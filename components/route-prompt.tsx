@@ -228,23 +228,32 @@ export function RoutePrompt({ loading, onGenerate, syncIntent }: Props) {
             />
           </div>
 
-          <div className="flex gap-5">
-            <label className="flex cursor-pointer items-center gap-2 text-[13px]">
-              <input
-                type="checkbox"
-                checked={avoidMotorways}
-                onChange={(e) => setAvoidMotorways(e.target.checked)}
-              />
-              Avoid highways
-            </label>
-            <label className="flex cursor-pointer items-center gap-2 text-[13px]">
-              <input
-                type="checkbox"
-                checked={includeTet}
-                onChange={(e) => setIncludeTet(e.target.checked)}
-              />
-              Follow the TET
-            </label>
+          <div className="flex flex-col gap-2">
+            <div className="flex gap-5">
+              <label className="flex cursor-pointer items-center gap-2 text-[13px]">
+                <input
+                  type="checkbox"
+                  checked={avoidMotorways}
+                  onChange={(e) => setAvoidMotorways(e.target.checked)}
+                />
+                Avoid highways
+              </label>
+              <label className="flex cursor-pointer items-center gap-2 text-[13px]">
+                <input
+                  type="checkbox"
+                  checked={includeTet}
+                  onChange={(e) => setIncludeTet(e.target.checked)}
+                />
+                Ride a TET section
+              </label>
+            </div>
+            {includeTet && (
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                Builds the ride around the nearest Trans Euro Trail section — out to
+                the trail, along part of it, then back. Not TET-only. When off, the
+                TET simply isn&apos;t targeted; it&apos;s never avoided.
+              </p>
+            )}
           </div>
         </div>
       )}

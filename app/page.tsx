@@ -76,14 +76,6 @@ export default function Home() {
             Tell us how you want to ride. Get a GPX.
           </p>
         </div>
-        <label className="flex cursor-pointer items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={showTet}
-            onChange={(e) => setShowTet(e.target.checked)}
-          />
-          Show TET Latvia
-        </label>
       </header>
 
       <div className="grid flex-1 gap-4 md:grid-cols-[380px_1fr]">
@@ -143,6 +135,7 @@ export default function Home() {
             start={result?.start ?? null}
             destination={result?.destination ?? null}
             showTet={showTet}
+            onToggleTet={setShowTet}
           />
         </div>
       </div>

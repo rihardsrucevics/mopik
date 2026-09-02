@@ -14,6 +14,7 @@ type Props = {
   start: { lat: number; lon: number } | null;
   destination?: { lat: number; lon: number } | null;
   showTet: boolean;
+  onToggleTet: (visible: boolean) => void;
 };
 
 const EMPTY: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
@@ -41,7 +42,7 @@ const SURFACE_COLOR_EXPR: maplibregl.ExpressionSpecification = [
   UNKNOWN_COLOR,
 ];
 
-export function RouteMap({ segments, start, destination, showTet }: Props) {
+export function RouteMap({ segments, start, destination, showTet, onToggleTet }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const markerRef = useRef<maplibregl.Marker | null>(null);
@@ -185,6 +186,25 @@ export function RouteMap({ segments, start, destination, showTet }: Props) {
   return (
     <div className="relative h-full w-full">
       <div ref={containerRef} className="h-full w-full rounded-lg" />
+
+      <button
+        type="button"
+        onClick={() => onToggleTet(!showTet)}
+        className="absolute left-3 top-3 flex items-center gap-2 rounded-full border border-[#ececf0] bg-white/95 px-3 py-1.5 text-xs font-medium text-foreground shadow-sm backdrop-blur transition-colors hover:bg-white"
+      >
+        <span
+          className="inline-block h-[3px] w-4 rounded-full"
+          style={{ background: TET_COLOR, opacity: showTet ? 0.9 : 0.3 }}
+        />
+        TET Latvia
+        <span
+          className={`flex h-4 w-7 items-center rounded-full p-0.5 transition-colors ${
+            showTet ? "justify-end bg-[#f56300]" : "justify-start bg-[#e9e9eb]"
+          }`}
+        >
+          <span className="h-3 w-3 rounded-full bg-white shadow-sm" />
+        </span>
+      </button>
       <div className="absolute bottom-3 left-3 flex flex-col gap-2 rounded-xl border border-[#ececf0] bg-white/95 px-3 py-2.5 text-[11px] leading-none shadow-sm backdrop-blur">
         <div className="flex flex-col gap-1.5">
           <span className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
