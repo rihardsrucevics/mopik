@@ -17,6 +17,7 @@ Return ONLY a JSON object with these fields (all optional unless stated):
   "durationHours": number,                         // 0.5-16
   "difficulty": "easy" | "adventure" | "hard",     // default "easy"
   "gravelPreference": number,                      // 0-100, % of unpaved the rider wants
+  "trailPreference": "none" | "some" | "lots",     // appetite for trail / single-track ("dotted line") segments, default "none"
   "avoidMotorways": boolean,                       // default true
   "avoidMainRoads": boolean,                       // default false
   "returnToStart": boolean,                        // default true
@@ -28,7 +29,7 @@ Interpret vague terms conservatively.
 "easy off-road" means mostly paved/gravel roads and good quality tracks -> difficulty "easy".
 "hard adventure" / "hardcore" may include rough tracks -> difficulty "hard", but never request legally restricted roads.
 "raustītās līnijas" / "dashed lines" / "tracks" means gravel & forest tracks -> raise gravelPreference.
-"punktotās līnijas" / "dotted lines" / "trails" means single-track paths -> difficulty "hard" only if clearly requested.
+"punktotās līnijas" / "dotted lines" / "trails" means single-track paths -> set trailPreference ("bez punktotajām" -> "none", "nedaudz punktoto" -> "some", "daudz punktoto" / hardcore -> "lots").
 "TET" / "Trans Euro Trail" means the rider wants to follow part of that trail -> includeTet true.
 The user may write in Latvian, English, Lithuanian, Estonian or Russian.
 Never put start or destination locations into the JSON — they are provided separately as structured fields.
@@ -58,6 +59,11 @@ export function parseRoutePromptHeuristic(prompt: string): RouteIntent {
     gravelPreference = 65;
   else if (/bez grants|no gravel|only asphalt|tikai asfalt/.test(p)) gravelPreference = 0;
 
+  let trailPreference: RouteIntent["trailPreference"] = "none";
+  if (/daudz punktot|lots of trails|hardcore|single[- ]?track/.test(p)) trailPreference = "lots";
+  else if (/nedaudz punktot|mazliet punktot|some trails|var .{0,10}punktot/.test(p))
+    trailPreference = "some";
+
   return RouteIntentSchema.parse({
     routeType: "round_trip",
     distanceKm: kmMatch ? parseInt(kmMatch[1], 10) : undefined,
@@ -66,6 +72,7 @@ export function parseRoutePromptHeuristic(prompt: string): RouteIntent {
       : undefined,
     difficulty,
     gravelPreference,
+    trailPreference,
     avoidMotorways: true,
     avoidMainRoads: /avoid main|bez lielajiem|bez lielaj|no main roads/.test(p),
     returnToStart: true,

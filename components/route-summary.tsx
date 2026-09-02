@@ -75,7 +75,11 @@ export function RouteSummary({ route, loading, onRegenerate }: Props) {
         <CardTitle className="flex items-center justify-between gap-2">
           <span>{route.name}</span>
           <span className="flex gap-1">
-            {route.tet && <Badge className="bg-purple-600 text-white">TET</Badge>}
+            {route.tet && (
+              <Badge className="rounded-full border border-[#f5630040] bg-transparent font-semibold tracking-wide text-[#f56300]">
+                TET
+              </Badge>
+            )}
             <Badge variant="secondary" className="capitalize">
               {route.profile}
             </Badge>
@@ -109,19 +113,19 @@ export function RouteSummary({ route, loading, onRegenerate }: Props) {
             label="Road"
             percent={route.roadMix.roadPercent}
             km={route.roadMix.roadKm}
-            color="#2563eb"
+            color="#0071e3"
           />
           <MixBar
             label="Track / dashed"
             percent={route.roadMix.trackPercent}
             km={route.roadMix.trackKm}
-            color="#ea580c"
+            color="#f56300"
           />
           <MixBar
             label="Trail / dotted"
             percent={route.roadMix.trailPercent}
             km={route.roadMix.trailKm}
-            color="#dc2626"
+            color="#ff3b30"
           />
         </div>
 
@@ -169,13 +173,16 @@ export function RouteSummary({ route, loading, onRegenerate }: Props) {
           </div>
         )}
 
-        <div className="flex gap-2">
-          <Button className="flex-1" onClick={downloadGpx}>
+        <div className="flex flex-col gap-2.5">
+          <Button
+            className="h-12 rounded-full bg-[#f56300] text-[15px] font-semibold text-white hover:bg-[#e05a00]"
+            onClick={downloadGpx}
+          >
             Download GPX
           </Button>
           <Button
-            className="flex-1"
-            variant="outline"
+            className="h-11 rounded-full bg-muted text-[14px] font-medium text-foreground shadow-none hover:bg-[#ebebed]"
+            variant="secondary"
             onClick={onRegenerate}
             disabled={loading}
           >

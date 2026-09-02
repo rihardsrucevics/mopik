@@ -47,6 +47,16 @@ export function buildCustomModel(intent: RouteIntent): CustomModel {
       multiply_by: asphaltPenalty,
     },
     { if: "surface == SAND", multiply_by: intent.difficulty === "hard" ? "0.5" : "0.05" },
+    // Trail / single-track appetite ("dotted lines").
+    {
+      if: "road_class == PATH",
+      multiply_by:
+        intent.trailPreference === "lots"
+          ? "1.0"
+          : intent.trailPreference === "some"
+            ? "0.3"
+            : "0.0",
+    },
   ];
 
   if (intent.difficulty === "easy") {

@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import { RouteMap } from "@/components/route-map";
-import { RoutePrompt } from "@/components/route-prompt";
+import { RoutePrompt, PromptRequest } from "@/components/route-prompt";
 import { RouteSummary } from "@/components/route-summary";
-import { GenerateRouteResponse } from "@/lib/types";
+import { GenerateRouteResponse, RouteIntent } from "@/lib/types";
 
 export default function Home() {
   const [result, setResult] = useState<GenerateRouteResponse | null>(null);
@@ -21,8 +21,7 @@ export default function Home() {
   const generate = async (
     start: string,
     destination: string,
-    prompt: string,
-    reuseIntent = false
+    req: { prompt?: string; intent?: Partial<RouteIntent> }
   ) => {
     setLoading(true);
     setError(null);
@@ -33,16 +32,16 @@ export default function Home() {
         body: JSON.stringify({
           start,
           destination: destination || undefined,
-          prompt,
-          // Regenerate: reuse parsed intent (skips the LLM); fresh seeds server-side.
-          intent: reuseIntent ? result?.intent : undefined,
+          prompt: req.prompt ?? "",
+          // Customize mode / regenerate send intent directly (skips the LLM).
+          intent: req.intent,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Route generation failed");
       setResult(data);
       setSelectedIdx(0);
-      setLastRequest({ start, destination, prompt });
+      setLastRequest({ start, destination, prompt: req.prompt ?? "" });
       if (data.intent?.includeTet) setShowTet(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
@@ -57,7 +56,7 @@ export default function Home() {
     <main className="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-4 p-4 md:p-6">
       <header className="flex flex-wrap items-end justify-between gap-2">
         <div>
-          <h1 className="flex items-center gap-2 text-2xl font-bold">
+          <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight">
             <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <circle cx="5.5" cy="17.5" r="3" stroke="currentColor" strokeWidth="1.8" />
               <circle cx="18.5" cy="17.5" r="3" stroke="#f56300" strokeWidth="1.8" />
@@ -89,7 +88,11 @@ export default function Home() {
 
       <div className="grid flex-1 gap-4 md:grid-cols-[380px_1fr]">
         <div className="flex flex-col gap-4">
-          <RoutePrompt loading={loading} onGenerate={(s, d, p) => generate(s, d, p)} />
+          <RoutePrompt
+            loading={loading}
+            onGenerate={(s: string, d: string, req: PromptRequest) => generate(s, d, req)}
+            syncIntent={result?.intent ?? null}
+          />
 
           {error && (
             <div className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-900">
@@ -125,7 +128,10 @@ export default function Home() {
               loading={loading}
               onRegenerate={() =>
                 lastRequest &&
-                generate(lastRequest.start, lastRequest.destination, lastRequest.prompt, true)
+                generate(lastRequest.start, lastRequest.destination, {
+                  prompt: lastRequest.prompt,
+                  intent: result?.intent,
+                })
               }
             />
           )}

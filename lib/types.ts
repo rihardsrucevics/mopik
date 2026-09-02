@@ -7,6 +7,8 @@ export const RouteIntentSchema = z.object({
   difficulty: z.enum(["easy", "adventure", "hard"]).default("easy"),
   /** 0–100, how much unpaved/gravel the rider wants */
   gravelPreference: z.number().min(0).max(100).default(40),
+  /** appetite for trail / single-track ("dotted line") segments */
+  trailPreference: z.enum(["none", "some", "lots"]).default("none"),
   avoidMotorways: z.boolean().default(true),
   avoidMainRoads: z.boolean().default(false),
   returnToStart: z.boolean().default(true),

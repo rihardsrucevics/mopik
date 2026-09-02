@@ -19,10 +19,10 @@ type Props = {
 const EMPTY: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
 
 // Our own consistent adventure legend — deliberately NOT a copy of any OSM renderer.
-const ROAD_COLOR = "#2563eb"; // solid line
-const TRACK_COLOR = "#ea580c"; // dashed line
-const TRAIL_COLOR = "#dc2626"; // dotted line
-const TET_COLOR = "#9333ea"; // TET overlay
+const ROAD_COLOR = "#0071e3"; // solid line
+const TRACK_COLOR = "#f56300"; // dashed line
+const TRAIL_COLOR = "#ff3b30"; // dotted line
+const TET_COLOR = "#af52de"; // TET overlay
 
 export function RouteMap({ segments, start, destination, showTet }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -147,7 +147,7 @@ export function RouteMap({ segments, start, destination, showTet }: Props) {
 
     if (destination) {
       if (!destMarkerRef.current) {
-        destMarkerRef.current = new maplibregl.Marker({ color: "#dc2626" });
+        destMarkerRef.current = new maplibregl.Marker({ color: "#ff3b30" });
       }
       destMarkerRef.current.setLngLat([destination.lon, destination.lat]).addTo(map);
     } else {
