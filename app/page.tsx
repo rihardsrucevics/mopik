@@ -57,7 +57,22 @@ export default function Home() {
     <main className="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-4 p-4 md:p-6">
       <header className="flex flex-wrap items-end justify-between gap-2">
         <div>
-          <h1 className="text-2xl font-bold">Baltic Adventure Route Generator</h1>
+          <h1 className="flex items-center gap-2 text-2xl font-bold">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle cx="5.5" cy="17.5" r="3" stroke="currentColor" strokeWidth="1.8" />
+              <circle cx="18.5" cy="17.5" r="3" stroke="#f56300" strokeWidth="1.8" />
+              <path
+                d="M5.5 17.5 L9.5 11.5 H14 L18.5 17.5"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <path d="M14 11.5 L15.8 8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+              <path d="M14.2 8 H17.6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+            </svg>
+            Mopic
+          </h1>
           <p className="text-sm text-muted-foreground">
             Tell us how you want to ride. Get a GPX.
           </p>

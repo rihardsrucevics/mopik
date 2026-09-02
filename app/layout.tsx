@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Baltic Adventure Route Generator",
+  title: "Mopic",
   description: "Adventure motorcycle routes from natural language. From idea to GPX in seconds.",
 };
 
