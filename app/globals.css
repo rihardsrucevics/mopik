@@ -128,7 +128,7 @@
     @apply font-sans;
   }
 }
-/* Mopic — Apple-style system (matches the design canvas) */
+/* Mopik — Apple-style system (matches the design canvas) */
 :root {
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
     "Segoe UI", system-ui, sans-serif;

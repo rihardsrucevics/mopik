@@ -70,7 +70,7 @@ export default function Home() {
               <path d="M14 11.5 L15.8 8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
               <path d="M14.2 8 H17.6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
             </svg>
-            Mopic
+            Mopik
           </h1>
           <p className="text-sm text-muted-foreground">
             Tell us how you want to ride. Get a GPX.
