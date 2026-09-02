@@ -1,36 +1,55 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Baltic Adventure Route Generator
 
-## Getting Started
+Adventure motorcycle routes from natural language. From idea to GPX in seconds.
 
-First, run the development server:
+> "Start in Cēsis. 150 km loop, around 60% gravel, follow part of the TET, easy adventure."
+
+The app interprets the request with an LLM (structured intent only — it never
+invents coordinates), generates **3 alternative routes** with GraphHopper,
+shows them on a MapLibre map with the adventure-rider road model
+(**Road / Track-dashed / Trail-dotted**), and exports GPX for OsmAnd, Garmin,
+DMD2, Locus, Kurviger, etc.
+
+## Features
+
+- Natural-language ride description (Latvian or English) + structured **Start** and optional **Destination** fields
+- 3 route alternatives per request (different seeds for loops, detour variants for point-to-point)
+- **TET Latvia** support: mention "TET" and routes follow a slice of the nearest Trans Euro Trail section; purple TET overlay on the map
+- Road / Track / Trail mix + surface breakdown per route, with honest unknown-data warnings
+- GPX download, regenerate with fresh seeds
+- Works without an OpenAI key (heuristic prompt parser fallback)
+
+## Setup
 
 ```bash
+npm install
+cp .env.example .env.local   # add your keys
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+- `GRAPHHOPPER_API_KEY` — required, free key at [graphhopper.com](https://www.graphhopper.com/)
+- `OPENAI_API_KEY` — optional, enables LLM intent parsing
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Note: the free GraphHopper plan doesn't support custom models (routing
+profiles) and allows max 5 route points; the app degrades gracefully (standard
+car profile, TET followed via 3 via-points). A paid key unlocks the
+gravel/difficulty custom models in `lib/routing/profiles.ts` automatically.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Architecture
 
-## Learn More
+```
+prompt ──▶ lib/ai/parse-route-prompt.ts   (LLM → RouteIntent JSON, never coordinates)
+start  ──▶ lib/geo/geocode.ts             (GraphHopper geocoding, Baltic-biased)
+intent ──▶ lib/routing/profiles.ts        (GraphHopper custom models per difficulty)
+       ──▶ lib/routing/tet.ts             (TET slice → via points)
+       ──▶ lib/routing/graphhopper.ts     (round-trip / multi-point routing)
+       ──▶ lib/routing/classify.ts        (path details → Road/Track/Trail + surfaces)
+       ──▶ lib/gpx/generate-gpx.ts        (GPX 1.1 export)
+```
 
-To learn more about Next.js, take a look at the following resources:
+TET data: `public/tet-lv.geojson` — downsampled from the official TET Latvia
+GPX (map overlay + server-side slice picking use the same file).
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+`public/maplibre-gl-worker.mjs` + `maplibre-gl-shared.mjs` are copied from
+`node_modules/maplibre-gl/dist` by the `postinstall` script — the bundler's
+own worker emission 404s under the Next dev server.

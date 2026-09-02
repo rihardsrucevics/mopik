@@ -1,69 +1,130 @@
-import Image from "next/image";
+"use client";
+
+import { useState } from "react";
+import { RouteMap } from "@/components/route-map";
+import { RoutePrompt } from "@/components/route-prompt";
+import { RouteSummary } from "@/components/route-summary";
+import { GenerateRouteResponse } from "@/lib/types";
 
 export default function Home() {
+  const [result, setResult] = useState<GenerateRouteResponse | null>(null);
+  const [selectedIdx, setSelectedIdx] = useState(0);
+  const [lastRequest, setLastRequest] = useState<{
+    start: string;
+    destination: string;
+    prompt: string;
+  } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [showTet, setShowTet] = useState(false);
+
+  const generate = async (
+    start: string,
+    destination: string,
+    prompt: string,
+    reuseIntent = false
+  ) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/generate-route", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          start,
+          destination: destination || undefined,
+          prompt,
+          // Regenerate: reuse parsed intent (skips the LLM); fresh seeds server-side.
+          intent: reuseIntent ? result?.intent : undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Route generation failed");
+      setResult(data);
+      setSelectedIdx(0);
+      setLastRequest({ start, destination, prompt });
+      if (data.intent?.includeTet) setShowTet(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const selected = result?.routes[selectedIdx] ?? null;
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+    <main className="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-4 p-4 md:p-6">
+      <header className="flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <h1 className="text-2xl font-bold">Baltic Adventure Route Generator</h1>
+          <p className="text-sm text-muted-foreground">
+            Tell us how you want to ride. Get a GPX.
           </p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
+        <label className="flex cursor-pointer items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={showTet}
+            onChange={(e) => setShowTet(e.target.checked)}
+          />
+          Show TET Latvia
+        </label>
+      </header>
+
+      <div className="grid flex-1 gap-4 md:grid-cols-[380px_1fr]">
+        <div className="flex flex-col gap-4">
+          <RoutePrompt loading={loading} onGenerate={(s, d, p) => generate(s, d, p)} />
+
+          {error && (
+            <div className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-900">
+              {error}
+            </div>
+          )}
+
+          {result && result.routes.length > 1 && (
+            <div className="flex gap-2">
+              {result.routes.map((r, i) => (
+                <button
+                  key={r.id}
+                  onClick={() => setSelectedIdx(i)}
+                  className={`flex-1 rounded-md border p-2 text-left text-xs transition-colors ${
+                    i === selectedIdx
+                      ? "border-foreground bg-foreground text-background"
+                      : "hover:bg-muted"
+                  }`}
+                >
+                  <div className="font-semibold">Option {r.variant}</div>
+                  <div>
+                    {(r.distanceMeters / 1000).toFixed(0)} km ·{" "}
+                    {Math.round(r.roadMix.trackPercent + r.roadMix.trailPercent)}% off-road
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {selected && (
+            <RouteSummary
+              route={selected}
+              loading={loading}
+              onRegenerate={() =>
+                lastRequest &&
+                generate(lastRequest.start, lastRequest.destination, lastRequest.prompt, true)
+              }
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+          )}
         </div>
-      </main>
-    </div>
+
+        <div className="h-[60vh] overflow-hidden rounded-lg border md:h-[calc(100vh-8rem)]">
+          <RouteMap
+            segments={selected?.segments ?? null}
+            start={result?.start ?? null}
+            destination={result?.destination ?? null}
+            showTet={showTet}
+          />
+        </div>
+      </div>
+    </main>
   );
 }
