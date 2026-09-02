@@ -150,11 +150,12 @@ export function RouteSummary({ route, loading, onRegenerate }: Props) {
         </div>
 
         {!route.customModelApplied && (
-          <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900">
-            ℹ️ Your GraphHopper plan doesn&apos;t support custom routing profiles, so
-            gravel/difficulty preferences aren&apos;t applied to routing yet — the
-            route uses the standard car profile. The mix breakdown below is still
-            real data.
+          <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs leading-relaxed text-blue-900">
+            ℹ️ The free GraphHopper plan can&apos;t steer routing by gravel or
+            difficulty, so the standard car profile rarely picks tracks or trails.
+            Gravel still happens on gravel roads — shown orange on the map. For
+            guaranteed gravel, enable <strong>Follow the TET</strong>; full off-road
+            steering needs a paid GraphHopper key.
           </div>
         )}
 

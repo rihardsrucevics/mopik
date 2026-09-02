@@ -19,10 +19,27 @@ type Props = {
 const EMPTY: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
 
 // Our own consistent adventure legend — deliberately NOT a copy of any OSM renderer.
-const ROAD_COLOR = "#0071e3"; // solid line
-const TRACK_COLOR = "#f56300"; // dashed line
-const TRAIL_COLOR = "#ff3b30"; // dotted line
+// Line COLOR encodes the surface, line STYLE encodes the road class:
+// solid = road, dashed = track, dotted = trail. A gravel public road is a
+// solid orange line; an asphalt track is a dashed blue one.
+const PAVED_COLOR = "#0071e3";
+const GRAVEL_COLOR = "#f56300";
+const DIRT_COLOR = "#8f5a24";
+const UNKNOWN_COLOR = "#98989d";
+const TRAIL_COLOR = "#ff3b30"; // trails are always red — they are the risk signal
 const TET_COLOR = "#af52de"; // TET overlay
+
+const SURFACE_COLOR_EXPR: maplibregl.ExpressionSpecification = [
+  "match",
+  ["get", "surface"],
+  "asphalt",
+  PAVED_COLOR,
+  ["gravel", "compacted"],
+  GRAVEL_COLOR,
+  ["ground", "dirt", "sand"],
+  DIRT_COLOR,
+  UNKNOWN_COLOR,
+];
 
 export function RouteMap({ segments, start, destination, showTet }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -85,7 +102,7 @@ export function RouteMap({ segments, start, destination, showTet }: Props) {
         source: "route",
         filter: ["==", ["get", "roadClass"], "road"],
         layout: { "line-cap": "round", "line-join": "round" },
-        paint: { "line-color": ROAD_COLOR, "line-width": 4 },
+        paint: { "line-color": SURFACE_COLOR_EXPR, "line-width": 4 },
       });
       map.addLayer({
         id: "route-track",
@@ -94,7 +111,7 @@ export function RouteMap({ segments, start, destination, showTet }: Props) {
         filter: ["==", ["get", "roadClass"], "track"],
         layout: { "line-join": "round" },
         paint: {
-          "line-color": TRACK_COLOR,
+          "line-color": SURFACE_COLOR_EXPR,
           "line-width": 4,
           "line-dasharray": [2, 1.5],
         },
@@ -168,35 +185,69 @@ export function RouteMap({ segments, start, destination, showTet }: Props) {
   return (
     <div className="relative h-full w-full">
       <div ref={containerRef} className="h-full w-full rounded-lg" />
-      <div className="absolute bottom-3 left-3 rounded-md bg-white/90 px-3 py-2 text-xs shadow">
-        <div className="flex items-center gap-2">
-          <span className="inline-block h-0.5 w-6" style={{ background: ROAD_COLOR }} />
-          Road
-        </div>
-        <div className="mt-1 flex items-center gap-2">
-          <span
-            className="inline-block h-0.5 w-6"
-            style={{
-              background: `repeating-linear-gradient(90deg, ${TRACK_COLOR} 0 6px, transparent 6px 10px)`,
-            }}
-          />
-          Track / dashed
-        </div>
-        <div className="mt-1 flex items-center gap-2">
-          <span
-            className="inline-block h-0.5 w-6"
-            style={{
-              background: `repeating-linear-gradient(90deg, ${TRAIL_COLOR} 0 2px, transparent 2px 6px)`,
-            }}
-          />
-          Trail / dotted
-        </div>
-        {showTet && (
-          <div className="mt-1 flex items-center gap-2">
-            <span className="inline-block h-0.5 w-6" style={{ background: TET_COLOR }} />
-            TET Latvia
+      <div className="absolute bottom-3 left-3 flex flex-col gap-2 rounded-xl border border-[#ececf0] bg-white/95 px-3 py-2.5 text-[11px] leading-none shadow-sm backdrop-blur">
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Surface
+          </span>
+          <div className="flex items-center gap-3">
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block h-[3px] w-4 rounded-full" style={{ background: PAVED_COLOR }} />
+              Paved
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block h-[3px] w-4 rounded-full" style={{ background: GRAVEL_COLOR }} />
+              Gravel
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block h-[3px] w-4 rounded-full" style={{ background: DIRT_COLOR }} />
+              Dirt
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block h-[3px] w-4 rounded-full" style={{ background: UNKNOWN_COLOR }} />
+              Unknown
+            </span>
           </div>
-        )}
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Type
+          </span>
+          <div className="flex items-center gap-3">
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block h-[3px] w-5 rounded-full bg-foreground/70" />
+              Road
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span
+                className="inline-block h-[3px] w-5"
+                style={{
+                  background:
+                    "repeating-linear-gradient(90deg, rgba(29,29,31,0.7) 0 5px, transparent 5px 8px)",
+                }}
+              />
+              Track
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span
+                className="inline-block h-[3px] w-5"
+                style={{
+                  background: `repeating-linear-gradient(90deg, ${TRAIL_COLOR} 0 2px, transparent 2px 5px)`,
+                }}
+              />
+              Trail
+            </span>
+            {showTet && (
+              <span className="flex items-center gap-1.5">
+                <span
+                  className="inline-block h-[3px] w-5 rounded-full"
+                  style={{ background: TET_COLOR, opacity: 0.65 }}
+                />
+                TET
+              </span>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
