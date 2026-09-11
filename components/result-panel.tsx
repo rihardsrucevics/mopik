@@ -113,17 +113,20 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
     message: `Apmēram ${Math.round(longerSuggestion.durationMinutes / 15) * 0.25} stundas, tas tīrākais aplis.`,
   });
 
-  // One URL carries the whole route (lib/share/route-code.ts): the phone's
-  // share sheet where there is one, the clipboard elsewhere.
+  // One URL carries the whole route (lib/share/route-code.ts). On a phone the
+  // system share sheet is the natural thing; on a desktop it is not (macOS
+  // opens its own sheet, which nobody wants for a link), so there the link
+  // goes to the clipboard with a visible confirmation.
   const shareRoute = async () => {
     const code = encodeRouteShare(route, route.stops?.[0]?.name ?? plan?.startPlace ?? "", plan);
     const url = shareUrl(code, window.location.origin);
     const title = `${route.name} · ${Math.round(route.distanceMeters / 1000)} km`;
-    if (typeof navigator.share === "function") {
+    const phone = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.matchMedia("(pointer: coarse)").matches;
+    if (phone && typeof navigator.share === "function") {
       try { await navigator.share({ title, url }); track("route_shared", { method: "share", km: Math.round(route.distanceMeters / 1000), variant: route.variant }); return; }
       catch { /* dismissed: fall through to copy */ }
     }
-    try { await navigator.clipboard.writeText(url); setShared("copied"); setTimeout(() => setShared("idle"), 2200); track("route_shared", { method: "copy", km: Math.round(route.distanceMeters / 1000), variant: route.variant }); }
+    try { await navigator.clipboard.writeText(url); setShared("copied"); setTimeout(() => setShared("idle"), 3500); track("route_shared", { method: "copy", km: Math.round(route.distanceMeters / 1000), variant: route.variant }); }
     catch { window.prompt("Kopē saiti:", url); }
   };
 
@@ -201,6 +204,9 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
             <div><div className="text-[10px] uppercase tracking-wider text-stone-400">Laiks</div><div className="text-lg font-semibold tabular-nums">{duration(route.durationSeconds)}</div></div>
             <div><div className="text-[10px] uppercase tracking-wider text-stone-400">Atkārtoti</div><div className="text-lg font-semibold tabular-nums" style={{ color: route.overlap.repeatedPercent > 15 ? "#ff3b30" : undefined }}>{route.overlap.repeatedPercent} %</div></div>
           </div>
+          {shared === "copied" && (
+            <p role="status" className="mopik-fade-in mt-2 rounded-lg bg-stone-900 px-3 py-2 text-xs text-white">Saite nokopēta. Ielīmē WhatsApp, Telegram vai e-pastā — saņēmējs redzēs karti un skaitļus.</p>
+          )}
           {remoteLoop && (
             <p className="mt-2 text-[11px] leading-relaxed text-stone-500">
               Pārbrauciens {remoteLoop.transitOutKm} km · {duration(remoteLoop.transitOutMinutes * 60)} → <span className="font-semibold text-stone-700">{remoteLoop.focus.label.split(",")[0]} aplis {remoteLoop.loops[selected]?.km ?? "–"} km · {duration((remoteLoop.loops[selected]?.minutes ?? 0) * 60)}</span> → atpakaļ {remoteLoop.transitBackKm} km · {duration(remoteLoop.transitBackMinutes * 60)}
