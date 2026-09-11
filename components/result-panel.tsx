@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ArrowLeft, ArrowUp, ChevronDown, ChevronUp, Download, LoaderCircle } from "lucide-react";
 import { GeneratedRoute, GenerateRouteResponse } from "@/lib/types";
 import { RidePlan, planSummary } from "@/lib/chat/ride-plan";
+import { BeerBanner } from "@/components/beer-banner";
 
 /**
  * The left column once routes exist: what was asked, the three versions,
@@ -188,6 +189,8 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
             {warnings.map((w) => <li key={w}>⚠️ {w}</li>)}
           </ul>
         )}
+
+        <BeerBanner />
 
         {details && (
           <div className="space-y-3 rounded-xl border border-stone-200 p-3">

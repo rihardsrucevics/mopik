@@ -1,5 +1,16 @@
 # Mopik — progress log
 
+## 2026-09-12 (late) — "Uzsauc man aliņu"
+
+A small dashed card under the route result: beer glyph, "Patika trase?
+Uzsauc man aliņu.", a "5 € 🍺" button to the Revolut link with the amount in
+the path (`https://revolut.me/rucijs/5eur`; the base link works if the
+amount is not prefilled) and, on desktop only, a QR code encoding the same
+link (`public/revolut-qr.svg`, generated with the `qrcode` CLI, 37×37
+modules). Clicks send a `beer_click` GA event when gtag is present.
+Component: `components/beer-banner.tsx`, placed in `result-panel.tsx` above
+the details.
+
 ## 2026-09-12 (night) — on the phone, the words come first
 
 The rider generated Jelgava on the phone, got the honest verdict, and could
