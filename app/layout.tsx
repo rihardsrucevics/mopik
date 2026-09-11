@@ -1,7 +1,9 @@
 import type { Metadata, Viewport } from "next";
+import Script from "next/script";
 import "./globals.css";
 
 const SITE_URL = "https://www.mopik.eu";
+const GA_ID = "G-ZSR9E9QKKM";
 const TITLE = "Mopik — adventure moto maršruti Latvijā";
 const DESCRIPTION =
   "Mazāk plānošanas. Vairāk braukšanas. Mopik uzzīmē adventure un enduro maršrutus pa grants un meža ceļiem — no ieceres līdz GPX dažās sekundēs.";
@@ -38,7 +40,17 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="lv" className="h-full antialiased">
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        {children}
+        {/* Google Analytics (gtag.js), loaded after hydration so it never delays the page. */}
+        <Script src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`} strategy="afterInteractive" />
+        <Script id="ga-init" strategy="afterInteractive">{`
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+          gtag('config', '${GA_ID}');
+        `}</Script>
+      </body>
     </html>
   );
 }
