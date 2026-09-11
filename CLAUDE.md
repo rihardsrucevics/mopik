@@ -203,6 +203,9 @@ Fidelity check: `BROUTER_BASE_URL=http://localhost:17777 npx tsx scripts/fidelit
 - **Animation is one SVG scene reused twice** (`RouteScene`): the intro splash
   and the in-chat loader. Bike follows the drawn path via SMIL `mpath`; keep
   the route id `#mopik-route` in sync if you change it.
+  The loader adds pickups (cigarette, beer) on the path, collected by the
+  bike; they are timed on `svg.getCurrentTime()` because SMIL runs on the SVG
+  document clock, not on `Date.now()`.
 - **Lucky ride** = start only + no destination + flexible time. Not a mode the
   rider picks; detected in `app/page.tsx`, sent as `lucky: true`, and the
   API aims for ~120 km and the result opens on *Sarežģītākā*.

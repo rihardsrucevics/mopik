@@ -1,5 +1,20 @@
 # Mopik — progress log
 
+## 2026-09-12 (late, 4) — the loader is a game
+
+The cigarette and beer no longer replace the scene; they lie on the route
+the bike is riding. One item per lap, alternating (cigarette at 36 % of the
+path on even laps, beer at 70 % on odd laps), bobbing while they wait. When
+the bike reaches one it pops with a small burst, the status line switches to
+"Uzpīpēju…" / "Iedzeru aliņu…" for 1.8 s in orange, and a counter
+"🚬 1 · 🍺 1" appears on the right. Positions come from
+`getPointAtLength` on the drawn path; timing reads the SVG document clock
+(`svg.getCurrentTime()`), the same clock the SMIL bike runs on, so bike and
+pickups never drift. All bookkeeping happens in an interval outside React
+render (a first version called the parent's callback inside a state updater
+and React complained). The beer glass has no handle by request. Intro
+splash reuses the scene without pickups.
+
 ## 2026-09-12 (late, 3) — the picked Valmiera was not the Valmiera that got routed
 
 Two causes, both fixed:
