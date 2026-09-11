@@ -1,5 +1,35 @@
 # Mopik — progress log
 
+## 2026-09-12 (later) — the surroundings of a stop, and a complex version that earns its name
+
+The rider's rule: "Rīga → Baldone → Rīga" is, for most riders, a ride to ride
+*around* Baldone. So the winding and complex versions may include the
+surroundings; the straight one never does. Via the chat, "vairāk apkārtnes"
+asks for more of it.
+
+- **Ring candidates** (`around-<r>-<side>` in `buildCandidates`): a small
+  ring around each via place — arrive, swing round one side, pass beyond,
+  come back the other side, leave — on a short offset corridor, routed with
+  the rider's own profile. `surroundings: "some" | "more"` in plan and intent
+  (default some; chat regex + prompt for more) scales the radius.
+- **Wiggle candidates** (`zig-<scale>`): three offsets per leg on one side
+  with breathing amplitude (wide, narrow, wide): turns and short
+  opposite-direction stretches while the overall direction holds. Two
+  flavours, the rider's profile wide and the deep profile narrow.
+- **Complex scoring** now rewards turns (`turnsPer10Km × 1.2`) on top of
+  tracks, trails, roughness and nature; the straight pick never takes a
+  detour candidate; the complex pick may take a detour candidate up to 10 %
+  past the free band (the panel states the overshoot).
+- **What it took to make the rings fit** (Rīga → Baldone → Rīga, 3 h, Meži,
+  local BRouter): crossing zigzags retraced 52 %, dropped. Rings inheriting
+  the straight corridor retraced 33 % (the corridor itself retraces 48 %),
+  fixed by offsetting the corridor like the via candidates. A 2.3 km ring
+  with the deep profile came back 45 min over budget — the rider's loop
+  around Baldone is slow forest track, ~15 km/h — so the ring is small
+  (1.2–3.5 km) and the corridor short. Result: **Sarežģītākā = ring around
+  Baldone, 97 km / 3 h 18, 12 % repeated, 67 % unpaved, 38 % track**;
+  Taisnākā 108 km / 3 h 27 at 1 %; Līkumotākā 113 km / 3 h 34 at 4 %.
+
 ## 2026-09-12 — the chat understands the ride's shape; the time limit is honest
 
 **The case.** "Atradi foršu meža apli kaut kur Baldones mežos un uztaisi

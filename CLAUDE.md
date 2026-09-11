@@ -221,6 +221,12 @@ Fidelity check: `BROUTER_BASE_URL=http://localhost:17777 npx tsx scripts/fidelit
   past the free band; when nothing fits, lead with the nearest and state
   "Prasīts ~2 h, šī versija ir 2 h 47 min." with one-tap ways out. A rider
   who typed 2 h and got 3 h 30 does not come back.
+- **The surroundings belong to the winding/complex versions, never the
+  straight one.** For a via ride, `around-*` (ring around the stop) and
+  `zig-*` (one-sided wiggles) candidates compete for those slots; `detour()`
+  keeps them out of the direct pick. Rings are small and on the rider's
+  profile because forest rings near a town run ~15 km/h and the budget is
+  time. Chat: "vairāk apkārtnes" → `surroundings: "more"`.
 - **Prompt changes are measured with `npx tsx scripts/chat-golden.ts`**
   against the dev server (12 phrasings). Don't tune the prompt by feel.
 

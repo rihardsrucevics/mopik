@@ -32,6 +32,12 @@ export const RouteIntentSchema = z.object({
   /** Consider TET sections as optional candidates, alongside ordinary loops. */
   includeTet: z.boolean().default(false),
   /**
+   * How much of the area around a stop to ride: "some" puts a small ring
+   * around each via place into the winding/complex versions; "more" spends
+   * more of the spare budget there ("vairāk apkārtnes").
+   */
+  surroundings: z.enum(["some", "more"]).default("some"),
+  /**
    * How far from the requested distance/duration a route may land, as a
    * percentage. Loop length can't be dialled in precisely — a loop's length
    * is whatever the road network allows between its anchors — so this lets

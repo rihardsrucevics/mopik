@@ -14,6 +14,8 @@ export const RidePlanSchema = z.object({
   focusArea: z.string().max(160).nullable().default(null),
   /** Whether a duration/distance is for the whole ride or just the focus loop. */
   budgetScope: z.enum(["total", "focus"]).default("total"),
+  /** Ride around the stops a little (default) or a lot ("vairāk apkārtnes"). */
+  surroundings: z.enum(["some", "more"]).default("some"),
   returnToStart: z.boolean().nullable(),
   budget: z.object({
     mode: z.enum(["unknown", "duration", "distance", "flexible"]),
@@ -130,6 +132,7 @@ export function planToIntent(plan: RidePlan): RouteIntent {
     preferForest: plan.preferForest, noSand: plan.noSand,
     avoidTowns: plan.avoidTowns, avoidMainRoads: plan.avoidMainRoads,
     includeTet: plan.includeTet, includeSightseeing: plan.includeSightseeing,
+    surroundings: plan.surroundings,
   });
 }
 
@@ -153,6 +156,7 @@ export function planSummary(plan: RidePlan, lv: boolean): string {
   const details = [places, plan.directionPlace ? `${plan.directionPlace} ${lv ? "virzienā" : "direction"}` : "", budget, difficulty, style, surface,
     plan.maxRepeatedPercent !== null ? `${lv ? "atkārtojums līdz" : "repeat at most"} ${plan.maxRepeatedPercent}%` : "",
     plan.prioritizeLowOverlap && plan.maxRepeatedPercent === null ? (lv ? "mazāk atkārtojumu" : "less retracing") : "",
+    plan.surroundings === "more" ? (lv ? "vairāk apkārtnes" : "more around the stops") : "",
     plan.noSand ? (lv ? "bez smiltīm" : "avoid sand") : "",
     plan.avoidTowns ? (lv ? "izvairīties no pilsētām" : "avoid towns") : "",
     plan.avoidMainRoads ? (lv ? "izvairīties no lielajiem ceļiem" : "avoid main roads") : "",

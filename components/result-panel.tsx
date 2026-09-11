@@ -16,7 +16,7 @@ import { RidePlan, planSummary } from "@/lib/chat/ride-plan";
 const VARIANT_LABELS: Record<string, { label: string; detail: string }> = {
   direct: { label: "Taisnākā", detail: "gludi un ātri" },
   balanced: { label: "Līkumotākā", detail: "līdzsvars" },
-  complex: { label: "Sarežģītākā", detail: "maksimāli pa mežu" },
+  complex: { label: "Sarežģītākā", detail: "mežs, pagriezieni, apkārtne" },
 };
 
 function duration(seconds: number): string {

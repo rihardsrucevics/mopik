@@ -10,7 +10,7 @@ import {
   parseStartPlace,
   resolveTargetDistanceKm,
 } from "@/lib/ai/parse-route-prompt";
-import { bearingDegrees, haversineMeters, inSector, type BearingSector } from "@/lib/geo/geometry";
+import { bearingDegrees, destinationPoint, haversineMeters, inSector, type BearingSector } from "@/lib/geo/geometry";
 import { geocode, GeocodeResult } from "@/lib/geo/geocode";
 import { findResolvedPlace, type ResolvedPlace } from "@/lib/chat/places";
 // Isochrones come from Valhalla (BRouter has none); the routes themselves
@@ -385,8 +385,13 @@ async function buildCandidates(
   const startPt: [number, number] = [start.lon, start.lat];
 
   const profileOptions = buildMotoProfileOptions(intent);
-  const route = async (points: [number, number][]) => {
-    const path = await fetchRoutePath({ points, profileOptions });
+  // The complex version's own profile: as much forest and gravel as the
+  // rider's surface choice allows. Asphalt-only riders keep asphalt.
+  const deepOptions = intent.gravelPreference > 10
+    ? buildMotoProfileOptions({ ...intent, gravelPreference: 100, preferForest: true })
+    : profileOptions;
+  const route = async (points: [number, number][], options = profileOptions) => {
+    const path = await fetchRoutePath({ points, profileOptions: options });
     const stops = [...requiredVia, ...(destination ? [destination] : [])].map(p => [p.lon, p.lat] as [number, number]);
     if (!visitsRequiredStops(path.coordinates, stops)) throw new Error("Route did not reach all required stops in order");
     if (destination || intent.includeSightseeing) return path;
@@ -417,6 +422,69 @@ async function buildCandidates(
         }
         return { path: await route(points) };
       }});
+    }
+
+    // The surroundings. A ride "to Baldone and back" is, for most riders, a
+    // ride to ride *around* Baldone: a small ring around each stop, entered
+    // on one side and left on the other, spends the spare budget where the
+    // rider wanted to be. The corridors out and back are pushed apart like
+    // the plain via candidates' (a straight there-and-back retraces ~48%
+    // near Riga, offset corridors 1-4%). Routed with the deep profile;
+    // competes for the winding and complex slots, never the straight one.
+    const viaIndices = places.map((_, i) => i).filter((i) => i > 0 && i < places.length - 1);
+    if (viaIndices.length && spareMeters > 6000) {
+      const more = intent.surroundings === "more";
+      // Radius that spends part of the spare length on rings (perimeter ≈ 2π·1.4r on real roads).
+      const spend = spareMeters / (viaIndices.length * 2 * Math.PI * 1.4);
+      const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+      // Measured on Rīga → Baldone → Rīga at 3 h: a 2.3 km ring with the deep
+      // profile came back 45 min over budget (the whole ride slowed to
+      // 27 km/h), so the ring is small and the corridor keeps the rider's own
+      // profile; the ring itself is the interest.
+      const radii = [
+        clamp(spend * (more ? 0.6 : 0.35), 1200, more ? 6000 : 3500),
+        clamp(spend * (more ? 1.0 : 0.6), 1500, more ? 8000 : 5000),
+      ];
+      for (const r of radii) for (const side of [1, -1]) {
+        candidates.push({ variant: `around-${Math.round(r / 100)}-${side}`, competing: true, run: async () => {
+          const points: [number, number][] = [startPt];
+          for (let i = 1; i < places.length; i++) {
+            const here: [number, number] = [places[i].lon, places[i].lat];
+            // A short corridor: the ring is where the time goes.
+            points.push(perpendicularVia(places[i - 1], places[i], 0.5, reach * 0.7 * side));
+            points.push(here);
+            if (viaIndices.includes(i)) {
+              // Arrive, swing round one side, pass beyond, come back the other side, leave.
+              const b = bearingDegrees([places[i - 1].lon, places[i - 1].lat], here);
+              points.push(destinationPoint(here, b + 90 * side, r), destinationPoint(here, b, r), destinationPoint(here, b - 90 * side, r));
+            }
+          }
+          return { path: await route(points) };
+        }});
+      }
+    }
+
+    // Wiggles along the corridor: the overall direction holds, the road does
+    // not. Three offsets per leg on one side with the amplitude breathing
+    // (wide, narrow, wide) — turns, short opposite-direction stretches and
+    // the tracks between, without crossing the line, which retraced half the
+    // route when tried. The complex version's raw material.
+    if (intent.rideStyle !== "direct") {
+      // Two flavours: the rider's profile with a wide wiggle, the deep
+      // profile with a narrow one (deep tracks are slow; the budget is time).
+      for (const [scale, options] of [[1.2, profileOptions], [0.7, deepOptions]] as const) {
+        candidates.push({ variant: `zig-${scale}`, competing: true, run: async () => {
+          const points: [number, number][] = [startPt];
+          for (let i = 1; i < places.length; i++) {
+            const side = 1;
+            for (const [fraction, amplitude] of [[0.2, 1], [0.5, 0.35], [0.8, 1]] as const) {
+              points.push(perpendicularVia(places[i - 1], places[i], fraction, reach * scale * amplitude * side));
+            }
+            points.push([places[i].lon, places[i].lat]);
+          }
+          return { path: await route(points, options) };
+        }});
+      }
     }
     return { candidates };
   }
@@ -1153,11 +1221,16 @@ export async function POST(req: NextRequest) {
     const directScore = (c: Scored) =>
       common(c) + c.classified.quality.turnsPer10Km * 4 + roughShare(c) * 0.8 + c.classified.roadMix.trackPercent * 0.5 +
       (km(c) / Math.max(1, targetKm)) * 25;
+    // The complex version is the interesting one: tracks, trails, forest and
+    // as many turns as the roads offer. A route that doubles back through
+    // the woods for a while is a feature here, not a fault.
     const complexScore = (c: Scored) =>
       common(c) -
       (c.classified.roadMix.trackPercent + c.classified.roadMix.trailPercent) * 0.6 -
       roughShare(c) * 0.3 -
-      (c.classified.quality.natureScore ?? 0) * 0.15;
+      (c.classified.quality.natureScore ?? 0) * 0.15 -
+      c.classified.quality.turnsPer10Km * 1.2;
+    const detour = (c: Scored) => /^(around|zig)-/.test(c.variant);
     const variantOf = new Map<Scored, RouteVariant>();
     const takenKeys: Set<string>[] = [];
     const distinct = (c: Scored) => {
@@ -1174,9 +1247,16 @@ export async function POST(req: NextRequest) {
       const c = ordered.find((x) => !variantOf.has(x) && distinct(x));
       if (c) variantOf.set(c, variant);
     };
-    pick("direct", [...selection].sort((a, b) => directScore(a) - directScore(b)));
+    pick("direct", [...selection].filter((c) => !detour(c)).sort((a, b) => directScore(a) - directScore(b)));
     pick("balanced", selection);
-    pick("complex", [...selection].sort((a, b) => complexScore(a) - complexScore(b)));
+    // The complex version may run a little past the free band — a ring
+    // around the stop on slow forest tracks costs minutes, and the panel
+    // states the overshoot plainly — but only a little: 10% of the request.
+    const COMPLEX_EXTRA_DRIFT = 10;
+    const complexPool = budgeted && withinBudget.length
+      ? worthShowing.filter((c) => withinTolerance(c) || (detour(c) && excessDriftPercent(c) <= COMPLEX_EXTRA_DRIFT))
+      : selection;
+    pick("complex", [...complexPool].sort((a, b) => complexScore(a) - complexScore(b)));
     const order: RouteVariant[] = ["direct", "balanced", "complex"];
     const picked = [...variantOf.entries()].sort((a, b) => order.indexOf(a[1]) - order.indexOf(b[1])).map(([c]) => c);
     const chosen = [...fixed, ...picked].slice(0, SHOWN_VARIANTS);
