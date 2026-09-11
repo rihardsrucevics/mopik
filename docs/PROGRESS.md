@@ -1,5 +1,27 @@
 # Mopik — progress log
 
+## 2026-09-12 — short share links (Vercel Blob), and the plan after this deploy
+
+**Short links.** `mopik.eu/r/<8 chars>` instead of a 4 KB code. `POST /api/share`
+stores the full code as a public text blob under its content hash
+(`lib/share/store.ts`, store `mopik-shares`, `BLOB_READ_WRITE_TOKEN` in all
+Vercel environments and `.env.local`); `/r/<id>` and its OG image resolve
+either an id or a full code (`lib/share/resolve.ts`). The share button asks
+for a short id with a 4 s timeout and falls back to the long link, so sharing
+works even if the store is down. Same route → same id. Desktop copies the
+link with a visible confirmation; the system share sheet is phones only.
+
+**Planned next (rider's request, after this deploy):**
+- **Avoid a place/area from the chat** — "man nepatīk, ka pirmā ved cauri
+  Jūrmalai pa pilsētu". BRouter supports `nogos` (lon,lat,radius circles):
+  chat extracts `avoidPlaces`, the API geocodes them and passes ~4–6 km nogo
+  circles, so the route goes around. Today the chat says it cannot.
+- **"Izdomā" / "tu izlem"** — when the rider delegates the choice, the chat
+  must pick a sensible option itself instead of asking again.
+- **Mix of two versions** ("uztaisi mix starp pirmo un trešo") — not a real
+  operation on routes; interpret as "the first version's corridor with the
+  third's forest share" → adjust the profile and regenerate, and say so.
+
 ## 2026-09-12 — the Safari "string did not match the expected pattern" bug, solved: it was Vercel's 60 s cap
 
 The rider finally caught it with the error name shown: `SyntaxError …

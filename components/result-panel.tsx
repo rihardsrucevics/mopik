@@ -119,7 +119,13 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
   // goes to the clipboard with a visible confirmation.
   const shareRoute = async () => {
     const code = encodeRouteShare(route, route.stops?.[0]?.name ?? plan?.startPlace ?? "", plan);
-    const url = shareUrl(code, window.location.origin);
+    // Short id from the store when it answers quickly; the long self-contained
+    // link otherwise. Both open the same page.
+    let url = shareUrl(code, window.location.origin);
+    try {
+      const res = await fetch("/api/share", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code }), signal: AbortSignal.timeout(4000) });
+      if (res.ok) { const { id } = await res.json(); if (typeof id === "string") url = shareUrl(id, window.location.origin); }
+    } catch { /* long link it is */ }
     const title = `${route.name} · ${Math.round(route.distanceMeters / 1000)} km`;
     const phone = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.matchMedia("(pointer: coarse)").matches;
     if (phone && typeof navigator.share === "function") {

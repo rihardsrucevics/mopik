@@ -274,6 +274,12 @@ build into connection refusals; the script rotates mirrors.
 - `RESEND_API_KEY` (optional): rider feedback e-mails via Resend to
   rihards.rucevics@gmail.com; without it the form falls back to a mailto: link.
 
+**Gotcha:** `vercel blob create-store --yes` (and `vercel env pull` to
+`.env.local`) OVERWRITES `.env.local`, keeping only what Vercel knows. It
+happened on 2026-09-12; keys were restored from the production environment
+(`vercel env pull` to a temp file, then append). Pull to a temp path, never
+to `.env.local` directly.
+
 ## BRouter runs locally
 
 `../brouter-server/start.sh` (outside the repo; BRouter 1.7.10 + Baltic
@@ -298,7 +304,9 @@ runner: macOS then denies it Documents access and every route 500s with
 
 ## Known open items
 
-**Planned, decided 2026-09-12:** self-hosted BRouter on a small VPS for
+**Planned, 2026-09-12 evening:** avoid-area from chat via BRouter `nogos`
+(Jūrmala case), "izdomā" → the chat decides, "mix of versions" → profile
+adjustment with an explanation. **Planned, decided 2026-09-12:** self-hosted BRouter on a small VPS for
 production (the real fix for time drift and single-version results on
 brouter.de; needs the rider's hosting account). **Shelved:** LVM GEO data —
 measured 0.1 % new road geometry vs OSM, no attributes; only gates/barriers

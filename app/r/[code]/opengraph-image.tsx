@@ -1,5 +1,5 @@
 import { ImageResponse } from "next/og";
-import { decodeRouteShare } from "@/lib/share/route-code";
+import { resolveShare } from "@/lib/share/resolve";
 
 /** The share card: the actual route line, coloured by surface, with the numbers. */
 export const alt = "Mopik maršruts";
@@ -10,7 +10,7 @@ const COLOR: Record<string, string> = { asphalt: "#2f7bff", gravel: "#f56300", c
 
 export default async function Image({ params }: { params: Promise<{ code: string }> }) {
   const { code } = await params;
-  const share = decodeRouteShare(decodeURIComponent(code));
+  const share = (await resolveShare(code))?.share ?? null;
   const W = 1200, H = 630, PAD = 60, MAP_W = 640;
   let paths: { d: string; color: string }[] = [];
   if (share) {

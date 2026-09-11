@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { SharedRouteView } from "@/components/shared-route";
-import { decodeRouteShare } from "@/lib/share/route-code";
+import { resolveShare } from "@/lib/share/resolve";
 
 /**
  * /r/<code>: a shared route. The whole route lives in the code (see
@@ -17,8 +17,9 @@ function minutesLabel(m: number): string {
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { code } = await params;
-  const share = decodeRouteShare(decodeURIComponent(code));
-  if (!share) return { title: "Maršruts nav atrasts" };
+  const resolved = await resolveShare(code);
+  if (!resolved) return { title: "Maršruts nav atrasts" };
+  const { share } = resolved;
   const title = `${share.name} · ${share.km} km · ${minutesLabel(share.minutes)}`;
   const description = `${share.unpavedPercent} % grants un meža ceļu, ${share.repeatedPercent} % atkārtoti. Adventure maršruts no Mopik — lejupielādē GPX vai uztaisi līdzīgu.`;
   return {
@@ -32,9 +33,8 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
 
 export default async function SharedRoutePage({ params }: Params) {
   const { code } = await params;
-  const raw = decodeURIComponent(code);
-  const share = decodeRouteShare(raw);
-  if (!share) notFound();
-  const planCode = raw.split("~")[4] ?? null;
-  return <SharedRouteView share={share} planCode={planCode} />;
+  const resolved = await resolveShare(code);
+  if (!resolved) notFound();
+  const planCode = resolved.code.split("~")[4] ?? null;
+  return <SharedRouteView share={resolved.share} planCode={planCode} />;
 }
