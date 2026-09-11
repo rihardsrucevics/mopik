@@ -3,7 +3,7 @@ import Script from "next/script";
 import "./globals.css";
 
 const SITE_URL = "https://www.mopik.eu";
-const GA_ID = "G-ZSR9E9QKKM";
+const GA_ID = "G-M01X58GWMC";
 const TITLE = "Mopik — adventure moto maršruti Latvijā";
 const DESCRIPTION =
   "Mazāk plānošanas. Vairāk braukšanas. Mopik uzzīmē adventure un enduro maršrutus pa grants un meža ceļiem — no ieceres līdz GPX dažās sekundēs.";
