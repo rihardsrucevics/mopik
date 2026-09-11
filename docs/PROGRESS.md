@@ -1,5 +1,26 @@
 # Mopik — progress log
 
+## 2026-09-12 (late, 2) — the beer moved into a popup; feedback goes to the inbox
+
+- **Beer popup** (`components/beer-popup.tsx`) replaces the inline banner:
+  after "Lejupielādēt GPX" (the file downloads first) a full-screen dark
+  card in the Revolut QR colour (#201f25): "GPX ir tavs. Lai labi brauc!",
+  "5 € caur Revolut" button, the QR (`public/revolut-qr-dark.svg`, light
+  modules on dark) on desktop only, and every way to skip it (×, outside
+  click, Escape, "Varbūt citreiz"). GA events `beer_popup` and `beer_click`.
+  The "viena cilvēka vakaru projekts" line is gone by the rider's wish.
+- **"Download GPX" → "Lejupielādēt GPX".**
+- **Feedback** (`components/feedback-dialog.tsx`, `app/api/feedback/route.ts`):
+  an "Atsauksme" link in the header opens a dialog (text, optional e-mail,
+  the current plan/route attached as context). The API e-mails
+  rihards.rucevics@gmail.com through Resend when `RESEND_API_KEY` is set
+  (sender `onboarding@resend.dev`, which may deliver to the account owner's
+  own address without domain verification, so no DNS work); without a key it
+  answers 503 with a `mailto:` carrying the same text and the client opens
+  the rider's mail app. Every message is also logged to the runtime log.
+  **To finish: create a Resend account with that Gmail address, make an API
+  key, add `RESEND_API_KEY` to Vercel production.**
+
 ## 2026-09-12 (late) — "Uzsauc man aliņu"
 
 A small dashed card under the route result: beer glyph, "Patika trase?

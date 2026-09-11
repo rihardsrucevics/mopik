@@ -6,6 +6,7 @@ import { useRef, useState, useEffect } from "react";
 import { RouteMap } from "@/components/route-map";
 import { RoutePrompt } from "@/components/route-prompt";
 import { ResultPanel } from "@/components/result-panel";
+import { FeedbackDialog } from "@/components/feedback-dialog";
 import { IntroSplash } from "@/components/intro-splash";
 import { RideComposer } from "@/components/ride-composer";
 import { ChatMessage, ChatQuickReply, ChatResponse, RidePlan, planSummary } from "@/lib/chat/ride-plan";
@@ -51,6 +52,7 @@ export default function Home() {
   const [lucky, setLucky] = useState(false);
   // Phone only: the map over the whole screen, on request.
   const [mapExpanded, setMapExpanded] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   useEffect(() => {
     if (!mapExpanded) return;
     const previous = document.body.style.overflow;
@@ -168,8 +170,12 @@ export default function Home() {
       <header className="mb-5 flex items-center justify-between border-b border-stone-200 pb-4">
         <div className="flex items-baseline gap-3">{/* eslint-disable-next-line @next/next/no-html-link-for-pages -- full reload on purpose: a fresh plan */}
             <h1 className="text-2xl font-bold tracking-tight"><a href="/" aria-label="Mopik — uz sākumu">Mopik<span className="text-[#f56300]">.</span></a></h1><p className="hidden text-xs text-stone-500 sm:block">Mazāk plānošanas. Vairāk braukšanas.</p></div>
+        <div className="flex items-center gap-4">
+        <button type="button" onClick={() => setFeedbackOpen(true)} className="text-xs text-stone-500 underline decoration-stone-300 underline-offset-4 hover:text-stone-900">Atsauksme</button>
         {(messages.length > 0 || plan) && <button disabled={phase !== "idle"} onClick={() => { setEntryMode("form"); setMessages([]); setPlan(null); setPlaces([]); setResult(null); setChatting(false); setError(null); setRetry(null); setQuickReplies([]); }} className="text-xs text-stone-500 underline underline-offset-4 disabled:opacity-40">Jauns brauciens</button>}
+        </div>
       </header>
+      <FeedbackDialog open={feedbackOpen} onClose={() => setFeedbackOpen(false)} context={[plan ? planSummary(plan, true) : "", route ? `${route.name} (${Math.round(route.distanceMeters / 1000)} km)` : ""].filter(Boolean).join(" · ") || undefined} />
       <div className="grid items-start gap-5 md:grid-cols-[minmax(340px,460px)_1fr]">
         <div className="min-w-0 space-y-4">
           {entryMode === "form"

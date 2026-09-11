@@ -255,6 +255,9 @@ POI data: `python3 scripts/build_poi_dataset.py` → `public/poi-baltics.geojson
 re-run after changing scores needs no network. Overpass rate-limits a full
 build into connection refusals; the script rotates mirrors.
 
+- `RESEND_API_KEY` (optional): rider feedback e-mails via Resend to
+  rihards.rucevics@gmail.com; without it the form falls back to a mailto: link.
+
 ## BRouter runs locally
 
 `../brouter-server/start.sh` (outside the repo; BRouter 1.7.10 + Baltic

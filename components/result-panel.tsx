@@ -4,11 +4,11 @@ import { useState } from "react";
 import { ArrowLeft, ArrowUp, ChevronDown, ChevronUp, Download, LoaderCircle } from "lucide-react";
 import { GeneratedRoute, GenerateRouteResponse } from "@/lib/types";
 import { RidePlan, planSummary } from "@/lib/chat/ride-plan";
-import { BeerBanner } from "@/components/beer-banner";
+import { BeerPopup } from "@/components/beer-popup";
 
 /**
  * The left column once routes exist: what was asked, the three versions,
- * the selected one's numbers, Download GPX, warnings — and at the bottom an
+ * the selected one's numbers, Lejupielādēt GPX, warnings — and at the bottom an
  * input inviting a correction. Sending a correction hands the column over
  * to the chat until new routes arrive, then this view returns. No chat
  * history competes with the result.
@@ -53,6 +53,7 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
   onBackToForm: () => void;
 }) {
   const [details, setDetails] = useState(false);
+  const [beer, setBeer] = useState(false);
   const [text, setText] = useState("");
   const route = routes[Math.min(selected, routes.length - 1)];
   if (!route) return null;
@@ -73,6 +74,8 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
     a.download = route.name.toLowerCase().replace(/[^a-z0-9]+/g, "-") + ".gpx";
     a.click();
     URL.revokeObjectURL(url);
+    // The file is on its way; now the thank-you, skippable.
+    setTimeout(() => setBeer(true), 400);
   };
 
   // The time limit is the feature riders value most, so the verdict on it is
@@ -177,7 +180,7 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
             </p>
           )}
           <div className="mt-3 flex items-center gap-2">
-            <button type="button" onClick={downloadGpx} className="flex h-11 flex-1 items-center justify-center gap-2 rounded-full bg-[#f56300] text-sm font-semibold text-white transition hover:bg-[#d85600]"><Download className="size-4" />Download GPX</button>
+            <button type="button" onClick={downloadGpx} className="flex h-11 flex-1 items-center justify-center gap-2 rounded-full bg-[#f56300] text-sm font-semibold text-white transition hover:bg-[#d85600]"><Download className="size-4" />Lejupielādēt GPX</button>
             <button type="button" onClick={() => setDetails(!details)} aria-expanded={details} className="flex h-11 shrink-0 items-center gap-1 rounded-full border border-stone-200 px-3 text-xs font-medium text-stone-700 hover:bg-stone-50">
               Detaļas{details ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
             </button>
@@ -189,8 +192,6 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
             {warnings.map((w) => <li key={w}>⚠️ {w}</li>)}
           </ul>
         )}
-
-        <BeerBanner />
 
         {details && (
           <div className="space-y-3 rounded-xl border border-stone-200 p-3">
@@ -233,6 +234,7 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
           </button>
         </div>
       </form>
+      <BeerPopup open={beer} onClose={() => setBeer(false)} />
     </section>
   );
 }
