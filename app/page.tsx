@@ -59,7 +59,7 @@ export default function Home() {
     setPhase("routing");
     const sourcePrompt = conversation.filter(m => m.role === "user").map(m => m.content).join("\n");
     try {
-      const isLucky = current.returnToStart === true && current.viaPlaces.length === 0 && current.budget.mode === "flexible";
+      const isLucky = current.returnToStart === true && current.viaPlaces.length === 0 && !current.focusArea && current.budget.mode === "flexible";
       setLucky(isLucky);
       const response = await fetch("/api/generate-route", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ plan: current, prompt: sourcePrompt, places, lucky: isLucky }) });
       const data = await response.json();
@@ -77,6 +77,7 @@ export default function Home() {
       const notes = [
         isLucky ? "Bez galamērķa un laika limita? Laimīgais! Atradu tev kaut ko foršu." : "",
         versions > 1 ? `Gatavs — ${versions} versijas zemāk, pārslēdz un skaties kartē.` : "Gatavs — maršruts kartē.",
+        data.remoteLoop ? `Pārbrauciens līdz ${(data as GenerateRouteResponse).remoteLoop!.focus.label.split(",")[0]} ~${(data as GenerateRouteResponse).remoteLoop!.transitOutMinutes} min, atpakaļ ~${(data as GenerateRouteResponse).remoteLoop!.transitBackMinutes} min; pa vidu aplis.` : "",
         data.distanceWarning ? "Maršruts iznāca garāks par vēlamo." : "",
         "Saki, ko mainīt: īsāku, vairāk pa mežu, caur kādu vietu…",
       ];
@@ -146,7 +147,7 @@ export default function Home() {
           {entryMode === "form"
             ? <RideComposer key={plan ? planSummary(plan, false) : "new"} initialPlan={plan} profile={profile} onProfileChange={changeProfile} busy={phase !== "idle"} onGenerate={startFromForm} onUseChat={() => setEntryMode("chat")} />
             : result && result.routes.length > 0 && !chatting
-              ? <ResultPanel routes={result.routes} selected={selected} onSelect={setSelected} plan={plan} avoidTowns={result.intent.avoidTowns ?? false} lucky={lucky} busy={phase !== "idle"} onSend={send} onBackToForm={() => setEntryMode("form")} />
+              ? <ResultPanel routes={result.routes} selected={selected} onSelect={setSelected} plan={plan} avoidTowns={result.intent.avoidTowns ?? false} lucky={lucky} remoteLoop={result.remoteLoop} longerSuggestion={result.longerSuggestion} tolerancePercent={result.intent.distanceTolerancePercent} busy={phase !== "idle"} onSend={send} onBackToForm={() => setEntryMode("form")} />
               : <RoutePrompt messages={messages} plan={plan} hasRoute={Boolean(route)} phase={phase} quickReplies={quickReplies} lucky={lucky && !route} onSend={send} onBackToForm={() => setEntryMode("form")} />}
           {error && <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><p>{error}</p>{retry && <button onClick={retryLast} disabled={phase !== "idle"} className="mt-2 underline underline-offset-4 disabled:opacity-40">Mēģināt vēlreiz</button>}</div>}
         </div>

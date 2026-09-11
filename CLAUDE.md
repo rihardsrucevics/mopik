@@ -208,6 +208,21 @@ Fidelity check: `BROUTER_BASE_URL=http://localhost:17777 npx tsx scripts/fidelit
   API aims for ~120 km and the result opens on *Sarežģītākā*.
 - **Logo reloads `/`** on purpose (fresh state), hence the disabled
   `no-html-link-for-pages` rule on that anchor.
+- **A ride has a shape, and "where the fun is" can be away from the start.**
+  `focusArea` in the plan = transit → loop → transit (Rīga → Baldones meža
+  aplis → Rīga). A via place is a visit; a focus area is a playground. The
+  chat must never squeeze "meža aplis X mežos, no Y" into viaPlaces. The
+  budget is the whole day unless `budgetScope: "focus"`.
+- **Say what you understood before drawing.** The chat leads with "Sapratu:
+  …" in the rider's words whenever the shape is new/changed, and does the
+  transit arithmetic (2 h total − 2 × 50 min = 20 min in the forest) as a
+  question with two taps, not as a surprise on the map.
+- **The time limit is the product.** Never show a version more than ~45 %
+  past the free band; when nothing fits, lead with the nearest and state
+  "Prasīts ~2 h, šī versija ir 2 h 47 min." with one-tap ways out. A rider
+  who typed 2 h and got 3 h 30 does not come back.
+- **Prompt changes are measured with `npx tsx scripts/chat-golden.ts`**
+  against the dev server (12 phrasings). Don't tune the prompt by feel.
 
 ## Environment
 

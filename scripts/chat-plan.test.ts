@@ -66,3 +66,26 @@ test("sandy paths are beach-like while unknown forest tracks remain eligible", (
   assert.equal(hasUnverifiedMotorPath(path({ highway: "path", motorcycle: "yes" })), false);
   assert.equal(hasBeachLikePath(path({ highway: "track", surface: "sand" })), false);
 });
+
+import { planSummary } from "../lib/chat/ride-plan";
+import { joinPaths } from "../lib/routing/join-paths";
+test("a focus area reads as transit → loop → transit, with the budget scope", () => {
+  const remote = RidePlanSchema.parse({ ...complete, startPlace: "Rīga", viaPlaces: [], focusArea: "Baldone", budgetScope: "focus" });
+  const lv = planSummary(remote, true);
+  assert.match(lv, /^Rīga → Baldone \(aplis\) → Rīga · ~ 2 h aplim/);
+  assert.match(planSummary({ ...remote, budgetScope: "total" }, true), /~ 2 h · /);
+  assert.match(planSummary(remote, false), /Baldone \(loop\)/);
+  // Older plans without the new fields still parse, as a plain loop.
+  const legacy = RidePlanSchema.parse({ ...complete, focusArea: undefined, budgetScope: undefined });
+  assert.equal(legacy.focusArea, null); assert.equal(legacy.budgetScope, "total");
+});
+test("joined legs keep edge indices aligned and drop the shared junction point", () => {
+  const out = { distanceMeters: 1000, durationSeconds: 60, coordinates: [[24, 57], [24.01, 57]] as [number, number][], edges: [{ beginShapeIndex: 0, endShapeIndex: 1, tags: { highway: "primary" } }] };
+  const loop = { distanceMeters: 2000, durationSeconds: 120, coordinates: [[24.01, 57], [24.02, 57.01], [24.01, 57]] as [number, number][], edges: [{ beginShapeIndex: 0, endShapeIndex: 2, tags: { highway: "track" } }] };
+  const back = { ...out, coordinates: [[24.01, 57], [24, 57]] as [number, number][] };
+  const joined = joinPaths([out, loop, back]);
+  assert.equal(joined.distanceMeters, 4000);
+  assert.equal(joined.coordinates.length, 2 + 2 + 1);
+  assert.deepEqual(joined.edges.map((e) => [e.beginShapeIndex, e.endShapeIndex]), [[0, 1], [1, 3], [3, 4]]);
+  assert.equal(joined.edges[1].tags?.highway, "track");
+});

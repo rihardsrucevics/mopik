@@ -21,6 +21,7 @@ import { fetchRoutePath } from "@/lib/routing/brouter";
 import { buildMotoProfileOptions } from "@/lib/routing/moto-profile";
 import { buildCostingOptions, profileName } from "@/lib/routing/profiles";
 import { pruneSpurs } from "@/lib/routing/prune-spurs";
+import { joinPaths } from "@/lib/routing/join-paths";
 import { loopRank, meetsRideLimits } from "@/lib/routing/score";
 import { classifyRoute } from "@/lib/routing/classify";
 import { measureTetCoverage } from "@/lib/routing/tet-coverage";
@@ -733,7 +734,7 @@ export async function POST(req: NextRequest) {
       destinationPlace: body.plan.returnToStart ? undefined : body.plan.destinationPlace ?? undefined,
       directionPlace: body.plan.directionPlace ?? undefined, source: "plan" as const,
     } : await parseRoutePrompt(body.prompt, body.settings);
-    const intent = body.plan ? parsed.intent : body.intent ?? parsed.intent;
+    let intent: RouteIntent = body.plan ? parsed.intent : body.intent ?? parsed.intent;
 
     // Places come from the description ("around Baldone", "from Riga to
     // Cesis"). Explicit fields still win when a caller sends them, but the
@@ -801,7 +802,74 @@ export async function POST(req: NextRequest) {
       try { requiredVia.push(await resolvePlace(name)); }
       catch { return NextResponse.json({ error: `Neizdevās atrast obligāto pieturvietu “${name}”. Precizē to čatā.` }, { status: 422 }); }
     }
-    let targetKm = body.plan?.budget.mode === "flexible" ? (body.lucky ? 120 : 80) : resolveTargetDistanceKm(intent);
+    // A focus area away from the start ("meža aplis Baldones mežos, no
+    // Rīgas"): ride there directly, loop around it with the rider's own
+    // settings, come back by another corridor. The loop is planned exactly
+    // like a loop from the focus town; the two transits are routed once and
+    // stitched on at the end. What the rider sees as the budget is the whole
+    // day unless they said the hours are for the loop only.
+    const origin = start;
+    type RemoteLoop = { focus: GeocodeResult; out: RoutePath; back: RoutePath; outSeconds: number; backSeconds: number };
+    let remote: RemoteLoop | null = null;
+    if (body.plan?.focusArea && body.plan.returnToStart && !destination) {
+      let focus: GeocodeResult;
+      try { focus = await resolvePlace(body.plan.focusArea); }
+      catch { return NextResponse.json({ error: `Neizdevās atrast apvidu “${body.plan.focusArea}”. Precizē vietu čatā.` }, { status: 422 }); }
+      const startPt: [number, number] = [start.lon, start.lat];
+      const focusPt: [number, number] = [focus.lon, focus.lat];
+      if (haversineMeters(startPt, focusPt) > 3000) {
+        // Transit is transit: direct, main roads allowed, little gravel.
+        const transitIntent: RouteIntent = {
+          ...intent, rideStyle: "direct", difficulty: "easy", avoidMainRoads: false, preferForest: false, trailPreference: "none",
+          gravelPreference: 0, accessPolicy: "verified", includeSightseeing: false,
+        };
+        const profileOptions = buildMotoProfileOptions(transitIntent);
+        const out = await fetchRoutePath({ points: [startPt, focusPt], profileOptions });
+        // The way back should be a different corridor: the direct return
+        // and two offset ones compete on how few road pieces they share with
+        // the way out, with a mild penalty for extra length.
+        const reach = Math.min(12000, Math.max(3000, haversineMeters(startPt, focusPt) * 0.2));
+        const backSettled = await Promise.allSettled([
+          fetchRoutePath({ points: [focusPt, startPt], profileOptions }),
+          ...[1, -1].map((side) => fetchRoutePath({ points: [focusPt, perpendicularVia(focus, start, 0.5, reach * side), startPt], profileOptions })),
+        ]);
+        const backs = backSettled.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
+        if (!backs.length) throw new Error("Neizdevās izplānot atpakaļceļu no apvidus.");
+        const outKeys = roadPieceKeys(out.coordinates);
+        const sharedWithOut = (p: RoutePath) => {
+          const keys = roadPieceKeys(p.coordinates);
+          let n = 0;
+          for (const k of keys) if (outKeys.has(k)) n++;
+          return n / Math.max(1, keys.size);
+        };
+        const cost = (p: RoutePath) => sharedWithOut(p) + Math.max(0, p.distanceMeters / out.distanceMeters - 1) * 0.8;
+        backs.sort((a, b) => cost(a) - cost(b));
+        const back = backs[0];
+        const outSeconds = classifyRoute(out).durationSeconds;
+        const backSeconds = classifyRoute(back).durationSeconds;
+        remote = { focus, out, back, outSeconds, backSeconds };
+        console.log(`remote loop: ${origin.label.split(",")[0]} → ${focus.label.split(",")[0]} ${(out.distanceMeters / 1000).toFixed(0)} km / ${Math.round(outSeconds / 60)} min out, ${(back.distanceMeters / 1000).toFixed(0)} km / ${Math.round(backSeconds / 60)} min back (shares ${Math.round(sharedWithOut(back) * 100)}%)`);
+        if (body.plan.budgetScope === "total") {
+          const transitHours = (outSeconds + backSeconds) / 3600;
+          const transitKm = (out.distanceMeters + back.distanceMeters) / 1000;
+          if (intent.durationHours) {
+            intent = {
+              ...intent,
+              durationHours: Math.max(0.5, intent.durationHours - transitHours),
+              minimumDurationHours: intent.minimumDurationHours ? Math.max(0, intent.minimumDurationHours - transitHours) : undefined,
+            };
+          } else if (intent.distanceKm) {
+            intent = {
+              ...intent,
+              distanceKm: Math.max(20, intent.distanceKm - transitKm),
+              minimumDistanceKm: intent.minimumDistanceKm ? Math.max(0, intent.minimumDistanceKm - transitKm) : undefined,
+            };
+          }
+        }
+        start = focus;
+      }
+    }
+    let targetKm = body.plan?.budget.mode === "flexible" ? (remote ? 60 : body.lucky ? 120 : 80) : resolveTargetDistanceKm(intent);
 
     // Plain loops get a calibration route first (TET and one-way rides have
     // fixed shapes). It corrects the anchor radius — and, for a duration
@@ -878,9 +946,13 @@ export async function POST(req: NextRequest) {
     // directions in different regions (Riga undershoots, Tukums overshoots).
     // When the loops come back with their median length more than a quarter
     // off target, re-plan every shape at a radius scaled by that ratio and
-    // route again. Only when self-hosted: it doubles the request count.
+    // route again. Self-hosted, every shape; on the public instance only a
+    // few, because the time limit is the feature riders value most and a
+    // 2-hour request that comes back at 3½ hours is a broken product, not a
+    // saved request.
     const SECOND_PASS_TRIGGER = 0.25;
-    if (calibration && process.env.BROUTER_BASE_URL) {
+    const PUBLIC_SECOND_PASS_SHAPES = 4;
+    if (calibration) {
       const lengths = scored
         .filter((c) => c.competing && !c.exploratory)
         .map((c) => c.path.distanceMeters / 1000)
@@ -901,7 +973,8 @@ export async function POST(req: NextRequest) {
           radiusMeters,
           secondPass: true,
         }, direction, requiredVia);
-        const second = await runAll(again.candidates.filter((c) => !c.exploratory));
+        const retry = again.candidates.filter((c) => !c.exploratory);
+        const second = await runAll(process.env.BROUTER_BASE_URL ? retry : retry.slice(0, PUBLIC_SECOND_PASS_SHAPES));
         scored = [...scored, ...second.scored];
       }
     }
@@ -1049,16 +1122,24 @@ export async function POST(req: NextRequest) {
       ...competing.slice(0, 5).map((s) => s.classified.overlap.repeatedPercent),
       100
     );
+    // A version more than ~45% past the free band is a different ride: for a
+    // 2-hour request that is already 3 h 15 min. Not shown, however clean.
+    const MAX_EXCESS_DRIFT = 45;
     const worthShowing = competing.filter(
       (s) =>
         s.classified.overlap.repeatedPercent <= Math.max(15, bestShown + 10) &&
-        excessDriftPercent(s) <= 60 &&
+        excessDriftPercent(s) <= MAX_EXCESS_DRIFT &&
         acceptable(s)
     );
     // Prefer routes inside the agreed approximate budget when any exist. Do
-    // not silently trade a two-hour ride for 80 min.
+    // not silently trade a two-hour ride for 80 min. When none is inside,
+    // the rider cares about the time first and the overlap second, so the
+    // nearest-to-budget versions lead and the UI says how far off they are.
     const withinBudget = worthShowing.filter(withinTolerance);
-    const selection = body.plan && body.plan.budget.mode !== "flexible" && withinBudget.length ? withinBudget : worthShowing;
+    const budgeted = Boolean(body.plan && body.plan.budget.mode !== "flexible");
+    const selection = budgeted
+      ? (withinBudget.length ? withinBudget : [...worthShowing].sort((a, b) => excessDriftPercent(a) - excessDriftPercent(b)))
+      : worthShowing;
 
     // Three versions from one pool. `selection` is already in balanced-rank
     // order; the other two re-score it on their own axis. Each pick must be
@@ -1101,10 +1182,14 @@ export async function POST(req: NextRequest) {
     const chosen = [...fixed, ...picked].slice(0, SHOWN_VARIANTS);
 
     const startName = start.label.split(",")[0];
+    const originName = origin.label.split(",")[0];
     const locale = detectLocale(body.prompt);
 
     const routes: GeneratedRoute[] = chosen.map((chosenScored) => {
-      const { path, stops, classified } = chosenScored;
+      const { stops } = chosenScored;
+      // A remote loop is shown and exported whole: out, round, back.
+      const path = remote ? joinPaths([remote.out, chosenScored.path, remote.back]) : chosenScored.path;
+      const classified = remote ? classifyRoute(path) : chosenScored.classified;
       const tet = measureTetCoverage(path.coordinates);
       return {
         id: crypto.randomUUID(),
@@ -1112,7 +1197,7 @@ export async function POST(req: NextRequest) {
         // (destination, TET) keep their existing descriptive names.
         name: destination
           ? `${startName} → ${destination.label.split(",")[0]}${tet ? " via TET" : ""}`
-          : nameLoop({
+          : (remote ? `${originName} → ` : "") + nameLoop({
                 startLabel: startName,
                 difficulty: intent.difficulty,
                 stops,
@@ -1129,7 +1214,7 @@ export async function POST(req: NextRequest) {
         surfaces: classified.surfaces,
         quality: classified.quality,
         overlap: classified.overlap,
-        stops: [...requiredVia.map(p => ({ name: p.label.split(",")[0], category: "via" })), ...stopLabels(stops, locale)],
+        stops: [...(remote ? [{ name: startName, category: "via" }] : []), ...requiredVia.map(p => ({ name: p.label.split(",")[0], category: "via" })), ...stopLabels(stops, locale)],
         profile: profileName(intent),
         sourcePrompt: body.prompt,
         variant: variantOf.get(chosenScored) ?? "balanced",
@@ -1162,7 +1247,8 @@ export async function POST(req: NextRequest) {
     // presenting a much longer ride as if it were what was asked for. The
     // threshold is the rider's own tolerance, so raising it in Settings also
     // silences the warning it makes irrelevant.
-    const shortestKm = Math.min(...routes.map((r) => r.distanceMeters / 1000));
+    // Judged on the loop itself: the transits are not part of the target.
+    const shortestKm = Math.min(...chosen.map((c) => c.path.distanceMeters / 1000));
     const tolerated = 1 + intent.distanceTolerancePercent / 100;
     const overshoots = shortestKm > targetKm * tolerated;
 
@@ -1238,10 +1324,22 @@ export async function POST(req: NextRequest) {
             },
           }
         : {}),
-      start,
+      start: origin,
       destination: destination ?? undefined,
-      via: requiredVia,
+      via: remote ? [remote.focus, ...requiredVia] : requiredVia,
       routes,
+      ...(remote
+        ? {
+            remoteLoop: {
+              focus: remote.focus,
+              transitOutKm: Math.round(remote.out.distanceMeters / 1000),
+              transitOutMinutes: Math.round(remote.outSeconds / 60),
+              transitBackKm: Math.round(remote.back.distanceMeters / 1000),
+              transitBackMinutes: Math.round(remote.backSeconds / 60),
+              loops: chosen.map((c) => ({ km: Math.round(c.path.distanceMeters / 1000), minutes: Math.round(c.classified.durationSeconds / 60) })),
+            },
+          }
+        : {}),
       ...(overshoots && !destination
         ? {
             distanceWarning: {

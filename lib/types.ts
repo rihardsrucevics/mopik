@@ -216,6 +216,20 @@ export type GenerateRouteResponse = {
   via?: { lat: number; lon: number; label: string }[];
   routes: GeneratedRoute[];
   /**
+   * Set when the ride was built as transit → loop → transit around a focus
+   * area away from the start ("meža aplis Baldones mežos, no Rīgas"). The UI
+   * shows the split so the rider sees where the time goes.
+   */
+  remoteLoop?: {
+    focus: { lat: number; lon: number; label: string };
+    transitOutKm: number;
+    transitOutMinutes: number;
+    transitBackKm: number;
+    transitBackMinutes: number;
+    /** the loop part of each shown route, in route order */
+    loops: { km: number; minutes: number }[];
+  };
+  /**
    * Set when every route came back well outside the requested length, so the
    * UI can say so instead of quietly presenting a much longer ride. Very
    * short targets are the usual cause: a loop that leaves town and returns a

@@ -150,11 +150,23 @@ export function RideComposer({ initialPlan, profile, onProfileChange, busy, onGe
           <ChoiceRow label="Ilgums" value={durationMode} onChange={setDurationMode} choices={[{ value: "flexible", label: "Brīvs" }, { value: "hours", label: "Konkrēts" }]} />
         </div>
         {durationMode === "hours" && (
-          <label className="flex h-10 items-center gap-2 rounded-xl border border-stone-200 px-3">
-            <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-400">Stundas</span>
-            <input type="number" min="0.5" max="16" step="0.5" value={hours} onChange={(e) => setHours(e.target.value)} className="min-w-0 flex-1 bg-transparent text-right text-base font-semibold outline-none md:text-sm" />
-            <span className="text-xs text-stone-400">h</span>
-          </label>
+          <div className="flex items-stretch gap-1.5" role="group" aria-label="Stundas">
+            {/* The usual days as one tap each; the field is for everything else. */}
+            {[2, 4, 6, 8].map((h) => {
+              const active = Number(hours.replace(",", ".")) === h;
+              return (
+                <button key={h} type="button" onClick={() => setHours(String(h))} aria-pressed={active}
+                  className={`h-10 min-w-0 flex-1 rounded-xl border text-sm font-semibold tabular-nums transition ${active ? "border-stone-900 bg-stone-900 text-white" : "border-stone-200 bg-white text-stone-700 hover:border-stone-300"}`}>
+                  {h} h
+                </button>
+              );
+            })}
+            <label className="flex h-10 w-[5.5rem] shrink-0 items-center gap-1 rounded-xl border border-stone-200 px-2.5 focus-within:border-[#f56300]">
+              {/* type=text + inputMode=decimal: iOS opens the number pad, and "2,5" stays typeable. */}
+              <input type="text" inputMode="decimal" pattern="[0-9]*[.,]?[0-9]*" aria-label="Stundas, cits skaitlis" value={hours} onChange={(e) => setHours(e.target.value)} className="min-w-0 flex-1 bg-transparent text-right text-base font-semibold outline-none md:text-sm" />
+              <span className="text-xs text-stone-400">h</span>
+            </label>
+          </div>
         )}
 
         <div>

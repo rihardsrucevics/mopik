@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { ArrowLeft, ArrowUp, ChevronDown, ChevronUp, Download, LoaderCircle } from "lucide-react";
-import { GeneratedRoute } from "@/lib/types";
+import { GeneratedRoute, GenerateRouteResponse } from "@/lib/types";
 import { RidePlan, planSummary } from "@/lib/chat/ride-plan";
 
 /**
@@ -33,8 +33,14 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = false, lucky = false, busy, onSend, onBackToForm }: {
+export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = false, lucky = false, remoteLoop, longerSuggestion, tolerancePercent = 20, busy, onSend, onBackToForm }: {
   routes: GeneratedRoute[];
+  /** transit → loop → transit split, when the ride was built around a focus area */
+  remoteLoop?: GenerateRouteResponse["remoteLoop"];
+  /** the API's own offer when nothing inside the budget looped cleanly */
+  longerSuggestion?: GenerateRouteResponse["longerSuggestion"];
+  /** the rider's tolerance on time/distance, from the intent (default 20) */
+  tolerancePercent?: number;
   /** start only, no destination, no time: the most interesting ride we could find */
   lucky?: boolean;
   selected: number;
@@ -68,6 +74,28 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
     URL.revokeObjectURL(url);
   };
 
+  // The time limit is the feature riders value most, so the verdict on it is
+  // explicit: requested vs delivered, and one tap towards each way out. A
+  // loop's length is whatever the roads allow, so there is a free band —
+  // the rider's tolerance or 15 minutes, whichever is larger.
+  const requestedMinutes = plan?.budget.mode === "duration" && plan.budget.value ? plan.budget.value * 60 : null;
+  const deliveredMinutes = plan?.budgetScope === "focus" && remoteLoop ? (remoteLoop.loops[selected]?.minutes ?? route.durationSeconds / 60) : route.durationSeconds / 60;
+  const freeMinutes = requestedMinutes ? Math.max(15, (requestedMinutes * tolerancePercent) / 100) : 0;
+  const isMaximum = plan?.budget.constraint === "maximum";
+  const over = requestedMinutes !== null && deliveredMinutes > requestedMinutes + (isMaximum ? 0 : freeMinutes);
+  const under = requestedMinutes !== null && !isMaximum && deliveredMinutes < requestedMinutes - freeMinutes;
+  const requestedLabel = requestedMinutes !== null ? duration(requestedMinutes * 60) : "";
+  const timeVerdict = over
+    ? `Prasīts ${isMaximum ? "līdz" : "~"}${requestedLabel}, šī versija ir ${duration(deliveredMinutes * 60)}.`
+    : under ? `Prasīts ~${requestedLabel}, šī versija ir tikai ${duration(deliveredMinutes * 60)}.` : null;
+  const timeActions: { label: string; message: string }[] = [];
+  if (over && requestedMinutes) timeActions.push({ label: `Meklēt īsāku (līdz ${requestedLabel})`, message: `Īsāku — ne vairāk kā ${plan!.budget.value} stundas.` });
+  if (under && requestedMinutes) timeActions.push({ label: `Meklēt garāku (~${requestedLabel})`, message: `Garāku — apmēram ${plan!.budget.value} stundas, var vairāk pieturu.` });
+  if (longerSuggestion) timeActions.push({
+    label: `Tīrāks aplis ~${duration(longerSuggestion.durationMinutes * 60)} (${longerSuggestion.repeatedPercent} % atkārtoti)`,
+    message: `Apmēram ${Math.round(longerSuggestion.durationMinutes / 15) * 0.25} stundas, tas tīrākais aplis.`,
+  });
+
   const warnings: string[] = [];
   if (route.overlap.repeatedPercent > 15) warnings.push(`${route.overlap.repeatedKm} km atkārto jau nobrauktus ceļus — vari prasīt mazāk atkārtojumu.`);
   if (route.roadMix.trailKm > 0) warnings.push(`${route.roadMix.trailKm} km taku.`);
@@ -99,6 +127,18 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
             <span className="font-semibold">Bez galamērķa un laika limita? Laimīgais!</span> Šī ir interesantākā trase, ko atradām — versijas zemāk, ja gribi citu.
           </p>
         )}
+        {(timeVerdict || timeActions.length > 0) && (
+          <div className={`rounded-xl px-3 py-2 text-xs leading-relaxed ${timeVerdict ? "bg-amber-50 text-amber-950" : "bg-[#faf9f6] text-stone-700"}`}>
+            {timeVerdict && <p className="font-semibold">{timeVerdict}</p>}
+            {timeActions.length > 0 && (
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {timeActions.map((a) => (
+                  <button key={a.label} type="button" disabled={busy} onClick={() => onSend(a.message)} className="rounded-full border border-[#f56300] bg-white px-3 py-1.5 text-[11px] font-medium text-[#bd4b00] transition hover:bg-[#fff3ea] disabled:opacity-50">{a.label}</button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         {routes.length > 1 && (
           <div role="tablist" aria-label="Maršruta versijas" className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${routes.length}, minmax(0, 1fr))` }}>
             {routes.map((r, index) => {
@@ -110,7 +150,7 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
                   <div className="truncate text-xs font-semibold">{meta.label}</div>
                   <div className={`truncate text-[10px] ${active ? "text-stone-300" : "text-stone-500"}`}>{meta.detail}</div>
                   <div className="mt-1 truncate text-xs font-semibold tabular-nums">{Math.round(r.distanceMeters / 1000)} km</div>
-                  <div className={`truncate text-[10px] tabular-nums ${active ? "text-stone-300" : "text-stone-500"}`}>{duration(r.durationSeconds)} · {unpaved(r)} % grants</div>
+                  <div className={`truncate text-[10px] tabular-nums ${active ? "text-stone-300" : "text-stone-500"}`}><span className={requestedMinutes !== null && r.durationSeconds / 60 > requestedMinutes + (isMaximum ? 0 : freeMinutes) ? (active ? "text-amber-300" : "text-amber-700") : ""}>{duration(r.durationSeconds)}</span> · {unpaved(r)} % grants</div>
                 </button>
               );
             })}
@@ -130,6 +170,11 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
             <div><div className="text-[10px] uppercase tracking-wider text-stone-400">Laiks</div><div className="text-lg font-semibold tabular-nums">{duration(route.durationSeconds)}</div></div>
             <div><div className="text-[10px] uppercase tracking-wider text-stone-400">Atkārtoti</div><div className="text-lg font-semibold tabular-nums" style={{ color: route.overlap.repeatedPercent > 15 ? "#ff3b30" : undefined }}>{route.overlap.repeatedPercent} %</div></div>
           </div>
+          {remoteLoop && (
+            <p className="mt-2 text-[11px] leading-relaxed text-stone-500">
+              Pārbrauciens {remoteLoop.transitOutKm} km · {duration(remoteLoop.transitOutMinutes * 60)} → <span className="font-semibold text-stone-700">{remoteLoop.focus.label.split(",")[0]} aplis {remoteLoop.loops[selected]?.km ?? "–"} km · {duration((remoteLoop.loops[selected]?.minutes ?? 0) * 60)}</span> → atpakaļ {remoteLoop.transitBackKm} km · {duration(remoteLoop.transitBackMinutes * 60)}
+            </p>
+          )}
           <div className="mt-3 flex items-center gap-2">
             <button type="button" onClick={downloadGpx} className="flex h-11 flex-1 items-center justify-center gap-2 rounded-full bg-[#f56300] text-sm font-semibold text-white transition hover:bg-[#d85600]"><Download className="size-4" />Download GPX</button>
             <button type="button" onClick={() => setDetails(!details)} aria-expanded={details} className="flex h-11 shrink-0 items-center gap-1 rounded-full border border-stone-200 px-3 text-xs font-medium text-stone-700 hover:bg-stone-50">

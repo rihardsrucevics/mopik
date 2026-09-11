@@ -1,5 +1,64 @@
 # Mopik — progress log
 
+## 2026-09-12 — the chat understands the ride's shape; the time limit is honest
+
+**The case.** "Atradi foršu meža apli kaut kur Baldones mežos un uztaisi
+maršrutu no Rīgas, pa to apli un atpakaļ" came back as Rīga → Baldone → Rīga
+along two corridors: Baldone was a turnaround, the forest loop never
+happened, and with 2 h total the transits ate everything. The plan schema had
+no way to say "the fun part is over there".
+
+- **Focus area in the plan** (`focusArea`, `budgetScope` in `ride-plan.ts`).
+  The chat sets `focusArea: "Baldone"` (nominative town, not in viaPlaces) and
+  the generator builds transit → loop → transit: a direct asphalt transit
+  (`rideStyle: direct`, gravel 0, easy) out, the normal loop machinery with
+  the focus town as its start and the rider's own settings, and a return
+  that competes three corridors on how few road pieces they share with the
+  way out. Legs are stitched by `lib/routing/join-paths.ts`; the whole ride
+  is what the rider sees and exports. Budget: total minus the two measured
+  transits, unless the rider said the hours are for the loop only.
+  Measured, Rīga → Baldone, 4 h total, Grūti/Meži: transit 46 km / 59 min
+  each way, loops 56–102 km, totals 227–263 min, 2–6 % repeated, 66 %
+  unpaved. The response carries `remoteLoop` and the result panel shows
+  "Pārbrauciens 46 km · 59 min → Baldone aplis 30 km · 50 min → atpakaļ".
+- **Transit arithmetic before drawing** (`transitCheck` in the chat API,
+  `lib/chat/photon.ts` for coordinates and a straight-line × 1.3 at 48 km/h
+  estimate). 2 h total with ~50 min each way → "Pārbrauciens Rīga → Baldone ir
+  ap 50 min katrā virzienā, tāpēc 2 h kopā mežam atstāj tikai ~20 min. Kā
+  skaitam?" with two taps: "Kopā 3 h" / "2 h tikai aplim". Asked once per
+  budget, not every turn.
+- **Understanding sentence.** The model now returns `understanding`, one
+  sentence in the rider's words, shown as "Sapratu: No Rīgas aizbraukt uz
+  Baldones mežiem, izbraukāt tur foršu meža apli pa grants ceļiem un takām,
+  un atgriezties Rīgā." whenever the ride's shape is new or changed; field
+  diffs ("ilgums atjaunināts") remain for small corrections. First message
+  runs at `effort: medium`, corrections at `low`.
+- **Golden set** `scripts/chat-golden.ts` — 12 rider phrasings (focus area vs
+  plain via vs "ap Siguldu", loop-only hours, English, one-way, direction,
+  transit check firing and resolving, low overlap) → expected plan fields and
+  reply patterns, against the dev server. 12/12 on the first run; run it
+  after every prompt change.
+- **Time limit, first user's feedback** ("tas laika limits negrib strādāt…
+  noved pie stundām ilga maršruta"). Three changes: (1) the result panel
+  states the verdict — "Prasīts ~2 h, šī versija ir 2 h 47 min." — with
+  one-tap ways out (Meklēt īsāku (līdz 2 h) → a hard maximum; Meklēt garāku;
+  the API's cleaner-loop offer when there is one), and colours over-budget
+  times amber on the version cards; (2) versions more than 45 % past the
+  free band are no longer shown, and when nothing is inside the budget the
+  nearest-to-budget versions lead instead of the cleanest; (3) the second
+  correction pass now also runs on the public BRouter (capped at 4 shapes) —
+  before it was self-hosted only, which is exactly what production uses.
+  "Ne vairāk kā N stundas" is parsed deterministically as a maximum.
+  Rīga 2 h locally: 1 h 46 – 2 h 05, all inside the band.
+- **Form:** hours as one-tap 2 h / 4 h / 6 h / 8 h plus a field with the
+  decimal keypad on phones (`inputMode="decimal"`, `type="text"` so "2,5"
+  works).
+
+Open: the real fix for production time drift is a self-hosted BRouter
+reachable from Vercel (a small VPS); brouter.de's pacing is why passes are
+capped there. The form's "Uz + Turp un atpakaļ" still means a via, not a
+focus area — decide whether the form should offer "izbraukāt apkārtni".
+
 ## 2026-09-11 (night) — the route draws itself, lucky rides, share card
 
 - **Intro and loader animation** (`components/route-loader.tsx`,

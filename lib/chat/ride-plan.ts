@@ -6,6 +6,14 @@ export const RidePlanSchema = z.object({
   viaPlaces: z.array(z.string().min(1).max(160)).max(6),
   destinationPlace: z.string().max(160).nullable(),
   directionPlace: z.string().max(160).nullable(),
+  /**
+   * The playground: where the fun part of the ride happens when it is not at
+   * the start ("meža aplis Baldones mežos, no Rīgas"). The ride is then a
+   * transit there, a loop around it and a transit back — not a visit.
+   */
+  focusArea: z.string().max(160).nullable().default(null),
+  /** Whether a duration/distance is for the whole ride or just the focus loop. */
+  budgetScope: z.enum(["total", "focus"]).default("total"),
   returnToStart: z.boolean().nullable(),
   budget: z.object({
     mode: z.enum(["unknown", "duration", "distance", "flexible"]),
@@ -35,8 +43,10 @@ export type ChatResponse = { plan: RidePlan; message: string; ready: boolean; qu
 export type PlanPrompt = { message: string; quickReplies: ChatQuickReply[] };
 
 function routeContext(plan: RidePlan, lv: boolean): string {
-  const places = [plan.startPlace, ...plan.viaPlaces, plan.destinationPlace].filter(Boolean);
-  if (!places.length) return "";
+  const focus = plan.focusArea?.trim() ? `${plan.focusArea} (${lv ? "aplis" : "loop"})` : null;
+  const places = [plan.startPlace, ...(focus ? [focus] : []), ...plan.viaPlaces, plan.destinationPlace].filter(Boolean);
+  // A lone start is no context ("braucienam Rīga" reads wrong); the rider knows where they are.
+  if (places.length < 2) return "";
   return lv ? ` braucienam ${places.join(" → ")}` : ` for ${places.join(" → ")}`;
 }
 
@@ -124,11 +134,13 @@ export function planToIntent(plan: RidePlan): RouteIntent {
 }
 
 export function planSummary(plan: RidePlan, lv: boolean): string {
-  const places = [plan.startPlace, ...plan.viaPlaces, plan.returnToStart ? plan.startPlace : plan.destinationPlace].filter(Boolean).join(" → ");
-  const budget = plan.budget.mode === "unknown" ? (lv ? "ilgums vēl jāprecizē" : "duration to clarify")
+  const focus = plan.focusArea?.trim() ? `${plan.focusArea} (${lv ? "aplis" : "loop"})` : null;
+  const places = [plan.startPlace, ...(focus ? [focus] : []), ...plan.viaPlaces, plan.returnToStart ? plan.startPlace : plan.destinationPlace].filter(Boolean).join(" → ");
+  const scope = focus && plan.budgetScope === "focus" && plan.budget.mode !== "flexible" && plan.budget.mode !== "unknown" ? (lv ? " aplim" : " for the loop") : "";
+  const budget = (plan.budget.mode === "unknown" ? (lv ? "ilgums vēl jāprecizē" : "duration to clarify")
     : plan.budget.mode === "flexible" ? (lv ? "brīvs ilgums" : "flexible duration")
     : plan.budget.constraint === "range" ? `${plan.budget.minimumValue}–${plan.budget.value} ${plan.budget.mode === "duration" ? "h" : "km"}`
-    : `${plan.budget.constraint === "maximum" ? (lv ? "līdz" : "up to") : "~"} ${plan.budget.value} ${plan.budget.mode === "duration" ? "h" : "km"}`;
+    : `${plan.budget.constraint === "maximum" ? (lv ? "līdz" : "up to") : "~"} ${plan.budget.value} ${plan.budget.mode === "duration" ? "h" : "km"}`) + scope;
   const difficulty = { unknown: "", easy: lv ? "Viegli" : "Easy", adventure: lv ? "Vidēji" : "Medium", hard: lv ? "Grūti" : "Hard" }[plan.difficulty];
   const style = plan.rideStyle === "unknown" ? ""
     : plan.rideStyle === "direct" && plan.includeSightseeing ? (lv ? "Tūrisms" : "Tourism")
