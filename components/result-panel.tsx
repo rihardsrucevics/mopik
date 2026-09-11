@@ -61,21 +61,30 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
   const unpaved = (r: GeneratedRoute) => r.surfaces.gravelPercent + r.surfaces.dirtPercent;
 
   const downloadGpx = async () => {
-    const res = await fetch("/api/export-gpx", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: route.name, coordinates: route.geometry.coordinates }),
-    });
-    if (!res.ok) return;
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = route.name.toLowerCase().replace(/[^a-z0-9]+/g, "-") + ".gpx";
-    a.click();
-    URL.revokeObjectURL(url);
-    // The file is on its way; now the thank-you, skippable.
-    setTimeout(() => setBeer(true), 400);
+    // The thank-you opens in the click itself: on iOS Safari the download
+    // sheet and the programmatic click after an await left a timer-driven
+    // popup never showing. The file downloads underneath it.
+    setBeer(true);
+    try {
+      const res = await fetch("/api/export-gpx", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: route.name, coordinates: route.geometry.coordinates }),
+      });
+      if (!res.ok) return;
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = route.name.toLowerCase().replace(/[^a-z0-9]+/g, "-") + ".gpx";
+      a.rel = "noopener";
+      // Attached to the document: some mobile browsers ignore clicks on detached anchors.
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 4000);
+    } catch (e) {
+      console.error("GPX download failed", e);
+    }
   };
 
   // The time limit is the feature riders value most, so the verdict on it is
