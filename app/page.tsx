@@ -3,10 +3,11 @@
 import { useRef, useState } from "react";
 import { RouteMap } from "@/components/route-map";
 import { RoutePrompt } from "@/components/route-prompt";
-import { RouteSummary } from "@/components/route-summary";
+import { RouteSheet } from "@/components/route-sheet";
 import { RideComposer } from "@/components/ride-composer";
 import { ChatMessage, ChatQuickReply, ChatResponse, RidePlan, planSummary } from "@/lib/chat/ride-plan";
 import { seedPlanFromProfile } from "@/lib/chat/ride-profile";
+import type { ResolvedPlace } from "@/lib/chat/places";
 import { useRideProfile } from "@/lib/chat/use-ride-profile";
 import { GenerateRouteResponse } from "@/lib/types";
 
@@ -21,6 +22,11 @@ export default function Home() {
   const [retry, setRetry] = useState<Retry | null>(null);
   const [showTet, setShowTet] = useState(false);
   const [quickReplies, setQuickReplies] = useState<ChatQuickReply[]>([]);
+  // Which of the three versions (direct / balanced / complex) is on the map.
+  const [selected, setSelected] = useState(0);
+  // Places picked in the form, with coordinates; sent with every generation
+  // so chat corrections keep pointing at the same towns.
+  const [places, setPlaces] = useState<ResolvedPlace[]>([]);
   // The rider's standing profile (how rough, why, where): remembered on the
   // device, applied to the form and used to seed a fresh chat so it only has
   // to ask where and how long.
@@ -31,19 +37,20 @@ export default function Home() {
     setPhase("routing");
     const sourcePrompt = conversation.filter(m => m.role === "user").map(m => m.content).join("\n");
     try {
-      const response = await fetch("/api/generate-route", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ plan: current, prompt: sourcePrompt }) });
+      const response = await fetch("/api/generate-route", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ plan: current, prompt: sourcePrompt, places }) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Neizdevās ģenerēt maršrutu.");
       const route = (data as GenerateRouteResponse).routes[0];
       if (!route) throw new Error("Neizdevās atrast prasībām atbilstošu maršrutu.");
       setResult(data);
+      setSelected(0);
       setQuickReplies([]);
-      const minutes = Math.round(route.durationSeconds / 60);
-      const notes = [`Maršruts gatavs: ${Math.round(route.distanceMeters / 1000)} km, aptuveni ${Math.floor(minutes/60)} h ${minutes%60} min.`,
-        route.stops?.length ? `Pieturvietas: ${route.stops.map(s => s.name).join(" → ")}.` : "",
-        route.overlap.repeatedPercent ? `${route.overlap.repeatedPercent}% brauciena atkārto jau izmantotus ceļus.` : "",
-        data.distanceWarning ? "Maršruts ir garāks par vēlamo. Vari precizēt ilgumu vai prasības čatā." : "",
-        "Apskati karti. Šeit vari pateikt, ko vēlies mainīt.",
+      const versions = (data as GenerateRouteResponse).routes.length;
+      // The numbers are in the result card; the message only says what to do next.
+      const notes = [
+        versions > 1 ? `Gatavs — ${versions} versijas zemāk, pārslēdz un skaties kartē.` : "Gatavs — maršruts kartē.",
+        data.distanceWarning ? "Maršruts iznāca garāks par vēlamo." : "",
+        "Saki, ko mainīt: īsāku, vairāk pa mežu, caur kādu vietu…",
       ];
       setMessages([...conversation, { role: "assistant", content: notes.filter(Boolean).join(" ") }]);
       setRetry(null);
@@ -79,10 +86,14 @@ export default function Home() {
     setMessages(next);
     try { await converse(next, plan ?? seedPlanFromProfile(profile)); } finally { setPhase("idle"); busyRef.current = false; }
   }
-  async function startFromForm(current: RidePlan) {
+  async function startFromForm(current: RidePlan, picked: ResolvedPlace[]) {
     if (busyRef.current) return;
-    busyRef.current = true; setError(null); setRetry(null); setQuickReplies([]); setResult(null); setPlan(current); setEntryMode("chat");
-    const conversation: ChatMessage[] = [{ role: "user", content: `Brauciena ievade: ${planSummary(current, true)}.` }];
+    busyRef.current = true; setError(null); setRetry(null); setQuickReplies([]); setResult(null); setPlan(current); setPlaces(picked); setEntryMode("chat");
+    // Short: the profile is in the panel header and the plan object travels
+    // with every chat turn, so the message only needs the places and budget.
+    const places = [current.startPlace, ...current.viaPlaces, current.returnToStart ? current.startPlace : current.destinationPlace].filter(Boolean).join(" → ");
+    const budget = current.budget.mode === "duration" ? `~${current.budget.value} h` : current.budget.mode === "distance" ? `~${current.budget.value} km` : "brīvs ilgums";
+    const conversation: ChatMessage[] = [{ role: "user", content: `${places}, ${budget}.` }];
     setMessages(conversation);
     try { await generate(current, conversation); }
     finally { setPhase("idle"); busyRef.current = false; }
@@ -93,25 +104,28 @@ export default function Home() {
     try { if (retry.stage === "chat") await converse(retry.messages, retry.plan); else await generate(retry.plan, retry.messages); }
     finally { setPhase("idle"); busyRef.current = false; }
   }
-  const route = result?.routes[0] ?? null;
+  const route = result?.routes[Math.min(selected, (result?.routes.length ?? 1) - 1)] ?? null;
   return (
     <main className="mx-auto min-h-screen w-full max-w-[1600px] px-4 py-5 md:px-7">
       <header className="mb-5 flex items-center justify-between border-b border-stone-200 pb-4">
-        <div className="flex items-baseline gap-3"><h1 className="text-2xl font-bold tracking-tight">Mopik<span className="text-[#f56300]">.</span></h1><p className="hidden text-xs text-stone-500 sm:block">Mazāk plānošanas. Vairāk braukšanas.</p></div>
-        {(messages.length > 0 || plan) && <button disabled={phase !== "idle"} onClick={() => { setEntryMode("form"); setMessages([]); setPlan(null); setResult(null); setError(null); setRetry(null); setQuickReplies([]); }} className="text-xs text-stone-500 underline underline-offset-4 disabled:opacity-40">Jauns brauciens</button>}
+        <div className="flex items-baseline gap-3"><h1 className="text-2xl font-bold tracking-tight">Mopiks<span className="text-[#f56300]">.</span></h1><p className="hidden text-xs text-stone-500 sm:block">Mazāk plānošanas. Vairāk braukšanas.</p></div>
+        {(messages.length > 0 || plan) && <button disabled={phase !== "idle"} onClick={() => { setEntryMode("form"); setMessages([]); setPlan(null); setPlaces([]); setResult(null); setError(null); setRetry(null); setQuickReplies([]); }} className="text-xs text-stone-500 underline underline-offset-4 disabled:opacity-40">Jauns brauciens</button>}
       </header>
-      <div className="grid items-start gap-5 md:grid-cols-[minmax(320px,400px)_1fr]">
-        <div className="min-w-0">
+      <div className="grid items-start gap-5 md:grid-cols-[minmax(340px,460px)_1fr]">
+        <div className="min-w-0 space-y-4">
           {entryMode === "form"
             ? <RideComposer key={plan ? planSummary(plan, false) : "new"} initialPlan={plan} profile={profile} onProfileChange={changeProfile} busy={phase !== "idle"} onGenerate={startFromForm} onUseChat={() => setEntryMode("chat")} />
-            : <RoutePrompt messages={messages} plan={plan} hasRoute={Boolean(route)} phase={phase} quickReplies={quickReplies} onSend={send} onBackToForm={() => setEntryMode("form")} />}
-          {error && <div role="alert" className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><p>{error}</p>{retry && <button onClick={retryLast} disabled={phase !== "idle"} className="mt-2 underline underline-offset-4 disabled:opacity-40">Mēģināt vēlreiz</button>}</div>}
+            : <RoutePrompt messages={messages} plan={plan} hasRoute={Boolean(route)} phase={phase} quickReplies={quickReplies} onSend={send} onBackToForm={() => setEntryMode("form")}
+                resultPanel={result && result.routes.length > 0 ? <RouteSheet routes={result.routes} selected={selected} onSelect={setSelected} avoidTowns={result.intent.avoidTowns ?? false} /> : null} />}
+          {error && <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><p>{error}</p>{retry && <button onClick={retryLast} disabled={phase !== "idle"} className="mt-2 underline underline-offset-4 disabled:opacity-40">Mēģināt vēlreiz</button>}</div>}
         </div>
-        <div className="min-w-0 space-y-4">
-          <div className="h-[55vh] overflow-hidden rounded-2xl border border-stone-200 md:h-[calc(100vh-10rem)]">
+        {/* Map first on the phone, sticky on the desktop, and nothing on top
+            of it: the result (versions, numbers, download) sits in the chat
+            panel right above the input, where the rider's attention already is. */}
+        <div className="order-first min-w-0 md:order-none md:sticky md:top-5">
+          <div className="relative h-[42dvh] overflow-hidden rounded-2xl border border-stone-200 md:h-[calc(100vh-7rem)]">
             <RouteMap segments={route?.segments ?? null} start={result?.start ?? null} destination={result?.destination ?? null} via={result?.via} showTet={showTet} onToggleTet={setShowTet} />
           </div>
-          {route && <RouteSummary route={route} avoidTowns={result?.intent.avoidTowns ?? false} />}
         </div>
       </div>
     </main>

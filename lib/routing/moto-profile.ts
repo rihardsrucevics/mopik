@@ -216,7 +216,7 @@ function costs(o: MotoProfileOptions) {
 export function buildMotoProfile(o: MotoProfileOptions): string {
   const c = costs(o);
 
-  return `# Mopik adventure motorcycle profile — generated, do not edit by hand
+  return `# Mopiks adventure motorcycle profile — generated, do not edit by hand
 ---context:global
 
 assign consider_elevation = false

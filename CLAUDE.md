@@ -1,13 +1,26 @@
 @AGENTS.md
 
-# Mopik — adventure motorcycle route generator
+# Mopiks — adventure motorcycle route generator
 
 ## Current product decision — 2026-09-11 (takes precedence)
 
-Read `docs/CHAT-MVP-2026-09-10.md`. The primary UI is now a structured,
-ticket-like ride composer + map + ONE route. Do not restore A/B/C alternatives
-or Generate another. The composer shows From, To, optional stops, trip type,
-duration, difficulty, style and surface as direct controls. Its finite choices
+Read `docs/CHAT-MVP-2026-09-10.md`. The primary UI is a structured,
+ticket-like ride composer + map + **three versions of one request** (rider's
+decision 2026-09-11, superseding the earlier "one route"): `direct`
+(smoothest, fewest turns and rough tracks, not longer than needed),
+`balanced` (the ranking's pick) and `complex` (most track/trail and forest),
+all drawn from the same candidate pool and the same acceptance checks
+(`RouteVariant` in `route.ts`, `components/route-variants.tsx`). "Generate
+another" stays removed. The composer asks only what changes per ride — From,
+To, stops (with **place suggestions from Photon**, `/api/places`; picked
+places carry coordinates in `places[]` and are never geocoded again), trip
+type, duration — and shows difficulty / style / surface as one remembered
+**profile** line (`lib/chat/ride-profile.ts`: Viegli/Vidēji/Grūti,
+Tūrisms/Sports, Tikai asfalts/Der arī grants/Meži; asphalt hides difficulty).
+The map is sticky on the right (first on phones) and nothing overlays it;
+versions, the three numbers, Download GPX and folded details are a card in the
+chat panel right above the input (`components/route-sheet.tsx`, passed as
+`resultPanel`) — the result never needs scrolling. Its finite choices
 become a canonical RidePlan in `lib/chat/compose-plan.ts` without LLM
 interpretation. Chat remains an alternative entry path and becomes the route
 correction UI after generation; finite chat questions return quick-reply
@@ -230,10 +243,10 @@ runner: macOS then denies it Documents access and every route 500s with
 - Direction hints ("uz Siguldas pusi" vs "caur Siguldu") designed, including
   Latvian case handling, not implemented.
 - Two pre-existing lint errors in `route-map.tsx` / `route-prompt.tsx`.
-- Geocoding still on GraphHopper.
+- Free-text geocoding still on GraphHopper; the form's picked places bypass it via `/api/places` (Photon, Baltic settlements only).
 - **The Stadia free tier forbids commercial use.** Both routers can be
   self-hosted (BRouter and Valhalla are both open source) — that's the path if
-  Mopik goes public.
+  Mopiks goes public.
 
 ## Working style that has paid off here
 

@@ -1,4 +1,4 @@
-# Mopik
+# Mopiks
 
 Adventure motorcycle routes from natural language. From idea to GPX in seconds.
 

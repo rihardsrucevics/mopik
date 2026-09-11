@@ -1,5 +1,38 @@
 # Mopik — progress log
 
+## 2026-09-11 (evening) — three versions, left-column summary, place picker, Mopiks
+
+- **Three versions per request** instead of one, from the same candidate
+  pool: `direct` (few turns, few rough tracks, shortest reasonable),
+  `balanced` (ranking's pick), `complex` (max track/trail + forest). Tukums
+  2 h: 87 km gludi / 65 km / 49 km with 41% tracks; Rīga → Baldone: three
+  different roads. Picked by re-scoring the accepted pool on each axis and
+  rejecting duplicates (>80% shared road pieces). `components/route-variants.tsx`
+  shows them as cards; the chat's correction applies to the selected one.
+- **Layout**: the result is a card **inside the chat panel, right above the
+  input** (`components/route-sheet.tsx`): version tabs, name, three numbers,
+  Download GPX, and "Detaļas N" folding warnings, road mix, surface and nature
+  away. It was tried as a sheet over the map first; the rider wanted the map
+  clear. Then it ate the chat history, so it is two rows now — version tabs,
+  then `68 km · 1 h 48 min · 1 % atkārtoti · GPX · details` — and both
+  canned chat messages are one line (the numbers live in the card, the
+  profile in the panel header). Desktop: chat left at full height, map
+  right, nothing to scroll.
+  Phone: map first (42 dvh), then the chat panel at natural height with a
+  short message log, the result card and the input — one small scroll at
+  most. Legend under the TET toggle, hidden on phones. The old summary card
+  and variant cards are gone.
+- **Place picker**: `/api/places` proxies Photon (komoot) restricted to Baltic
+  settlements (city/town/village/hamlet), Latvia first, bigger first, cached
+  10 min. `components/place-input.tsx` is a debounced combobox; a picked place
+  carries coordinates (`places[]` on the request) and the API uses them
+  instead of geocoding. "Valmi" → Valmiera (city) first. Typed-but-unpicked
+  names still geocode as before.
+- **Profile**: difficulty is three levels (Viegli / Vidēji / Grūti → easy /
+  adventure / hard), style two (Tūrisms / Sports); Mix removed.
+- Product renamed **Mopiks** in the UI, GPX creator and doc headings.
+- Checkpoint commit `fe64a41` made before this work; 19 tests pass.
+
 ## 2026-09-11 (later) — the profile is one line, not three questions
 
 Rider's observation: for adventure/enduro riders the variables are place,

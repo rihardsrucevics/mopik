@@ -12,6 +12,7 @@ import {
 } from "@/lib/ai/parse-route-prompt";
 import { bearingDegrees, haversineMeters, inSector, type BearingSector } from "@/lib/geo/geometry";
 import { geocode, GeocodeResult } from "@/lib/geo/geocode";
+import { findResolvedPlace, type ResolvedPlace } from "@/lib/chat/places";
 // Isochrones come from Valhalla (BRouter has none); the routes themselves
 // come from BRouter, whose profile we write ourselves — on 25-30 km Baltic
 // legs that yields 57-92% unpaved against Valhalla's 1-50%.
@@ -48,6 +49,15 @@ const RequestSchema = z.object({
   destination: z.string().optional(),
   prompt: z.string().default(""),
   plan: RidePlanSchema.optional(),
+  /**
+   * Places the rider picked from the suggestion list, with coordinates. A
+   * name that matches one of these is never geocoded again — the pick is the
+   * rider's answer to "which Valmiera".
+   */
+  places: z
+    .array(z.object({ name: z.string(), label: z.string(), lat: z.number(), lon: z.number() }))
+    .max(12)
+    .optional(),
   /** form controls, used as defaults that the prompt overrides */
   settings: RouteIntentSchema.partial().optional(),
   /** fully resolved intent, e.g. on "Generate another" — skips parsing */
@@ -108,7 +118,17 @@ type Candidate = {
 };
 
 /** How many loop shapes survive to the UI. */
-const SHOWN_VARIANTS = 1;
+const SHOWN_VARIANTS = 3;
+
+/**
+ * The three versions shown, in this order: the smoothest and quickest way
+ * to ride the request, the balanced one the ranking prefers, and the one
+ * that goes deepest into the tracks. All three come from the same candidate
+ * pool and pass the same acceptance checks; they differ only in what they
+ * optimise. A loop cannot be "straight", so for loops "direct" means few
+ * turns and few rough tracks; for one-way rides it is close to the direct road.
+ */
+export type RouteVariant = "direct" | "balanced" | "complex";
 
 /** Two loops sharing more than this share of their road pieces are one option. */
 const DUPLICATE_SHARE = 0.8;
@@ -731,9 +751,15 @@ export async function POST(req: NextRequest) {
       body.plan ? parsed.destinationPlace : body.destination?.trim() ||
       (parsed.source === "llm" ? parsed.destinationPlace : parseDestinationPlace(body.prompt));
 
+    // A picked place carries its own coordinates; only free text is geocoded.
+    const resolvePlace = async (name: string): Promise<GeocodeResult> => {
+      const picked: ResolvedPlace | undefined = findResolvedPlace(body.places, name);
+      return picked ? { lat: picked.lat, lon: picked.lon, label: picked.label } : geocode(name);
+    };
+
     let start: GeocodeResult;
     try {
-      start = await geocode(startQuery);
+      start = await resolvePlace(startQuery);
     } catch {
       return NextResponse.json(
         { error: `We couldn't find “${startQuery}”. Try a nearby town.` },
@@ -746,7 +772,7 @@ export async function POST(req: NextRequest) {
     let destination: GeocodeResult | null = null;
     if (destinationQuery) {
       try {
-        destination = await geocode(destinationQuery);
+        destination = await resolvePlace(destinationQuery);
       } catch {
         return NextResponse.json({ error: `Neizdevās atrast galamērķi “${destinationQuery}”. Precizē vietu čatā.` }, { status: 422 });
       }
@@ -755,7 +781,7 @@ export async function POST(req: NextRequest) {
     let direction: BearingSector | undefined;
     if (parsed.directionPlace && !destination) {
       try {
-        const place = await geocode(parsed.directionPlace);
+        const place = await resolvePlace(parsed.directionPlace);
         direction = {
           centreDeg: bearingDegrees([start.lon, start.lat], [place.lon, place.lat]),
           halfWidthDeg: 65,
@@ -767,7 +793,7 @@ export async function POST(req: NextRequest) {
 
     const requiredVia: GeocodeResult[] = [];
     for (const name of body.plan?.viaPlaces ?? []) {
-      try { requiredVia.push(await geocode(name)); }
+      try { requiredVia.push(await resolvePlace(name)); }
       catch { return NextResponse.json({ error: `Neizdevās atrast obligāto pieturvietu “${name}”. Precizē to čatā.` }, { status: 422 }); }
     }
     let targetKm = body.plan?.budget.mode === "flexible" ? 80 : resolveTargetDistanceKm(intent);
@@ -1024,16 +1050,56 @@ export async function POST(req: NextRequest) {
         excessDriftPercent(s) <= 60 &&
         acceptable(s)
     );
-    // With a single result, prefer a route inside the agreed approximate
-    // budget when one exists. Do not silently trade a two-hour ride for 80 min.
+    // Prefer routes inside the agreed approximate budget when any exist. Do
+    // not silently trade a two-hour ride for 80 min.
     const withinBudget = worthShowing.filter(withinTolerance);
     const selection = body.plan && body.plan.budget.mode !== "flexible" && withinBudget.length ? withinBudget : worthShowing;
-    const chosen = [...fixed, ...selection].slice(0, SHOWN_VARIANTS);
+
+    // Three versions from one pool. `selection` is already in balanced-rank
+    // order; the other two re-score it on their own axis. Each pick must be
+    // a different road set from the ones already taken.
+    const km = (c: Scored) => c.path.distanceMeters / 1000;
+    const roughShare = (c: Scored) => (c.classified.quality.roughTrackKm / Math.max(1, km(c))) * 100;
+    const streetShare = (c: Scored) => (c.classified.quality.streetKm / Math.max(1, km(c))) * 100;
+    const common = (c: Scored) => c.classified.overlap.repeatedPercent + excessDriftPercent(c) + streetShare(c) * 0.3;
+    // "Direct" also means not longer than it needs to be: a smooth 87 km
+    // loop should not outrank a smooth 65 km one on a 2-hour request.
+    const directScore = (c: Scored) =>
+      common(c) + c.classified.quality.turnsPer10Km * 4 + roughShare(c) * 0.8 + c.classified.roadMix.trackPercent * 0.5 +
+      (km(c) / Math.max(1, targetKm)) * 25;
+    const complexScore = (c: Scored) =>
+      common(c) -
+      (c.classified.roadMix.trackPercent + c.classified.roadMix.trailPercent) * 0.6 -
+      roughShare(c) * 0.3 -
+      (c.classified.quality.natureScore ?? 0) * 0.15;
+    const variantOf = new Map<Scored, RouteVariant>();
+    const takenKeys: Set<string>[] = [];
+    const distinct = (c: Scored) => {
+      const keys = roadPieceKeys(c.path.coordinates);
+      const dup = takenKeys.some((k) => {
+        let shared = 0;
+        for (const key of keys) if (k.has(key)) shared++;
+        return shared / Math.min(keys.size, k.size) > DUPLICATE_SHARE;
+      });
+      if (!dup) takenKeys.push(keys);
+      return !dup;
+    };
+    const pick = (variant: RouteVariant, ordered: Scored[]) => {
+      const c = ordered.find((x) => !variantOf.has(x) && distinct(x));
+      if (c) variantOf.set(c, variant);
+    };
+    pick("direct", [...selection].sort((a, b) => directScore(a) - directScore(b)));
+    pick("balanced", selection);
+    pick("complex", [...selection].sort((a, b) => complexScore(a) - complexScore(b)));
+    const order: RouteVariant[] = ["direct", "balanced", "complex"];
+    const picked = [...variantOf.entries()].sort((a, b) => order.indexOf(a[1]) - order.indexOf(b[1])).map(([c]) => c);
+    const chosen = [...fixed, ...picked].slice(0, SHOWN_VARIANTS);
 
     const startName = start.label.split(",")[0];
     const locale = detectLocale(body.prompt);
 
-    const routes: GeneratedRoute[] = chosen.map(({ path, stops, classified }) => {
+    const routes: GeneratedRoute[] = chosen.map((chosenScored) => {
+      const { path, stops, classified } = chosenScored;
       const tet = measureTetCoverage(path.coordinates);
       return {
         id: crypto.randomUUID(),
@@ -1061,7 +1127,7 @@ export async function POST(req: NextRequest) {
         stops: [...requiredVia.map(p => ({ name: p.label.split(",")[0], category: "via" })), ...stopLabels(stops, locale)],
         profile: profileName(intent),
         sourcePrompt: body.prompt,
-        variant: "",
+        variant: variantOf.get(chosenScored) ?? "balanced",
         tet,
         ...(body.debug
           ? {

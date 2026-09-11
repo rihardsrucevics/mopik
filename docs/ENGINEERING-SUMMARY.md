@@ -1,4 +1,4 @@
-# Mopik — kopsavilkums inženieriem
+# Mopiks — kopsavilkums inženieriem
 
 **Jaunākais stāvoklis 2026-09-11:** [strukturētā ievade, čata korekcijas un viens maršruts](CHAT-MVP-2026-09-10.md). Tālākie 08.–09.09. apraksti ir vēsturiski; A/B/C varianti ir izņemti. Primārā plūsma tagad ir tieša `No`/`Uz`/pieturvietu un brauciena īpašību ievade. Tā izveido `RidePlan` bez LLM interpretācijas. Čats paliek alternatīvai sākšanai un maršruta korekcijām.
 

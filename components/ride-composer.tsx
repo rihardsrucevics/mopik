@@ -4,6 +4,8 @@ import { useState } from "react";
 import { ArrowRight, ChevronDown, ChevronUp, MapPin, Plus, Route, Sparkles, X } from "lucide-react";
 import { RidePlan } from "@/lib/chat/ride-plan";
 import { composeRidePlan } from "@/lib/chat/compose-plan";
+import { PlaceInput } from "@/components/place-input";
+import type { ResolvedPlace } from "@/lib/chat/places";
 import {
   PROFILE_LABELS,
   PROFILE_PRESETS,
@@ -97,7 +99,7 @@ export function RideComposer({ initialPlan, profile, onProfileChange, busy, onGe
   profile: RideProfile;
   onProfileChange: (profile: RideProfile) => void;
   busy: boolean;
-  onGenerate: (plan: RidePlan) => void;
+  onGenerate: (plan: RidePlan, places: ResolvedPlace[]) => void;
   onUseChat: () => void;
 }) {
   const [start, setStart] = useState(initialPlan?.startPlace ?? "Rīga");
@@ -107,6 +109,11 @@ export function RideComposer({ initialPlan, profile, onProfileChange, busy, onGe
   const [durationMode, setDurationMode] = useState<"flexible" | "hours">(initialPlan?.budget.mode === "duration" ? "hours" : "flexible");
   const [hours, setHours] = useState(String(initialPlan?.budget.mode === "duration" ? initialPlan.budget.value ?? 4 : 4));
   const [error, setError] = useState<string | null>(null);
+  // Picked places by field: "start", "destination", "stop-0"… Typing again
+  // clears the pick, so a changed name is geocoded rather than silently
+  // kept at the old coordinates.
+  const [picked, setPicked] = useState<Record<string, ResolvedPlace | null>>({});
+  const setPick = (key: string, place: ResolvedPlace | null) => setPicked((prev) => ({ ...prev, [key]: place }));
 
   // A plan the chat has modified carries its own profile; otherwise the
   // rider's remembered one applies.
@@ -120,7 +127,7 @@ export function RideComposer({ initialPlan, profile, onProfileChange, busy, onGe
     if (durationMode === "hours" && (!Number.isFinite(value) || value < 0.5 || value > 16)) { setError("Ilgumam jābūt no 0,5 līdz 16 stundām."); return; }
     const plan = composeRidePlan({ start, destination, stops, tripType, durationMode, hours: value, profile: effectiveProfile });
     setError(null);
-    onGenerate(plan);
+    onGenerate(plan, Object.values(picked).filter((p): p is ResolvedPlace => p !== null));
   };
 
   return (
@@ -133,15 +140,18 @@ export function RideComposer({ initialPlan, profile, onProfileChange, busy, onGe
 
       <div className="space-y-5 p-5">
         <div className="grid gap-2 sm:grid-cols-2">
-          <label className="rounded-xl border border-stone-200 px-3 py-2 focus-within:border-[#f56300]"><span className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-stone-400"><MapPin className="size-3" />No</span><input value={start} onChange={(e) => setStart(e.target.value)} className="mt-1 w-full bg-transparent text-sm font-medium outline-none" placeholder="Rīga" /></label>
-          <label className="rounded-xl border border-stone-200 px-3 py-2 focus-within:border-[#f56300]"><span className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-stone-400"><ArrowRight className="size-3" />Uz</span><input value={destination} onChange={(e) => setDestination(e.target.value)} className="mt-1 w-full bg-transparent text-sm font-medium outline-none" placeholder={tripType === "round_trip" ? "Nav obligāts" : "Ainaži"} /></label>
+          <PlaceInput value={start} onChange={setStart} onPick={(p) => setPick("start", p)} icon={<MapPin className="size-3" />} label="No" placeholder="Rīga" />
+          <PlaceInput value={destination} onChange={setDestination} onPick={(p) => setPick("destination", p)} icon={<ArrowRight className="size-3" />} label="Uz" placeholder={tripType === "round_trip" ? "Nav obligāts" : "Ainaži"} />
         </div>
 
         <ChoiceRow label="Maršruta veids" value={tripType} onChange={setTripType} choices={[{ value: "round_trip", label: "Turp un atpakaļ" }, { value: "one_way", label: "Vienā virzienā" }]} />
 
         <div>
           {stops.map((stop, index) => (
-            <label key={index} className="mb-2 flex items-center gap-2 rounded-xl border border-stone-200 px-3 py-2 focus-within:border-[#f56300]"><Route className="size-3.5 text-stone-400" /><span className="sr-only">Pieturvieta {index + 1}</span><input value={stop} onChange={(e) => setStops(stops.map((item, i) => i === index ? e.target.value : item))} className="min-w-0 flex-1 bg-transparent text-sm outline-none" placeholder="Pieturvieta, piemēram, Limbaži" /><button type="button" onClick={() => setStops(stops.filter((_, i) => i !== index))} aria-label="Noņemt pieturvietu"><X className="size-4 text-stone-400" /></button></label>
+            <div key={index} className="mb-2 flex items-start gap-2">
+              <PlaceInput className="min-w-0 flex-1" value={stop} onChange={(v) => setStops(stops.map((item, i) => i === index ? v : item))} onPick={(p) => setPick(`stop-${index}`, p)} icon={<Route className="size-3" />} label={`Pieturvieta ${index + 1}`} placeholder="Piemēram, Limbaži" />
+              <button type="button" onClick={() => { setStops(stops.filter((_, i) => i !== index)); setPick(`stop-${index}`, null); }} aria-label="Noņemt pieturvietu" className="mt-4"><X className="size-4 text-stone-400" /></button>
+            </div>
           ))}
           <button type="button" onClick={addStop} disabled={stops.length >= 4} className="inline-flex items-center gap-1 text-xs font-medium text-[#bd4b00] disabled:opacity-40"><Plus className="size-3.5" />Pievienot pieturvietu</button>
         </div>

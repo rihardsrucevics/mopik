@@ -219,7 +219,7 @@ export function RouteMap({ segments, start, destination, via, showTet, onToggleT
           <span className="h-3 w-3 rounded-full bg-white shadow-sm" />
         </span>
       </button>
-      <div className="absolute bottom-3 left-3 flex flex-col gap-2 rounded-xl border border-[#ececf0] bg-white/95 px-3 py-2.5 text-[11px] leading-none shadow-sm backdrop-blur">
+      <div className="absolute left-3 top-14 hidden flex-col gap-2 rounded-xl border border-[#ececf0] bg-white/95 px-3 py-2.5 text-[11px] leading-none shadow-sm backdrop-blur md:flex">
         <div className="flex flex-col gap-1.5">
           <span className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
             Surface

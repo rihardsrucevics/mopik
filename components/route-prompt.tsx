@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowLeft, ArrowUp, LoaderCircle } from "lucide-react";
 import { ChatMessage, ChatQuickReply, RidePlan, planSummary } from "@/lib/chat/ride-plan";
 
@@ -12,9 +12,11 @@ type Props = {
   quickReplies: ChatQuickReply[];
   onSend: (text: string) => void;
   onBackToForm: () => void;
+  /** the result (versions, numbers, download), shown above the input */
+  resultPanel?: ReactNode;
 };
 
-export function RoutePrompt({ messages, plan, hasRoute, phase, quickReplies, onSend, onBackToForm }: Props) {
+export function RoutePrompt({ messages, plan, hasRoute, phase, quickReplies, onSend, onBackToForm, resultPanel }: Props) {
   const [text, setText] = useState("");
   const endRef = useRef<HTMLDivElement>(null);
   const busy = phase !== "idle";
@@ -34,8 +36,8 @@ export function RoutePrompt({ messages, plan, hasRoute, phase, quickReplies, onS
   };
 
   return (
-    <section className="flex h-[75dvh] min-h-[500px] flex-col overflow-hidden rounded-2xl border border-stone-200 bg-[#faf9f6] md:h-[calc(100vh-10rem)]" aria-label="Brauciena saruna">
-      <div className="border-b border-stone-200 px-5 py-4">
+    <section className="flex flex-col overflow-hidden rounded-2xl border border-stone-200 bg-[#faf9f6] md:h-[calc(100vh-7rem)]" aria-label="Brauciena saruna">
+      <div className="border-b border-stone-200 px-4 py-3 md:px-5 md:py-4">
         <div className="flex items-start justify-between gap-3">
           <div>
             <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#bd4b00]">{hasRoute ? "Maršruta korekcijas" : messages.length ? "Brauciena plāns" : "Brīvā saruna"}</div>
@@ -43,10 +45,10 @@ export function RoutePrompt({ messages, plan, hasRoute, phase, quickReplies, onS
           </div>
           <button type="button" onClick={onBackToForm} disabled={busy} className="inline-flex shrink-0 items-center gap-1 text-xs text-stone-500 underline decoration-stone-300 underline-offset-4 disabled:opacity-40"><ArrowLeft className="size-3.5" />Ievades forma</button>
         </div>
-        {plan && <p className="mt-2 line-clamp-2 text-[11px] leading-relaxed text-stone-500">{planSummary(plan, true)}</p>}
+        {plan && <p className="mt-2 hidden line-clamp-2 text-[11px] leading-relaxed text-stone-500 md:block">{planSummary(plan, true)}</p>}
       </div>
 
-      <div className="flex-1 space-y-5 overflow-y-auto px-5 py-5" role="log" aria-label="Sarunas ziņas" aria-live="polite">
+      <div className="max-h-[26dvh] flex-1 space-y-4 overflow-y-auto px-4 py-4 md:max-h-none md:space-y-5 md:px-5 md:py-5" role="log" aria-label="Sarunas ziņas" aria-live="polite">
         {messages.length === 0 && (
           <div className="py-5 text-sm leading-7 text-stone-600">
             <p>Vari uzreiz pateikt visu, ko zini.</p>
@@ -55,7 +57,7 @@ export function RoutePrompt({ messages, plan, hasRoute, phase, quickReplies, onS
         )}
         {messages.map((message, index) => (
           <div key={index} className={message.role === "user" ? "ml-5 rounded-2xl rounded-br-sm bg-stone-900 px-4 py-3 text-white" : "mr-2 text-stone-700"}>
-            <div className={`mb-1 text-[10px] font-semibold uppercase tracking-widest ${message.role === "user" ? "text-stone-400" : "text-[#bd4b00]"}`}>{message.role === "user" ? "Tu" : "Mopik"}</div>
+            <div className={`mb-1 text-[10px] font-semibold uppercase tracking-widest ${message.role === "user" ? "text-stone-400" : "text-[#bd4b00]"}`}>{message.role === "user" ? "Tu" : "Mopiks"}</div>
             <p className="whitespace-pre-wrap text-sm leading-relaxed">{message.content}</p>
           </div>
         ))}
@@ -68,6 +70,8 @@ export function RoutePrompt({ messages, plan, hasRoute, phase, quickReplies, onS
         <div ref={endRef} />
       </div>
 
+      {resultPanel && <div className="border-t border-stone-200 bg-white px-3 pt-3">{resultPanel}</div>}
+
       <form onSubmit={(event) => { event.preventDefault(); submit(); }} className="border-t border-stone-200 bg-white p-3">
         <label htmlFor="ride-message" className="sr-only">Ziņa par braucienu</label>
         <div className="flex items-end gap-2 rounded-xl border border-stone-200 p-2 focus-within:border-[#f56300]">
@@ -77,7 +81,7 @@ export function RoutePrompt({ messages, plan, hasRoute, phase, quickReplies, onS
             className="min-w-0 flex-1 resize-none bg-transparent px-2 py-1 text-sm outline-none placeholder:text-stone-400 disabled:opacity-60" />
           <button type="submit" disabled={busy || !text.trim()} aria-label="Nosūtīt ziņu" className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-[#f56300] text-white transition hover:bg-[#d85600] disabled:opacity-35"><ArrowUp className="size-5" /></button>
         </div>
-        <p className="mt-2 px-1 text-[10px] text-stone-400">Enter — nosūtīt · Shift + Enter — jauna rinda</p>
+        <p className="mt-2 hidden px-1 text-[10px] text-stone-400 md:block">Enter — nosūtīt · Shift + Enter — jauna rinda</p>
       </form>
     </section>
   );
