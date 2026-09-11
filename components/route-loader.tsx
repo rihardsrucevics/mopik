@@ -48,21 +48,33 @@ export function RouteLoader({ phase, className }: { phase: "thinking" | "routing
   const lines = STATUS[phase];
   const [index, setIndex] = useState(0);
   const [override, setOverride] = useState<string | null>(null);
+  // The big break scene laid over the route for a moment after a pickup.
+  const [breakScene, setBreakScene] = useState<Pickup | null>(null);
   const [score, setScore] = useState<Record<Pickup, number>>({ cigarette: 0, beer: 0 });
   useEffect(() => {
     const t = setInterval(() => setIndex((i) => (i + 1) % lines.length), 2200);
     return () => clearInterval(t);
   }, [lines.length]);
+  const BREAK_MS = 2400;
   const onPickup = (kind: Pickup) => {
     setScore((s) => ({ ...s, [kind]: s[kind] + 1 }));
     setOverride(PICKUP_LINE[kind]);
-    setTimeout(() => setOverride(null), 1800);
+    setBreakScene(kind);
+    setTimeout(() => { setOverride(null); setBreakScene(null); }, BREAK_MS);
   };
   const line = override ?? lines[index];
 
   return (
     <div role="status" aria-live="polite" className={`overflow-hidden rounded-2xl border border-stone-200 bg-[#faf9f6] ${className ?? ""}`}>
-      <RouteScene className="h-28 w-full" pickups={phase !== "thinking"} onPickup={onPickup} />
+      <div className="relative">
+        <RouteScene className="h-28 w-full" pickups={phase !== "thinking"} onPickup={onPickup} />
+        {/* The ride keeps running underneath so the game state survives the break. */}
+        {breakScene && (
+          <div className="mopik-fade-in absolute inset-0 bg-[#faf9f6]">
+            {breakScene === "cigarette" ? <CigaretteScene className="h-28 w-full" /> : <BeerScene className="h-28 w-full" />}
+          </div>
+        )}
+      </div>
       <div className="flex items-center gap-2 px-4 pb-3">
         <span className="size-1.5 animate-pulse rounded-full bg-[#f56300]" />
         <span key={line} className={`mopik-fade-in text-xs font-medium ${override ? "text-[#bd4b00]" : "text-stone-700"}`}>{line}</span>
@@ -212,6 +224,80 @@ export function RouteScene({ className, speed = 1, pickups = false, onPickup }: 
           <mpath href="#mopik-route" />
         </animateMotion>
       </g>
+    </svg>
+  );
+}
+
+/** The big break: a cigarette burning down while the line says Uzpīpēju… */
+export function CigaretteScene({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 326 130" className={className} aria-hidden="true">
+      <defs>
+        <radialGradient id="mopik-ember" cx="0.5" cy="0.5" r="0.5">
+          <stop offset="0%" stopColor="#ffb347" />
+          <stop offset="60%" stopColor="#f56300" />
+          <stop offset="100%" stopColor="#f56300" stopOpacity="0" />
+        </radialGradient>
+      </defs>
+      {/* the same hill, so the break happens on the same ride */}
+      <g fill="none" stroke="#e4e0d8" strokeWidth="1">
+        <path d="M -10 116 C 60 100, 120 106, 180 118 S 280 130, 340 110" />
+        <path d="M -10 96 C 50 70, 90 70, 130 88 S 210 120, 260 96 S 320 72, 340 84" />
+      </g>
+      {/* filter */}
+      <rect x="196" y="60" width="42" height="14" rx="3" fill="#d9a066" />
+      <rect x="196" y="60" width="42" height="14" rx="3" fill="none" stroke="#b9874f" strokeWidth="1" />
+      {/* paper, burning from the left towards the filter */}
+      <g className="mopik-cig-body" style={{ transformOrigin: "196px 67px" }}>
+        <rect x="90" y="60" width="106" height="14" rx="2" fill="#ffffff" stroke="#d6d3d1" strokeWidth="1" />
+      </g>
+      {/* ember and smoke travel with the burn line */}
+      <g className="mopik-cig-ember">
+        <rect x="86" y="60" width="6" height="14" rx="2" fill="#57534e" />
+        <circle cx="89" cy="67" r="9" fill="url(#mopik-ember)" />
+        <g fill="none" stroke="#a8a29e" strokeWidth="1.4" strokeLinecap="round">
+          <path className="mopik-smoke" d="M 88 52 c -6 -6, 6 -10, 0 -18" style={{ animationDelay: "0s" }} />
+          <path className="mopik-smoke" d="M 92 50 c -6 -6, 6 -10, 0 -18" style={{ animationDelay: "0.7s" }} />
+          <path className="mopik-smoke" d="M 84 54 c -6 -6, 6 -10, 0 -18" style={{ animationDelay: "1.4s" }} />
+        </g>
+      </g>
+    </svg>
+  );
+}
+
+/** The big break: a beer (no handle) emptied while the line says Iedzeru aliņu… */
+export function BeerScene({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 326 130" className={className} aria-hidden="true">
+      <g fill="none" stroke="#e4e0d8" strokeWidth="1">
+        <path d="M -10 116 C 60 100, 120 106, 180 118 S 280 130, 340 110" />
+        <path d="M -10 96 C 50 70, 90 70, 130 88 S 210 120, 260 96 S 320 72, 340 84" />
+      </g>
+      <defs>
+        <clipPath id="mopik-glass-clip"><path d="M 143 32 L 183 32 L 179 106 Q 163 112 147 106 Z" /></clipPath>
+      </defs>
+      {/* beer, draining towards the bottom */}
+      <g clipPath="url(#mopik-glass-clip)">
+        <g className="mopik-beer" style={{ transformOrigin: "163px 106px" }}>
+          <rect x="140" y="44" width="46" height="64" fill="#f5b733" />
+          <rect x="140" y="44" width="46" height="4" fill="#fde68a" />
+        </g>
+        <g fill="#fff7d6" fillOpacity="0.9">
+          <circle className="mopik-bubble" cx="152" cy="100" r="1.6" style={{ animationDelay: "0s" }} />
+          <circle className="mopik-bubble" cx="163" cy="104" r="1.2" style={{ animationDelay: "0.5s" }} />
+          <circle className="mopik-bubble" cx="172" cy="98" r="1.4" style={{ animationDelay: "1s" }} />
+          <circle className="mopik-bubble" cx="158" cy="102" r="1" style={{ animationDelay: "1.5s" }} />
+        </g>
+        {/* foam, riding down on the beer */}
+        <g className="mopik-foam">
+          <ellipse cx="163" cy="44" rx="23" ry="5" fill="#fffaf0" />
+          <circle cx="150" cy="41" r="4" fill="#fffaf0" />
+          <circle cx="163" cy="39" r="5" fill="#fffaf0" />
+          <circle cx="176" cy="41" r="4" fill="#fffaf0" />
+        </g>
+      </g>
+      {/* glass and handle */}
+      <path d="M 143 32 L 183 32 L 179 106 Q 163 112 147 106 Z" fill="none" stroke="#a8a29e" strokeWidth="1.6" strokeLinejoin="round" />
     </svg>
   );
 }

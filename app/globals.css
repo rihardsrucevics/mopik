@@ -203,6 +203,20 @@ body {
 }
 .mopik-curtain-up { animation: mopik-curtain-up 0.6s cubic-bezier(0.7, 0, 0.3, 1) forwards; }
 
+/* The rider's breaks: a cigarette burning towards the filter, a beer emptied. */
+@keyframes mopik-cig-burn { from { transform: scaleX(1); } to { transform: scaleX(0.45); } }
+@keyframes mopik-cig-move { from { transform: translateX(0); } to { transform: translateX(58px); } }
+@keyframes mopik-smoke { 0% { transform: translateY(0); opacity: 0; } 20% { opacity: 0.8; } 100% { transform: translateY(-22px); opacity: 0; } }
+@keyframes mopik-beer-drain { from { transform: scaleY(1); } to { transform: scaleY(0.12); } }
+@keyframes mopik-foam-drop { from { transform: translateY(0); } to { transform: translateY(54px); } }
+@keyframes mopik-bubble { 0% { transform: translateY(0); opacity: 0; } 20% { opacity: 0.9; } 100% { transform: translateY(-40px); opacity: 0; } }
+.mopik-cig-body  { animation: mopik-cig-burn 2.3s linear both; }
+.mopik-cig-ember { animation: mopik-cig-move 2.3s linear both; }
+.mopik-smoke     { animation: mopik-smoke 1.6s ease-out infinite; }
+.mopik-beer      { animation: mopik-beer-drain 2.3s ease-in both; }
+.mopik-foam      { animation: mopik-foam-drop 2.3s ease-in both; }
+.mopik-bubble    { animation: mopik-bubble 1.4s ease-out infinite; }
+
 /* Pickups on the road: a gentle bob while they wait, a pop when collected. */
 @keyframes mopik-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-1.5px); } }
 @keyframes mopik-pop { 0% { transform: scale(1); opacity: 1; } 60% { transform: scale(1.6); opacity: 0.9; } 100% { transform: scale(2); opacity: 0; } }
@@ -213,6 +227,7 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .mopik-draw, .mopik-draw-mask, .mopik-bike, .mopik-wordmark, .mopik-tagline, .mopik-fade-in,
-  .mopik-bob, .mopik-pop, .mopik-burst { animation: none; }
+  .mopik-bob, .mopik-pop, .mopik-burst,
+  .mopik-cig-body, .mopik-cig-ember, .mopik-smoke, .mopik-beer, .mopik-foam, .mopik-bubble { animation: none; }
   .mopik-draw { stroke-dashoffset: 0; }
 }

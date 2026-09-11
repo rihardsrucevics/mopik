@@ -2,6 +2,13 @@
 
 ## 2026-09-12 (late, 4) — the loader is a game
 
+**Correction, same evening:** the pickup alone was not the point. When the
+bike collects an item, the whole scene switches for 2.4 s to the big break
+— the cigarette burning towards the filter or the beer (no handle) being
+emptied — laid over the route (which keeps running underneath, so laps and
+score survive), with "Uzpīpēju…" / "Iedzeru aliņu…" in the status line.
+Then the ride is back.
+
 The cigarette and beer no longer replace the scene; they lie on the route
 the bike is riding. One item per lap, alternating (cigarette at 36 % of the
 path on even laps, beer at 70 % on odd laps), bobbing while they wait. When
