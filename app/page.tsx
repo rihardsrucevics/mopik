@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { RouteMap } from "@/components/route-map";
 import { RoutePrompt } from "@/components/route-prompt";
-import { RouteSheet } from "@/components/route-sheet";
+import { ResultPanel } from "@/components/result-panel";
 import { RideComposer } from "@/components/ride-composer";
 import { ChatMessage, ChatQuickReply, ChatResponse, RidePlan, planSummary } from "@/lib/chat/ride-plan";
 import { seedPlanFromProfile } from "@/lib/chat/ride-profile";
@@ -24,6 +24,9 @@ export default function Home() {
   const [quickReplies, setQuickReplies] = useState<ChatQuickReply[]>([]);
   // Which of the three versions (direct / balanced / complex) is on the map.
   const [selected, setSelected] = useState(0);
+  // After a correction is typed the left column becomes the chat until new
+  // routes arrive; otherwise it shows the result. Never both at once.
+  const [chatting, setChatting] = useState(false);
   // Places picked in the form, with coordinates; sent with every generation
   // so chat corrections keep pointing at the same towns.
   const [places, setPlaces] = useState<ResolvedPlace[]>([]);
@@ -44,6 +47,7 @@ export default function Home() {
       if (!route) throw new Error("Neizdevās atrast prasībām atbilstošu maršrutu.");
       setResult(data);
       setSelected(0);
+      setChatting(false);
       setQuickReplies([]);
       const versions = (data as GenerateRouteResponse).routes.length;
       // The numbers are in the result card; the message only says what to do next.
@@ -81,7 +85,7 @@ export default function Home() {
     if (busyRef.current) return;
     if (messages.length >= 37) { setError("Saruna sasniegusi šīs versijas garuma robežu. Sāc jaunu braucienu."); return; }
     busyRef.current = true; setError(null); setRetry(null);
-    setQuickReplies([]);
+    setQuickReplies([]); setChatting(true);
     const next: ChatMessage[] = [...messages, { role: "user", content: text }];
     setMessages(next);
     try { await converse(next, plan ?? seedPlanFromProfile(profile)); } finally { setPhase("idle"); busyRef.current = false; }
@@ -108,21 +112,21 @@ export default function Home() {
   return (
     <main className="mx-auto min-h-screen w-full max-w-[1600px] px-4 py-5 md:px-7">
       <header className="mb-5 flex items-center justify-between border-b border-stone-200 pb-4">
-        <div className="flex items-baseline gap-3"><h1 className="text-2xl font-bold tracking-tight">Mopiks<span className="text-[#f56300]">.</span></h1><p className="hidden text-xs text-stone-500 sm:block">Mazāk plānošanas. Vairāk braukšanas.</p></div>
-        {(messages.length > 0 || plan) && <button disabled={phase !== "idle"} onClick={() => { setEntryMode("form"); setMessages([]); setPlan(null); setPlaces([]); setResult(null); setError(null); setRetry(null); setQuickReplies([]); }} className="text-xs text-stone-500 underline underline-offset-4 disabled:opacity-40">Jauns brauciens</button>}
+        <div className="flex items-baseline gap-3"><h1 className="text-2xl font-bold tracking-tight">Mopik<span className="text-[#f56300]">.</span></h1><p className="hidden text-xs text-stone-500 sm:block">Mazāk plānošanas. Vairāk braukšanas.</p></div>
+        {(messages.length > 0 || plan) && <button disabled={phase !== "idle"} onClick={() => { setEntryMode("form"); setMessages([]); setPlan(null); setPlaces([]); setResult(null); setChatting(false); setError(null); setRetry(null); setQuickReplies([]); }} className="text-xs text-stone-500 underline underline-offset-4 disabled:opacity-40">Jauns brauciens</button>}
       </header>
       <div className="grid items-start gap-5 md:grid-cols-[minmax(340px,460px)_1fr]">
         <div className="min-w-0 space-y-4">
           {entryMode === "form"
             ? <RideComposer key={plan ? planSummary(plan, false) : "new"} initialPlan={plan} profile={profile} onProfileChange={changeProfile} busy={phase !== "idle"} onGenerate={startFromForm} onUseChat={() => setEntryMode("chat")} />
-            : <RoutePrompt messages={messages} plan={plan} hasRoute={Boolean(route)} phase={phase} quickReplies={quickReplies} onSend={send} onBackToForm={() => setEntryMode("form")}
-                resultPanel={result && result.routes.length > 0 ? <RouteSheet routes={result.routes} selected={selected} onSelect={setSelected} avoidTowns={result.intent.avoidTowns ?? false} /> : null} />}
+            : result && result.routes.length > 0 && !chatting
+              ? <ResultPanel routes={result.routes} selected={selected} onSelect={setSelected} plan={plan} avoidTowns={result.intent.avoidTowns ?? false} busy={phase !== "idle"} onSend={send} onBackToForm={() => setEntryMode("form")} />
+              : <RoutePrompt messages={messages} plan={plan} hasRoute={Boolean(route)} phase={phase} quickReplies={quickReplies} onSend={send} onBackToForm={() => setEntryMode("form")} />}
           {error && <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><p>{error}</p>{retry && <button onClick={retryLast} disabled={phase !== "idle"} className="mt-2 underline underline-offset-4 disabled:opacity-40">Mēģināt vēlreiz</button>}</div>}
         </div>
-        {/* Map first on the phone, sticky on the desktop, and nothing on top
-            of it: the result (versions, numbers, download) sits in the chat
-            panel right above the input, where the rider's attention already is. */}
-        <div className="order-first min-w-0 md:order-none md:sticky md:top-5">
+        {/* Sticky on the desktop; on the phone the map only appears once
+            there is a route to show, above the result. Nothing overlays it. */}
+        <div className={`order-first min-w-0 md:order-none md:sticky md:top-5 ${result ? "" : "hidden md:block"}`}>
           <div className="relative h-[42dvh] overflow-hidden rounded-2xl border border-stone-200 md:h-[calc(100vh-7rem)]">
             <RouteMap segments={route?.segments ?? null} start={result?.start ?? null} destination={result?.destination ?? null} via={result?.via} showTet={showTet} onToggleTet={setShowTet} />
           </div>

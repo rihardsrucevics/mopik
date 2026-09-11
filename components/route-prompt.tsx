@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowUp, LoaderCircle } from "lucide-react";
 import { ChatMessage, ChatQuickReply, RidePlan, planSummary } from "@/lib/chat/ride-plan";
 
@@ -13,10 +13,9 @@ type Props = {
   onSend: (text: string) => void;
   onBackToForm: () => void;
   /** the result (versions, numbers, download), shown above the input */
-  resultPanel?: ReactNode;
 };
 
-export function RoutePrompt({ messages, plan, hasRoute, phase, quickReplies, onSend, onBackToForm, resultPanel }: Props) {
+export function RoutePrompt({ messages, plan, hasRoute, phase, quickReplies, onSend, onBackToForm }: Props) {
   const [text, setText] = useState("");
   const endRef = useRef<HTMLDivElement>(null);
   const busy = phase !== "idle";
@@ -57,7 +56,7 @@ export function RoutePrompt({ messages, plan, hasRoute, phase, quickReplies, onS
         )}
         {messages.map((message, index) => (
           <div key={index} className={message.role === "user" ? "ml-5 rounded-2xl rounded-br-sm bg-stone-900 px-4 py-3 text-white" : "mr-2 text-stone-700"}>
-            <div className={`mb-1 text-[10px] font-semibold uppercase tracking-widest ${message.role === "user" ? "text-stone-400" : "text-[#bd4b00]"}`}>{message.role === "user" ? "Tu" : "Mopiks"}</div>
+            <div className={`mb-1 text-[10px] font-semibold uppercase tracking-widest ${message.role === "user" ? "text-stone-400" : "text-[#bd4b00]"}`}>{message.role === "user" ? "Tu" : "Mopik"}</div>
             <p className="whitespace-pre-wrap text-sm leading-relaxed">{message.content}</p>
           </div>
         ))}
@@ -69,8 +68,6 @@ export function RoutePrompt({ messages, plan, hasRoute, phase, quickReplies, onS
         {busy && <div className="flex items-center gap-2 text-xs text-stone-500" role="status"><LoaderCircle className="size-3.5 animate-spin" />{phase === "thinking" ? "Atjauninu brauciena plānu…" : "Meklēju piemērotus ceļus un pārbaudu maršrutu…"}</div>}
         <div ref={endRef} />
       </div>
-
-      {resultPanel && <div className="border-t border-stone-200 bg-white px-3 pt-3">{resultPanel}</div>}
 
       <form onSubmit={(event) => { event.preventDefault(); submit(); }} className="border-t border-stone-200 bg-white p-3">
         <label htmlFor="ride-message" className="sr-only">Ziņa par braucienu</label>

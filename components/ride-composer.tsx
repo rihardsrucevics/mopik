@@ -21,11 +21,11 @@ type Choice<T extends string> = { value: T; label: string; detail?: string };
 function ChoiceRow<T extends string>({ label, value, choices, onChange }: { label: string; value: T; choices: Choice<T>[]; onChange: (value: T) => void }) {
   return (
     <fieldset>
-      <legend className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-400">{label}</legend>
-      <div className="grid gap-1.5 rounded-xl bg-stone-100 p-1 sm:grid-flow-col sm:auto-cols-fr">
+      <legend className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-400">{label}</legend>
+      <div className="grid grid-flow-col auto-cols-fr gap-1 rounded-xl bg-stone-100 p-1">
         {choices.map((choice) => (
           <button key={choice.value} type="button" aria-pressed={value === choice.value} onClick={() => onChange(choice.value)}
-            className={`min-w-0 rounded-lg px-2.5 py-2 text-left transition ${value === choice.value ? "bg-white text-stone-950 shadow-sm ring-1 ring-stone-200" : "text-stone-500 hover:text-stone-800"}`}>
+            className={`min-w-0 rounded-lg px-2 py-1.5 text-left transition ${value === choice.value ? "bg-white text-stone-950 shadow-sm ring-1 ring-stone-200" : "text-stone-500 hover:text-stone-800"}`}>
             <span className="block text-xs font-semibold">{choice.label}</span>
             {choice.detail && <span className="mt-0.5 block text-[9px] leading-tight opacity-70">{choice.detail}</span>}
           </button>
@@ -46,7 +46,7 @@ function ProfileLine({ profile, onChange }: { profile: RideProfile; onChange: (p
 
   return (
     <div className="rounded-xl border border-stone-200 bg-[#faf9f6]">
-      <div className="flex items-center justify-between gap-3 px-3 py-2.5">
+      <div className="flex items-center justify-between gap-3 px-3 py-2">
         <div className="min-w-0">
           <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-400">Tavs profils</div>
           <div className="truncate text-sm font-semibold text-stone-900">{profileSummary(p)}</div>
@@ -80,14 +80,13 @@ function ProfileLine({ profile, onChange }: { profile: RideProfile; onChange: (p
             <ChoiceRow label={PROFILE_LABELS.difficulty.title} value={p.difficulty} onChange={(difficulty) => onChange({ ...p, difficulty })}
               choices={(["rest", "adventure", "hard"] as const).map((v) => ({ value: v, ...PROFILE_LABELS.difficulty[v] }))} />
           )}
+          {p.surface === "forest" && (
+            <p className="rounded-lg bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-900">
+              “Meži” var iekļaut takas ar nepārbaudītu piekļuves statusu. Smilšu pludmales takas un skaidri aizliegti ceļi netiek izmantoti.
+            </p>
+          )}
           <p className="text-[11px] leading-relaxed text-stone-500">Profils paliek atcerēts šajā ierīcē arī nākamajiem braucieniem.</p>
         </div>
-      )}
-
-      {p.surface === "forest" && (
-        <p className="border-t border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-900">
-          “Meži” var iekļaut takas ar nepārbaudītu piekļuves statusu. Smilšu pludmales takas un skaidri aizliegti ceļi netiek izmantoti.
-        </p>
       )}
     </div>
   );
@@ -132,19 +131,29 @@ export function RideComposer({ initialPlan, profile, onProfileChange, busy, onGe
 
   return (
     <section className="overflow-hidden rounded-2xl border border-stone-200 bg-white" aria-label="Brauciena ievade">
-      <div className="border-b border-stone-200 bg-[#faf9f6] px-5 py-4">
-        <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#bd4b00]">Tavs nākamais brauciens</div>
-        <h2 className="text-xl font-semibold tracking-tight">Kur un cik ilgi brauksim?</h2>
-        <p className="mt-1 text-xs text-stone-500">Pārējo nosaka tavs profils. Maršrutu varēsi precizēt pēc ģenerēšanas.</p>
+      <div className="border-b border-stone-200 bg-[#faf9f6] px-4 py-3">
+        <div className="mb-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#bd4b00]">Tavs nākamais brauciens</div>
+        <h2 className="text-lg font-semibold tracking-tight">Kur un cik ilgi brauksim?</h2>
+        <p className="mt-1 hidden text-xs text-stone-500 md:block">Pārējo nosaka tavs profils. Maršrutu varēsi precizēt pēc ģenerēšanas.</p>
       </div>
 
-      <div className="space-y-5 p-5">
-        <div className="grid gap-2 sm:grid-cols-2">
+      <div className="space-y-3.5 p-4">
+        <div className="grid grid-cols-2 gap-2">
           <PlaceInput value={start} onChange={setStart} onPick={(p) => setPick("start", p)} icon={<MapPin className="size-3" />} label="No" placeholder="Rīga" />
           <PlaceInput value={destination} onChange={setDestination} onPick={(p) => setPick("destination", p)} icon={<ArrowRight className="size-3" />} label="Uz" placeholder={tripType === "round_trip" ? "Nav obligāts" : "Ainaži"} />
         </div>
 
-        <ChoiceRow label="Maršruta veids" value={tripType} onChange={setTripType} choices={[{ value: "round_trip", label: "Turp un atpakaļ" }, { value: "one_way", label: "Vienā virzienā" }]} />
+        <div className="grid grid-cols-2 gap-3">
+          <ChoiceRow label="Maršruta veids" value={tripType} onChange={setTripType} choices={[{ value: "round_trip", label: "Turp‑atpakaļ" }, { value: "one_way", label: "Vienā virzienā" }]} />
+          <ChoiceRow label="Ilgums" value={durationMode} onChange={setDurationMode} choices={[{ value: "flexible", label: "Brīvs" }, { value: "hours", label: "Konkrēts" }]} />
+        </div>
+        {durationMode === "hours" && (
+          <label className="flex h-10 items-center gap-2 rounded-xl border border-stone-200 px-3">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-400">Stundas</span>
+            <input type="number" min="0.5" max="16" step="0.5" value={hours} onChange={(e) => setHours(e.target.value)} className="min-w-0 flex-1 bg-transparent text-right text-sm font-semibold outline-none" />
+            <span className="text-xs text-stone-400">h</span>
+          </label>
+        )}
 
         <div>
           {stops.map((stop, index) => (
@@ -156,16 +165,11 @@ export function RideComposer({ initialPlan, profile, onProfileChange, busy, onGe
           <button type="button" onClick={addStop} disabled={stops.length >= 4} className="inline-flex items-center gap-1 text-xs font-medium text-[#bd4b00] disabled:opacity-40"><Plus className="size-3.5" />Pievienot pieturvietu</button>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-[1fr_120px]">
-          <ChoiceRow label="Ilgums" value={durationMode} onChange={setDurationMode} choices={[{ value: "flexible", label: "Brīvs" }, { value: "hours", label: "Konkrēts" }]} />
-          <label className={durationMode === "hours" ? "block" : "pointer-events-none opacity-35"}><span className="mb-2 block text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-400">Stundas</span><div className="flex h-[42px] items-center rounded-xl border border-stone-200 px-3"><input type="number" min="0.5" max="16" step="0.5" value={hours} onChange={(e) => setHours(e.target.value)} disabled={durationMode !== "hours"} className="min-w-0 flex-1 bg-transparent text-sm font-semibold outline-none" /><span className="text-xs text-stone-400">h</span></div></label>
-        </div>
-
         <ProfileLine profile={effectiveProfile} onChange={onProfileChange} />
 
         {error && <p role="alert" className="text-xs text-red-700">{error}</p>}
 
-        <button type="button" onClick={submit} disabled={busy} className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[#f56300] text-sm font-semibold text-white transition hover:bg-[#d85600] disabled:opacity-50"><Sparkles className="size-4" />Izveidot maršrutu</button>
+        <button type="button" onClick={submit} disabled={busy} className="flex h-11 w-full items-center justify-center gap-2 rounded-full bg-[#f56300] text-sm font-semibold text-white transition hover:bg-[#d85600] disabled:opacity-50"><Sparkles className="size-4" />Izveidot maršrutu</button>
         <button type="button" onClick={onUseChat} disabled={busy} className="w-full text-center text-xs text-stone-500 underline decoration-stone-300 underline-offset-4 hover:text-stone-800">Vai arī aprakstīt braucienu čatā</button>
       </div>
     </section>

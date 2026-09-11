@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Mopiks",
+  title: "Mopik",
   description: "Adventure motorcycle routes from natural language. From idea to GPX in seconds.",
 };
 

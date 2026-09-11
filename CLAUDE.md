@@ -1,6 +1,6 @@
 @AGENTS.md
 
-# Mopiks — adventure motorcycle route generator
+# Mopik — adventure motorcycle route generator
 
 ## Current product decision — 2026-09-11 (takes precedence)
 
@@ -17,10 +17,13 @@ places carry coordinates in `places[]` and are never geocoded again), trip
 type, duration — and shows difficulty / style / surface as one remembered
 **profile** line (`lib/chat/ride-profile.ts`: Viegli/Vidēji/Grūti,
 Tūrisms/Sports, Tikai asfalts/Der arī grants/Meži; asphalt hides difficulty).
-The map is sticky on the right (first on phones) and nothing overlays it;
-versions, the three numbers, Download GPX and folded details are a card in the
-chat panel right above the input (`components/route-sheet.tsx`, passed as
-`resultPanel`) — the result never needs scrolling. Its finite choices
+The left column is **either the result or the chat, never both**
+(`components/result-panel.tsx` after generation: summary, version cards,
+numbers, Download GPX, warnings, "Ko mainīt?" input; typing a correction
+flips to the chat until new routes arrive — `chatting` in `page.tsx`). The
+map is sticky on the right with nothing overlaid, hidden on phones until a
+route exists, then first. Rejected earlier: a sheet over the map, a card
+inside the chat. Its finite choices
 become a canonical RidePlan in `lib/chat/compose-plan.ts` without LLM
 interpretation. Chat remains an alternative entry path and becomes the route
 correction UI after generation; finite chat questions return quick-reply
@@ -246,7 +249,7 @@ runner: macOS then denies it Documents access and every route 500s with
 - Free-text geocoding still on GraphHopper; the form's picked places bypass it via `/api/places` (Photon, Baltic settlements only).
 - **The Stadia free tier forbids commercial use.** Both routers can be
   self-hosted (BRouter and Valhalla are both open source) — that's the path if
-  Mopiks goes public.
+  Mopik goes public.
 
 ## Working style that has paid off here
 

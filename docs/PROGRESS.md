@@ -1,6 +1,6 @@
 # Mopik — progress log
 
-## 2026-09-11 (evening) — three versions, left-column summary, place picker, Mopiks
+## 2026-09-11 (evening) — three versions, left-column summary, place picker, Mopik
 
 - **Three versions per request** instead of one, from the same candidate
   pool: `direct` (few turns, few rough tracks, shortest reasonable),
@@ -9,19 +9,19 @@
   different roads. Picked by re-scoring the accepted pool on each axis and
   rejecting duplicates (>80% shared road pieces). `components/route-variants.tsx`
   shows them as cards; the chat's correction applies to the selected one.
-- **Layout**: the result is a card **inside the chat panel, right above the
-  input** (`components/route-sheet.tsx`): version tabs, name, three numbers,
-  Download GPX, and "Detaļas N" folding warnings, road mix, surface and nature
-  away. It was tried as a sheet over the map first; the rider wanted the map
-  clear. Then it ate the chat history, so it is two rows now — version tabs,
-  then `68 km · 1 h 48 min · 1 % atkārtoti · GPX · details` — and both
-  canned chat messages are one line (the numbers live in the card, the
-  profile in the panel header). Desktop: chat left at full height, map
-  right, nothing to scroll.
-  Phone: map first (42 dvh), then the chat panel at natural height with a
-  short message log, the result card and the input — one small scroll at
-  most. Legend under the TET toggle, hidden on phones. The old summary card
-  and variant cards are gone.
+- **Layout — the left column is either the result or the chat, never
+  both** (rider's design). After generation `components/result-panel.tsx`
+  takes the whole column: request summary, three version cards, the
+  selected route's name and numbers, Download GPX, warnings, folded details,
+  and at the bottom a "Ko mainīt?" input. Sending a correction flips the
+  column to the chat (`chatting` state in `page.tsx`) until new routes
+  arrive, then the result view returns. Tried and rejected on the way: a
+  sheet over the map (hid the map) and a card inside the chat (ate the
+  history). Phone: the map is hidden until a route exists, then comes first
+  (42 dvh) above the result; the composer is compact (No/Uz side by side,
+  ride type + duration side by side, hours inline, choices always
+  horizontal, header note hidden). Legend under the TET toggle, hidden on
+  phones.
 - **Place picker**: `/api/places` proxies Photon (komoot) restricted to Baltic
   settlements (city/town/village/hamlet), Latvia first, bigger first, cached
   10 min. `components/place-input.tsx` is a debounced combobox; a picked place
@@ -30,7 +30,7 @@
   names still geocode as before.
 - **Profile**: difficulty is three levels (Viegli / Vidēji / Grūti → easy /
   adventure / hard), style two (Tūrisms / Sports); Mix removed.
-- Product renamed **Mopiks** in the UI, GPX creator and doc headings.
+- Product was renamed to Mopiks in the UI, GPX creator and doc headings, then back to **Mopik** the same day at the rider's request.
 - Checkpoint commit `fe64a41` made before this work; 19 tests pass.
 
 ## 2026-09-11 (later) — the profile is one line, not three questions

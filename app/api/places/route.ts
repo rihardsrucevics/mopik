@@ -55,7 +55,7 @@ export async function GET(req: NextRequest) {
 
   let features: PhotonFeature[] = [];
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(6000), headers: { "User-Agent": "Mopiks/0.1 (adventure motorcycle route planner)" } });
+    const res = await fetch(url, { signal: AbortSignal.timeout(6000), headers: { "User-Agent": "Mopik/0.1 (adventure motorcycle route planner)" } });
     if (res.ok) features = ((await res.json()) as { features?: PhotonFeature[] }).features ?? [];
   } catch (err) {
     console.warn("place search failed:", err);
