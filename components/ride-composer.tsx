@@ -25,8 +25,8 @@ function ChoiceRow<T extends string>({ label, value, choices, onChange }: { labe
       <div className="grid grid-flow-col auto-cols-fr gap-1 rounded-xl bg-stone-100 p-1">
         {choices.map((choice) => (
           <button key={choice.value} type="button" aria-pressed={value === choice.value} onClick={() => onChange(choice.value)}
-            className={`min-w-0 rounded-lg px-2 py-1.5 text-left transition ${value === choice.value ? "bg-white text-stone-950 shadow-sm ring-1 ring-stone-200" : "text-stone-500 hover:text-stone-800"}`}>
-            <span className="block text-xs font-semibold">{choice.label}</span>
+            className={`min-w-0 rounded-lg px-2 py-2 text-center transition ${value === choice.value ? "bg-white text-stone-950 shadow-sm ring-1 ring-stone-200" : "text-stone-500 hover:text-stone-800"}`}>
+            <span className="block whitespace-nowrap text-xs font-semibold">{choice.label}</span>
             {choice.detail && <span className="mt-0.5 block text-[9px] leading-tight opacity-70">{choice.detail}</span>}
           </button>
         ))}
@@ -130,27 +130,27 @@ export function RideComposer({ initialPlan, profile, onProfileChange, busy, onGe
   };
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-stone-200 bg-white" aria-label="Brauciena ievade">
+    <section className="flex flex-col overflow-hidden rounded-2xl border border-stone-200 bg-white md:h-[calc(100vh-7rem)]" aria-label="Brauciena ievade">
       <div className="border-b border-stone-200 bg-[#faf9f6] px-4 py-3">
         <div className="mb-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#bd4b00]">Tavs nākamais brauciens</div>
         <h2 className="text-lg font-semibold tracking-tight">Kur un cik ilgi brauksim?</h2>
         <p className="mt-1 hidden text-xs text-stone-500 md:block">Pārējo nosaka tavs profils. Maršrutu varēsi precizēt pēc ģenerēšanas.</p>
       </div>
 
-      <div className="space-y-3.5 p-4">
+      <div className="flex flex-1 flex-col gap-4 p-4 md:gap-5 md:p-5">
         <div className="grid grid-cols-2 gap-2">
           <PlaceInput value={start} onChange={setStart} onPick={(p) => setPick("start", p)} icon={<MapPin className="size-3" />} label="No" placeholder="Rīga" />
           <PlaceInput value={destination} onChange={setDestination} onPick={(p) => setPick("destination", p)} icon={<ArrowRight className="size-3" />} label="Uz" placeholder={tripType === "round_trip" ? "Nav obligāts" : "Ainaži"} />
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <ChoiceRow label="Maršruta veids" value={tripType} onChange={setTripType} choices={[{ value: "round_trip", label: "Turp‑atpakaļ" }, { value: "one_way", label: "Vienā virzienā" }]} />
+        <div className="grid gap-4">
+          <ChoiceRow label="Maršruta veids" value={tripType} onChange={setTripType} choices={[{ value: "round_trip", label: "Turp un atpakaļ" }, { value: "one_way", label: "Vienā virzienā" }]} />
           <ChoiceRow label="Ilgums" value={durationMode} onChange={setDurationMode} choices={[{ value: "flexible", label: "Brīvs" }, { value: "hours", label: "Konkrēts" }]} />
         </div>
         {durationMode === "hours" && (
           <label className="flex h-10 items-center gap-2 rounded-xl border border-stone-200 px-3">
             <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-400">Stundas</span>
-            <input type="number" min="0.5" max="16" step="0.5" value={hours} onChange={(e) => setHours(e.target.value)} className="min-w-0 flex-1 bg-transparent text-right text-sm font-semibold outline-none" />
+            <input type="number" min="0.5" max="16" step="0.5" value={hours} onChange={(e) => setHours(e.target.value)} className="min-w-0 flex-1 bg-transparent text-right text-base font-semibold outline-none md:text-sm" />
             <span className="text-xs text-stone-400">h</span>
           </label>
         )}
@@ -169,7 +169,10 @@ export function RideComposer({ initialPlan, profile, onProfileChange, busy, onGe
 
         {error && <p role="alert" className="text-xs text-red-700">{error}</p>}
 
-        <button type="button" onClick={submit} disabled={busy} className="flex h-11 w-full items-center justify-center gap-2 rounded-full bg-[#f56300] text-sm font-semibold text-white transition hover:bg-[#d85600] disabled:opacity-50"><Sparkles className="size-4" />Izveidot maršrutu</button>
+        {/* Pushed to the bottom on the desktop so the column is used and the
+            action is where a form's action belongs. */}
+        <div className="md:mt-auto" />
+        <button type="button" onClick={submit} disabled={busy} className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[#f56300] text-sm font-semibold text-white transition hover:bg-[#d85600] disabled:opacity-50"><Sparkles className="size-4" />Izveidot maršrutu</button>
         <button type="button" onClick={onUseChat} disabled={busy} className="w-full text-center text-xs text-stone-500 underline decoration-stone-300 underline-offset-4 hover:text-stone-800">Vai arī aprakstīt braucienu čatā</button>
       </div>
     </section>

@@ -10,7 +10,7 @@ decision 2026-09-11, superseding the earlier "one route"): `direct`
 (smoothest, fewest turns and rough tracks, not longer than needed),
 `balanced` (the ranking's pick) and `complex` (most track/trail and forest),
 all drawn from the same candidate pool and the same acceptance checks
-(`RouteVariant` in `route.ts`, `components/route-variants.tsx`). "Generate
+(`RouteVariant` in `route.ts`, cards in `components/result-panel.tsx`). "Generate
 another" stays removed. The composer asks only what changes per ride — From,
 To, stops (with **place suggestions from Photon**, `/api/places`; picked
 places carry coordinates in `places[]` and are never geocoded again), trip

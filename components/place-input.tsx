@@ -83,7 +83,7 @@ export function PlaceInput({ value, onChange, onPick, placeholder, icon, label, 
             else if (e.key === "Enter" && active >= 0) { e.preventDefault(); pick(suggestions[active]); }
             else if (e.key === "Escape") setOpen(false);
           }}
-          className="mt-1 w-full bg-transparent text-sm font-medium outline-none"
+          className="mt-1 w-full bg-transparent text-base font-medium outline-none md:text-sm"
           placeholder={placeholder}
         />
       </label>

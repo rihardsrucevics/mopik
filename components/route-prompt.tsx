@@ -75,7 +75,7 @@ export function RoutePrompt({ messages, plan, hasRoute, phase, quickReplies, onS
           <textarea id="ride-message" value={text} onChange={(event) => setText(event.target.value)} rows={2} maxLength={6000} disabled={busy}
             onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); submit(); } }}
             placeholder={hasRoute ? "Piemēram: īsāku un vairāk pa mežu…" : messages.length ? "Papildini ieceri…" : "Apraksti savu braucienu…"}
-            className="min-w-0 flex-1 resize-none bg-transparent px-2 py-1 text-sm outline-none placeholder:text-stone-400 disabled:opacity-60" />
+            className="min-w-0 flex-1 resize-none bg-transparent px-2 py-1 text-base outline-none placeholder:text-stone-400 disabled:opacity-60 md:text-sm" />
           <button type="submit" disabled={busy || !text.trim()} aria-label="Nosūtīt ziņu" className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-[#f56300] text-white transition hover:bg-[#d85600] disabled:opacity-35"><ArrowUp className="size-5" /></button>
         </div>
         <p className="mt-2 hidden px-1 text-[10px] text-stone-400 md:block">Enter — nosūtīt · Shift + Enter — jauna rinda</p>

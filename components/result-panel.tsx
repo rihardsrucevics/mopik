@@ -172,7 +172,7 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
           <textarea id="ride-correction" value={text} onChange={(e) => setText(e.target.value)} rows={1} maxLength={6000} disabled={busy}
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); submit(); } }}
             placeholder="Piemēram: īsāku, vairāk pa mežu, caur Limbažiem…"
-            className="min-w-0 flex-1 resize-none bg-transparent px-2 py-1.5 text-sm outline-none placeholder:text-stone-400 disabled:opacity-60" />
+            className="min-w-0 flex-1 resize-none bg-transparent px-2 py-1.5 text-base outline-none placeholder:text-stone-400 disabled:opacity-60 md:text-sm" />
           <button type="submit" disabled={busy || !text.trim()} aria-label="Nosūtīt korekciju" className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-[#f56300] text-white transition hover:bg-[#d85600] disabled:opacity-35">
             {busy ? <LoaderCircle className="size-5 animate-spin" /> : <ArrowUp className="size-5" />}
           </button>
