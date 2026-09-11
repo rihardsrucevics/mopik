@@ -7,6 +7,7 @@ import { ResultPanel } from "@/components/result-panel";
 import { IntroSplash } from "@/components/intro-splash";
 import { RideComposer } from "@/components/ride-composer";
 import { ChatMessage, ChatQuickReply, ChatResponse, RidePlan, planSummary } from "@/lib/chat/ride-plan";
+import { describeInfeasible, minutesLabel } from "@/lib/chat/feasibility";
 import { seedPlanFromProfile } from "@/lib/chat/ride-profile";
 import type { ResolvedPlace } from "@/lib/chat/places";
 import { useRideProfile } from "@/lib/chat/use-ride-profile";
@@ -66,6 +67,21 @@ export default function Home() {
       if (!response.ok) throw new Error(data.error || "Neizdevās ģenerēt maršrutu.");
       const route = (data as GenerateRouteResponse).routes[0];
       if (!route) throw new Error("Neizdevās atrast prasībām atbilstošu maršrutu.");
+      const verdict = (data as GenerateRouteResponse).infeasible;
+      if (verdict) {
+        // The request cannot be ridden on these roads in this time. The
+        // nearest ride is on the map; the chat says what does not fit, what
+        // the minimum is, and offers the ways out as taps — never an error.
+        setResult(data);
+        setSelected(0);
+        setLucky(false);
+        const { message, quickReplies: replies } = describeInfeasible(current, verdict, true);
+        setMessages([...conversation, { role: "assistant", content: message }]);
+        setQuickReplies([...replies, { label: `Rādīt tuvāko (${minutesLabel(verdict.minimumMinutes)})`, message: "", action: "show-routes" }]);
+        setChatting(true);
+        setRetry(null);
+        return;
+      }
       setResult(data);
       // The lucky ride leads with the most interesting version.
       const complexIndex = (data as GenerateRouteResponse).routes.findIndex((r) => r.variant === "complex");
@@ -148,7 +164,7 @@ export default function Home() {
             ? <RideComposer key={plan ? planSummary(plan, false) : "new"} initialPlan={plan} profile={profile} onProfileChange={changeProfile} busy={phase !== "idle"} onGenerate={startFromForm} onUseChat={() => setEntryMode("chat")} />
             : result && result.routes.length > 0 && !chatting
               ? <ResultPanel routes={result.routes} selected={selected} onSelect={setSelected} plan={plan} avoidTowns={result.intent.avoidTowns ?? false} lucky={lucky} remoteLoop={result.remoteLoop} longerSuggestion={result.longerSuggestion} tolerancePercent={result.intent.distanceTolerancePercent} busy={phase !== "idle"} onSend={send} onBackToForm={() => setEntryMode("form")} />
-              : <RoutePrompt messages={messages} plan={plan} hasRoute={Boolean(route)} phase={phase} quickReplies={quickReplies} lucky={lucky && !route} onSend={send} onBackToForm={() => setEntryMode("form")} />}
+              : <RoutePrompt messages={messages} plan={plan} hasRoute={Boolean(route)} phase={phase} quickReplies={quickReplies} lucky={lucky && !route} onSend={send} onBackToForm={() => setEntryMode("form")} onAction={() => { setChatting(false); setQuickReplies([]); }} />}
           {error && <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><p>{error}</p>{retry && <button onClick={retryLast} disabled={phase !== "idle"} className="mt-2 underline underline-offset-4 disabled:opacity-40">Mēģināt vēlreiz</button>}</div>}
         </div>
         {/* Sticky on the desktop; on the phone the map only appears once

@@ -15,10 +15,11 @@ type Props = {
   lucky?: boolean;
   onSend: (text: string) => void;
   onBackToForm: () => void;
-  /** the result (versions, numbers, download), shown above the input */
+  /** a quick reply that acts on the client (show the routes) instead of being sent */
+  onAction?: (action: "show-routes") => void;
 };
 
-export function RoutePrompt({ messages, plan, hasRoute, phase, quickReplies, lucky = false, onSend, onBackToForm }: Props) {
+export function RoutePrompt({ messages, plan, hasRoute, phase, quickReplies, lucky = false, onSend, onBackToForm, onAction }: Props) {
   const [text, setText] = useState("");
   const endRef = useRef<HTMLDivElement>(null);
   const busy = phase !== "idle";
@@ -65,7 +66,7 @@ export function RoutePrompt({ messages, plan, hasRoute, phase, quickReplies, luc
         ))}
         {!busy && quickReplies.length > 0 && (
           <div className="flex flex-wrap gap-2" aria-label="Ātrās atbildes">
-            {quickReplies.map((reply) => <button key={reply.label} type="button" onClick={() => send(reply.message)} className="rounded-full border border-[#f56300] bg-white px-3.5 py-2 text-xs font-medium text-[#bd4b00] transition hover:bg-[#fff4ec]">{reply.label}</button>)}
+            {quickReplies.map((reply) => <button key={reply.label} type="button" onClick={() => (reply.action ? onAction?.(reply.action) : send(reply.message))} className="rounded-full border border-[#f56300] bg-white px-3.5 py-2 text-xs font-medium text-[#bd4b00] transition hover:bg-[#fff4ec]">{reply.label}</button>)}
           </div>
         )}
         {busy && <RouteLoader phase={phase === "thinking" ? "thinking" : lucky ? "lucky" : "routing"} />}

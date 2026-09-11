@@ -74,14 +74,6 @@ export async function lookupPlace(name: string): Promise<PlaceSuggestion | null>
   return (await searchPlaces(name))[0] ?? null;
 }
 
-/**
- * Transit estimate before routing: straight line × a Latvian road factor at
- * the pace a transit actually averages once the city streets at the start
- * are counted (Rīga → Baldone routed at 46 km / 59 min). Good to about
- * ±20%, enough to tell a rider that two hours will not fit a transit each
- * way and a forest loop.
- */
-export function estimateTransit(a: { lat: number; lon: number }, b: { lat: number; lon: number }): { km: number; hours: number } {
-  const km = Math.hypot((a.lat - b.lat) * 111.32, (a.lon - b.lon) * 111.32 * Math.cos(((a.lat + b.lat) / 2) * Math.PI / 180)) * 1.3;
-  return { km: Math.round(km), hours: km / 48 };
-}
+// The pre-routing arithmetic lives in `feasibility.ts` (pure, shared with the
+// client); re-exported here for the callers that reason about places.
+export { estimateTransit } from "./feasibility";

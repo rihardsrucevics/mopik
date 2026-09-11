@@ -2,8 +2,10 @@ import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
 import { NextResponse } from "next/server";
-import { ChatMessageSchema, RidePlanSchema, nextPlanPrompt, planSummary, type ChatQuickReply, type RidePlan } from "@/lib/chat/ride-plan";
+import { ChatMessageSchema, RidePlanSchema, nextPlanPrompt, planSummary, planToIntent, type ChatQuickReply, type RidePlan } from "@/lib/chat/ride-plan";
 import { estimateTransit, lookupPlace } from "@/lib/chat/photon";
+import { describeInfeasible, estimateLegs, exceedsBudget } from "@/lib/chat/feasibility";
+import { plannedAvgSpeedKmh } from "@/lib/routing/speed";
 
 export const maxDuration = 60;
 const RequestSchema = z.object({
@@ -76,7 +78,12 @@ function normalizePlan(extracted: RidePlan, previous: RidePlan | null, latest: s
   if (/tikai takas ar pārbaudāmu|verified access only/.test(lower)) plan.accessPolicy = "verified";
   if (/takas ar nezināmu piekļuves|atļaut nepārbaudītas takas/.test(lower)) plan.accessPolicy = "allow_unverified";
   if (/beigās atgriezties (?:sākumpunktā|[a-zāčēģīķļņšūž]+)|finish back at/.test(lower)) plan.returnToStart = true;
-  if (/vienvirziena brauciens|one-way ride/.test(lower)) plan.returnToStart = false;
+  if (/vienvirziena brauciens|one-way ride/.test(lower)) {
+    plan.returnToStart = false;
+    // "Vienā virzienā Rīga → Jelgava" from the feasibility chips: the last
+    // stop is where the ride ends now, whatever the model made of it.
+    if (plan.viaPlaces.length && (!plan.destinationPlace || plan.destinationPlace === plan.viaPlaces[plan.viaPlaces.length - 1])) plan.destinationPlace = plan.viaPlaces.pop()!;
+  }
   if (plan.budget.mode === "unknown" && /\b(nezinu|brīvs|brīvi|vienalga)\b/.test(lower)) {
     plan.budget = { mode: "flexible", value: null, constraint: "target", minimumValue: null };
   }
@@ -121,6 +128,32 @@ async function transitCheck(plan: RidePlan, previous: RidePlan | null, lv: boole
   };
 }
 
+/**
+ * The same arithmetic for a ride through named stops: Rīga → Jelgava → Rīga
+ * on forest roads is ~105 km of direct legs, about 3 h at that pace, and a
+ * 2 h request cannot hold it whatever the router tries (it routed at 4 h).
+ * Say so before drawing, with the ways out as taps — more time, asphalt if
+ * that fits, one way if that fits. Asked once per ask, not every turn; the
+ * router's own verdict (`infeasible` in the response) covers a rider who
+ * insists, and the composer, which never passes through here.
+ */
+async function viaBudgetCheck(plan: RidePlan, previous: RidePlan | null, lv: boolean): Promise<{ message: string; quickReplies: ChatQuickReply[] } | null> {
+  if (!plan.startPlace || plan.focusArea || plan.returnToStart === null) return null;
+  if (!plan.viaPlaces.length && !plan.destinationPlace) return null;
+  if ((plan.budget.mode !== "duration" && plan.budget.mode !== "distance") || !plan.budget.value) return null;
+  const ask = (p: RidePlan) => JSON.stringify([p.startPlace, p.viaPlaces, p.destinationPlace, p.returnToStart, p.budget, p.gravelPreference, p.trailPreference, p.preferForest]);
+  if (previous && ask(previous) === ask(plan)) return null;
+  const names = [plan.startPlace, ...plan.viaPlaces, ...(plan.destinationPlace ? [plan.destinationPlace] : [])];
+  const found = await Promise.all(names.map((name) => lookupPlace(name)));
+  if (found.some((p) => !p)) return null;
+  const points = found.map((p) => ({ lat: p!.lat, lon: p!.lon }));
+  if (plan.returnToStart) points.push(points[0]);
+  let intent;
+  try { intent = planToIntent(plan); } catch { return null; }
+  const estimate = estimateLegs(points, plannedAvgSpeedKmh(intent), plannedAvgSpeedKmh({ ...intent, gravelPreference: 0, trailPreference: "none" }), plan.returnToStart);
+  return exceedsBudget(plan, estimate) ? describeInfeasible(plan, estimate, lv) : null;
+}
+
 function describeChanges(before: RidePlan | null, after: RidePlan, lv: boolean): string | null {
   if (!before) return null;
   const changes: string[] = [];
@@ -154,7 +187,7 @@ export async function POST(req: Request) {
     const lv = language === "lv";
     const previous = body.data.plan ?? null;
     const plan = normalizePlan(result.parsed_output.plan, previous, body.data.messages.at(-1)!.content);
-    const next = nextPlanPrompt(plan, lv) ?? (await transitCheck(plan, previous, lv));
+    const next = nextPlanPrompt(plan, lv) ?? (await transitCheck(plan, previous, lv)) ?? (await viaBudgetCheck(plan, previous, lv));
     const clarificationText = next ? null : clarification?.trim();
     // The shape of the ride is restated whenever it is new or changed; small
     // corrections get the field-level acknowledgement instead.

@@ -40,7 +40,8 @@ export const RidePlanSchema = z.object({
 export type RidePlan = z.infer<typeof RidePlanSchema>;
 export const ChatMessageSchema = z.object({ role: z.enum(["user", "assistant"]), content: z.string().min(1).max(6000) });
 export type ChatMessage = z.infer<typeof ChatMessageSchema>;
-export type ChatQuickReply = { label: string; message: string };
+/** A tap target. `action` is handled on the client instead of being sent to the chat. */
+export type ChatQuickReply = { label: string; message: string; action?: "show-routes" };
 export type ChatResponse = { plan: RidePlan; message: string; ready: boolean; quickReplies: ChatQuickReply[] };
 export type PlanPrompt = { message: string; quickReplies: ChatQuickReply[] };
 

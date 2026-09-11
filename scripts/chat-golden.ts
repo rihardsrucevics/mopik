@@ -84,6 +84,20 @@ const CASES: Case[] = [
     ready: true,
   },
   {
+    name: "via ride that cannot fit the time asks before routing",
+    message: "No Rīgas caur Jelgavu un atpakaļ pa mežiem, apmēram 2 stundas",
+    expect: { startPlace: "Rīga", viaPlaces: ["Jelgava"], returnToStart: true, focusArea: null, budget: { mode: "duration", value: 2, constraint: "target", minimumValue: null } },
+    messageMatch: /nesanāk: taisnākais ceļš turp un atpakaļ ir ~\d+ km/,
+    ready: false,
+  },
+  {
+    name: "one-way chip turns the last stop into the destination",
+    message: "Vienvirziena brauciens Rīga → Jelgava, apmēram 2 stundas.",
+    plan: { startPlace: "Rīga", viaPlaces: ["Jelgava"], returnToStart: true, ...MEZI, difficulty: "adventure", rideStyle: "explore", budget: { mode: "duration", value: 2, constraint: "target", minimumValue: null } } as Partial<RidePlan>,
+    expect: { startPlace: "Rīga", viaPlaces: [], destinationPlace: "Jelgava", returnToStart: false },
+    ready: true,
+  },
+  {
     name: "less overlap stays a supported preference",
     message: "2h no Ķekavas, mazāk pārklāšanās, atpakaļ pa citiem ceļiem",
     expect: { startPlace: "Ķekava", prioritizeLowOverlap: true, returnToStart: true },

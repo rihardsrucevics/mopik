@@ -89,3 +89,36 @@ test("joined legs keep edge indices aligned and drop the shared junction point",
   assert.deepEqual(joined.edges.map((e) => [e.beginShapeIndex, e.endShapeIndex]), [[0, 1], [1, 3], [3, 4]]);
   assert.equal(joined.edges[1].tags?.highway, "track");
 });
+
+import { describeInfeasible, estimateLegs, exceedsBudget } from "../lib/chat/feasibility";
+test("a via ride that cannot fit the time is said plainly, with the ways out as taps", () => {
+  const riga = { lat: 56.9496, lon: 24.1052 };
+  const jelgava = { lat: 56.6511, lon: 23.7213 };
+  const plan = RidePlanSchema.parse({ ...complete, startPlace: "Rīga", viaPlaces: ["Jelgava"], avoidMainRoads: true });
+  // 33 km/h is the planner's pace for gravel 100 + lots of trails, 58 on asphalt.
+  const estimate = estimateLegs([riga, jelgava, riga], 33, 58, true);
+  assert.ok(estimate.directKm > 95 && estimate.directKm < 115, `direct ${estimate.directKm} km`);
+  assert.ok(estimate.directMinutes > 120 * 1.2, `direct ${estimate.directMinutes} min`);
+  assert.equal(estimate.oneWayKm, Math.round(estimate.directKm / 2));
+  assert.equal(exceedsBudget(plan, estimate), true);
+  // Routed: the shortest forest ride was 136 km / 241 min (2026-09-11).
+  const verdict = describeInfeasible(plan, { ...estimate, minimumMinutes: 241, minimumKm: 136 }, true);
+  assert.match(verdict.message, /^Rīga → Jelgava → Rīga pa meža un grants ceļiem 2 h ietvaros nesanāk: taisnākais ceļš turp un atpakaļ ir ~\d+ km, pa meža un grants ceļiem tas ir ap 3 h/);
+  assert.match(verdict.message, /Īsākais, ko šeit var izplānot pa meža un grants ceļiem, ir 4 h 1 min \/ 136 km/);
+  assert.deepEqual(verdict.quickReplies.map((r) => r.label), ["Kopā 4 h", "Pa asfaltu 2 h", "Vienā virzienā Rīga → Jelgava"]);
+  // Before routing there is no minimum yet; the suggestion rounds the estimate up.
+  const early = describeInfeasible(plan, estimate, true);
+  assert.doesNotMatch(early.message, /Īsākais/);
+  assert.equal(early.quickReplies[0].label, "Kopā 3.5 h");
+  // The chips must survive the chat's deterministic normalisation.
+  assert.match(verdict.quickReplies[1].message, /^Segums: tikai asfalts\. Apmēram 2 stundas kopā\.$/);
+  assert.match(verdict.quickReplies[2].message, /^Vienvirziena brauciens Rīga → Jelgava/);
+  // A ride that fits asks nothing: Rīga → Baldone → Rīga in 2 h.
+  const baldone = { lat: 56.7424, lon: 24.4001 };
+  assert.equal(exceedsBudget(plan, estimateLegs([riga, baldone, riga], 33, 58, true)), false);
+  // Asphalt riders are not offered asphalt; one-way riders are not offered one way.
+  const asphalt = RidePlanSchema.parse({ ...plan, gravelPreference: 0, trailPreference: "none", preferForest: false, returnToStart: false, viaPlaces: [], destinationPlace: "Jelgava" });
+  const oneWay = describeInfeasible(asphalt, { ...estimateLegs([riga, jelgava], 58, 58, false), directMinutes: 200 }, true);
+  assert.deepEqual(oneWay.quickReplies.map((r) => r.label), ["Kopā 3.5 h"]);
+  assert.match(oneWay.message, /^Rīga → Jelgava pa asfaltu 2 h ietvaros nesanāk: taisnākais ceļš ir ~\d+ km/);
+});

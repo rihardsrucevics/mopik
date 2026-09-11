@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { FeasibilityVerdict } from "@/lib/chat/feasibility";
 
 export const RouteIntentSchema = z.object({
   routeType: z.enum(["round_trip", "point_to_point"]).default("round_trip"),
@@ -207,6 +208,8 @@ export type GenerateRouteResponse = {
     riverside: number;
     ascent: number;
     excessDrift: number;
+    /** reaches the stops and meets the rider's limits (ceiling, minimum, max repeated) */
+    acceptable: boolean;
     shown: boolean;
   }[];
   /** only with `debug: true`: what the calibration route measured */
@@ -242,6 +245,14 @@ export type GenerateRouteResponse = {
    * different way has a floor of roughly 20 km whatever we ask for.
    */
   distanceWarning?: { targetKm: number; shortestKm: number };
+  /**
+   * Set when nothing came close to the request and `routes` are the nearest
+   * rides instead: Rīga → Jelgava → Rīga on forest roads is at least ~4 h,
+   * whatever the rider typed. Carries the minimum we routed and the direct
+   * legs' estimate so the client can ask what to do (more time, asphalt,
+   * one way) instead of showing an error.
+   */
+  infeasible?: FeasibilityVerdict;
   /**
    * Set when even the best option retraces a lot of its own road. Around
    * Tukums, for instance, every loop under ~150 km repeats 41-52% however the

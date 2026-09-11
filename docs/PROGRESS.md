@@ -1,5 +1,48 @@
 # Mopik — progress log
 
+## 2026-09-12 (evening) — a ride that cannot fit gets a sentence, not an error
+
+**The case.** "Rīga → Jelgava → Rīga, ~2 h, Meži" answered "Neizdevās atrast
+maršrutu…" (422). All 17 candidates had routed and reached Jelgava; every
+one was 136–163 km / 4 h 01 – 4 h 43, i.e. 80 %+ past the 24-minute free
+band, so `worthShowing` emptied and the handler treated "nothing fits" as
+"nothing found". brouter.de was not the cause: the self-hosted run failed
+identically in 7 s. The ride physically cannot be done in 2 h on forest and
+gravel roads; the minimum is ~4 h.
+
+**Rule from the rider:** such an error must never reach the chat. The chat
+resolves it: what is not OK, alternatives near the requested time, and the
+minimum that can be planned on the chosen road type.
+
+- `lib/chat/feasibility.ts` (new): `estimateLegs` (straight line × 1.3 at
+  the planning speed; asphalt and one-way variants), `exceedsBudget` (fires
+  above 1.2× the request), `describeInfeasible` (the shared LV/EN sentence
+  and chips). `estimateTransit` moved here.
+- Chat API: `viaBudgetCheck` after `transitCheck` — Photon lookups of the
+  places, then, before routing: "Rīga → Jelgava → Rīga pa meža un grants
+  ceļiem 2 h ietvaros nesanāk: taisnākais ceļš turp un atpakaļ ir ~105 km, pa
+  meža un grants ceļiem tas ir ap 3 h 10 min. Kā darām?" with chips **Kopā
+  3.5 h / Pa asfaltu 2 h / Vienā virzienā Rīga → Jelgava**. Asked once per
+  budget. "Vienvirziena brauciens …" turns the last via into the destination.
+- Generate API: when budgeted and nothing passes `worthShowing` but
+  candidates routed, the nearest-to-budget rides are returned (200) with
+  `infeasible: {requestedMinutes, minimumMinutes, minimumKm, directKm,
+  directMinutes, asphaltMinutes, oneWayKm, oneWayMinutes}`. 422 only when
+  nothing routed at all. `debugCandidates` also on the 422.
+- Page: on `infeasible` the map shows the shortest ride and the chat says
+  "Īsākais, ko šeit var izplānot …, ir 4 h 1 min / 136 km — tas ir kartē."
+  with chips incl. **Rādīt tuvāko (4 h 1 min)** (`ChatQuickReply.action`).
+- Golden set 14/14 (two new cases); unit tests 10/10. Jelgava on brouter.de
+  via the fixed handler: 200, 136 km / 241 min leads.
+- Built by a parallel agent in a worktree on branch `fix/via-plan-honest-limit`,
+  merged here. Production request took 55 s on brouter.de — close to Vercel's
+  60 s; another argument for the self-hosted BRouter.
+
+**Also:** two rider's breaks in the loader — "Uzpīpēju…" with a cigarette
+burning towards the filter and "Iedzeru aliņu…" with a beer emptying — slipped
+into the status lines at random positions (never first), once each per
+generation; reduced-motion disables them like the rest.
+
 ## 2026-09-12 (later) — the surroundings of a stop, and a complex version that earns its name
 
 The rider's rule: "Rīga → Baldone → Rīga" is, for most riders, a ride to ride

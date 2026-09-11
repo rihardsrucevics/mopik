@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { RidePlanSchema, nextPlanQuestion, planToIntent } from "@/lib/chat/ride-plan";
+import { estimateLegs } from "@/lib/chat/feasibility";
+import { plannedAvgSpeedKmh } from "@/lib/routing/speed";
 import { hasBeachLikePath, hasUnverifiedMotorPath } from "@/lib/routing/access";
 import { visitsRequiredStops } from "@/lib/routing/required-stops";
 import {
@@ -1058,13 +1060,18 @@ export async function POST(req: NextRequest) {
     // 7%-gravel loop beat a 59%-gravel one for a rider who asked for woods,
     // hence the unpaved shortfall term.
     // Named places and maximum budgets are acceptance conditions, not score weights.
-    const acceptable = (s: Scored) => visitsRequiredStops(s.path.coordinates, requiredVia.map(p => [p.lon,p.lat])) &&
+    const reachesStops = (s: Scored) => visitsRequiredStops(s.path.coordinates, requiredVia.map(p => [p.lon,p.lat])) &&
       haversineMeters(s.path.coordinates[0], [start.lon,start.lat]) <= 300 &&
-      haversineMeters(s.path.coordinates[s.path.coordinates.length-1], [destination?.lon ?? start.lon,destination?.lat ?? start.lat]) <= 300 && meetsRideLimits(intent, {
+      haversineMeters(s.path.coordinates[s.path.coordinates.length-1], [destination?.lon ?? start.lon,destination?.lat ?? start.lat]) <= 300;
+    const acceptable = (s: Scored) => reachesStops(s) && meetsRideLimits(intent, {
       durationSeconds: s.classified.durationSeconds,
       distanceMeters: s.path.distanceMeters,
       repeatedPercent: 100*s.classified.overlap.repeatedKm / Math.max(0.001, s.classified.overlap.distinctKm+s.classified.overlap.repeatedKm),
     });
+    // Everything that routed and reaches the stops, limits or not. When no
+    // candidate meets the limits, the shortest of these is the honest
+    // answer to "how long does this take at least".
+    const routed = scored.filter(reachesStops);
     scored = scored.filter(acceptable);
     let competing = scored.filter((s) => s.competing);
     const fixed = scored.filter((s) => !s.competing);
@@ -1199,18 +1206,32 @@ export async function POST(req: NextRequest) {
     // A version more than ~45% past the free band is a different ride: for a
     // 2-hour request that is already 3 h 15 min. Not shown, however clean.
     const MAX_EXCESS_DRIFT = 45;
-    const worthShowing = competing.filter(
+    let worthShowing = competing.filter(
       (s) =>
         s.classified.overlap.repeatedPercent <= Math.max(15, bestShown + 10) &&
         excessDriftPercent(s) <= MAX_EXCESS_DRIFT &&
         acceptable(s)
     );
+    const budgeted = Boolean(body.plan && body.plan.budget.mode !== "flexible");
+    // Nothing near the request. Rīga → Jelgava → Rīga on forest and gravel
+    // roads routes at 136–163 km / 4–4.7 h against 2 h (2026-09-11): every
+    // candidate was past the cut and the answer was an error that hid
+    // exactly the numbers the rider needed. Instead the nearest rides are
+    // shown, time first, flagged `infeasible` with the minimum, and the chat
+    // asks what to do — more time, asphalt, one way. The rider's limits (a
+    // "līdz 2 h" ceiling) are set aside here on purpose: the shortest ride
+    // that exists is the answer to "how long at least", and the client says
+    // so in the same breath.
+    const byNearest = (a: Scored, b: Scored) =>
+      excessDriftPercent(a) - excessDriftPercent(b) || a.classified.overlap.repeatedPercent - b.classified.overlap.repeatedPercent;
+    const nearest = routed.filter((s) => s.competing).sort(byNearest);
+    const infeasible = budgeted && worthShowing.length === 0 && nearest.length > 0;
+    if (infeasible) worthShowing = nearest;
     // Prefer routes inside the agreed approximate budget when any exist. Do
     // not silently trade a two-hour ride for 80 min. When none is inside,
     // the rider cares about the time first and the overlap second, so the
     // nearest-to-budget versions lead and the UI says how far off they are.
     const withinBudget = worthShowing.filter(withinTolerance);
-    const budgeted = Boolean(body.plan && body.plan.budget.mode !== "flexible");
     const selection = budgeted
       ? (withinBudget.length ? withinBudget : [...worthShowing].sort((a, b) => excessDriftPercent(a) - excessDriftPercent(b)))
       : worthShowing;
@@ -1271,8 +1292,8 @@ export async function POST(req: NextRequest) {
     // candidates, nearest the budget first. A shorter or slightly longer
     // second option beats showing one.
     if (picked.length < SHOWN_VARIANTS) {
-      const fillers = competing
-        .filter((c) => !variantOf.has(c) && excessDriftPercent(c) <= MAX_EXCESS_DRIFT)
+      const fillers = (infeasible ? worthShowing : competing)
+        .filter((c) => !variantOf.has(c) && (infeasible || excessDriftPercent(c) <= MAX_EXCESS_DRIFT))
         .sort((a, b) => excessDriftPercent(a) - excessDriftPercent(b) || a.classified.overlap.repeatedPercent - b.classified.overlap.repeatedPercent);
       for (const c of fillers) {
         if (picked.length >= SHOWN_VARIANTS) break;
@@ -1283,6 +1304,8 @@ export async function POST(req: NextRequest) {
       }
       picked.sort((a, b) => order.indexOf(variantOf.get(a)!) - order.indexOf(variantOf.get(b)!));
     }
+    // When nothing fits, the nearest to the request leads whatever its label.
+    if (infeasible) picked.sort(byNearest);
     const chosen = [...fixed, ...picked].slice(0, SHOWN_VARIANTS);
 
     const startName = start.label.split(",")[0];
@@ -1336,13 +1359,35 @@ export async function POST(req: NextRequest) {
       };
     });
 
+    // The whole pool with its numbers — on the 422 as well, because "why did
+    // nothing come back" is exactly the question that response raises.
+    const debugCandidates = body.debug
+      ? routed.map((s) => ({
+          variant: s.variant,
+          km: Math.round(s.path.distanceMeters / 100) / 10,
+          min: Math.round(s.classified.durationSeconds / 60),
+          repeated: s.classified.overlap.repeatedPercent,
+          unpaved: s.classified.surfaces.gravelPercent + s.classified.surfaces.dirtPercent,
+          nature: s.classified.quality.natureScore,
+          forest: s.classified.quality.forestKm,
+          riverside: s.classified.quality.riversideKm,
+          ascent: s.classified.quality.elevationGainM,
+          excessDrift: Math.round(excessDriftPercent(s)),
+          acceptable: acceptable(s),
+          shown: chosen.includes(s),
+        }))
+      : undefined;
+
     if (routes.length === 0) {
       const firstError =
         settled[0].status === "rejected"
           ? String((settled[0] as PromiseRejectedResult).reason)
           : "unknown";
       return NextResponse.json(
-        { error: body.plan ? "Neizdevās atrast maršrutu, kas izpilda pieturvietas un norādītās robežas. Precizē ilgumu vai prasības čatā." : `All route candidates failed: ${firstError}` },
+        {
+          error: body.plan ? "Neizdevās atrast maršrutu, kas izpilda pieturvietas un norādītās robežas. Precizē ilgumu vai prasības čatā." : `All route candidates failed: ${firstError}`,
+          ...(debugCandidates ? { debugCandidates } : {}),
+        },
         { status: body.plan ? 422 : 502 }
       );
     }
@@ -1400,23 +1445,7 @@ export async function POST(req: NextRequest) {
     const response: GenerateRouteResponse = {
       intent,
       parser: parsed.source,
-      ...(body.debug
-        ? {
-            debugCandidates: scored.map((s) => ({
-              variant: s.variant,
-              km: Math.round(s.path.distanceMeters / 100) / 10,
-              min: Math.round(s.classified.durationSeconds / 60),
-              repeated: s.classified.overlap.repeatedPercent,
-              unpaved: s.classified.surfaces.gravelPercent + s.classified.surfaces.dirtPercent,
-              nature: s.classified.quality.natureScore,
-              forest: s.classified.quality.forestKm,
-              riverside: s.classified.quality.riversideKm,
-              ascent: s.classified.quality.elevationGainM,
-              excessDrift: Math.round(excessDriftPercent(s)),
-              shown: chosen.includes(s),
-            })),
-          }
-        : {}),
+      ...(debugCandidates ? { debugCandidates } : {}),
       ...(body.debug && calibration
         ? {
             debugCalibration: {
@@ -1444,7 +1473,25 @@ export async function POST(req: NextRequest) {
             },
           }
         : {}),
-      ...(overshoots && !destination
+      ...(infeasible
+        ? {
+            infeasible: {
+              requestedMinutes: body.plan?.budget.mode === "duration" && body.plan.budget.value ? Math.round(body.plan.budget.value * 60) : null,
+              requestedKm: body.plan?.budget.mode === "distance" && body.plan.budget.value ? Math.round(body.plan.budget.value) : Math.round(targetKm),
+              // The whole ride as the rider will ride it: a remote loop's
+              // transits count when the budget was for the whole day.
+              minimumMinutes: Math.round((chosen[0].classified.durationSeconds + (remote && body.plan?.budgetScope === "total" ? remote.outSeconds + remote.backSeconds : 0)) / 60),
+              minimumKm: Math.round((chosen[0].path.distanceMeters + (remote && body.plan?.budgetScope === "total" ? remote.out.distanceMeters + remote.back.distanceMeters : 0)) / 1000),
+              ...estimateLegs(
+                remote ? [origin, remote.focus, origin] : [origin, ...requiredVia, destination ?? origin],
+                plannedAvgSpeedKmh(intent),
+                plannedAvgSpeedKmh({ ...intent, gravelPreference: 0, trailPreference: "none" }),
+                !destination
+              ),
+            },
+          }
+        : {}),
+      ...(overshoots && !destination && !infeasible
         ? {
             distanceWarning: {
               targetKm: Math.round(targetKm),
