@@ -1,6 +1,8 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { Maximize2, Minimize2 } from "lucide-react";
+
+import { useRef, useState, useEffect } from "react";
 import { RouteMap } from "@/components/route-map";
 import { RoutePrompt } from "@/components/route-prompt";
 import { ResultPanel } from "@/components/result-panel";
@@ -47,6 +49,16 @@ export default function Home() {
   // Start only, round trip, no stops, flexible time: the rider wants to be
   // surprised. The loader and the result say so, and the deepest version leads.
   const [lucky, setLucky] = useState(false);
+  // Phone only: the map over the whole screen, on request.
+  const [mapExpanded, setMapExpanded] = useState(false);
+  useEffect(() => {
+    if (!mapExpanded) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setMapExpanded(false); };
+    window.addEventListener("keydown", onKey);
+    return () => { document.body.style.overflow = previous; window.removeEventListener("keydown", onKey); };
+  }, [mapExpanded]);
   // Places picked in the form, with coordinates; sent with every generation
   // so chat corrections keep pointing at the same towns.
   const [places, setPlaces] = useState<ResolvedPlace[]>([]);
@@ -170,8 +182,17 @@ export default function Home() {
         {/* Sticky on the desktop; on the phone the map only appears once
             there is a route to show, above the result. Nothing overlays it. */}
         <div className={`order-first min-w-0 md:order-none md:sticky md:top-5 ${result ? "" : "hidden md:block"}`}>
-          <div className="relative h-[42dvh] overflow-hidden rounded-2xl border border-stone-200 md:h-[calc(100vh-7rem)]">
+          {/* Phone heights: 42dvh with the result panel, 26dvh while the chat
+              has something to say (the words matter more than the picture
+              then), the whole screen when asked. */}
+          <div className={mapExpanded
+            ? "fixed inset-0 z-40 bg-[#faf9f6] md:relative md:inset-auto md:z-auto md:h-[calc(100vh-7rem)] md:overflow-hidden md:rounded-2xl md:border md:border-stone-200"
+            : `relative overflow-hidden rounded-2xl border border-stone-200 md:h-[calc(100vh-7rem)] ${result && chatting ? "h-[26dvh]" : "h-[42dvh]"}`}>
             <RouteMap segments={route?.segments ?? null} start={result?.start ?? null} destination={result?.destination ?? null} via={result?.via} showTet={showTet} onToggleTet={setShowTet} />
+            <button type="button" onClick={() => setMapExpanded((v) => !v)} aria-label={mapExpanded ? "Aizvērt pilnekrāna karti" : "Karte pa visu ekrānu"}
+              className="absolute bottom-3 left-3 flex size-10 items-center justify-center rounded-full border border-stone-200 bg-white/95 text-stone-700 shadow-sm backdrop-blur md:hidden">
+              {mapExpanded ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
+            </button>
           </div>
         </div>
       </div>

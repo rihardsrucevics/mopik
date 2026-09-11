@@ -1,5 +1,29 @@
 # Mopik — progress log
 
+## 2026-09-12 (night) — on the phone, the words come first
+
+The rider generated Jelgava on the phone, got the honest verdict, and could
+not see it: the map took 42 % of the screen, the chat panel's header and
+chips took the rest, and the log was scrolled to its end. He scrolled up
+only because he knew the text had to be there.
+
+- **Map height on the phone:** 42dvh with the result panel, **26dvh while
+  the chat has something to say** (`result && chatting`), full screen on
+  request. The chat panel under the small map grows to `74dvh − 8.5rem`.
+- **Log scrolls to the START of the latest reply**, only inside the log
+  (`scrollTo` on the log element, never `scrollIntoView`, which would drag
+  the page). While working or after the rider's own message it follows the
+  end as before.
+- **Full-screen map on the phone:** a button bottom-left on the map toggles
+  `fixed inset-0`; body scroll locked, Escape closes; hidden on desktop.
+  `RouteMap` now has a `ResizeObserver` calling `map.resize()`, so both the
+  height change and the full-screen toggle repaint correctly.
+- **Budget checks yield to insistence:** "tomēr / vienalga / mēģini / anyway"
+  skips `transitCheck`/`viaBudgetCheck`, and the via check asks once per
+  places-and-hours (the constraint changing from "līdz 2 h" to "~2 h" is the
+  same ask). Before, an insisting second message was asked the same question
+  again.
+
 ## 2026-09-12 (evening) — a ride that cannot fit gets a sentence, not an error
 
 **The case.** "Rīga → Jelgava → Rīga, ~2 h, Meži" answered "Neizdevās atrast

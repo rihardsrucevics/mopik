@@ -22,10 +22,22 @@ type Props = {
 export function RoutePrompt({ messages, plan, hasRoute, phase, quickReplies, lucky = false, onSend, onBackToForm, onAction }: Props) {
   const [text, setText] = useState("");
   const endRef = useRef<HTMLDivElement>(null);
+  const logRef = useRef<HTMLDivElement>(null);
+  const lastRef = useRef<HTMLDivElement>(null);
   const busy = phase !== "idle";
 
+  // A reply is read from its first line, so the log scrolls to the START of
+  // the latest assistant message (only the log itself, never the page);
+  // while working or after the rider's own message, it follows the end.
   useEffect(() => {
-    if (messages.length > 0 || busy) endRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    const log = logRef.current;
+    if (!log) return;
+    const last = messages[messages.length - 1];
+    if (!busy && last?.role === "assistant" && lastRef.current) {
+      log.scrollTo({ top: Math.max(0, lastRef.current.offsetTop - 8), behavior: "smooth" });
+    } else if (messages.length > 0 || busy) {
+      log.scrollTo({ top: log.scrollHeight, behavior: "smooth" });
+    }
   }, [messages, busy]);
 
   const send = (message: string) => {
@@ -39,7 +51,7 @@ export function RoutePrompt({ messages, plan, hasRoute, phase, quickReplies, luc
   };
 
   return (
-    <section className={`flex flex-col overflow-hidden rounded-2xl border border-stone-200 bg-[#faf9f6] md:h-[calc(100vh-7rem)] ${hasRoute ? "h-[max(320px,calc(58dvh-8.5rem))]" : "h-[calc(100dvh-7.5rem)]"}`} aria-label="Brauciena saruna">
+    <section className={`flex flex-col overflow-hidden rounded-2xl border border-stone-200 bg-[#faf9f6] md:h-[calc(100vh-7rem)] ${hasRoute ? "h-[max(360px,calc(74dvh-8.5rem))]" : "h-[calc(100dvh-7.5rem)]"}`} aria-label="Brauciena saruna">
       <div className="border-b border-stone-200 px-4 py-3 md:px-5 md:py-4">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -51,7 +63,7 @@ export function RoutePrompt({ messages, plan, hasRoute, phase, quickReplies, luc
         {plan && <p className="mt-2 hidden line-clamp-2 text-[11px] leading-relaxed text-stone-500 md:block">{planSummary(plan, true)}</p>}
       </div>
 
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4 md:space-y-5 md:px-5 md:py-5" role="log" aria-label="Sarunas ziņas" aria-live="polite">
+      <div ref={logRef} className="relative min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4 md:space-y-5 md:px-5 md:py-5" role="log" aria-label="Sarunas ziņas" aria-live="polite">
         {messages.length === 0 && (
           <div className="py-5 text-sm leading-7 text-stone-600">
             <p>Vari uzreiz pateikt visu, ko zini.</p>
@@ -59,7 +71,7 @@ export function RoutePrompt({ messages, plan, hasRoute, phase, quickReplies, luc
           </div>
         )}
         {messages.map((message, index) => (
-          <div key={index} className={message.role === "user" ? "ml-5 rounded-2xl rounded-br-sm bg-stone-900 px-4 py-3 text-white" : "mr-2 text-stone-700"}>
+          <div key={index} ref={index === messages.length - 1 ? lastRef : undefined} className={message.role === "user" ? "ml-5 rounded-2xl rounded-br-sm bg-stone-900 px-4 py-3 text-white" : "mr-2 text-stone-700"}>
             <div className={`mb-1 text-[10px] font-semibold uppercase tracking-widest ${message.role === "user" ? "text-stone-400" : "text-[#bd4b00]"}`}>{message.role === "user" ? "Tu" : "Mopik"}</div>
             <p className="whitespace-pre-wrap text-sm leading-relaxed">{message.content}</p>
           </div>

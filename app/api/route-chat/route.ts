@@ -100,8 +100,9 @@ function normalizePlan(extracted: RidePlan, previous: RidePlan | null, latest: s
  * leaves half an hour for the forest. Say so before drawing, with the two
  * honest ways out as tap targets. Asked once per budget, not every turn.
  */
-async function transitCheck(plan: RidePlan, previous: RidePlan | null, lv: boolean): Promise<{ message: string; quickReplies: ChatQuickReply[] } | null> {
+async function transitCheck(plan: RidePlan, previous: RidePlan | null, lv: boolean, latest = ""): Promise<{ message: string; quickReplies: ChatQuickReply[] } | null> {
   if (!plan.focusArea || !plan.startPlace || !plan.returnToStart) return null;
+  if (insists(latest)) return null;
   if (plan.budget.mode !== "duration" || !plan.budget.value || plan.budgetScope !== "total") return null;
   const sameAsk = previous && previous.focusArea === plan.focusArea && previous.startPlace === plan.startPlace &&
     JSON.stringify(previous.budget) === JSON.stringify(plan.budget) && previous.budgetScope === plan.budgetScope;
@@ -137,11 +138,18 @@ async function transitCheck(plan: RidePlan, previous: RidePlan | null, lv: boole
  * router's own verdict (`infeasible` in the response) covers a rider who
  * insists, and the composer, which never passes through here.
  */
-async function viaBudgetCheck(plan: RidePlan, previous: RidePlan | null, lv: boolean): Promise<{ message: string; quickReplies: ChatQuickReply[] } | null> {
+/** The rider has heard the arithmetic and wants the ride anyway. */
+function insists(latest: string): boolean {
+  return /\btomēr\b|\bvienalga\b|\bmēģini\b|\bmēģinām\b|\banyway\b|\btry (?:it|anyway)\b|\binsist/i.test(latest);
+}
+
+async function viaBudgetCheck(plan: RidePlan, previous: RidePlan | null, lv: boolean, latest: string): Promise<{ message: string; quickReplies: ChatQuickReply[] } | null> {
   if (!plan.startPlace || plan.focusArea || plan.returnToStart === null) return null;
+  if (insists(latest)) return null;
   if (!plan.viaPlaces.length && !plan.destinationPlace) return null;
   if ((plan.budget.mode !== "duration" && plan.budget.mode !== "distance") || !plan.budget.value) return null;
-  const ask = (p: RidePlan) => JSON.stringify([p.startPlace, p.viaPlaces, p.destinationPlace, p.returnToStart, p.budget, p.gravelPreference, p.trailPreference, p.preferForest]);
+  // Asked once per places-and-hours; "~2 h" after "līdz 2 h" is the same ask.
+  const ask = (p: RidePlan) => JSON.stringify([p.startPlace, p.viaPlaces, p.destinationPlace, p.returnToStart, p.budget.mode, p.budget.value, p.gravelPreference, p.trailPreference, p.preferForest]);
   if (previous && ask(previous) === ask(plan)) return null;
   const names = [plan.startPlace, ...plan.viaPlaces, ...(plan.destinationPlace ? [plan.destinationPlace] : [])];
   const found = await Promise.all(names.map((name) => lookupPlace(name)));
@@ -173,7 +181,7 @@ export async function POST(req: Request) {
   if (!body.success || body.data.messages.at(-1)?.role !== "user") return NextResponse.json({ error: "Invalid conversation" }, { status: 400 });
   if (!process.env.ANTHROPIC_API_KEY) return NextResponse.json({ error: "Sarunai nav pieejams LLM savienojums. Konfigurē ANTHROPIC_API_KEY serverī." }, { status: 503 });
   try {
-    const client = new Anthropic({ timeout: 45000, maxRetries: 0, defaultHeaders: process.env.ANTHROPIC_WORKSPACE_ID ? { "anthropic-workspace-id": process.env.ANTHROPIC_WORKSPACE_ID } : undefined });
+    const client = new Anthropic({ timeout: 45000, maxRetries: 2, defaultHeaders: process.env.ANTHROPIC_WORKSPACE_ID ? { "anthropic-workspace-id": process.env.ANTHROPIC_WORKSPACE_ID } : undefined });
     const result = await client.messages.parse({
       model: process.env.ANTHROPIC_MODEL ?? "claude-opus-5", max_tokens: 2200,
       system: SYSTEM,
@@ -187,7 +195,8 @@ export async function POST(req: Request) {
     const lv = language === "lv";
     const previous = body.data.plan ?? null;
     const plan = normalizePlan(result.parsed_output.plan, previous, body.data.messages.at(-1)!.content);
-    const next = nextPlanPrompt(plan, lv) ?? (await transitCheck(plan, previous, lv)) ?? (await viaBudgetCheck(plan, previous, lv));
+    const latest = body.data.messages.at(-1)!.content;
+    const next = nextPlanPrompt(plan, lv) ?? (await transitCheck(plan, previous, lv, latest)) ?? (await viaBudgetCheck(plan, previous, lv, latest));
     const clarificationText = next ? null : clarification?.trim();
     // The shape of the ride is restated whenever it is new or changed; small
     // corrections get the field-level acknowledgement instead.
@@ -202,6 +211,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ plan, ready: !question, message, quickReplies: next?.quickReplies ?? [] });
   } catch (error) {
     console.error("Ride conversation failed:", error);
-    return NextResponse.json({ error: "Neizdevās saņemt čata atbildi. Mēģini vēlreiz; brauciena prasības nav mainītas." }, { status: 502 });
+    const overloaded = error instanceof Error && /529|overloaded|429|rate/i.test(error.message);
+    return NextResponse.json({
+      error: overloaded
+        ? "Mopik čata modelis šobrīd ir pārslogots. Pagaidi brīdi un spied “Mēģināt vēlreiz”; brauciena prasības nav mainītas."
+        : "Neizdevās saņemt čata atbildi. Mēģini vēlreiz; brauciena prasības nav mainītas.",
+    }, { status: 502 });
   }
 }

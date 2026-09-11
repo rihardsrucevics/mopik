@@ -227,6 +227,9 @@ Fidelity check: `BROUTER_BASE_URL=http://localhost:17777 npx tsx scripts/fidelit
   keeps them out of the direct pick. Rings are small and on the rider's
   profile because forest rings near a town run ~15 km/h and the budget is
   time. Chat: "vairāk apkārtnes" → `surroundings: "more"`.
+- **On the phone the map yields to words.** 26dvh while the chat speaks,
+  42dvh with the result panel, full screen on request (button on the map).
+  The chat log scrolls to the start of the latest reply, inside the log only.
 - **"Nothing fits" is never an error.** When candidates routed but none
   fits the budget, the API returns the nearest rides plus `infeasible`
   (minimum minutes on this surface, direct km, asphalt and one-way

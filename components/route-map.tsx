@@ -197,6 +197,16 @@ export function RouteMap({ segments, start, destination, via, showTet, onToggleT
     syncData();
   }, [segments, start, destination, via, showTet]);
 
+  // The container changes size on the phone (smaller while the chat has
+  // something to say, full screen on request); MapLibre only notices when told.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(() => mapRef.current?.resize());
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
   return (
     <div className="relative h-full w-full">
       <div ref={containerRef} className="h-full w-full rounded-lg" />
