@@ -23,7 +23,10 @@ export type AnalyticsEvent =
   | "map_fullscreen"         // phone map expanded
   | "route_shared"           // share button; props: method (share|copy), km, variant
   | "shared_route_viewed"    // /r/<code> opened
-  | "shared_gpx_downloaded"; // GPX from a shared page
+  | "shared_gpx_downloaded"  // GPX from a shared page
+  | "install_prompt_shown"   // Android: add-to-home-screen offered
+  | "install_accepted"
+  | "install_dismissed";
 
 declare global {
   interface Window { gtag?: (...args: unknown[]) => void }

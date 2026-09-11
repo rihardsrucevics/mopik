@@ -7,6 +7,7 @@ import { RouteMap } from "@/components/route-map";
 import { RoutePrompt } from "@/components/route-prompt";
 import { ResultPanel } from "@/components/result-panel";
 import { FeedbackDialog } from "@/components/feedback-dialog";
+import { InstallPrompt } from "@/components/install-prompt";
 import { track } from "@/lib/analytics";
 import { decodePlanShare } from "@/lib/share/route-code";
 import { IntroSplash } from "@/components/intro-splash";
@@ -26,6 +27,23 @@ type Retry = { stage: "chat"; messages: ChatMessage[]; plan: RidePlan | null } |
  * error name and the first stack frame are appended for anything that is not
  * one of our own messages.
  */
+/**
+ * The API answers JSON; the platform does not. A killed function (Vercel's
+ * 60 s cap) or a gateway error comes back as an HTML page, which `.json()`
+ * turns into a cryptic SyntaxError. Read the text, then decide.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- the API's shapes are checked where they are used
+async function readJson(response: Response): Promise<any> {
+  const text = await response.text();
+  try { return JSON.parse(text); }
+  catch {
+    const timedOut = response.status === 504 || /timeout|timed out/i.test(text);
+    throw new Error(timedOut || response.status >= 500
+      ? "Serveris pārtrauca ģenerēšanu, jo tā aizņēma pārāk ilgi (limits ~60 s). Garš brauciens pa meža ceļiem var neietilpt. Mēģini vēlreiz vai īsāku ilgumu."
+      : `Serveris atgriezja negaidītu atbildi (${response.status}).`);
+  }
+}
+
 function describeError(e: unknown, fallback: string): string {
   if (!(e instanceof Error)) return fallback;
   const ours = /[āčēģīķļņšūž]|Neizdev|Tell us|couldn't|route/i.test(e.message) && e.name === "Error";
@@ -94,7 +112,7 @@ export default function Home() {
       const isLucky = current.returnToStart === true && current.viaPlaces.length === 0 && !current.focusArea && current.budget.mode === "flexible";
       setLucky(isLucky);
       const response = await fetch("/api/generate-route", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ plan: current, prompt: sourcePrompt, places: pickedPlaces, lucky: isLucky }) });
-      const data = await response.json();
+      const data = await readJson(response);
       if (!response.ok) throw new Error(data.error || "Neizdevās ģenerēt maršrutu.");
       const route = (data as GenerateRouteResponse).routes[0];
       if (!route) throw new Error("Neizdevās atrast prasībām atbilstošu maršrutu.");
@@ -170,7 +188,7 @@ export default function Home() {
     setPhase("thinking");
     try {
       const response = await fetch("/api/route-chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ messages: conversation, plan: previousPlan }) });
-      const data = await response.json();
+      const data = await readJson(response);
       if (!response.ok) throw new Error(data.error || "Neizdevās saņemt atbildi.");
       const answer = data as ChatResponse;
       const updated: ChatMessage[] = [...conversation, { role: "assistant", content: answer.message }];
@@ -227,6 +245,7 @@ export default function Home() {
       <FeedbackDialog open={feedbackOpen} onClose={() => setFeedbackOpen(false)} context={[plan ? planSummary(plan, true) : "", route ? `${route.name} (${Math.round(route.distanceMeters / 1000)} km)` : ""].filter(Boolean).join(" · ") || undefined} />
       <div className="grid items-start gap-5 md:grid-cols-[minmax(340px,460px)_1fr]">
         <div className="min-w-0 space-y-4">
+          <InstallPrompt show={Boolean(result) && !chatting} />
           {entryMode === "form"
             ? <RideComposer key={plan ? planSummary(plan, false) : "new"} initialPlan={plan} profile={profile} onProfileChange={changeProfile} busy={phase !== "idle"} onGenerate={startFromForm} onUseChat={() => setEntryMode("chat")} />
             : result && result.routes.length > 0 && !chatting

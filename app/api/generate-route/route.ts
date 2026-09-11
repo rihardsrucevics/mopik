@@ -416,7 +416,11 @@ async function buildCandidates(
     // ran on the way out — 34-49% repeated on every candidate.
     const legMeters = (directKm * 1000) / Math.max(1, places.length - 1);
     const reach = Math.min(20000, Math.max(3000, spareMeters / (places.length * 5), legMeters * 0.12));
-    const scales = intent.rideStyle === "direct" ? [0, 0.25, 0.5] : [0, 0.35, 0.7, 1, 1.4, 1.8, 2.2, 2.8];
+    // The public brouter.de answers ~2-3 s a route and throttles by IP (Vercel's
+    // egress is shared), so there the via search runs a quarter of the shapes
+    // and lets the time budget do the rest; self-hosted runs them all.
+    const selfHostedVia = !!process.env.BROUTER_BASE_URL;
+    const scales = intent.rideStyle === "direct" ? [0, 0.25, 0.5] : selfHostedVia ? [0, 0.35, 0.7, 1, 1.4, 1.8, 2.2, 2.8] : [0, 0.7, 1.4, 2.2];
     const candidates: Candidate[] = [];
     // On a round trip the -1 side is the +1 shape ridden the other way round
     // (same roads, same overlap — measured identical to the metre), so there
@@ -458,7 +462,7 @@ async function buildCandidates(
       // profile; the ring itself is the interest.
       const radii = [
         clamp(spend * (more ? 0.6 : 0.35), 1200, more ? 6000 : 3500),
-        clamp(spend * (more ? 1.0 : 0.6), 1500, more ? 8000 : 5000),
+        ...(selfHostedVia ? [clamp(spend * (more ? 1.0 : 0.6), 1500, more ? 8000 : 5000)] : []),
       ];
       for (const r of radii) for (const side of [1, -1]) {
         candidates.push({ variant: `around-${Math.round(r / 100)}-${side}`, competing: true, run: async () => {
@@ -487,7 +491,8 @@ async function buildCandidates(
     if (intent.rideStyle !== "direct") {
       // Two flavours: the rider's profile with a wide wiggle, the deep
       // profile with a narrow one (deep tracks are slow; the budget is time).
-      for (const [scale, options] of [[1.2, profileOptions], [0.7, deepOptions]] as const) {
+      const flavours = selfHostedVia ? ([[1.2, profileOptions], [0.7, deepOptions]] as const) : ([[0.7, deepOptions]] as const);
+      for (const [scale, options] of flavours) {
         candidates.push({ variant: `zig-${scale}`, competing: true, run: async () => {
           const points: [number, number][] = [startPt];
           for (let i = 1; i < places.length; i++) {
@@ -796,7 +801,18 @@ function mutations(shape: LoopShape): LoopShape[] {
   ].map((m) => ({ ...m, exploratory: shape.exploratory }));
 }
 
+/**
+ * Wall-clock budget for one generation. Vercel's hobby plan kills the function
+ * at 60 s and answers with an HTML error page; the browser then fails to parse
+ * JSON (Safari: "The string did not match the expected pattern") — that was
+ * the "bug" riders saw on long rides via the public BRouter. Below the cap the
+ * search stops launching new batches and answers with the best it has.
+ */
+const TIME_BUDGET_MS = process.env.BROUTER_BASE_URL ? 110_000 : 42_000;
+
 export async function POST(req: NextRequest) {
+  const startedAt = Date.now();
+  const outOfTime = () => Date.now() - startedAt > TIME_BUDGET_MS;
   let body;
   try {
     body = RequestSchema.parse(await req.json());
@@ -999,6 +1015,7 @@ export async function POST(req: NextRequest) {
     const runAll = async (cands: Candidate[]): Promise<{ settled: PromiseSettledResult<Awaited<ReturnType<Candidate["run"]>>>[]; scored: Scored[] }> => {
       const settled: PromiseSettledResult<Awaited<ReturnType<Candidate["run"]>>>[] = [];
       for (let i = 0; i < cands.length; i += CONCURRENCY) {
+        if (outOfTime()) { console.warn(`time budget: stopping after ${i} of ${cands.length} candidates`); break; }
         const batch = cands.slice(i, i + CONCURRENCY);
         settled.push(...(await Promise.allSettled(batch.map((c) => c.run()))));
       }
@@ -1042,7 +1059,7 @@ export async function POST(req: NextRequest) {
     // saved request.
     const SECOND_PASS_TRIGGER = 0.25;
     const PUBLIC_SECOND_PASS_SHAPES = 4;
-    if (calibration) {
+    if (calibration && !outOfTime()) {
       const lengths = scored
         .filter((c) => c.competing && !c.exploratory)
         .map((c) => c.path.distanceMeters / 1000)
@@ -1173,7 +1190,7 @@ export async function POST(req: NextRequest) {
       // routes). A rider with a map does exactly this — nudges the good
       // shape rather than starting over — and it finds loops the fixed
       // shape list misses.
-      if (process.env.BROUTER_BASE_URL && built.fromShapes) {
+      if (process.env.BROUTER_BASE_URL && built.fromShapes && !outOfTime()) {
         // The two best by rank, plus the wide loop that retraces least: when
         // nothing inside tolerance loops cleanly, that is the one worth
         // refining into an offer.

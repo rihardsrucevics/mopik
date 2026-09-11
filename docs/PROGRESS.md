@@ -1,5 +1,33 @@
 # Mopik — progress log
 
+## 2026-09-12 — the Safari "string did not match the expected pattern" bug, solved: it was Vercel's 60 s cap
+
+The rider finally caught it with the error name shown: `SyntaxError …
+json@[native code]` after Rīga → Limbaži → Rīga 7 h. `response.json()` was
+parsing Vercel's plain-text `FUNCTION_INVOCATION_TIMEOUT` page — Safari words
+that error differently from Chromium, which is why it never reproduced
+locally (local BRouter finishes in 10–20 s). Confirmed with curl against
+production: 504 after 60.2 s. A second request at the same time pushed even
+Tukums 2 h over the cap, because brouter.de throttles by IP and Vercel's
+egress IP is shared.
+
+- **Time budget** in the generate API: 42 s on the public BRouter (110 s
+  self-hosted). `runAll` stops launching batches when over budget, the
+  second pass and mutations are skipped, and the response is the best found
+  so far — always JSON, never a platform error page.
+- **Client reads the body as text first** (`readJson` in page.tsx); a
+  non-JSON body becomes a plain sentence: "Serveris pārtrauca ģenerēšanu, jo
+  tā aizņēma pārāk ilgi (limits ~60 s)…".
+- **Fewer via candidates on the public instance**: 4 scales instead of 8,
+  one ring radius, one wiggle flavour (~8 routes instead of ~21).
+- The real fix remains the self-hosted BRouter (planned).
+
+**Also:** Android Chrome "Pievienot sākuma ekrānam" — `app/manifest.ts`,
+icons rendered on demand at `/icons/<size>` (maskable variant), a no-op
+service worker `public/sw.js`, and `components/install-prompt.tsx`, which
+shows only on Android after a route exists, uses the browser's own install
+dialog, and stays dismissed for 30 days. Nothing is shown on iOS (no API).
+
 ## 2026-09-12 — a route as a link, and a slightly longer opening
 
 **Shareable route link** (`lib/share/route-code.ts`, `app/r/[code]/`,

@@ -311,9 +311,10 @@ add information (see `docs/LVM-GEO-2026-09-12.md`). Don't re-research it.
   cached contours is designed but not wired up — see the audit plan, item 3.
 - Direction hints ("uz Siguldas pusi" vs "caur Siguldu") designed, including
   Latvian case handling, not implemented.
-- Safari-only "The string did not match the expected pattern." after a
-  generation (WebKit `SyntaxError` DOMException); unreproduced in Chromium.
-  The error box now shows `name: message — frame`; ask the rider for that text.
+- The "string did not match the expected pattern" Safari error was Vercel's
+  60 s timeout page parsed as JSON. Generation has a wall-clock budget
+  (`TIME_BUDGET_MS`); the client reads bodies as text first. Never let a
+  request run to the platform cap.
 - Free-text geocoding: Photon settlement lookup first (same as the picker), GraphHopper fallback. Picked places travel as `places[]` and are never geocoded again — and `generate()` must receive them as an argument, not read them from state set in the same tick (the Valmiera-in-Rīga bug).
 - **The Stadia free tier forbids commercial use.** Both routers can be
   self-hosted (BRouter and Valhalla are both open source) — that's the path if
