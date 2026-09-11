@@ -245,6 +245,9 @@ Fidelity check: `BROUTER_BASE_URL=http://localhost:17777 npx tsx scripts/fidelit
   estimates) and the chat explains and offers chips; the chat also does the
   via-distance arithmetic before routing (`lib/chat/feasibility.ts`). 422 is
   only for "nothing routed at all".
+- **Shared routes live in the URL**, not in storage (`lib/share/route-code.ts`,
+  version prefix `1~`). Changing the encoding means bumping the version and
+  keeping the old decoder: links in riders' chats must keep working.
 - **Prompt changes are measured with `npx tsx scripts/chat-golden.ts`**
   against the dev server (12 phrasings). Don't tune the prompt by feel.
 

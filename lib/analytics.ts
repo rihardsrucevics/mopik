@@ -20,7 +20,10 @@ export type AnalyticsEvent =
   | "beer_popup"             // the thank-you shown
   | "beer_click"             // the Revolut link tapped
   | "feedback_sent"          // feedback dialog submitted
-  | "map_fullscreen";        // phone map expanded
+  | "map_fullscreen"         // phone map expanded
+  | "route_shared"           // share button; props: method (share|copy), km, variant
+  | "shared_route_viewed"    // /r/<code> opened
+  | "shared_gpx_downloaded"; // GPX from a shared page
 
 declare global {
   interface Window { gtag?: (...args: unknown[]) => void }

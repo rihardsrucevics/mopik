@@ -8,6 +8,7 @@ import { RoutePrompt } from "@/components/route-prompt";
 import { ResultPanel } from "@/components/result-panel";
 import { FeedbackDialog } from "@/components/feedback-dialog";
 import { track } from "@/lib/analytics";
+import { decodePlanShare } from "@/lib/share/route-code";
 import { IntroSplash } from "@/components/intro-splash";
 import { RideComposer } from "@/components/ride-composer";
 import { ChatMessage, ChatQuickReply, ChatResponse, RidePlan, planSummary } from "@/lib/chat/ride-plan";
@@ -54,6 +55,21 @@ export default function Home() {
   // Phone only: the map over the whole screen, on request.
   const [mapExpanded, setMapExpanded] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  // "Ģenerēt līdzīgu sev" from a shared route: the plan arrives in ?p= and
+  // pre-fills the form; the URL is cleaned so a reload does not re-apply it.
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search).get("p");
+    if (!p) return;
+    const shared = decodePlanShare(p);
+    const mode = new URLSearchParams(window.location.search).get("mode") === "chat" ? "chat" : "form";
+    // No cleanup on purpose: development StrictMode runs the effect twice and
+    // a cancelled timer meant the plan never arrived. The URL is cleaned only
+    // once the plan is applied.
+    setTimeout(() => {
+      if (shared) { setPlan(shared); setEntryMode(mode); }
+      window.history.replaceState(null, "", window.location.pathname);
+    }, 0);
+  }, []);
   useEffect(() => {
     if (!mapExpanded) return;
     const previous = document.body.style.overflow;

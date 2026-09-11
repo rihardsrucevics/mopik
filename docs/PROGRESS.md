@@ -1,5 +1,42 @@
 # Mopik — progress log
 
+## 2026-09-12 — a route as a link, and a slightly longer opening
+
+**Shareable route link** (`lib/share/route-code.ts`, `app/r/[code]/`,
+`components/shared-route.tsx`). No database: the whole route travels in the
+URL — name, numbers, the line simplified to 10 m (Douglas–Peucker, cap 700
+points), the surface class of every stretch as run-lengths over a small
+dictionary, and optionally the plan that produced it. Only URL-safe
+characters (own 6-bit varint alphabet instead of Google's polyline, which
+uses `\ ] ^ ~`…). Measured: a 108 km Baldone ride, 2748 → 518 points,
+~2.1 KB of URL. The link never expires and costs nothing to keep.
+
+- Result panel: **Dalīties** next to Detaļas — the phone's share sheet when
+  there is one, clipboard otherwise ("Nokopēts"), `window.prompt` as the last
+  resort. Event `route_shared` {method}.
+- `/r/<code>`: the same map (segments rebuilt from the decoded classes, so
+  colours match), numbers, **Lejupielādēt GPX** (from the 10 m line — fine for
+  navigation), **Ģenerēt līdzīgu sev** (→ `/?p=<plan>` pre-fills the form),
+  **Uztaisīt savu**. Events `shared_route_viewed`, `shared_gpx_downloaded`.
+- Link preview: `generateMetadata` + a dynamic `opengraph-image` that draws
+  the real line coloured by surface with km / time / gravel, so a link pasted
+  into WhatsApp or Telegram shows the ride. `robots: noindex`.
+- Tests: `scripts/share.test.ts` (round trip, garbage → null, plan rides
+  along). Decided over storage (Vercel Blob/KV) because it needs no account
+  or infra and a shared ride should outlive both.
+
+- The code also carries road/track/trail km, surface %, and the quality
+  numbers (forest, riverside, open, ascent, unverified, rough, sand, streets),
+  so the shared page shows the same **Detaļas** block and the same warnings
+  as the result panel, and **Pielāgot čatā** (→ `/?p=<plan>&mode=chat`)
+  opens the chat seeded with the plan. Prefill bug found and fixed: in
+  development StrictMode the effect ran twice and its cleanup cancelled the
+  timer that applied the plan; no cleanup now, URL cleaned after applying.
+- **Map legend in Latvian:** Segums / Asfalts / Grants / Zeme / Nezināms,
+  Veids / Ceļš / Meža ceļš / Taka, TET Latvija.
+
+**Intro** now 3.1 s (was 2.3) with the route drawn at speed 1.25.
+
 ## 2026-09-12 — LVM GEO evaluated and shelved; self-hosted BRouter goes to the plan
 
 **LVM GEO** (state forest data) was measured against OSM by a research agent

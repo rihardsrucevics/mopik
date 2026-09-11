@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowLeft, ArrowUp, ChevronDown, ChevronUp, Download, LoaderCircle } from "lucide-react";
+import { ArrowLeft, ArrowUp, ChevronDown, ChevronUp, Download, LoaderCircle, Share2 } from "lucide-react";
 import { GeneratedRoute, GenerateRouteResponse } from "@/lib/types";
 import { RidePlan, planSummary } from "@/lib/chat/ride-plan";
 import { BeerPopup } from "@/components/beer-popup";
 import { track } from "@/lib/analytics";
+import { encodeRouteShare, shareUrl } from "@/lib/share/route-code";
 
 /**
  * The left column once routes exist: what was asked, the three versions,
@@ -55,6 +56,7 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
 }) {
   const [details, setDetails] = useState(false);
   const [beer, setBeer] = useState(false);
+  const [shared, setShared] = useState<"idle" | "copied">("idle");
   const [text, setText] = useState("");
   const route = routes[Math.min(selected, routes.length - 1)];
   if (!route) return null;
@@ -110,6 +112,20 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
     label: `Tīrāks aplis ~${duration(longerSuggestion.durationMinutes * 60)} (${longerSuggestion.repeatedPercent} % atkārtoti)`,
     message: `Apmēram ${Math.round(longerSuggestion.durationMinutes / 15) * 0.25} stundas, tas tīrākais aplis.`,
   });
+
+  // One URL carries the whole route (lib/share/route-code.ts): the phone's
+  // share sheet where there is one, the clipboard elsewhere.
+  const shareRoute = async () => {
+    const code = encodeRouteShare(route, route.stops?.[0]?.name ?? plan?.startPlace ?? "", plan);
+    const url = shareUrl(code, window.location.origin);
+    const title = `${route.name} · ${Math.round(route.distanceMeters / 1000)} km`;
+    if (typeof navigator.share === "function") {
+      try { await navigator.share({ title, url }); track("route_shared", { method: "share", km: Math.round(route.distanceMeters / 1000), variant: route.variant }); return; }
+      catch { /* dismissed: fall through to copy */ }
+    }
+    try { await navigator.clipboard.writeText(url); setShared("copied"); setTimeout(() => setShared("idle"), 2200); track("route_shared", { method: "copy", km: Math.round(route.distanceMeters / 1000), variant: route.variant }); }
+    catch { window.prompt("Kopē saiti:", url); }
+  };
 
   const warnings: string[] = [];
   if (route.overlap.repeatedPercent > 15) warnings.push(`${route.overlap.repeatedKm} km atkārto jau nobrauktus ceļus — vari prasīt mazāk atkārtojumu.`);
@@ -192,6 +208,9 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
           )}
           <div className="mt-3 flex items-center gap-2">
             <button type="button" onClick={downloadGpx} className="flex h-11 flex-1 items-center justify-center gap-2 rounded-full bg-[#f56300] text-sm font-semibold text-white transition hover:bg-[#d85600]"><Download className="size-4" />Lejupielādēt GPX</button>
+            <button type="button" onClick={shareRoute} aria-label="Dalīties ar maršrutu" className="flex h-11 shrink-0 items-center gap-1 rounded-full border border-stone-200 px-3 text-xs font-medium text-stone-700 hover:bg-stone-50">
+              <Share2 className="size-3.5" />{shared === "copied" ? "Nokopēts" : "Dalīties"}
+            </button>
             <button type="button" onClick={() => setDetails(!details)} aria-expanded={details} className="flex h-11 shrink-0 items-center gap-1 rounded-full border border-stone-200 px-3 text-xs font-medium text-stone-700 hover:bg-stone-50">
               Detaļas{details ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
             </button>

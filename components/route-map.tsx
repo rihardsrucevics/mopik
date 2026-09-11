@@ -220,7 +220,7 @@ export function RouteMap({ segments, start, destination, via, showTet, onToggleT
           className="inline-block h-[3px] w-4 rounded-full"
           style={{ background: TET_COLOR, opacity: showTet ? 0.9 : 0.3 }}
         />
-        TET Latvia
+        TET Latvija
         <span
           className={`flex h-4 w-7 items-center rounded-full p-0.5 transition-colors ${
             showTet ? "justify-end bg-[#f56300]" : "justify-start bg-[#e9e9eb]"
@@ -232,35 +232,35 @@ export function RouteMap({ segments, start, destination, via, showTet, onToggleT
       <div className="absolute left-3 top-14 hidden flex-col gap-2 rounded-xl border border-[#ececf0] bg-white/95 px-3 py-2.5 text-[11px] leading-none shadow-sm backdrop-blur md:flex">
         <div className="flex flex-col gap-1.5">
           <span className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
-            Surface
+            Segums
           </span>
           <div className="flex items-center gap-3">
             <span className="flex items-center gap-1.5">
               <span className="inline-block h-[3px] w-4 rounded-full" style={{ background: PAVED_COLOR }} />
-              Paved
+              Asfalts
             </span>
             <span className="flex items-center gap-1.5">
               <span className="inline-block h-[3px] w-4 rounded-full" style={{ background: GRAVEL_COLOR }} />
-              Gravel
+              Grants
             </span>
             <span className="flex items-center gap-1.5">
               <span className="inline-block h-[3px] w-4 rounded-full" style={{ background: DIRT_COLOR }} />
-              Dirt
+              Zeme
             </span>
             <span className="flex items-center gap-1.5">
               <span className="inline-block h-[3px] w-4 rounded-full" style={{ background: UNKNOWN_COLOR }} />
-              Unknown
+              Nezināms
             </span>
           </div>
         </div>
         <div className="flex flex-col gap-1.5">
           <span className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
-            Type
+            Veids
           </span>
           <div className="flex items-center gap-3">
             <span className="flex items-center gap-1.5">
               <span className="inline-block h-[3px] w-5 rounded-full bg-foreground/70" />
-              Road
+              Ceļš
             </span>
             <span className="flex items-center gap-1.5">
               <span
@@ -270,7 +270,7 @@ export function RouteMap({ segments, start, destination, via, showTet, onToggleT
                     "repeating-linear-gradient(90deg, rgba(29,29,31,0.7) 0 5px, transparent 5px 8px)",
                 }}
               />
-              Track
+              Meža ceļš
             </span>
             <span className="flex items-center gap-1.5">
               <span
@@ -279,7 +279,7 @@ export function RouteMap({ segments, start, destination, via, showTet, onToggleT
                   background: `repeating-linear-gradient(90deg, ${TRAIL_COLOR} 0 2px, transparent 2px 5px)`,
                 }}
               />
-              Trail
+              Taka
             </span>
             {showTet && (
               <span className="flex items-center gap-1.5">

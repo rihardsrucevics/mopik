@@ -4,12 +4,12 @@ import { useEffect, useState } from "react";
 import { RouteScene } from "@/components/route-loader";
 
 /**
- * A two-second opening: the route draws itself across the hills while the
+ * A three-second opening: the route draws itself across the hills while the
  * wordmark settles, then the curtain lifts. Once per browser session, never
  * for riders who asked their OS for reduced motion, and a tap skips it.
  */
 const SESSION_KEY = "mopik.intro.seen";
-const DURATION_MS = 2300;
+const DURATION_MS = 3100;
 
 /**
  * Decided once per page load. React's development StrictMode runs effects
@@ -54,7 +54,7 @@ export function IntroSplash() {
       className={`fixed inset-0 z-50 flex cursor-pointer flex-col items-center justify-center bg-[#faf9f6] ${state === "leaving" ? "mopik-curtain-up" : ""}`}
     >
       <div className="w-[min(88vw,560px)]">
-        <RouteScene className="h-auto w-full" speed={1.6} />
+        <RouteScene className="h-auto w-full" speed={1.25} />
       </div>
       <div className="mt-2 flex items-baseline gap-3">
         <span className="mopik-wordmark text-4xl font-bold tracking-tight text-stone-900 md:text-5xl">Mopik<span className="text-[#f56300]">.</span></span>
