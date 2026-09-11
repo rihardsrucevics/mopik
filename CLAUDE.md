@@ -292,7 +292,7 @@ runner: macOS then denies it Documents access and every route 500s with
 - Safari-only "The string did not match the expected pattern." after a
   generation (WebKit `SyntaxError` DOMException); unreproduced in Chromium.
   The error box now shows `name: message — frame`; ask the rider for that text.
-- Free-text geocoding still on GraphHopper; the form's picked places bypass it via `/api/places` (Photon, Baltic settlements only).
+- Free-text geocoding: Photon settlement lookup first (same as the picker), GraphHopper fallback. Picked places travel as `places[]` and are never geocoded again — and `generate()` must receive them as an argument, not read them from state set in the same tick (the Valmiera-in-Rīga bug).
 - **The Stadia free tier forbids commercial use.** Both routers can be
   self-hosted (BRouter and Valhalla are both open source) — that's the path if
   Mopik goes public.

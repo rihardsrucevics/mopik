@@ -1,5 +1,21 @@
 # Mopik — progress log
 
+## 2026-09-12 (late, 3) — the picked Valmiera was not the Valmiera that got routed
+
+Two causes, both fixed:
+
+- **The form's pick never reached the first generation.** `startFromForm`
+  called `setPlaces(picked)` and then `generate()`, whose closure still held
+  the previous `places` (`[]`), so the API geocoded the name again.
+  `generate()` now takes the picked places as an argument. Verified by
+  intercepting the request: `places: [{Valmiera, 57.539, 25.426}]`, before
+  the fix `[]`.
+- **Free-text geocoding preferred a "Valmiera" office in Rīga.** GraphHopper's
+  fuzzy search ranked it above the city. `geocode()` now asks the same
+  Photon settlement lookup the picker uses (Baltic towns/villages, Latvia
+  first) for each de-inflected candidate before falling back to GraphHopper.
+  "Valmiera" → 57.5389, 25.4262 (the city); loops 18–29 km for 1 h.
+
 ## 2026-09-12 (late, 2) — the beer moved into a popup; feedback goes to the inbox
 
 - **Beer popup** (`components/beer-popup.tsx`) replaces the inline banner:

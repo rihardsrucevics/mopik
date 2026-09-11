@@ -70,13 +70,13 @@ export default function Home() {
   const [profile, changeProfile] = useRideProfile();
   const busyRef = useRef(false);
 
-  async function generate(current: RidePlan, conversation: ChatMessage[]) {
+  async function generate(current: RidePlan, conversation: ChatMessage[], pickedPlaces: ResolvedPlace[] = places) {
     setPhase("routing");
     const sourcePrompt = conversation.filter(m => m.role === "user").map(m => m.content).join("\n");
     try {
       const isLucky = current.returnToStart === true && current.viaPlaces.length === 0 && !current.focusArea && current.budget.mode === "flexible";
       setLucky(isLucky);
-      const response = await fetch("/api/generate-route", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ plan: current, prompt: sourcePrompt, places, lucky: isLucky }) });
+      const response = await fetch("/api/generate-route", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ plan: current, prompt: sourcePrompt, places: pickedPlaces, lucky: isLucky }) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Neizdevās ģenerēt maršrutu.");
       const route = (data as GenerateRouteResponse).routes[0];
@@ -154,7 +154,7 @@ export default function Home() {
     const budget = current.budget.mode === "duration" ? `~${current.budget.value} h` : current.budget.mode === "distance" ? `~${current.budget.value} km` : "brīvs ilgums";
     const conversation: ChatMessage[] = [{ role: "user", content: `${places}, ${budget}.` }];
     setMessages(conversation);
-    try { await generate(current, conversation); }
+    try { await generate(current, conversation, picked); }
     finally { setPhase("idle"); busyRef.current = false; }
   }
   async function retryLast() {

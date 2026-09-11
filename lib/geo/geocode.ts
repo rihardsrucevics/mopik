@@ -1,3 +1,5 @@
+import { lookupPlace } from "@/lib/chat/photon";
+
 const GH_BASE = "https://graphhopper.com/api/1";
 
 export type GeocodeResult = { lat: number; lon: number; label: string };
@@ -103,6 +105,15 @@ export async function geocode(input: string): Promise<GeocodeResult> {
   const q = input.trim();
   let fallback: Hit | null = null;
   let best: Hit | null = null;
+
+  // Settlements first, from the same Photon lookup the form's picker uses:
+  // Baltic towns and villages only, Latvia first. GraphHopper's fuzzy search
+  // put a "Valmiera" office in Rīga ahead of the city; a settlement whose
+  // name matches the typed (or de-inflected) word is what a rider means.
+  for (const candidate of latvianNominativeCandidates(q).slice(0, MAX_CANDIDATES)) {
+    const hit = await lookupPlace(candidate).catch(() => null);
+    if (hit && fold(hit.name) === fold(candidate)) return { lat: hit.lat, lon: hit.lon, label: hit.label };
+  }
 
   for (const candidate of latvianNominativeCandidates(q).slice(0, MAX_CANDIDATES)) {
     let hits: Hit[];
