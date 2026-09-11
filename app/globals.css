@@ -153,3 +153,57 @@ body {
   letter-spacing: -0.011em;
   -webkit-font-smoothing: antialiased;
 }
+
+/* ---------------------------------------------------------------------- */
+/* Mopik motion: the route that draws itself (route-loader, intro-splash)  */
+
+@keyframes mopik-draw {
+  0%   { stroke-dashoffset: 1; opacity: 1; }
+  78%  { stroke-dashoffset: 0; opacity: 1; }
+  90%  { stroke-dashoffset: 0; opacity: 1; }
+  100% { stroke-dashoffset: 0; opacity: 0; }
+}
+.mopik-draw {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: mopik-draw var(--mopik-dur, 3.6s) cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+/* The masks punch dashes and dots into the drawn line as it passes, so the
+   stroke reads solid → dashed → dotted; they fade with the line. */
+@keyframes mopik-mask {
+  0%, 88% { opacity: 1; }
+  100%    { opacity: 0; }
+}
+.mopik-draw-mask { animation: mopik-mask var(--mopik-dur, 3.6s) linear infinite; }
+
+@keyframes mopik-bike-fade {
+  0%   { opacity: 0; }
+  4%   { opacity: 1; }
+  78%  { opacity: 1; }
+  86%  { opacity: 0; }
+  100% { opacity: 0; }
+}
+.mopik-bike { animation: mopik-bike-fade var(--mopik-dur, 3.6s) linear infinite; }
+
+@keyframes mopik-fade-in {
+  from { opacity: 0; transform: translateY(3px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.mopik-fade-in { animation: mopik-fade-in 0.35s ease-out both; }
+
+@keyframes mopik-wordmark {
+  from { opacity: 0; letter-spacing: 0.35em; transform: translateY(6px); }
+  to   { opacity: 1; letter-spacing: -0.025em; transform: translateY(0); }
+}
+.mopik-wordmark { animation: mopik-wordmark 1.1s cubic-bezier(0.2, 0.7, 0.2, 1) 0.5s both; }
+.mopik-tagline  { animation: mopik-fade-in 0.6s ease-out 1.3s both; }
+
+@keyframes mopik-curtain-up {
+  to { transform: translateY(-100%); opacity: 0.6; }
+}
+.mopik-curtain-up { animation: mopik-curtain-up 0.6s cubic-bezier(0.7, 0, 0.3, 1) forwards; }
+
+@media (prefers-reduced-motion: reduce) {
+  .mopik-draw, .mopik-draw-mask, .mopik-bike, .mopik-wordmark, .mopik-tagline, .mopik-fade-in { animation: none; }
+  .mopik-draw { stroke-dashoffset: 0; }
+}

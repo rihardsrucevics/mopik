@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, ArrowUp, LoaderCircle } from "lucide-react";
+import { ArrowLeft, ArrowUp } from "lucide-react";
+import { RouteLoader } from "@/components/route-loader";
 import { ChatMessage, ChatQuickReply, RidePlan, planSummary } from "@/lib/chat/ride-plan";
 
 type Props = {
@@ -10,12 +11,14 @@ type Props = {
   hasRoute: boolean;
   phase: "idle" | "thinking" | "routing";
   quickReplies: ChatQuickReply[];
+  /** the rider gave only a start and no time: the lucky ride */
+  lucky?: boolean;
   onSend: (text: string) => void;
   onBackToForm: () => void;
   /** the result (versions, numbers, download), shown above the input */
 };
 
-export function RoutePrompt({ messages, plan, hasRoute, phase, quickReplies, onSend, onBackToForm }: Props) {
+export function RoutePrompt({ messages, plan, hasRoute, phase, quickReplies, lucky = false, onSend, onBackToForm }: Props) {
   const [text, setText] = useState("");
   const endRef = useRef<HTMLDivElement>(null);
   const busy = phase !== "idle";
@@ -65,7 +68,7 @@ export function RoutePrompt({ messages, plan, hasRoute, phase, quickReplies, onS
             {quickReplies.map((reply) => <button key={reply.label} type="button" onClick={() => send(reply.message)} className="rounded-full border border-[#f56300] bg-white px-3.5 py-2 text-xs font-medium text-[#bd4b00] transition hover:bg-[#fff4ec]">{reply.label}</button>)}
           </div>
         )}
-        {busy && <div className="flex items-center gap-2 text-xs text-stone-500" role="status"><LoaderCircle className="size-3.5 animate-spin" />{phase === "thinking" ? "Atjauninu brauciena plānu…" : "Meklēju piemērotus ceļus un pārbaudu maršrutu…"}</div>}
+        {busy && <RouteLoader phase={phase === "thinking" ? "thinking" : lucky ? "lucky" : "routing"} />}
         <div ref={endRef} />
       </div>
 

@@ -1,5 +1,38 @@
 # Mopik — progress log
 
+## 2026-09-11 (night) — the route draws itself, lucky rides, share card
+
+- **Intro and loader animation** (`components/route-loader.tsx`,
+  `components/intro-splash.tsx`, keyframes in `globals.css`). One SVG scene:
+  contour lines, an orange route drawing itself solid → dashed → dotted like
+  the map legend, a motorcycle riding the very path being drawn (SMIL
+  `animateMotion` + `mpath` on `#mopik-route`, so they never drift). The intro
+  plays once per browser session (`sessionStorage`, module-level cache so
+  StrictMode's double effect doesn't mark it seen), skips on click and on
+  `prefers-reduced-motion`. The same scene, smaller, replaces the spinner in
+  chat with phase-specific status lines (thinking / routing / lucky).
+- **Lucky ride.** Start only, no destination, flexible time → the API gets
+  `lucky: true`, targets ~120 km instead of 80, and the result panel opens on
+  the *Sarežģītākā* version with the banner "Bez galamērķa un laika limita?
+  Laimīgais!". Verified: Tukums → 102/117/124 km, 3 versions.
+- **Logo → `/`** with a full reload (fresh plan; eslint rule disabled on that
+  one anchor on purpose).
+- **CTA no longer shrinks** when the profile panel opens: the composer body is
+  a scrollable flex column, so the button needed `shrink-0` (was squeezed to
+  ~30 px on desktop).
+- **OG / share card.** `app/layout.tsx` now has `metadataBase`
+  (www.mopik.eu), Latvian title/description, Open Graph (`lv_LV`), Twitter
+  large card, `lang="lv"`, theme colour. `app/opengraph-image.tsx` renders a
+  1200×630 PNG with `ImageResponse`: the same hill/route/bike motif, wordmark,
+  tagline. Check with any link-preview tool after deploy.
+- **Safari bug, not yet reproduced.** After Rīga → Baldone → Rīga (flexible)
+  Safari showed "The string did not match the expected pattern." (a WebKit
+  `SyntaxError` DOMException; Chromium runs the same plan fine). The error box
+  now appends `name: message — first stack frame` for non-Mopik errors and
+  logs the full error to the console, so the next occurrence tells us where.
+  Suspects: SVG/SMIL attributes in the loader, `sessionStorage`, `Request`
+  construction.
+
 ## 2026-09-11 (evening) — three versions, left-column summary, place picker, Mopik
 
 - **Three versions per request** instead of one, from the same candidate

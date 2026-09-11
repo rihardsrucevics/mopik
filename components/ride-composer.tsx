@@ -137,7 +137,9 @@ export function RideComposer({ initialPlan, profile, onProfileChange, busy, onGe
         <p className="mt-1 hidden text-xs text-stone-500 md:block">Pārējo nosaka tavs profils. Maršrutu varēsi precizēt pēc ģenerēšanas.</p>
       </div>
 
-      <div className="flex flex-1 flex-col gap-4 p-4 md:gap-5 md:p-5">
+      {/* Scrolls inside the fixed-height column when the profile panel is
+          open; overflow-hidden on the section otherwise trapped the content. */}
+      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4 md:gap-5 md:p-5">
         <div className="grid grid-cols-2 gap-2">
           <PlaceInput value={start} onChange={setStart} onPick={(p) => setPick("start", p)} icon={<MapPin className="size-3" />} label="No" placeholder="Rīga" />
           <PlaceInput value={destination} onChange={setDestination} onPick={(p) => setPick("destination", p)} icon={<ArrowRight className="size-3" />} label="Uz" placeholder={tripType === "round_trip" ? "Nav obligāts" : "Ainaži"} />
@@ -172,7 +174,7 @@ export function RideComposer({ initialPlan, profile, onProfileChange, busy, onGe
         {/* Pushed to the bottom on the desktop so the column is used and the
             action is where a form's action belongs. */}
         <div className="md:mt-auto" />
-        <button type="button" onClick={submit} disabled={busy} className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[#f56300] text-sm font-semibold text-white transition hover:bg-[#d85600] disabled:opacity-50"><Sparkles className="size-4" />Izveidot maršrutu</button>
+        <button type="button" onClick={submit} disabled={busy} className="flex h-12 w-full shrink-0 items-center justify-center gap-2 rounded-full bg-[#f56300] text-sm font-semibold text-white transition hover:bg-[#d85600] disabled:opacity-50"><Sparkles className="size-4" />Izveidot maršrutu</button>
         <button type="button" onClick={onUseChat} disabled={busy} className="w-full text-center text-xs text-stone-500 underline decoration-stone-300 underline-offset-4 hover:text-stone-800">Vai arī aprakstīt braucienu čatā</button>
       </div>
     </section>

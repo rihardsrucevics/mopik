@@ -63,6 +63,11 @@ const RequestSchema = z.object({
   /** fully resolved intent, e.g. on "Generate another" — skips parsing */
   intent: RouteIntentSchema.optional(),
   /**
+   * Start only, no destination, flexible time — "surprise me". Aims for a
+   * fuller day than the flexible default so there is something to find.
+   */
+  lucky: z.boolean().optional(),
+  /**
    * Include per-edge raw OSM tags in each route (`debugEdges`). For
    * measurement scripts; never set by the UI.
    */
@@ -796,7 +801,7 @@ export async function POST(req: NextRequest) {
       try { requiredVia.push(await resolvePlace(name)); }
       catch { return NextResponse.json({ error: `Neizdevās atrast obligāto pieturvietu “${name}”. Precizē to čatā.` }, { status: 422 }); }
     }
-    let targetKm = body.plan?.budget.mode === "flexible" ? 80 : resolveTargetDistanceKm(intent);
+    let targetKm = body.plan?.budget.mode === "flexible" ? (body.lucky ? 120 : 80) : resolveTargetDistanceKm(intent);
 
     // Plain loops get a calibration route first (TET and one-way rides have
     // fixed shapes). It corrects the anchor radius — and, for a duration

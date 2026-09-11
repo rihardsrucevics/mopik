@@ -197,6 +197,17 @@ Fidelity check: `BROUTER_BASE_URL=http://localhost:17777 npx tsx scripts/fidelit
   "Road" and the track figure read 2% on a route that was half gravel.
 - An untagged `highway=track` reports as gravel. `unclassified` stays
   "unknown" on purpose — rural means gravel, urban means asphalt.
+- **The left column is either the result or the chat, never both.** The
+  form → result panel (versions, numbers, GPX, "Ko mainīt?" box) → chat while a
+  correction is being processed → result again. The map stays visible.
+- **Animation is one SVG scene reused twice** (`RouteScene`): the intro splash
+  and the in-chat loader. Bike follows the drawn path via SMIL `mpath`; keep
+  the route id `#mopik-route` in sync if you change it.
+- **Lucky ride** = start only + no destination + flexible time. Not a mode the
+  rider picks; detected in `app/page.tsx`, sent as `lucky: true`, and the
+  API aims for ~120 km and the result opens on *Sarežģītākā*.
+- **Logo reloads `/`** on purpose (fresh state), hence the disabled
+  `no-html-link-for-pages` rule on that anchor.
 
 ## Environment
 
@@ -245,7 +256,9 @@ runner: macOS then denies it Documents access and every route 500s with
   cached contours is designed but not wired up — see the audit plan, item 3.
 - Direction hints ("uz Siguldas pusi" vs "caur Siguldu") designed, including
   Latvian case handling, not implemented.
-- Two pre-existing lint errors in `route-map.tsx` / `route-prompt.tsx`.
+- Safari-only "The string did not match the expected pattern." after a
+  generation (WebKit `SyntaxError` DOMException); unreproduced in Chromium.
+  The error box now shows `name: message — frame`; ask the rider for that text.
 - Free-text geocoding still on GraphHopper; the form's picked places bypass it via `/api/places` (Photon, Baltic settlements only).
 - **The Stadia free tier forbids commercial use.** Both routers can be
   self-hosted (BRouter and Valhalla are both open source) — that's the path if

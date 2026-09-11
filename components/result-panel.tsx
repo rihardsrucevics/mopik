@@ -33,8 +33,10 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = false, busy, onSend, onBackToForm }: {
+export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = false, lucky = false, busy, onSend, onBackToForm }: {
   routes: GeneratedRoute[];
+  /** start only, no destination, no time: the most interesting ride we could find */
+  lucky?: boolean;
   selected: number;
   onSelect: (index: number) => void;
   plan: RidePlan | null;
@@ -92,6 +94,11 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
       </div>
 
       <div className="flex-1 space-y-3 overflow-y-auto p-3 md:p-4">
+        {lucky && (
+          <p className="rounded-xl bg-[#fff3ea] px-3 py-2 text-xs leading-relaxed text-[#8a3a00]">
+            <span className="font-semibold">Bez galamērķa un laika limita? Laimīgais!</span> Šī ir interesantākā trase, ko atradām — versijas zemāk, ja gribi citu.
+          </p>
+        )}
         {routes.length > 1 && (
           <div role="tablist" aria-label="Maršruta versijas" className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${routes.length}, minmax(0, 1fr))` }}>
             {routes.map((r, index) => {
