@@ -40,8 +40,8 @@ export function BeerPopup({ open, onClose }: { open: boolean; onClose: () => voi
           <path d="M 27 16 q 6 0 6 5.5 q 0 5.5 -5.5 6" fill="none" stroke="#78716c" strokeWidth="1.2" strokeLinecap="round" />
           <circle cx="17" cy="26" r="0.9" fill="#fff7d6" /><circle cx="21" cy="22" r="0.7" fill="#fff7d6" /><circle cx="23" cy="29" r="0.8" fill="#fff7d6" />
         </svg>
-        <h2 id="beer-title" className="mt-3 text-2xl font-bold tracking-tight">GPX ir tavs. Lai labi brauc!</h2>
-        <p className="mt-2 text-sm text-stone-400">Ja trase patika, uzsauc man aliņu.</p>
+        <h2 id="beer-title" className="mt-3 text-2xl font-bold tracking-tight">Lai labi braucas!</h2>
+        <p className="mt-2 text-sm text-stone-400">Un tagad uzsauc man aliņu.</p>
         <a href={BEER_LINK} target="_blank" rel="noopener noreferrer" onClick={track}
           className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[#f56300] text-sm font-semibold text-white transition hover:bg-[#ff7a1f]">
           5 € caur Revolut 🍺
