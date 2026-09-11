@@ -22,7 +22,18 @@ gtag is on the page. Without the key it is a no-op. Events, all client-side:
 | `feedback_sent` | feedback dialog | with_email, length |
 | `map_fullscreen` | phone map expanded | — |
 
-Set-up left to do in PostHog itself (or via its MCP once connected):
+Done via the PostHog MCP (2026-09-12): project key in Vercel production
+(`NEXT_PUBLIC_POSTHOG_KEY`), session replay + console capture on, timezone
+Europe/Riga, dashboard **Mopik lietojums** (id 947311,
+https://eu.posthog.com/project/272078/dashboard/947311) with: generations
+per day + unique riders, GPX downloads per day, download/generation ratio
+(Metric, vs previous period), downloads by version (pie), form vs chat,
+where the chat steps in (infeasible / overlap), chat messages and chips,
+beer popup vs clicks, feedback, visitors, average km/minutes/repeated per
+week, and a header tile linking to Replay and the event stream. Verified
+in production: the page loads `eu-assets.i.posthog.com/array/<key>/config.js`.
+
+Originally planned:
 project API key into Vercel as `NEXT_PUBLIC_POSTHOG_KEY`, session replay
 enabled in project settings, and a dashboard with: generations per day,
 GPX downloads per day and the download/generation ratio, downloads by

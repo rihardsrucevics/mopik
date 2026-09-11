@@ -264,7 +264,8 @@ POI data: `python3 scripts/build_poi_dataset.py` → `public/poi-baltics.geojson
 re-run after changing scores needs no network. Overpass rate-limits a full
 build into connection refusals; the script rotates mirrors.
 
-- `NEXT_PUBLIC_POSTHOG_KEY` (optional, public): PostHog EU project key;
+- `NEXT_PUBLIC_POSTHOG_KEY` (public): PostHog EU project 272078 "Mopiks", org Great
+  Success; dashboard "Mopik lietojums" 947311. Set in Vercel production.
   `track()` in `lib/analytics.ts` is a no-op without it. Add new events to
   the `AnalyticsEvent` union and the table in PROGRESS.md.
 - `RESEND_API_KEY` (optional): rider feedback e-mails via Resend to
