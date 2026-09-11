@@ -44,3 +44,6 @@ next-env.d.ts
 
 # raw Overpass dumps cached by scripts/build_poi_dataset.py
 .poi-cache/
+
+# agent worktrees
+.claude/worktrees/

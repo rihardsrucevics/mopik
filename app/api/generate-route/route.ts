@@ -1094,14 +1094,20 @@ export async function POST(req: NextRequest) {
     const excessDriftPercent = (s: Scored) => {
       if (body.plan?.budget.mode === "flexible") return 0;
       const tolerance = intent.distanceTolerancePercent / 100;
+      // "Līdz 4 h" is a ceiling, not a target: a shorter ride is allowed and
+      // costs half as much drift as it would against "~4 h", so near-ceiling
+      // rides still lead but a clean 3 h loop is not thrown away.
+      const isMaximum = body.plan?.budget.constraint === "maximum";
+      const drift = (value: number, target: number, free: number) => {
+        const off = Math.max(0, Math.abs(value - target) - free);
+        return (off / target) * 100 * (isMaximum && value < target ? 0.5 : 1);
+      };
       if (targetMinutes) {
         const minutes = s.classified.durationSeconds / 60;
-        const free = Math.max(tolerance * targetMinutes, 15);
-        return (Math.max(0, Math.abs(minutes - targetMinutes) - free) / targetMinutes) * 100;
+        return drift(minutes, targetMinutes, Math.max(tolerance * targetMinutes, 15));
       }
       const km = s.path.distanceMeters / 1000;
-      const free = Math.max(tolerance * targetKm, 10);
-      return (Math.max(0, Math.abs(km - targetKm) - free) / targetKm) * 100;
+      return drift(km, targetKm, Math.max(tolerance * targetKm, 10));
     };
     const withinTolerance = (s: Scored) => excessDriftPercent(s) === 0;
 
@@ -1259,6 +1265,24 @@ export async function POST(req: NextRequest) {
     pick("complex", [...complexPool].sort((a, b) => complexScore(a) - complexScore(b)));
     const order: RouteVariant[] = ["direct", "balanced", "complex"];
     const picked = [...variantOf.entries()].sort((a, b) => order.indexOf(a[1]) - order.indexOf(b[1])).map(([c]) => c);
+    // Fewer than three distinct picks (the public BRouter routes far fewer
+    // shapes than a self-hosted one, and two shapes can converge on the same
+    // roads): fill the remaining slots with the next distinct acceptable
+    // candidates, nearest the budget first. A shorter or slightly longer
+    // second option beats showing one.
+    if (picked.length < SHOWN_VARIANTS) {
+      const fillers = competing
+        .filter((c) => !variantOf.has(c) && excessDriftPercent(c) <= MAX_EXCESS_DRIFT)
+        .sort((a, b) => excessDriftPercent(a) - excessDriftPercent(b) || a.classified.overlap.repeatedPercent - b.classified.overlap.repeatedPercent);
+      for (const c of fillers) {
+        if (picked.length >= SHOWN_VARIANTS) break;
+        const slot = order.find((v) => ![...variantOf.values()].includes(v));
+        if (!slot || !distinct(c)) continue;
+        variantOf.set(c, slot);
+        picked.push(c);
+      }
+      picked.sort((a, b) => order.indexOf(variantOf.get(a)!) - order.indexOf(variantOf.get(b)!));
+    }
     const chosen = [...fixed, ...picked].slice(0, SHOWN_VARIANTS);
 
     const startName = start.label.split(",")[0];
