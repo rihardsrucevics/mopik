@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowUp } from "lucide-react";
 import { RouteLoader } from "@/components/route-loader";
+import { track } from "@/lib/analytics";
 import { ChatMessage, ChatQuickReply, RidePlan, planSummary } from "@/lib/chat/ride-plan";
 
 type Props = {
@@ -78,7 +79,7 @@ export function RoutePrompt({ messages, plan, hasRoute, phase, quickReplies, luc
         ))}
         {!busy && quickReplies.length > 0 && (
           <div className="flex flex-wrap gap-2" aria-label="Ātrās atbildes">
-            {quickReplies.map((reply) => <button key={reply.label} type="button" onClick={() => (reply.action ? onAction?.(reply.action) : send(reply.message))} className="rounded-full border border-[#f56300] bg-white px-3.5 py-2 text-xs font-medium text-[#bd4b00] transition hover:bg-[#fff4ec]">{reply.label}</button>)}
+            {quickReplies.map((reply) => <button key={reply.label} type="button" onClick={() => { track("quick_reply_used", { label: reply.label, action: reply.action ?? "message" }); if (reply.action) onAction?.(reply.action); else send(reply.message); }} className="rounded-full border border-[#f56300] bg-white px-3.5 py-2 text-xs font-medium text-[#bd4b00] transition hover:bg-[#fff4ec]">{reply.label}</button>)}
           </div>
         )}
         {busy && <RouteLoader phase={phase === "thinking" ? "thinking" : lucky ? "lucky" : "routing"} />}

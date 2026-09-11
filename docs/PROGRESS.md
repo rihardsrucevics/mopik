@@ -1,5 +1,34 @@
 # Mopik — progress log
 
+## 2026-09-12 (late, 6) — product analytics: PostHog (EU) beside GA
+
+`lib/analytics.ts` is the one `track(event, props)` for the app. It sends to
+PostHog when `NEXT_PUBLIC_POSTHOG_KEY` is set (EU cloud, project 272078,
+host `eu.i.posthog.com`; session replay on with e-mail/password inputs
+masked; autocapture off; anonymous persons) and to Google Analytics when the
+gtag is on the page. Without the key it is a no-op. Events, all client-side:
+
+| event | when | key props |
+|---|---|---|
+| `form_generate` | composer button | budget, round_trip, via_count, profile, picked_places |
+| `chat_message_sent` | typed chat message | length, has_route, turn |
+| `quick_reply_used` | a chip | label, action |
+| `route_generated` | routes arrived | versions, km, minutes, repeated, unpaved, budget_*, focus_area, remote_loop, lucky, infeasible, source |
+| `route_infeasible` | nothing fits the time | requested_minutes, minimum_minutes, direct_km |
+| `overlap_chat_shown` | best version > 20 % repeated | best_repeated, km |
+| `route_version_selected` | version card | variant, km |
+| `gpx_downloaded` | the GPX button | variant, km, minutes, repeated, unpaved |
+| `beer_popup` / `beer_click` | thank-you shown / Revolut tapped | link |
+| `feedback_sent` | feedback dialog | with_email, length |
+| `map_fullscreen` | phone map expanded | — |
+
+Set-up left to do in PostHog itself (or via its MCP once connected):
+project API key into Vercel as `NEXT_PUBLIC_POSTHOG_KEY`, session replay
+enabled in project settings, and a dashboard with: generations per day,
+GPX downloads per day and the download/generation ratio, downloads by
+variant, infeasible and overlap-chat rates, chat turns per ride, beer
+clicks, feedback count, replays list.
+
 ## 2026-09-12 (late, 5) — Rīga → Valmiera → Rīga retraced 34 %: the offsets had no budget
 
 With a flexible duration the via ride planned against the 80 km loop

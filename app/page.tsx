@@ -7,6 +7,7 @@ import { RouteMap } from "@/components/route-map";
 import { RoutePrompt } from "@/components/route-prompt";
 import { ResultPanel } from "@/components/result-panel";
 import { FeedbackDialog } from "@/components/feedback-dialog";
+import { track } from "@/lib/analytics";
 import { IntroSplash } from "@/components/intro-splash";
 import { RideComposer } from "@/components/ride-composer";
 import { ChatMessage, ChatQuickReply, ChatResponse, RidePlan, planSummary } from "@/lib/chat/ride-plan";
@@ -82,7 +83,17 @@ export default function Home() {
       const route = (data as GenerateRouteResponse).routes[0];
       if (!route) throw new Error("Neizdevās atrast prasībām atbilstošu maršrutu.");
       const verdict = (data as GenerateRouteResponse).infeasible;
+      const first = (data as GenerateRouteResponse).routes[0];
+      track("route_generated", {
+        versions: (data as GenerateRouteResponse).routes.length, km: Math.round(first.distanceMeters / 1000), minutes: Math.round(first.durationSeconds / 60),
+        repeated: first.overlap.repeatedPercent, unpaved: first.surfaces.gravelPercent + first.surfaces.dirtPercent,
+        budget_mode: current.budget.mode, budget_value: current.budget.value ?? undefined, budget_constraint: current.budget.constraint,
+        round_trip: current.returnToStart ?? undefined, via_count: current.viaPlaces.length, focus_area: Boolean(current.focusArea), lucky: isLucky,
+        difficulty: current.difficulty, style: current.rideStyle, gravel: current.gravelPreference ?? undefined, trails: current.trailPreference,
+        remote_loop: Boolean((data as GenerateRouteResponse).remoteLoop), infeasible: Boolean(verdict), source: conversation.length <= 1 ? "form" : "chat",
+      });
       if (verdict) {
+        track("route_infeasible", { requested_minutes: verdict.requestedMinutes, minimum_minutes: verdict.minimumMinutes, direct_km: verdict.directKm });
         // The request cannot be ridden on these roads in this time. The
         // nearest ride is on the map; the chat says what does not fit, what
         // the minimum is, and offers the ways out as taps — never an error.
@@ -106,6 +117,7 @@ export default function Home() {
       const OVERLAP_CHAT_PERCENT = 20;
       const bestRepeat = Math.min(...(data as GenerateRouteResponse).routes.map((r) => r.overlap.repeatedPercent));
       if (bestRepeat > OVERLAP_CHAT_PERCENT) {
+        track("overlap_chat_shown", { best_repeated: bestRepeat, km: Math.round(route.distanceMeters / 1000) });
         setLucky(false);
         const km = Math.round(route.overlap.repeatedKm);
         setMessages([...conversation, { role: "assistant", content: `Šeit neizdevās atrast trasi bez atkārtošanās: labākā versija ${bestRepeat} % ceļa (${km} km) brauc pa jau nobrauktiem ceļiem. Trase ir kartē, bet es to labāk pārtaisītu. Ko darām?` }]);
@@ -160,6 +172,7 @@ export default function Home() {
     if (messages.length >= 37) { setError("Saruna sasniegusi šīs versijas garuma robežu. Sāc jaunu braucienu."); return; }
     busyRef.current = true; setError(null); setRetry(null);
     setQuickReplies([]); setChatting(true);
+    track("chat_message_sent", { length: text.length, has_route: Boolean(route), turn: messages.filter((m) => m.role === "user").length + 1 });
     const next: ChatMessage[] = [...messages, { role: "user", content: text }];
     setMessages(next);
     try { await converse(next, plan ?? seedPlanFromProfile(profile)); } finally { setPhase("idle"); busyRef.current = false; }
@@ -167,6 +180,7 @@ export default function Home() {
   async function startFromForm(current: RidePlan, picked: ResolvedPlace[]) {
     if (busyRef.current) return;
     busyRef.current = true; setError(null); setRetry(null); setQuickReplies([]); setResult(null); setPlan(current); setPlaces(picked); setEntryMode("chat");
+    track("form_generate", { budget_mode: current.budget.mode, budget_value: current.budget.value ?? undefined, round_trip: current.returnToStart ?? undefined, via_count: current.viaPlaces.length, difficulty: current.difficulty, style: current.rideStyle, gravel: current.gravelPreference ?? undefined, picked_places: picked.length });
     // Short: the profile is in the panel header and the plan object travels
     // with every chat turn, so the message only needs the places and budget.
     const places = [current.startPlace, ...current.viaPlaces, current.returnToStart ? current.startPlace : current.destinationPlace].filter(Boolean).join(" → ");
@@ -214,7 +228,7 @@ export default function Home() {
             ? "fixed inset-0 z-40 bg-[#faf9f6] md:relative md:inset-auto md:z-auto md:h-[calc(100vh-7rem)] md:overflow-hidden md:rounded-2xl md:border md:border-stone-200"
             : `relative overflow-hidden rounded-2xl border border-stone-200 md:h-[calc(100vh-7rem)] ${result && chatting ? "h-[26dvh]" : "h-[42dvh]"}`}>
             <RouteMap segments={route?.segments ?? null} start={result?.start ?? null} destination={result?.destination ?? null} via={result?.via} showTet={showTet} onToggleTet={setShowTet} />
-            <button type="button" onClick={() => setMapExpanded((v) => !v)} aria-label={mapExpanded ? "Aizvērt pilnekrāna karti" : "Karte pa visu ekrānu"}
+            <button type="button" onClick={() => setMapExpanded((v) => { if (!v) track("map_fullscreen"); return !v; })} aria-label={mapExpanded ? "Aizvērt pilnekrāna karti" : "Karte pa visu ekrānu"}
               className="absolute bottom-3 left-3 flex size-10 items-center justify-center rounded-full border border-stone-200 bg-white/95 text-stone-700 shadow-sm backdrop-blur md:hidden">
               {mapExpanded ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
             </button>

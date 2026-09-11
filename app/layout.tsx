@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import Script from "next/script";
+import { AnalyticsProvider } from "@/components/analytics-provider";
 import "./globals.css";
 
 const SITE_URL = "https://www.mopik.eu";
@@ -42,6 +43,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html lang="lv" className="h-full antialiased">
       <body className="min-h-full flex flex-col">
         {children}
+        <AnalyticsProvider />
         {/* Google Analytics (gtag.js), loaded after hydration so it never delays the page. */}
         <Script src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`} strategy="afterInteractive" />
         <Script id="ga-init" strategy="afterInteractive">{`

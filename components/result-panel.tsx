@@ -5,6 +5,7 @@ import { ArrowLeft, ArrowUp, ChevronDown, ChevronUp, Download, LoaderCircle } fr
 import { GeneratedRoute, GenerateRouteResponse } from "@/lib/types";
 import { RidePlan, planSummary } from "@/lib/chat/ride-plan";
 import { BeerPopup } from "@/components/beer-popup";
+import { track } from "@/lib/analytics";
 
 /**
  * The left column once routes exist: what was asked, the three versions,
@@ -65,6 +66,7 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
     // sheet and the programmatic click after an await left a timer-driven
     // popup never showing. The file downloads underneath it.
     setBeer(true);
+    track("gpx_downloaded", { variant: route.variant, km: Math.round(route.distanceMeters / 1000), minutes: Math.round(route.durationSeconds / 60), repeated: route.overlap.repeatedPercent, unpaved: unpaved(route) });
     try {
       const res = await fetch("/api/export-gpx", {
         method: "POST",
@@ -158,7 +160,7 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
               const active = index === selected;
               const meta = VARIANT_LABELS[r.variant] ?? { label: `Versija ${index + 1}`, detail: "" };
               return (
-                <button key={r.id} role="tab" type="button" aria-selected={active} onClick={() => onSelect(index)}
+                <button key={r.id} role="tab" type="button" aria-selected={active} onClick={() => { track("route_version_selected", { variant: r.variant, km: Math.round(r.distanceMeters / 1000) }); onSelect(index); }}
                   className={`min-w-0 rounded-xl border px-2.5 py-2 text-left transition ${active ? "border-stone-900 bg-stone-900 text-white" : "border-stone-200 bg-[#faf9f6] text-stone-700 hover:border-stone-300"}`}>
                   <div className="truncate text-xs font-semibold">{meta.label}</div>
                   <div className={`truncate text-[10px] ${active ? "text-stone-300" : "text-stone-500"}`}>{meta.detail}</div>

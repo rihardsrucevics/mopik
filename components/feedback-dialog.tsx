@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
+import { track } from "@/lib/analytics";
 
 /**
  * "Atsauksme": a rider's note straight to the maker. Posts to /api/feedback,
@@ -28,7 +29,7 @@ export function FeedbackDialog({ open, onClose, context }: { open: boolean; onCl
     try {
       const res = await fetch("/api/feedback", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: text.trim(), email: email.trim() || undefined, context, page: window.location.href }) });
       const data = await res.json().catch(() => ({}));
-      if (res.ok) { setState("sent"); setText(""); return; }
+      if (res.ok) { track("feedback_sent", { with_email: Boolean(email.trim()), length: text.trim().length }); setState("sent"); setText(""); return; }
       if (data.mailto) { window.location.href = data.mailto; setState("sent"); return; }
       throw new Error(data.error || "Neizdevās nosūtīt.");
     } catch (e) {

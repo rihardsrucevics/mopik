@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import Image from "next/image";
 import { X } from "lucide-react";
+import { track } from "@/lib/analytics";
 
 /**
  * After a GPX download: a full-screen, dark thank-you in the colour of the
@@ -11,10 +12,6 @@ import { X } from "lucide-react";
  */
 export const BEER_LINK = "https://revolut.me/rucijs";
 
-declare global {
-  interface Window { gtag?: (...args: unknown[]) => void }
-}
-
 export function BeerPopup({ open, onClose }: { open: boolean; onClose: () => void }) {
   useEffect(() => {
     if (!open) return;
@@ -22,11 +19,11 @@ export function BeerPopup({ open, onClose }: { open: boolean; onClose: () => voi
     window.addEventListener("keydown", onKey);
     const previous = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    try { window.gtag?.("event", "beer_popup"); } catch { /* optional */ }
+    track("beer_popup");
     return () => { window.removeEventListener("keydown", onKey); document.body.style.overflow = previous; };
   }, [open, onClose]);
   if (!open) return null;
-  const track = () => { try { window.gtag?.("event", "beer_click", { link: BEER_LINK }); } catch { /* optional */ } };
+  const onBeer = () => track("beer_click", { link: BEER_LINK });
 
   return (
     <div role="dialog" aria-modal="true" aria-labelledby="beer-title" onClick={onClose}
@@ -42,7 +39,7 @@ export function BeerPopup({ open, onClose }: { open: boolean; onClose: () => voi
         </svg>
         <h2 id="beer-title" className="mt-3 text-2xl font-bold tracking-tight">Lai labi braucas!</h2>
         <p className="mt-2 text-sm text-stone-400">Un tagad uzsauc man aliņu.</p>
-        <a href={BEER_LINK} target="_blank" rel="noopener noreferrer" onClick={track}
+        <a href={BEER_LINK} target="_blank" rel="noopener noreferrer" onClick={onBeer}
           className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[#f56300] text-sm font-semibold text-white transition hover:bg-[#ff7a1f]">
           5 € caur Revolut 🍺
         </a>
