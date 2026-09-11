@@ -51,7 +51,10 @@ export function BeerPopup({ open, onClose }: { open: boolean; onClose: () => voi
           <Image src="/revolut-qr-dark.svg" alt="QR kods: revolut.me/rucijs" width={132} height={132} unoptimized className="rounded-xl" />
           <span className="text-[11px] text-stone-500">Noskenē ar telefonu</span>
         </div>
-        <button type="button" onClick={onClose} className="mt-5 text-xs text-stone-500 underline decoration-stone-600 underline-offset-4 hover:text-stone-300">Varbūt citreiz</button>
+        <p className="mt-5 text-xs text-stone-500">
+          Rihards · <span className="text-stone-300">@rucijs</span> · <a href="mailto:rihards.rucevics@gmail.com" className="text-stone-300 underline decoration-stone-600 underline-offset-4 hover:text-white">rihards.rucevics@gmail.com</a>
+        </p>
+        <button type="button" onClick={onClose} className="mt-3 text-xs text-stone-500 underline decoration-stone-600 underline-offset-4 hover:text-stone-300">Varbūt citreiz</button>
       </div>
     </div>
   );
