@@ -25,7 +25,7 @@
 
 A small dashed card under the route result: beer glyph, "Patika trase?
 Uzsauc man aliņu.", a "5 € 🍺" button to the Revolut link with the amount in
-the path (`https://revolut.me/rucijs/5eur`; the base link works if the
+the path (`https://revolut.me/rucijs`; the base link works if the
 amount is not prefilled) and, on desktop only, a QR code encoding the same
 link (`public/revolut-qr.svg`, generated with the `qrcode` CLI, 37×37
 modules). Clicks send a `beer_click` GA event when gtag is present.

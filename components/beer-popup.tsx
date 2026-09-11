@@ -9,7 +9,7 @@ import { X } from "lucide-react";
  * Revolut QR card. One button to the 5 EUR link, the QR for riders on a
  * desktop, and every way to skip it (×, outside click, Escape).
  */
-export const BEER_LINK = "https://revolut.me/rucijs/5eur";
+export const BEER_LINK = "https://revolut.me/rucijs";
 
 declare global {
   interface Window { gtag?: (...args: unknown[]) => void }
@@ -48,7 +48,7 @@ export function BeerPopup({ open, onClose }: { open: boolean; onClose: () => voi
         </a>
         {/* Desktop: the phone scans this. */}
         <div className="mt-5 hidden flex-col items-center gap-2 md:flex">
-          <Image src="/revolut-qr-dark.svg" alt="QR kods: revolut.me/rucijs, 5 €" width={132} height={132} unoptimized className="rounded-xl" />
+          <Image src="/revolut-qr-dark.svg" alt="QR kods: revolut.me/rucijs" width={132} height={132} unoptimized className="rounded-xl" />
           <span className="text-[11px] text-stone-500">Noskenē ar telefonu</span>
         </div>
         <button type="button" onClick={onClose} className="mt-5 text-xs text-stone-500 underline decoration-stone-600 underline-offset-4 hover:text-stone-300">Varbūt citreiz</button>
