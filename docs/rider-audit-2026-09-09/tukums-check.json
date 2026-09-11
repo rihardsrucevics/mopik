@@ -1,0 +1,37 @@
+{
+  "seconds": 5.457099,
+  "parser": "llm",
+  "intent": {
+    "routeType": "round_trip",
+    "durationHours": 2,
+    "difficulty": "easy",
+    "gravelPreference": 85,
+    "trailPreference": "none",
+    "preferForest": false,
+    "includeSightseeing": false,
+    "avoidMotorways": true,
+    "avoidMainRoads": false,
+    "noSand": false,
+    "avoidTowns": false,
+    "returnToStart": true,
+    "includeTet": false,
+    "distanceTolerancePercent": 20
+  },
+  "routes": [
+    {
+      "km": 100.8,
+      "minutes": 133,
+      "repeatedPercent": 0
+    },
+    {
+      "km": 93.6,
+      "minutes": 132,
+      "repeatedPercent": 0
+    },
+    {
+      "km": 104.6,
+      "minutes": 134,
+      "repeatedPercent": 0
+    }
+  ]
+}

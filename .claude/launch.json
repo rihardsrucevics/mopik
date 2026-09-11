@@ -4,8 +4,17 @@
     {
       "name": "dev",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "port": 3000
+    },
+    {
+      "name": "brouter",
+      "runtimeExecutable": "../brouter-server/start.sh",
+      "runtimeArgs": [],
+      "port": 17777
     }
   ]
 }

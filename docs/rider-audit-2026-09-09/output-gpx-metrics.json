@@ -1,0 +1,32 @@
+[
+  {
+    "file": "ropazi-A.gpx",
+    "points": 4116,
+    "segments": 1,
+    "km": 166.51,
+    "repeatedKm": 0.36,
+    "repeatedPercent": 0.2,
+    "closureKm": 0.0,
+    "reversals": []
+  },
+  {
+    "file": "ropazi-B.gpx",
+    "points": 4420,
+    "segments": 1,
+    "km": 188.65,
+    "repeatedKm": 6.52,
+    "repeatedPercent": 3.5,
+    "closureKm": 0.0,
+    "reversals": []
+  },
+  {
+    "file": "ropazi-C.gpx",
+    "points": 4425,
+    "segments": 1,
+    "km": 174.79,
+    "repeatedKm": 0.36,
+    "repeatedPercent": 0.2,
+    "closureKm": 0.0,
+    "reversals": []
+  }
+]

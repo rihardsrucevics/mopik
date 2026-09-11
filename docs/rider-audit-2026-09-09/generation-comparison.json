@@ -1,0 +1,1030 @@
+{
+  "before": {
+    "intent": {
+      "routeType": "round_trip",
+      "durationHours": 6,
+      "difficulty": "adventure",
+      "gravelPreference": 90,
+      "trailPreference": "lots",
+      "avoidMotorways": true,
+      "avoidMainRoads": true,
+      "noSand": false,
+      "avoidTowns": false,
+      "returnToStart": true,
+      "includeTet": false,
+      "distanceTolerancePercent": 20
+    },
+    "parser": "llm",
+    "start": {
+      "lat": 56.9493977,
+      "lon": 24.1051846,
+      "label": "Rīga, Latvija"
+    },
+    "debugCalibration": {
+      "targetKm": 171,
+      "radiusKm": 13.8,
+      "measuredFactor": 15.2,
+      "measuredKmh": 28,
+      "calibrationKm": 100
+    },
+    "debugCandidates": [
+      {
+        "variant": "calibration",
+        "km": 99.7,
+        "min": 210,
+        "repeated": 8,
+        "unpaved": 41,
+        "excessDrift": 22,
+        "shown": false
+      },
+      {
+        "variant": "s7b45r1.0",
+        "km": 261.3,
+        "min": 555,
+        "repeated": 22,
+        "unpaved": 66,
+        "excessDrift": 34,
+        "shown": false
+      },
+      {
+        "variant": "s7b90r1.0",
+        "km": 179.8,
+        "min": 392,
+        "repeated": 6,
+        "unpaved": 67,
+        "excessDrift": 0,
+        "shown": true
+      },
+      {
+        "variant": "s7b20r1.2",
+        "km": 276.9,
+        "min": 619,
+        "repeated": 11,
+        "unpaved": 74,
+        "excessDrift": 52,
+        "shown": false
+      },
+      {
+        "variant": "s8b65r1.2",
+        "km": 239.7,
+        "min": 512,
+        "repeated": 19,
+        "unpaved": 70,
+        "excessDrift": 22,
+        "shown": false
+      },
+      {
+        "variant": "s7b135r1.0",
+        "km": 206,
+        "min": 456,
+        "repeated": 8,
+        "unpaved": 69,
+        "excessDrift": 7,
+        "shown": false
+      },
+      {
+        "variant": "s7b0r1.0",
+        "km": 227.3,
+        "min": 490,
+        "repeated": 24,
+        "unpaved": 64,
+        "excessDrift": 16,
+        "shown": false
+      },
+      {
+        "variant": "s8b110r1.0",
+        "km": 178.9,
+        "min": 370,
+        "repeated": 6,
+        "unpaved": 63,
+        "excessDrift": 0,
+        "shown": true
+      },
+      {
+        "variant": "s8b155r1.2",
+        "km": 239.7,
+        "min": 512,
+        "repeated": 19,
+        "unpaved": 70,
+        "excessDrift": 22,
+        "shown": false
+      },
+      {
+        "variant": "s7b0r1.7t0",
+        "km": 185,
+        "min": 425,
+        "repeated": 32,
+        "unpaved": 57,
+        "excessDrift": 0,
+        "shown": false
+      },
+      {
+        "variant": "s7b0r1.7t180",
+        "km": 204.8,
+        "min": 360,
+        "repeated": 15,
+        "unpaved": 81,
+        "excessDrift": 0,
+        "shown": false
+      },
+      {
+        "variant": "s7b0r1.7t270",
+        "km": 156.4,
+        "min": 354,
+        "repeated": 23,
+        "unpaved": 70,
+        "excessDrift": 0,
+        "shown": false
+      },
+      {
+        "variant": "s7b30r1.6w",
+        "km": 235.1,
+        "min": 507,
+        "repeated": 12,
+        "unpaved": 68,
+        "excessDrift": 21,
+        "shown": false
+      },
+      {
+        "variant": "s7b0r2.7t45",
+        "km": 335.8,
+        "min": 678,
+        "repeated": 37,
+        "unpaved": 77,
+        "excessDrift": 68,
+        "shown": false
+      },
+      {
+        "variant": "s7b0r2.7t135",
+        "km": 251.7,
+        "min": 453,
+        "repeated": 9,
+        "unpaved": 76,
+        "excessDrift": 6,
+        "shown": false
+      },
+      {
+        "variant": "s7b0r2.7t225",
+        "km": 357,
+        "min": 604,
+        "repeated": 25,
+        "unpaved": 74,
+        "excessDrift": 48,
+        "shown": false
+      },
+      {
+        "variant": "s7b0r2.7t315",
+        "km": 481.1,
+        "min": 978,
+        "repeated": 37,
+        "unpaved": 76,
+        "excessDrift": 152,
+        "shown": false
+      },
+      {
+        "variant": "s7b75r2.4w",
+        "km": 302.6,
+        "min": 644,
+        "repeated": 24,
+        "unpaved": 72,
+        "excessDrift": 59,
+        "shown": false
+      },
+      {
+        "variant": "s7b165r2.4w",
+        "km": 260,
+        "min": 538,
+        "repeated": 14,
+        "unpaved": 81,
+        "excessDrift": 29,
+        "shown": false
+      },
+      {
+        "variant": "s7b0r4.1t0",
+        "km": 728.5,
+        "min": 1483,
+        "repeated": 41,
+        "unpaved": 75,
+        "excessDrift": 292,
+        "shown": false
+      },
+      {
+        "variant": "s7b0r4.1t180",
+        "km": 439.5,
+        "min": 754,
+        "repeated": 7,
+        "unpaved": 73,
+        "excessDrift": 89,
+        "shown": false
+      },
+      {
+        "variant": "s8b135r1.0",
+        "km": 248,
+        "min": 534,
+        "repeated": 23,
+        "unpaved": 67,
+        "excessDrift": 28,
+        "shown": false
+      },
+      {
+        "variant": "s8b85r1.0",
+        "km": 210.6,
+        "min": 473,
+        "repeated": 5,
+        "unpaved": 71,
+        "excessDrift": 11,
+        "shown": false
+      },
+      {
+        "variant": "s8b110r0.8",
+        "km": 236.1,
+        "min": 516,
+        "repeated": 16,
+        "unpaved": 65,
+        "excessDrift": 23,
+        "shown": false
+      },
+      {
+        "variant": "s8b110r1.2",
+        "km": 239.7,
+        "min": 512,
+        "repeated": 19,
+        "unpaved": 70,
+        "excessDrift": 22,
+        "shown": false
+      },
+      {
+        "variant": "s7b110r1.0",
+        "km": 210.9,
+        "min": 454,
+        "repeated": 21,
+        "unpaved": 62,
+        "excessDrift": 6,
+        "shown": false
+      },
+      {
+        "variant": "s9b110r1.0",
+        "km": 274.1,
+        "min": 586,
+        "repeated": 24,
+        "unpaved": 68,
+        "excessDrift": 43,
+        "shown": false
+      },
+      {
+        "variant": "s7b115r1.0",
+        "km": 220.5,
+        "min": 476,
+        "repeated": 13,
+        "unpaved": 67,
+        "excessDrift": 12,
+        "shown": false
+      },
+      {
+        "variant": "s7b65r1.0",
+        "km": 183.1,
+        "min": 394,
+        "repeated": 10,
+        "unpaved": 72,
+        "excessDrift": 0,
+        "shown": true
+      },
+      {
+        "variant": "s7b90r0.8",
+        "km": 222,
+        "min": 481,
+        "repeated": 8,
+        "unpaved": 68,
+        "excessDrift": 14,
+        "shown": false
+      },
+      {
+        "variant": "s7b90r1.2",
+        "km": 264,
+        "min": 575,
+        "repeated": 24,
+        "unpaved": 66,
+        "excessDrift": 40,
+        "shown": false
+      },
+      {
+        "variant": "s6b90r1.0",
+        "km": 122.2,
+        "min": 251,
+        "repeated": 2,
+        "unpaved": 57,
+        "excessDrift": 10,
+        "shown": false
+      },
+      {
+        "variant": "s8b90r1.0",
+        "km": 248,
+        "min": 534,
+        "repeated": 23,
+        "unpaved": 67,
+        "excessDrift": 28,
+        "shown": false
+      },
+      {
+        "variant": "s7b0r4.1t205",
+        "km": 359,
+        "min": 560,
+        "repeated": 8,
+        "unpaved": 61,
+        "excessDrift": 35,
+        "shown": false
+      },
+      {
+        "variant": "s7b0r4.1t155",
+        "km": 460,
+        "min": 797,
+        "repeated": 12,
+        "unpaved": 74,
+        "excessDrift": 101,
+        "shown": false
+      },
+      {
+        "variant": "s7b0r3.5t180",
+        "km": 339.9,
+        "min": 559,
+        "repeated": 6,
+        "unpaved": 68,
+        "excessDrift": 35,
+        "shown": false
+      },
+      {
+        "variant": "s7b0r4.9t180",
+        "km": 513.6,
+        "min": 846,
+        "repeated": 4,
+        "unpaved": 74,
+        "excessDrift": 115,
+        "shown": false
+      },
+      {
+        "variant": "s6b0r4.1t180",
+        "km": 386.9,
+        "min": 619,
+        "repeated": 8,
+        "unpaved": 68,
+        "excessDrift": 52,
+        "shown": false
+      },
+      {
+        "variant": "s8b0r4.1t180",
+        "km": 418.9,
+        "min": 691,
+        "repeated": 9,
+        "unpaved": 69,
+        "excessDrift": 72,
+        "shown": false
+      }
+    ],
+    "routes": [
+      {
+        "name": "Skatu tornis \"Bumbu kalniņš\" and Sauliešu pilskalns Loop",
+        "distanceMeters": 178850,
+        "durationSeconds": 22185,
+        "roadMix": {
+          "roadPercent": 54,
+          "trackPercent": 42,
+          "trailPercent": 4,
+          "roadKm": 95.9,
+          "trackKm": 75.1,
+          "trailKm": 7.4
+        },
+        "surfaces": {
+          "asphaltPercent": 31,
+          "gravelPercent": 42,
+          "dirtPercent": 21,
+          "unknownPercent": 6
+        },
+        "quality": {
+          "roughTrackKm": 25.6,
+          "sandKm": 2.4,
+          "streetKm": 24.8,
+          "surfaceSwitches": 100,
+          "turnsPer10Km": 7.7
+        },
+        "overlap": {
+          "repeatedKm": 10.3,
+          "distinctKm": 168.1,
+          "repeatedPercent": 6
+        },
+        "stops": [
+          {
+            "name": "Ķīšezers",
+            "category": "viewpoint"
+          },
+          {
+            "name": "Pabaži wind-mill",
+            "category": "mill"
+          },
+          {
+            "name": "Sauliešu pilskalns",
+            "category": "hillfort"
+          },
+          {
+            "name": "RIX plane spotting",
+            "category": "viewpoint"
+          },
+          {
+            "name": "Buļļuciema bāka",
+            "category": "lighthouse"
+          },
+          {
+            "name": "Skatu tornis \"Bumbu kalniņš\"",
+            "category": "tower"
+          }
+        ],
+        "bbox": [
+          23.835397,
+          56.789979,
+          24.44505,
+          57.009643
+        ]
+      },
+      {
+        "name": "Putnu vērošanas tornis and Knābis Loop",
+        "distanceMeters": 179809,
+        "durationSeconds": 23547,
+        "roadMix": {
+          "roadPercent": 50,
+          "trackPercent": 47,
+          "trailPercent": 3,
+          "roadKm": 90.1,
+          "trackKm": 84.1,
+          "trailKm": 5.2
+        },
+        "surfaces": {
+          "asphaltPercent": 29,
+          "gravelPercent": 44,
+          "dirtPercent": 23,
+          "unknownPercent": 4
+        },
+        "quality": {
+          "roughTrackKm": 31.4,
+          "sandKm": 3.7,
+          "streetKm": 31.1,
+          "surfaceSwitches": 122,
+          "turnsPer10Km": 8.2
+        },
+        "overlap": {
+          "repeatedKm": 10.5,
+          "distinctKm": 168.9,
+          "repeatedPercent": 6
+        },
+        "stops": [
+          {
+            "name": "Bulduru pilskalns",
+            "category": "hillfort"
+          },
+          {
+            "name": "Ulbrokas muiža",
+            "category": "manor"
+          },
+          {
+            "name": "Putnu vērošanas tornis",
+            "category": "tower"
+          },
+          {
+            "name": "RIX plane spotting",
+            "category": "viewpoint"
+          },
+          {
+            "name": "Baltā kāpa",
+            "category": "waterfall"
+          },
+          {
+            "name": "Knābis",
+            "category": "tower"
+          }
+        ],
+        "bbox": [
+          23.835397,
+          56.863569,
+          24.44505,
+          57.065785
+        ]
+      },
+      {
+        "name": "Zoss and Skatu tornis \"Bumbu kalniņš\" Loop",
+        "distanceMeters": 183137,
+        "durationSeconds": 23619,
+        "roadMix": {
+          "roadPercent": 48,
+          "trackPercent": 49,
+          "trailPercent": 2,
+          "roadKm": 88.4,
+          "trackKm": 89.8,
+          "trailKm": 4.5
+        },
+        "surfaces": {
+          "asphaltPercent": 23,
+          "gravelPercent": 42,
+          "dirtPercent": 30,
+          "unknownPercent": 5
+        },
+        "quality": {
+          "roughTrackKm": 41.2,
+          "sandKm": 4.3,
+          "streetKm": 17.2,
+          "surfaceSwitches": 80,
+          "turnsPer10Km": 7.9
+        },
+        "overlap": {
+          "repeatedKm": 18.3,
+          "distinctKm": 164.4,
+          "repeatedPercent": 10
+        },
+        "stops": [
+          {
+            "name": "Bonaventuras muiža",
+            "category": "manor"
+          },
+          {
+            "name": "Silabrieži",
+            "category": "village"
+          },
+          {
+            "name": "Mūlkalns",
+            "category": "viewpoint"
+          },
+          {
+            "name": "Zoss",
+            "category": "tower"
+          },
+          {
+            "name": "Priedaines apmetne",
+            "category": "hillfort"
+          },
+          {
+            "name": "Skatu tornis \"Bumbu kalniņš\"",
+            "category": "tower"
+          }
+        ],
+        "bbox": [
+          23.835397,
+          56.789979,
+          24.44505,
+          57.073869
+        ]
+      }
+    ]
+  },
+  "final": {
+    "intent": {
+      "routeType": "round_trip",
+      "durationHours": 6,
+      "difficulty": "adventure",
+      "gravelPreference": 100,
+      "trailPreference": "lots",
+      "preferForest": true,
+      "includeSightseeing": false,
+      "avoidMotorways": true,
+      "avoidMainRoads": false,
+      "noSand": false,
+      "avoidTowns": false,
+      "returnToStart": true,
+      "includeTet": false,
+      "distanceTolerancePercent": 20
+    },
+    "parser": "llm",
+    "start": {
+      "lat": 56.9493977,
+      "lon": 24.1051846,
+      "label": "Rīga, Latvija"
+    },
+    "debugCalibration": {
+      "targetKm": 193,
+      "radiusKm": 18.1,
+      "measuredFactor": 7.5,
+      "measuredKmh": 32,
+      "calibrationKm": 46
+    },
+    "debugCandidates": [
+      {
+        "variant": "calibration",
+        "km": 46.4,
+        "min": 87,
+        "repeated": 1,
+        "unpaved": 23,
+        "excessDrift": 56,
+        "shown": false
+      },
+      {
+        "variant": "s8b0r0.8t85.39330066565697",
+        "km": 82.2,
+        "min": 179,
+        "repeated": 0,
+        "unpaved": 60,
+        "excessDrift": 30,
+        "shown": false
+      },
+      {
+        "variant": "s8b0r0.8t85.39330066565697",
+        "km": 109.8,
+        "min": 255,
+        "repeated": 0,
+        "unpaved": 65,
+        "excessDrift": 9,
+        "shown": false
+      },
+      {
+        "variant": "s8b0r0.8t85.39330066565697",
+        "km": 111.6,
+        "min": 257,
+        "repeated": 0,
+        "unpaved": 73,
+        "excessDrift": 9,
+        "shown": false
+      },
+      {
+        "variant": "s8b0r1.2t85.39330066565697",
+        "km": 89.4,
+        "min": 202,
+        "repeated": 1,
+        "unpaved": 69,
+        "excessDrift": 24,
+        "shown": false
+      },
+      {
+        "variant": "s8b0r1.2t85.39330066565697",
+        "km": 169.4,
+        "min": 355,
+        "repeated": 0,
+        "unpaved": 77,
+        "excessDrift": 0,
+        "shown": false
+      },
+      {
+        "variant": "s8b0r1.2t85.39330066565697",
+        "km": 175.2,
+        "min": 363,
+        "repeated": 0,
+        "unpaved": 78,
+        "excessDrift": 0,
+        "shown": true
+      },
+      {
+        "variant": "s8b0r1.7t85.39330066565697",
+        "km": 158,
+        "min": 320,
+        "repeated": 5,
+        "unpaved": 74,
+        "excessDrift": 0,
+        "shown": false
+      },
+      {
+        "variant": "s8b0r1.7t85.39330066565697",
+        "km": 209.3,
+        "min": 463,
+        "repeated": 0,
+        "unpaved": 82,
+        "excessDrift": 9,
+        "shown": false
+      },
+      {
+        "variant": "s8b0r2.4t85.39330066565697",
+        "km": 239.1,
+        "min": 474,
+        "repeated": 0,
+        "unpaved": 83,
+        "excessDrift": 12,
+        "shown": false
+      },
+      {
+        "variant": "s8b0r2.4t85.39330066565697",
+        "km": 252.1,
+        "min": 493,
+        "repeated": 0,
+        "unpaved": 79,
+        "excessDrift": 17,
+        "shown": false
+      },
+      {
+        "variant": "s8b0r2.4t85.39330066565697",
+        "km": 290.1,
+        "min": 536,
+        "repeated": 0,
+        "unpaved": 78,
+        "excessDrift": 29,
+        "shown": false
+      },
+      {
+        "variant": "s8b0r1.2t85.39330066565697",
+        "km": 191.7,
+        "min": 342,
+        "repeated": 16,
+        "unpaved": 81,
+        "excessDrift": 0,
+        "shown": false
+      },
+      {
+        "variant": "s8b0r1.2t85.39330066565697",
+        "km": 234.5,
+        "min": 468,
+        "repeated": 0,
+        "unpaved": 80,
+        "excessDrift": 10,
+        "shown": false
+      },
+      {
+        "variant": "s8b0r1.2t85.39330066565697",
+        "km": 289,
+        "min": 512,
+        "repeated": 0,
+        "unpaved": 76,
+        "excessDrift": 22,
+        "shown": false
+      },
+      {
+        "variant": "s8b0r1.7t85.39330066565697",
+        "km": 246.8,
+        "min": 434,
+        "repeated": 10,
+        "unpaved": 79,
+        "excessDrift": 0,
+        "shown": false
+      },
+      {
+        "variant": "s8b0r1.7t85.39330066565697",
+        "km": 308.9,
+        "min": 560,
+        "repeated": 0,
+        "unpaved": 73,
+        "excessDrift": 36,
+        "shown": false
+      },
+      {
+        "variant": "s8b0r1.7t85.39330066565697",
+        "km": 402.9,
+        "min": 723,
+        "repeated": 0,
+        "unpaved": 75,
+        "excessDrift": 81,
+        "shown": false
+      },
+      {
+        "variant": "s8b25r1.2t85.39330066565697",
+        "km": 189.1,
+        "min": 411,
+        "repeated": 3,
+        "unpaved": 79,
+        "excessDrift": 0,
+        "shown": true
+      },
+      {
+        "variant": "s8b-25r1.2t85.39330066565697",
+        "km": 166.9,
+        "min": 354,
+        "repeated": 0,
+        "unpaved": 79,
+        "excessDrift": 0,
+        "shown": true
+      },
+      {
+        "variant": "s8b0r1.0t85.39330066565697",
+        "km": 116.4,
+        "min": 255,
+        "repeated": 0,
+        "unpaved": 70,
+        "excessDrift": 9,
+        "shown": false
+      },
+      {
+        "variant": "s7b0r1.2t85.39330066565697",
+        "km": 166.6,
+        "min": 347,
+        "repeated": 0,
+        "unpaved": 78,
+        "excessDrift": 0,
+        "shown": false
+      },
+      {
+        "variant": "s9b0r1.2t85.39330066565697",
+        "km": 241.5,
+        "min": 474,
+        "repeated": 1,
+        "unpaved": 76,
+        "excessDrift": 12,
+        "shown": false
+      },
+      {
+        "variant": "s8b25r1.2t85.39330066565697",
+        "km": 168.5,
+        "min": 346,
+        "repeated": 0,
+        "unpaved": 78,
+        "excessDrift": 0,
+        "shown": false
+      },
+      {
+        "variant": "s8b-25r1.2t85.39330066565697",
+        "km": 136,
+        "min": 279,
+        "repeated": 0,
+        "unpaved": 70,
+        "excessDrift": 3,
+        "shown": false
+      },
+      {
+        "variant": "s8b0r1.0t85.39330066565697",
+        "km": 120.8,
+        "min": 266,
+        "repeated": 0,
+        "unpaved": 69,
+        "excessDrift": 6,
+        "shown": false
+      },
+      {
+        "variant": "s7b0r1.2t85.39330066565697",
+        "km": 135.5,
+        "min": 278,
+        "repeated": 0,
+        "unpaved": 71,
+        "excessDrift": 3,
+        "shown": false
+      },
+      {
+        "variant": "s9b0r1.2t85.39330066565697",
+        "km": 244.8,
+        "min": 484,
+        "repeated": 0,
+        "unpaved": 80,
+        "excessDrift": 14,
+        "shown": false
+      },
+      {
+        "variant": "s8b25r2.4t85.39330066565697",
+        "km": 232.1,
+        "min": 460,
+        "repeated": 0,
+        "unpaved": 82,
+        "excessDrift": 8,
+        "shown": false
+      },
+      {
+        "variant": "s8b-25r2.4t85.39330066565697",
+        "km": 194,
+        "min": 372,
+        "repeated": 20,
+        "unpaved": 80,
+        "excessDrift": 0,
+        "shown": false
+      },
+      {
+        "variant": "s8b0r2.0t85.39330066565697",
+        "km": 175.3,
+        "min": 327,
+        "repeated": 15,
+        "unpaved": 78,
+        "excessDrift": 0,
+        "shown": false
+      },
+      {
+        "variant": "s8b0r2.9t85.39330066565697",
+        "km": 230.8,
+        "min": 403,
+        "repeated": 11,
+        "unpaved": 75,
+        "excessDrift": 0,
+        "shown": false
+      },
+      {
+        "variant": "s7b0r2.4t85.39330066565697",
+        "km": 238.3,
+        "min": 477,
+        "repeated": 0,
+        "unpaved": 84,
+        "excessDrift": 12,
+        "shown": false
+      },
+      {
+        "variant": "s9b0r2.4t85.39330066565697",
+        "km": 360.2,
+        "min": 628,
+        "repeated": 7,
+        "unpaved": 73,
+        "excessDrift": 55,
+        "shown": false
+      }
+    ],
+    "routes": [
+      {
+        "name": "Rīga Adventure Loop A",
+        "distanceMeters": 166926.49372905862,
+        "durationSeconds": 21232,
+        "roadMix": {
+          "roadPercent": 45,
+          "trackPercent": 53,
+          "trailPercent": 2,
+          "roadKm": 74.5,
+          "trackKm": 88.8,
+          "trailKm": 3.3
+        },
+        "surfaces": {
+          "asphaltPercent": 20,
+          "gravelPercent": 57,
+          "dirtPercent": 22,
+          "unknownPercent": 1
+        },
+        "quality": {
+          "roughTrackKm": 27.2,
+          "sandKm": 5.9,
+          "streetKm": 13.8,
+          "surfaceSwitches": 66,
+          "turnsPer10Km": 5.2
+        },
+        "overlap": {
+          "repeatedKm": 0.4,
+          "distinctKm": 166.2,
+          "repeatedPercent": 0
+        },
+        "stops": [],
+        "bbox": [
+          24.092115,
+          56.732055,
+          24.48066,
+          57.080067
+        ]
+      },
+      {
+        "name": "Rīga Adventure Loop B",
+        "distanceMeters": 189098.95315925594,
+        "durationSeconds": 24657,
+        "roadMix": {
+          "roadPercent": 43,
+          "trackPercent": 55,
+          "trailPercent": 2,
+          "roadKm": 81.6,
+          "trackKm": 103.6,
+          "trailKm": 3.5
+        },
+        "surfaces": {
+          "asphaltPercent": 16,
+          "gravelPercent": 56,
+          "dirtPercent": 23,
+          "unknownPercent": 5
+        },
+        "quality": {
+          "roughTrackKm": 37.9,
+          "sandKm": 5.3,
+          "streetKm": 11.3,
+          "surfaceSwitches": 66,
+          "turnsPer10Km": 5.3
+        },
+        "overlap": {
+          "repeatedKm": 6.5,
+          "distinctKm": 182.1,
+          "repeatedPercent": 3
+        },
+        "stops": [],
+        "bbox": [
+          24.092115,
+          56.732055,
+          24.527356,
+          57.078695
+        ]
+      },
+      {
+        "name": "Rīga Adventure Loop C",
+        "distanceMeters": 175212.09079676666,
+        "durationSeconds": 21769,
+        "roadMix": {
+          "roadPercent": 51,
+          "trackPercent": 46,
+          "trailPercent": 3,
+          "roadKm": 89.3,
+          "trackKm": 80.6,
+          "trailKm": 4.9
+        },
+        "surfaces": {
+          "asphaltPercent": 20,
+          "gravelPercent": 59,
+          "dirtPercent": 19,
+          "unknownPercent": 1
+        },
+        "quality": {
+          "roughTrackKm": 25.9,
+          "sandKm": 5.2,
+          "streetKm": 16.4,
+          "surfaceSwitches": 74,
+          "turnsPer10Km": 6.2
+        },
+        "overlap": {
+          "repeatedKm": 0.4,
+          "distinctKm": 174.4,
+          "repeatedPercent": 0
+        },
+        "stops": [],
+        "bbox": [
+          24.092115,
+          56.740363,
+          24.497756,
+          57.124047
+        ]
+      }
+    ]
+  }
+}

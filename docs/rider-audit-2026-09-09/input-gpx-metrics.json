@@ -1,0 +1,227 @@
+[
+  {
+    "file": "2026-09-04.gpx",
+    "points": 2656,
+    "segments": 1,
+    "km": 126.21,
+    "repeatedKm": 0.44,
+    "repeatedPercent": 0.4,
+    "closureKm": 4.16,
+    "reversals": [
+      {
+        "atKm": 26.2,
+        "latLon": [
+          56.962149,
+          24.397484
+        ],
+        "outAndBackKm": 0.01
+      },
+      {
+        "atKm": 26.92,
+        "latLon": [
+          56.961962,
+          24.406929
+        ],
+        "outAndBackKm": 0.02
+      },
+      {
+        "atKm": 27.63,
+        "latLon": [
+          56.966767,
+          24.41438
+        ],
+        "outAndBackKm": 0.01
+      },
+      {
+        "atKm": 28.01,
+        "latLon": [
+          56.969606,
+          24.417168
+        ],
+        "outAndBackKm": 0.0
+      },
+      {
+        "atKm": 30.82,
+        "latLon": [
+          56.985645,
+          24.4096
+        ],
+        "outAndBackKm": 0.01
+      },
+      {
+        "atKm": 35.3,
+        "latLon": [
+          56.982695,
+          24.471989
+        ],
+        "outAndBackKm": 0.02
+      },
+      {
+        "atKm": 56.08,
+        "latLon": [
+          57.057117,
+          24.564248
+        ],
+        "outAndBackKm": 0.01
+      },
+      {
+        "atKm": 58.86,
+        "latLon": [
+          57.042017,
+          24.56809
+        ],
+        "outAndBackKm": 0.0
+      },
+      {
+        "atKm": 68.66,
+        "latLon": [
+          57.001836,
+          24.529193
+        ],
+        "outAndBackKm": 0.01
+      },
+      {
+        "atKm": 107.33,
+        "latLon": [
+          57.04274,
+          24.409283
+        ],
+        "outAndBackKm": 0.01
+      },
+      {
+        "atKm": 109.11,
+        "latLon": [
+          57.050128,
+          24.418299
+        ],
+        "outAndBackKm": 0.0
+      },
+      {
+        "atKm": 110.13,
+        "latLon": [
+          57.04939,
+          24.406737
+        ],
+        "outAndBackKm": 0.0
+      },
+      {
+        "atKm": 110.62,
+        "latLon": [
+          57.045524,
+          24.403784
+        ],
+        "outAndBackKm": 0.02
+      },
+      {
+        "atKm": 124.57,
+        "latLon": [
+          56.993506,
+          24.22792
+        ],
+        "outAndBackKm": 0.0
+      }
+    ]
+  },
+  {
+    "file": "lielo-kangaru-skatu-tornis-and-emburgas-pilskalns-loop.gpx",
+    "points": 4761,
+    "segments": 1,
+    "km": 242.01,
+    "repeatedKm": 27.63,
+    "repeatedPercent": 11.4,
+    "closureKm": 0.0,
+    "reversals": [
+      {
+        "atKm": 64.25,
+        "latLon": [
+          56.861765,
+          24.710734
+        ],
+        "outAndBackKm": 2.13
+      },
+      {
+        "atKm": 105.37,
+        "latLon": [
+          56.661327,
+          24.6432
+        ],
+        "outAndBackKm": 3.38
+      },
+      {
+        "atKm": 123.52,
+        "latLon": [
+          56.659559,
+          24.479509
+        ],
+        "outAndBackKm": 0.47
+      },
+      {
+        "atKm": 172.2,
+        "latLon": [
+          56.555477,
+          23.987846
+        ],
+        "outAndBackKm": 48.58
+      }
+    ]
+  },
+  {
+    "file": "putnu-v-ro-anas-tornis-and-kn-bis-loop.gpx",
+    "points": 4769,
+    "segments": 1,
+    "km": 180.46,
+    "repeatedKm": 9.04,
+    "repeatedPercent": 5.0,
+    "closureKm": 0.0,
+    "reversals": [
+      {
+        "atKm": 29.61,
+        "latLon": [
+          57.017086,
+          24.204777
+        ],
+        "outAndBackKm": 1.57
+      },
+      {
+        "atKm": 72.48,
+        "latLon": [
+          56.971043,
+          24.289156
+        ],
+        "outAndBackKm": 5.66
+      },
+      {
+        "atKm": 90.83,
+        "latLon": [
+          56.899351,
+          24.192823
+        ],
+        "outAndBackKm": 0.09
+      },
+      {
+        "atKm": 109.88,
+        "latLon": [
+          56.855019,
+          24.042879
+        ],
+        "outAndBackKm": 6.06
+      },
+      {
+        "atKm": 150.59,
+        "latLon": [
+          56.989592,
+          23.939418
+        ],
+        "outAndBackKm": 0.37
+      },
+      {
+        "atKm": 161.65,
+        "latLon": [
+          57.043067,
+          24.043131
+        ],
+        "outAndBackKm": 1.64
+      }
+    ]
+  }
+]

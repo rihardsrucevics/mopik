@@ -1,0 +1,674 @@
+--- a/lib/types.ts
++++ b/lib/types.ts
+@@ -9,6 +9,10 @@
+   gravelPreference: z.number().min(0).max(100).default(40),
+   /** appetite for trail / single-track ("dotted line") segments */
+   trailPreference: z.enum(["none", "some", "lots"]).default("none"),
++  /** Forest riding is distinct from gravel roads and permission to use trails. */
++  preferForest: z.boolean().default(false),
++  /** Tourist stops only when explicitly requested. */
++  includeSightseeing: z.boolean().default(false),
+   avoidMotorways: z.boolean().default(true),
+   avoidMainRoads: z.boolean().default(false),
+   /** "bez dziļām smiltīm" — deep sand is the hazard riders most often ask to avoid */
+--- a/lib/ai/parse-route-prompt.ts
++++ b/lib/ai/parse-route-prompt.ts
+@@ -21,6 +21,9 @@
+   "difficulty": "easy" | "adventure" | "hard",     // default "easy"
+   "gravelPreference": number,                      // 0-100, % of unpaved the rider wants
+   "trailPreference": "none" | "some" | "lots",     // appetite for trail / single-track ("dotted line") segments, default "none"
++  "preferForest": boolean,                         // true when forest riding is requested
++  "includeSightseeing": boolean,                   // true only for explicitly requested tourist stops
++  "directionPlace": string | null,                 // nominative direction, e.g. Ropaži in "to Ropazi direction and back"
+   "avoidMotorways": boolean,                       // default true
+   "avoidMainRoads": boolean,                       // default false
+   "noSand": boolean,                               // default false — true for "bez smiltīm", "no sand", "avoid deep sand"
+@@ -44,6 +47,8 @@
+ Places: "startPlace" is where the ride starts and "destinationPlace" is where it ends (null for a round trip). Riders write Latvian place names in whatever grammatical case the sentence needs — "Siguldā", "ap Cēsīm", "no Tukuma", "līdz Valmierai" — so return the NOMINATIVE dictionary form with correct diacritics, as it appears on a map: "Sigulda", "Cēsis", "Tukums", "Valmiera". "uz Siguldas pusi" / "towards Sigulda" is a direction, not a destination. A country or region alone ("Latvijā", "in Latvia", "pa Kurzemi") is not a start place.
+ 
+ If the user provides duration but not distance, leave distanceKm unset and set durationHours.
++
++Forest requests set preferForest true. "forest as much as possible" sets gravelPreference 100, but does not itself grant permission for single-track trails. Tourist stops are opt-in: leave includeSightseeing false unless requested. Preserve directionPlace independently of destinationPlace: "6h ride from Riga to Ropazi direction and back" is a round_trip starting in Rīga, directionPlace Ropaži, destinationPlace null.
+ 
+ Always preserve explicit user constraints.`;
+ 
+@@ -90,11 +95,26 @@
+   return undefined;
+ }
+ 
++/** Direction is a search constraint, never a mandatory visit or an endpoint. */
++export function parseDirectionPlace(prompt: string): string | undefined {
++  for (const re of [
++    /\b(?:towards?|in the direction of)\s+([\wāčēģīķļņšūž-]{3,})/iu,
++    /\b(?:to|in)\s+([\wāčēģīķļņšūž-]{3,})\s+direction/iu,
++    /\buz\s+([\wāčēģīķļņšūž-]{3,})\s+pusi/iu,
++  ]) {
++    const match = re.exec(prompt);
++    if (match) return match[1];
++  }
++  return undefined;
++}
++
+ /**
+  * A destination named in the prompt ("from Riga to Cesis"), for one-way rides.
+  * Absent means a round trip, which is the common case.
+  */
+ export function parseDestinationPlace(prompt: string): string | undefined {
++  if (/\b(?:and back|back to|return to)\b|atpaka[ļl]/iu.test(prompt)) return undefined;
++  const direction = parseDirectionPlace(prompt);
+   const NOT_A_PLACE =
+     /^(latvia|latvija|lithuania|lietuva|estonia|igaunija|baltics|baltija|forest|woods|mež\w*|start|home|the)$/i;
+ 
+@@ -105,7 +125,7 @@
+   ]) {
+     for (const m of prompt.matchAll(re)) {
+       // "uz Siguldas pusi" is a direction, not a destination.
+-      if (m[1] && !NOT_A_PLACE.test(m[1]) && !/\bpusi\b/i.test(prompt.slice(m.index ?? 0, (m.index ?? 0) + 40))) {
++      if (m[1] && m[1].toLowerCase() !== direction?.toLowerCase() && !NOT_A_PLACE.test(m[1]) && !/\bpusi\b/i.test(prompt.slice(m.index ?? 0, (m.index ?? 0) + 40))) {
+         return m[1];
+       }
+     }
+@@ -173,6 +193,7 @@
+   // phrasing were both unmatched, so a max-forest request came out at 85%
+   // and kept the speed ceiling too high to leave the asphalt.
+   const maxUnpaved =
++    /(?:forest|woods|gravel).{0,12}as much as possible/.test(p) ||
+     /max(?:imum|imal|imāl|imali|imāli)?\s*(?:daudz\s*)?(?:pa\s*)?(?:gravel|grants|unpaved|off[- ]?road|dotted|dashed|forest|mež\w*|mez\w*|tak\w*)/.test(
+       p
+     ) ||
+@@ -252,14 +273,9 @@
+     )
+       ? true
+       : undefined;
+-  // Asking for maximum off-road turns the TET on, because it is by far the
+-  // best answer available. Measured around Sigulda: POI-anchored loops gave
+-  // 18-27% unpaved with 43-49% retracing, while TET-based rides in the same
+-  // place gave 58-66% unpaved with 5-13% retracing. The TET is a
+-  // community-maintained network of legal-to-ride adventure roads, so it
+-  // reaches forest tracks that generic routing never picks.
++  // Maximum forest is not an implicit request to follow the TET.
+   const includeTet =
+-    /\btet\b|trans[- ]?euro[- ]?trail/.test(p) || maxUnpaved ? true : undefined;
++    /\btet\b|trans[- ]?euro[- ]?trail/.test(p) ? true : undefined;
+   const avoidMotorways = /avoid (?:highway|motorway)|bez lielceļ|izvair.{0,12}lielce/.test(p)
+     ? true
+     : undefined;
+@@ -267,6 +283,8 @@
+   // Only what the prompt actually stated. Undefined fields let the caller keep
+   // the rider's settings instead of overwriting them with defaults.
+   return {
++    ...(wantsWoods && !refusesUnpaved ? { preferForest: true } : {}),
++    ...(/sightseeing|tourist (?:stops|attractions)|tūrisma objekt|turisma objekt/.test(p) && !/no sightseeing|without tourist|bez tūrisma|bez turisma/.test(p) ? { includeSightseeing: true } : {}),
+     ...(distanceKm !== undefined ? { distanceKm } : {}),
+     ...(durationHours !== undefined ? { durationHours } : {}),
+     ...(difficulty !== undefined ? { difficulty } : {}),
+@@ -298,14 +316,16 @@
+   /** nominative, ready to geocode; undefined when unknown or when the LLM didn't run */
+   startPlace?: string;
+   destinationPlace?: string;
++  directionPlace?: string;
+   /** which parser produced this — surfaced for logging and tests */
+   source: "llm" | "heuristic";
+ };
+ 
+ /**
+- * What Claude returns. Every field is nullable rather than optional so the
++ * What Claude returns. Place and existing preference fields are nullable rather than optional so the
+  * structured-output schema stays strict; nulls are stripped before merging so
+- * an unstated field leaves the rider's settings alone.
++ * an unstated field leaves the rider's settings alone. The two new boolean
++ * fields are non-nullable to stay below the provider's 16-union limit.
+  */
+ const LlmIntentSchema = z.object({
+   routeType: z.enum(["round_trip", "point_to_point"]).nullable(),
+@@ -314,6 +334,9 @@
+   difficulty: z.enum(["easy", "adventure", "hard"]).nullable(),
+   gravelPreference: z.number().nullable(),
+   trailPreference: z.enum(["none", "some", "lots"]).nullable(),
++  preferForest: z.boolean(),
++  includeSightseeing: z.boolean(),
++  directionPlace: z.string().nullable(),
+   avoidMotorways: z.boolean().nullable(),
+   avoidMainRoads: z.boolean().nullable(),
+   noSand: z.boolean().nullable(),
+@@ -392,6 +415,7 @@
+ 
+   const heuristic = (): ParsedPrompt => ({
+     intent: RouteIntentSchema.parse({ ...base, ...parsePromptFields(prompt) }),
++    directionPlace: parseDirectionPlace(prompt),
+     source: "heuristic",
+   });
+ 
+@@ -399,7 +423,7 @@
+   if (!process.env.ANTHROPIC_API_KEY) return heuristic();
+ 
+   try {
+-    const { startPlace, destinationPlace, ...fields } = stripNulls(await parseWithClaude(prompt));
++    const { startPlace, destinationPlace, directionPlace, ...fields } = stripNulls(await parseWithClaude(prompt));
+     // Clamped rather than rejected: an out-of-range number must not discard
+     // every other understood field.
+     if (fields.distanceKm !== undefined) fields.distanceKm = Math.min(600, Math.max(20, fields.distanceKm));
+@@ -412,6 +436,7 @@
+       intent: parsed.data,
+       startPlace: startPlace?.trim() || undefined,
+       destinationPlace: destinationPlace?.trim() || undefined,
++      directionPlace: directionPlace?.trim() || parseDirectionPlace(prompt),
+       source: "llm",
+     };
+   } catch (err) {
+--- a/lib/routing/loop.ts
++++ b/lib/routing/loop.ts
+@@ -11,21 +11,12 @@
+ import { poisNear, type Poi } from "@/lib/geo/poi";
+ 
+ /**
+- * Planning a loop that covers new ground.
+- *
+- * The goal is NOT a circle and NOT an exact distance: it is not riding the
+- * same road twice. Shape follows from that — an oval or a lopsided sprawl is
+- * perfectly good if it avoids retracing, and a tidy circle that doubles back
+- * is not.
+- *
+- * Two decisions do most of the work:
+- *
+- *  - Stops are real places (from the POI dataset) rather than computed
+- *    points, so via points land on roads instead of in lakes and bogs.
+- *  - Stops are visited in bearing order around the start, which makes the
+- *    tour a simple non-self-intersecting polygon by construction. A
+- *    nearest-neighbour ordering does not guarantee that, and its crossings
+- *    are exactly what force the router to reuse roads.
++ * Via points steer a returning ride through a region. Their angular order
++ * is a search heuristic, not a requirement that the routed ride be circular.
++ * Tourist POIs are used only when explicitly requested; otherwise use the
++ * isochrone/geometric anchors and let the motorcycle router connect them.
++ * Geometric anchors are provisional: a future road-network sampler should
++ * choose connected forest corridors and avoid forcing dead-end visits.
+  */
+ 
+ export type LoopStop = {
+@@ -86,6 +77,7 @@
+ 
+ export type PlanLoopParams = {
+   start: { lat: number; lon: number };
++  includeSightseeing?: boolean;
+   /** ring to take anchor directions from; omit to use a plain circle */
+   ring?: IsoRing;
+   /** fallback radius when no ring is available */
+@@ -148,9 +140,11 @@
+   // Fan across the sector rather than stacking on its axis, so a directional
+   // hint still yields a loop and not an out-and-back corridor.
+   const span = sector.halfWidthDeg * 2;
++  // Small shifts explore nearby corridors while staying in the same sector.
++  const phase = Math.max(-0.4, Math.min(0.4, offsetDeg / 90));
+   return Array.from(
+     { length: count },
+-    (_, i) => sector.centreDeg - sector.halfWidthDeg + (i + 0.5) * (span / count)
++    (_, i) => sector.centreDeg - sector.halfWidthDeg + (i + 0.5 + phase) * (span / count)
+   );
+ }
+ 
+@@ -162,9 +156,9 @@
+   let anchors: Anchor[] = params.ring ? ringAnchors(params.ring, params.start) : [];
+   if (params.sector) {
+     const inside = anchors.filter((a) => inSector(a.bearingDeg, params.sector!));
+-    // A narrow sector over water or a sparse region can leave nothing; keep
+-    // the unrestricted set rather than failing outright.
+-    if (inside.length >= 2) anchors = inside;
++    // Never silently search the opposite direction. Empty sectors fall
++    // back to geometric anchors inside the requested sector.
++    anchors = inside;
+   }
+ 
+   const medianRadius =
+@@ -187,6 +181,11 @@
+     const anchor = anchorNearestBearing(anchors, bearing);
+     const searchCentre: Point =
+       anchor?.point ?? destinationPoint(origin, bearing, params.fallbackRadiusMeters);
++
++    if (!params.includeSightseeing) {
++      chosen.push({ point: searchCentre });
++      continue;
++    }
+ 
+     let best: { poi: Poi; value: number } | null = null;
+     for (const share of POI_SEARCH_SHARES) {
+@@ -196,6 +195,7 @@
+       );
+       const nearby = poisNear({ lat: searchCentre[1], lon: searchCentre[0] }, radius);
+       for (const poi of nearby) {
++        if (params.sector && !inSector(bearingOf([poi.lon, poi.lat]), params.sector)) continue;
+         const value = rankCandidate(
+           poi,
+           bearing,
+@@ -226,7 +226,9 @@
+   }
+ 
+   // Bearing order is what keeps the tour from crossing itself.
+-  chosen.sort((a, b) => bearingOf(a.point) - bearingOf(b.point));
++  chosen.sort((a, b) => params.sector
++    ? angleDiff(bearingOf(a.point), params.sector.centreDeg) - angleDiff(bearingOf(b.point), params.sector.centreDeg)
++    : bearingOf(a.point) - bearingOf(b.point));
+ 
+   const viaPoints = chosen.map((s) => s.point);
+   const legs = [origin, ...viaPoints, origin];
+--- a/app/api/generate-route/route.ts
++++ b/app/api/generate-route/route.ts
+@@ -7,6 +7,7 @@
+   parseStartPlace,
+   resolveTargetDistanceKm,
+ } from "@/lib/ai/parse-route-prompt";
++import { bearingDegrees, type BearingSector } from "@/lib/geo/geometry";
+ import { geocode, GeocodeResult } from "@/lib/geo/geocode";
+ // Isochrones come from Valhalla (BRouter has none); the routes themselves
+ // come from BRouter, whose profile we write ourselves — on 25-30 km Baltic
+@@ -15,6 +16,8 @@
+ import { fetchRoutePath, MAX_LOCATIONS } from "@/lib/routing/brouter";
+ import { buildMotoProfileOptions } from "@/lib/routing/moto-profile";
+ import { buildCostingOptions, profileName } from "@/lib/routing/profiles";
++import { pruneSpurs } from "@/lib/routing/prune-spurs";
++import { loopRank } from "@/lib/routing/score";
+ import { classifyRoute } from "@/lib/routing/classify";
+ import { pickTetSliceForRide, TetSlice } from "@/lib/routing/tet";
+ import { parseIsochrone, type IsoRing } from "@/lib/geo/isochrone";
+@@ -198,9 +201,9 @@
+ 
+   const fc = await fetchIsochrone({
+     center: start,
+-    contoursMinutes: CONTOUR_FRACTIONS.map((f) =>
+-      Math.round(midMinutes * f * 10) / 10
+-    ),
++    contoursMinutes: [...new Set(CONTOUR_FRACTIONS.map((f) =>
++      Math.max(0.1, Math.min(120, Math.round(midMinutes * f * 10) / 10))
++    ))],
+     costingOptions,
+   });
+   return parseIsochrone(fc);
+@@ -262,7 +265,8 @@
+   start: GeocodeResult,
+   intent: RouteIntent,
+   initialTargetKm: number,
+-  route: (points: [number, number][]) => Promise<RoutePath>
++  route: (points: [number, number][]) => Promise<RoutePath>,
++  direction?: BearingSector
+ ): Promise<LoopCalibration | null> {
+   const stops = stopsFor(initialTargetKm);
+   const radius = anchorRadiusMeters(initialTargetKm, stops);
+@@ -273,6 +277,8 @@
+     fallbackRadiusMeters: radius,
+     stopCount: stops,
+     bearingOffsetDeg: 0,
++    sector: direction,
++    includeSightseeing: intent.includeSightseeing,
+   });
+   let path: RoutePath;
+   try {
+@@ -342,7 +348,8 @@
+   start: GeocodeResult,
+   destination: GeocodeResult | null,
+   targetKm: number,
+-  calibration: LoopCalibration | null
++  calibration: LoopCalibration | null,
++  direction?: BearingSector
+ ): Promise<BuiltCandidates> {
+   const costingOptions = buildCostingOptions(intent);
+   const startPt: [number, number] = [start.lon, start.lat];
+@@ -351,8 +358,10 @@
+     : startPt;
+ 
+   const profileOptions = buildMotoProfileOptions(intent);
+-  const route = (points: [number, number][]) =>
+-    fetchRoutePath({ points, profileOptions });
++  const route = async (points: [number, number][]) => {
++    const path = await fetchRoutePath({ points, profileOptions });
++    return !destination && !intent.includeSightseeing && !intent.includeTet ? pruneSpurs(path) : path;
++  };
+ 
+   if (intent.includeTet) {
+     // Valhalla accepts 50 locations, so the slice is sampled densely enough
+@@ -555,6 +564,16 @@
+       exploratory: true,
+     })),
+   ];
++  if (direction) {
++    const directionalShapes: LoopShape[] = [0.85, 1.2, 1.7, 2.4].flatMap((scale) =>
++      [30, 50, 65].map((halfWidthDeg) => ({
++        stops: baseStops, bearingOffset: 0, radiusScale: scale, contourIndex: 1,
++        sector: { centreDeg: direction.centreDeg, halfWidthDeg },
++        exploratory: scale > 1.7,
++      }))
++    );
++    shapes.splice(0, shapes.length, ...(selfHosted ? directionalShapes : [directionalShapes[2], directionalShapes[5], directionalShapes[8], directionalShapes[11]]));
++  }
+   const wideRadius = Math.max(baseRadius * 2.4, 5000);
+ 
+   // One isochrone serves every shape. If it fails the loops still get built,
+@@ -562,7 +581,8 @@
+   let rings: Map<number, IsoRing[]> | null = null;
+   let ringsWide: Map<number, IsoRing[]> | null = null;
+   try {
+-    [rings, ringsWide] = await Promise.all([
++    // Directional fans use their own radii, so neither contour set is used.
++    if (!direction) [rings, ringsWide] = await Promise.all([
+       loopRings(start, baseRadius, intent, costingOptions),
+       loopRings(start, wideRadius, intent, costingOptions),
+     ]);
+@@ -584,7 +604,15 @@
+       ]
+     : [];
+ 
+-  const toCandidate = (shape: LoopShape): Candidate => {
++  const toCandidate = (inputShape: LoopShape): Candidate => {
++    // Preserve the requested direction in every pass and mutation. The
++    // sector steers via points; actual roads may bend outside it.
++    const shape: LoopShape = direction
++      ? { ...inputShape, sector: {
++          centreDeg: direction.centreDeg,
++          halfWidthDeg: Math.min(direction.halfWidthDeg, inputShape.sector?.halfWidthDeg ?? 65),
++        } }
++      : inputShape;
+     const { stops, bearingOffset, radiusScale, absoluteRadiusMeters, contourIndex, exploratory, sector, ringSet } = shape;
+     return {
+       variant: `s${stops}b${bearingOffset}r${radiusScale.toFixed(1)}${sector ? `t${sector.centreDeg}` : ""}${ringSet === "wide" ? "w" : ""}`,
+@@ -612,6 +640,7 @@
+           stopCount: stops,
+           bearingOffsetDeg: bearingOffset,
+           sector: sector ?? null,
++          includeSightseeing: intent.includeSightseeing,
+         });
+ 
+         return {
+@@ -646,7 +675,7 @@
+   });
+   const turned = (deg: number): LoopShape =>
+     shape.sector
+-      ? { ...shape, sector: { ...shape.sector, centreDeg: (shape.sector.centreDeg + deg + 360) % 360 } }
++      ? { ...shape, bearingOffset: shape.bearingOffset + deg, sector: { ...shape.sector, centreDeg: (shape.sector.centreDeg + deg + 360) % 360 } }
+       : { ...shape, bearingOffset: (shape.bearingOffset + deg + 360) % 360 };
+   return [
+     turned(25),
+@@ -715,6 +744,19 @@
+       }
+     }
+ 
++    let direction: BearingSector | undefined;
++    if (parsed.directionPlace && !destination) {
++      try {
++        const place = await geocode(parsed.directionPlace);
++        direction = {
++          centreDeg: bearingDegrees([start.lon, start.lat], [place.lon, place.lat]),
++          halfWidthDeg: 65,
++        };
++      } catch {
++        return NextResponse.json({ error: `We couldn't find the direction “${parsed.directionPlace}”. Try a nearby town.` }, { status: 422 });
++      }
++    }
++
+     let targetKm = resolveTargetDistanceKm(intent);
+ 
+     // Plain loops get a calibration route first (TET and one-way rides have
+@@ -724,12 +766,12 @@
+     if (!destination && !intent.includeTet) {
+       const profileOptions = buildMotoProfileOptions(intent);
+       calibration = await calibrateLoop(start, intent, targetKm, (points) =>
+-        fetchRoutePath({ points, profileOptions })
++        fetchRoutePath({ points, profileOptions }).then(path => intent.includeSightseeing ? path : pruneSpurs(path)), direction
+       );
+       if (calibration) targetKm = calibration.targetKm;
+     }
+ 
+-    const built = await buildCandidates(intent, start, destination, targetKm, calibration);
++    const built = await buildCandidates(intent, start, destination, targetKm, calibration, direction);
+     const candidates = built.candidates;
+     if (candidates.length === 0) {
+       return NextResponse.json(
+@@ -807,7 +849,7 @@
+           ...calibration,
+           radiusMeters,
+           secondPass: true,
+-        });
++        }, direction);
+         const second = await runAll(again.candidates.filter((c) => !c.exploratory));
+         scored = [...scored, ...second.scored];
+       }
+@@ -861,9 +903,6 @@
+     const withinTolerance = (s: Scored) => excessDriftPercent(s) === 0;
+ 
+     if (competing.length > 0) {
+-      const wantedUnpaved =
+-        intent.gravelPreference >= 70 || intent.trailPreference === "lots";
+-
+       const rank = (s: Scored) => {
+         const overlap = s.classified.overlap.repeatedPercent;
+         const unpaved =
+@@ -875,13 +914,14 @@
+         const streetPercent =
+           (s.classified.quality.streetKm / (s.path.distanceMeters / 1000)) * 100;
+ 
+-        // Lower is better.
+-        return (
+-          overlap +
+-          (wantedUnpaved ? Math.max(0, 55 - unpaved) : 0) +
+-          excessDrift +
+-          streetPercent * (intent.avoidTowns ? 1 : 0.3)
+-        );
++        return loopRank(intent, {
++          repeatedPercent: overlap,
++          unpavedPercent: unpaved,
++          trackPercent: s.classified.roadMix.trackPercent,
++          trailPercent: s.classified.roadMix.trailPercent,
++          streetPercent,
++          excessDriftPercent: excessDrift,
++        });
+       };
+ 
+       const byRank = (a: Scored, b: Scored) => {
+--- /dev/null
++++ b/lib/routing/score.ts
+@@ -0,0 +1,21 @@
++import type { RouteIntent } from "@/lib/types";
++
++/** Lower is better. Forest preference remains active above the gravel floor.
++ * Track/trail share is a proxy for forest riding, not proof of forest cover.
++ * These provisional weights must be checked against rider-approved routes.
++ */
++export function loopRank(intent: RouteIntent, metrics: {
++  repeatedPercent: number;
++  unpavedPercent: number;
++  trackPercent: number;
++  trailPercent: number;
++  streetPercent: number;
++  excessDriftPercent: number;
++}): number {
++  const wantsUnpaved = intent.gravelPreference >= 70 || intent.trailPreference === "lots";
++  return metrics.repeatedPercent
++    + (wantsUnpaved ? Math.max(0, 55 - metrics.unpavedPercent) : 0)
++    + (intent.preferForest ? Math.max(0, 100 - metrics.trackPercent - metrics.trailPercent) * 0.5 : 0)
++    + metrics.excessDriftPercent
++    + metrics.streetPercent * (intent.avoidTowns ? 1 : 0.3);
++}
+--- /dev/null
++++ b/lib/routing/prune-spurs.ts
+@@ -0,0 +1,48 @@
++import type { RoutePath, RouteEdge } from "@/lib/types";
++import { haversineMeters } from "@/lib/geo/geometry";
++
++/** Remove exact out-and-back excursions, without inventing any road segment.
++ * Only call for free loops without requested stops. An access corridor that
++ * leads to a real circuit survives; A-B-C-B-A collapses but A-B-C-D-B-A does not.
++ */
++export function pruneSpurs(path: RoutePath): RoutePath {
++  const coords = path.coordinates;
++  if (coords.length < 3) return path;
++  const same = (a: number, b: number) => coords[a][0] === coords[b][0] && coords[a][1] === coords[b][1];
++  const kept: number[] = [];
++  for (let i = 0; i < coords.length; i++) {
++    if (kept.length && same(kept[kept.length - 1], i)) continue;
++    if (kept.length >= 2 && same(kept[kept.length - 2], i)) kept.pop();
++    else kept.push(i);
++  }
++  if (kept.length === coords.length) return path;
++  if (kept.length < 4) throw new Error("Candidate contains no circuit after removing dead-end excursions");
++
++  // Each surviving incoming segment retains the tags of its ORIGINAL edge.
++  // After cancellation the previous coordinate is identical to its original
++  // predecessor; no straight-line shortcut is introduced.
++  const edgeAt = new Map<number, RouteEdge>();
++  for (const edge of path.edges) {
++    for (let i = edge.beginShapeIndex + 1; i <= edge.endShapeIndex; i++) edgeAt.set(i, edge);
++  }
++  const coordinates = kept.map(i => coords[i]);
++  const edges: RouteEdge[] = [];
++  let meters = 0, originalMeters = 0;
++  for (let i = 1; i < coords.length; i++) originalMeters += haversineMeters(coords[i-1], coords[i]);
++  let previousSource: RouteEdge | undefined;
++  for (let i = 1; i < kept.length; i++) {
++    const source = edgeAt.get(kept[i]);
++    const length = haversineMeters(coordinates[i-1], coordinates[i]);
++    meters += length;
++    const last = edges.at(-1);
++    if (last && source === previousSource) {
++      last.endShapeIndex = i;
++      last.lengthKm = (last.lengthKm ?? 0) + length / 1000;
++    } else {
++      edges.push({ ...source, beginShapeIndex: i-1, endShapeIndex: i, lengthKm: length / 1000 });
++    }
++    previousSource = source;
++  }
++  const ratio = originalMeters > 0 ? meters / originalMeters : 1;
++  return { coordinates, edges, distanceMeters: path.distanceMeters * ratio, durationSeconds: path.durationSeconds * ratio };
++}
+--- a/lib/routing/brouter.ts
++++ b/lib/routing/brouter.ts
+@@ -78,6 +78,8 @@
+ 
+ /** Serialises requests with a small gap; the queue never rejects. */
+ function paced<T>(fn: () => Promise<T>): Promise<T> {
++  // The public throttle must not serialise the self-hosted server.
++  if (process.env.BROUTER_BASE_URL) return fn();
+   const run = queue.then(async () => {
+     if (!process.env.BROUTER_BASE_URL) {
+       const wait = lastRequestAt + MIN_GAP_MS - Date.now();
+--- /dev/null
++++ b/scripts/rider-regressions.test.ts
+@@ -0,0 +1,71 @@
++// Run: npx tsx --test scripts/rider-regressions.test.ts
++import assert from "node:assert/strict";
++import test from "node:test";
++import { parseDirectionPlace, parseDestinationPlace, parseRoutePromptHeuristic } from "../lib/ai/parse-route-prompt";
++import { planLoop } from "../lib/routing/loop";
++import { bearingDegrees, inSector } from "../lib/geo/geometry";
++import { loopRank } from "../lib/routing/score";
++import { RouteIntentSchema } from "../lib/types";
++
++test("Ropaži direction survives independently of endpoint, without implicit TET", () => {
++  const prompt = "6h ride from Riga to Ropazi direction and back. forest as much as possible.";
++  assert.equal(parseDirectionPlace(prompt), "Ropazi");
++  assert.equal(parseDestinationPlace(prompt), undefined);
++  const intent = parseRoutePromptHeuristic(prompt);
++  assert.equal(intent.durationHours, 6);
++  assert.equal(intent.preferForest, true);
++  assert.equal(intent.gravelPreference, 100);
++  assert.equal(intent.includeTet, false);
++  assert.equal(intent.includeSightseeing, false);
++  assert.equal(intent.trailPreference, "some");
++});
++
++test("directions in both languages are not destinations; explicit destinations survive", () => {
++  for (const p of ["from Riga towards Sigulda", "no Rīgas uz Siguldas pusi"]) {
++    assert.ok(parseDirectionPlace(p));
++    assert.equal(parseDestinationPlace(p), undefined);
++  }
++  assert.equal(parseDestinationPlace("from Riga to Cesis"), "Cesis");
++  assert.equal(parseRoutePromptHeuristic("TET 3h from Riga").includeTet, true);
++  assert.equal(parseRoutePromptHeuristic("3h from Riga, sightseeing").includeSightseeing, true);
++  assert.equal(parseRoutePromptHeuristic("3h from Riga, no sightseeing").includeSightseeing, false);
++});
++
++test("unrequested attractions never become via points; a north-crossing sector stays ordered", () => {
++  const start = { lat: 56.95, lon: 24.1 };
++  const sector = { centreDeg: 355, halfWidthDeg: 50 };
++  const plan = planLoop({ start, sector, fallbackRadiusMeters: 18000, stopCount: 5, bearingOffsetDeg: 0 });
++  assert.ok(plan.stops.every(s => !s.poi));
++  assert.ok(plan.viaPoints.every(p => inSector(bearingDegrees([start.lon, start.lat], p), sector)));
++  const bearings = plan.viaPoints.map(p => (bearingDegrees([start.lon, start.lat], p) - 355 + 540) % 360 - 180);
++  assert.deepEqual(bearings, [...bearings].sort((a,b) => a-b));
++});
++
++test("forest ranking distinguishes tracks from gravel roads above the gravel floor", () => {
++  const intent = RouteIntentSchema.parse({ preferForest: true, gravelPreference: 100 });
++  const base = { repeatedPercent: 3, unpavedPercent: 80, trackPercent: 20, trailPercent: 0, streetPercent: 5, excessDriftPercent: 0 };
++  const moreTracks = { ...base, trackPercent: 60 };
++  assert.ok(loopRank(intent, moreTracks) < loopRank(intent, base));
++  assert.ok(loopRank(intent, { ...moreTracks, trackPercent: 70 }) < loopRank(intent, moreTracks));
++  assert.ok(loopRank(intent, { ...moreTracks, repeatedPercent: 40 }) > loopRank(intent, base));
++  const ordinary = RouteIntentSchema.parse({ gravelPreference: 100 });
++  assert.equal(loopRank(ordinary, base), loopRank(ordinary, moreTracks));
++});
++
++import { pruneSpurs } from "../lib/routing/prune-spurs";
++import type { RoutePath } from "../lib/types";
++
++test("spur removal preserves access corridors, real circuits and original edge tags", () => {
++  // Access A-B; circuit B-C-D-E-C-B; unnecessary excursion D-X-Y-X-D.
++  const A = [24,57], B = [24.01,57], C = [24.02,57], D = [24.03,57],
++    E = [24.03,57.01], X = [24.04,57], Y = [24.05,57];
++  const coordinates = [A,B,C,D,X,Y,X,D,E,C,B,A] as [number,number][];
++  const path: RoutePath = { coordinates, distanceMeters: 10000, durationSeconds: 1000,
++    edges: coordinates.slice(1).map((_,i) => ({ beginShapeIndex:i, endShapeIndex:i+1, tags:{ highway: "track", marker:String(i+1) } })) };
++  const clean = pruneSpurs(path);
++  assert.deepEqual(clean.coordinates, [A,B,C,D,E,C,B,A]);
++  assert.deepEqual(clean.edges.map(e => e.tags?.marker), ["1","2","3","8","9","10","11"]);
++  assert.ok(clean.distanceMeters < path.distanceMeters);
++  assert.deepEqual(pruneSpurs(clean), clean);
++  assert.throws(() => pruneSpurs({ ...path, coordinates: [A,B,C,B,A] as [number,number][] }), /no circuit/);
++});
+--- /dev/null
++++ b/scripts/audit-gpx.py
+@@ -0,0 +1,47 @@
++"""Geometry-only GPX audit: python3 scripts/audit-gpx.py ride.gpx [...].
++Exact undirected edges rounded to 5 decimals; not map matching or surface inference.
++"""
++import json
++import math
++import sys
++import xml.etree.ElementTree as ET
++from pathlib import Path
++
++
++def km(a, b):
++    la, lo, lb, lob = map(math.radians, (*a, *b))
++    h = math.sin((lb-la)/2)**2 + math.cos(la)*math.cos(lb)*math.sin((lob-lo)/2)**2
++    return 12742 * math.asin(min(1, math.sqrt(h)))
++
++
++def audit(filename):
++    root = ET.parse(filename).getroot()
++    segments = [[(float(p.attrib['lat']), float(p.attrib['lon'])) for p in s.findall('{*}trkpt')]
++                for s in root.findall('.//{*}trkseg')]
++    points = [p for s in segments for p in s]
++    seen, reversals = set(), []
++    total = repeated = 0
++    for segment in segments:
++        for i in range(1, len(segment)):
++            a, b = segment[i-1], segment[i]
++            length = km(a, b)
++            total += length
++            edge = tuple(sorted(tuple(round(x, 5) for x in p) for p in (a, b)))
++            if edge in seen:
++                repeated += length
++            seen.add(edge)
++            if i + 1 < len(segment) and a == segment[i+1] and length > 0:
++                n, out_km = 0, 0
++                while i-n-1 >= 0 and i+n+1 < len(segment) and segment[i-n-1] == segment[i+n+1]:
++                    out_km += km(segment[i-n], segment[i-n-1])
++                    n += 1
++                reversals.append({'atKm': round(total, 2), 'latLon': b, 'outAndBackKm': round(2*out_km, 2)})
++    return {'file': Path(filename).name, 'points': len(points), 'segments': len(segments),
++            'km': round(total, 2), 'repeatedKm': round(repeated, 2),
++            'repeatedPercent': round(100*repeated/total, 1) if total else 0,
++            'closureKm': round(km(points[0], points[-1]), 2) if points else None,
++            'reversals': reversals}
++
++
++if __name__ == '__main__':
++    print(json.dumps([audit(f) for f in sys.argv[1:]], indent=2))

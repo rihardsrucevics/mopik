@@ -13,6 +13,7 @@ type Props = {
   segments: GeoJSON.FeatureCollection<GeoJSON.LineString, RouteSegmentProperties> | null;
   start: { lat: number; lon: number } | null;
   destination?: { lat: number; lon: number } | null;
+  via?: { lat: number; lon: number; label: string }[];
   showTet: boolean;
   onToggleTet: (visible: boolean) => void;
 };
@@ -26,7 +27,10 @@ const EMPTY: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: 
 const PAVED_COLOR = "#0071e3";
 const GRAVEL_COLOR = "#f56300";
 const DIRT_COLOR = "#8f5a24";
-const UNKNOWN_COLOR = "#98989d";
+// Dark enough to read against the light basemap: unknown surface is often a
+// third of a forest route, and at the old light grey those stretches looked
+// like gaps in the line rather than part of it.
+const UNKNOWN_COLOR = "#5b5b60";
 const TRAIL_COLOR = "#ff3b30"; // trails are always red — they are the risk signal
 const TET_COLOR = "#af52de"; // TET overlay
 
@@ -42,12 +46,14 @@ const SURFACE_COLOR_EXPR: maplibregl.ExpressionSpecification = [
   UNKNOWN_COLOR,
 ];
 
-export function RouteMap({ segments, start, destination, showTet, onToggleTet }: Props) {
+export function RouteMap({ segments, start, destination, via, showTet, onToggleTet }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const markerRef = useRef<maplibregl.Marker | null>(null);
   const destMarkerRef = useRef<maplibregl.Marker | null>(null);
   const loadedRef = useRef(false);
+  const viaMarkersRef = useRef<maplibregl.Marker[]>([]);
+  const syncRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -131,7 +137,7 @@ export function RouteMap({ segments, start, destination, showTet, onToggleTet }:
       });
 
       loadedRef.current = true;
-      syncData();
+      syncRef.current();
     });
 
     mapRef.current = map;
@@ -140,48 +146,56 @@ export function RouteMap({ segments, start, destination, showTet, onToggleTet }:
       mapRef.current = null;
       loadedRef.current = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const syncData = () => {
-    const map = mapRef.current;
-    if (!map || !loadedRef.current) return;
+  useEffect(() => {
+    const syncData = () => {
+      const map = mapRef.current;
+      if (!map || !loadedRef.current) return;
 
-    const source = map.getSource("route") as maplibregl.GeoJSONSource | undefined;
-    source?.setData(segments ?? EMPTY);
+      const source = map.getSource("route") as maplibregl.GeoJSONSource | undefined;
+      source?.setData(segments ?? EMPTY);
 
-    if (map.getLayer("tet-line")) {
-      map.setLayoutProperty("tet-line", "visibility", showTet ? "visible" : "none");
-    }
-
-    if (start) {
-      if (!markerRef.current) {
-        markerRef.current = new maplibregl.Marker({ color: "#16a34a" });
+      if (map.getLayer("tet-line")) {
+        map.setLayoutProperty("tet-line", "visibility", showTet ? "visible" : "none");
       }
-      markerRef.current.setLngLat([start.lon, start.lat]).addTo(map);
-    } else {
-      markerRef.current?.remove();
-    }
 
-    if (destination) {
-      if (!destMarkerRef.current) {
-        destMarkerRef.current = new maplibregl.Marker({ color: "#ff3b30" });
+      if (start) {
+        if (!markerRef.current) {
+          markerRef.current = new maplibregl.Marker({ color: "#16a34a" });
+        }
+        markerRef.current.setLngLat([start.lon, start.lat]).addTo(map);
+      } else {
+        markerRef.current?.remove();
       }
-      destMarkerRef.current.setLngLat([destination.lon, destination.lat]).addTo(map);
-    } else {
-      destMarkerRef.current?.remove();
-    }
 
-    if (segments && segments.features.length > 0) {
-      const bounds = new maplibregl.LngLatBounds();
-      for (const f of segments.features) {
-        for (const c of f.geometry.coordinates) bounds.extend(c as [number, number]);
+      if (destination) {
+        if (!destMarkerRef.current) {
+          destMarkerRef.current = new maplibregl.Marker({ color: "#ff3b30" });
+        }
+        destMarkerRef.current.setLngLat([destination.lon, destination.lat]).addTo(map);
+      } else {
+        destMarkerRef.current?.remove();
       }
-      map.fitBounds(bounds, { padding: 48, duration: 800 });
-    }
-  };
 
-  useEffect(syncData, [segments, start, destination, showTet]);
+      for (const marker of viaMarkersRef.current) marker.remove();
+      viaMarkersRef.current = (via ?? []).map(place => new maplibregl.Marker({ color: "#f56300" })
+        .setLngLat([place.lon, place.lat])
+        .setPopup(new maplibregl.Popup().setText(place.label))
+        .addTo(map));
+
+      if (segments && segments.features.length > 0) {
+        const bounds = new maplibregl.LngLatBounds();
+        for (const f of segments.features) {
+          for (const c of f.geometry.coordinates) bounds.extend(c as [number, number]);
+        }
+        map.fitBounds(bounds, { padding: 48, duration: 800 });
+      }
+    };
+
+    syncRef.current = syncData;
+    syncData();
+  }, [segments, start, destination, via, showTet]);
 
   return (
     <div className="relative h-full w-full">

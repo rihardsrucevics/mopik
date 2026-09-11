@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import { cumulativeDistances, haversineMeters, indexAtOffset } from "@/lib/geo/geometry";
 
 /**
  * TET (Trans Euro Trail) Latvia support.
@@ -9,10 +10,10 @@ import path from "path";
  * the official GPX (downsampled) as GeoJSON in /public/tet-lv.geojson — the
  * same file the map overlay uses.
  *
- * The free GraphHopper plan allows max 5 route points, so we can't follow the
- * TET point-by-point. Instead we pick a slice of the nearest TET section and
- * hand GraphHopper 3 via points along it — the TET runs on routable roads, so
- * the calculated route follows it closely between via points.
+ * We pick a slice of the nearest TET section and hand the router via points
+ * sampled along it — the TET runs on routable roads, so the calculated route
+ * follows it closely between via points. Valhalla accepts up to 50 locations,
+ * so the slice can be sampled densely enough to track the trail faithfully.
  */
 
 type TetSection = {
@@ -25,17 +26,6 @@ type TetSection = {
 
 let sectionsCache: TetSection[] | null = null;
 
-function haversineMeters(a: [number, number], b: [number, number]): number {
-  const R = 6371000;
-  const dLat = ((b[1] - a[1]) * Math.PI) / 180;
-  const dLon = ((b[0] - a[0]) * Math.PI) / 180;
-  const lat1 = (a[1] * Math.PI) / 180;
-  const lat2 = (b[1] * Math.PI) / 180;
-  const h =
-    Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(h));
-}
-
 export function loadTetSections(): TetSection[] {
   if (sectionsCache) return sectionsCache;
 
@@ -47,15 +37,11 @@ export function loadTetSections(): TetSection[] {
 
   sectionsCache = fc.features.map((f) => {
     const coordinates = f.geometry.coordinates as [number, number][];
-    const cumulative = [0];
-    for (let i = 1; i < coordinates.length; i++) {
-      cumulative.push(cumulative[i - 1] + haversineMeters(coordinates[i - 1], coordinates[i]));
-    }
     return {
       name: f.properties.name,
       lengthKm: f.properties.lengthKm,
       coordinates,
-      cumulative,
+      cumulative: cumulativeDistances(coordinates),
     };
   });
   return sectionsCache;
@@ -74,39 +60,66 @@ function nearestOnSection(
   return best;
 }
 
-/** index of the coordinate that lies `meters` along the section from `fromIndex` (can be negative). */
-function indexAtOffset(section: TetSection, fromIndex: number, meters: number): number {
-  const target = section.cumulative[fromIndex] + meters;
-  if (target <= 0) return 0;
-  const last = section.cumulative.length - 1;
-  if (target >= section.cumulative[last]) return last;
-  let lo = 0,
-    hi = last;
-  while (lo < hi) {
-    const mid = (lo + hi) >> 1;
-    if (section.cumulative[mid] < target) lo = mid + 1;
-    else hi = mid;
-  }
-  return lo;
-}
-
 export type TetSlice = {
   sectionName: string;
-  viaPoints: [number, number][]; // 3 points, [lon, lat]
+  viaPoints: [number, number][]; // [lon, lat]
   sliceKm: number;
   entryDistanceKm: number;
 };
 
+/** Via points sampled along a TET slice. Valhalla allows 50 locations total. */
+const DEFAULT_VIA_COUNT = 18;
+
 /**
  * Pick a TET slice near `start` worth roughly `targetSliceMeters` of riding,
- * and sample 3 via points along it. `variant` (0/1/2) shifts the slice:
+ * and sample via points along it. `variant` (0/1/2) shifts the slice:
  * forward along the section, backward, or centered — this is what makes the
  * three route alternatives genuinely different.
  */
+/**
+ * Roads wind: the ride to the trail and the ride back from its far end run
+ * this much longer than the straight line.
+ */
+const APPROACH_DETOUR = 1.6;
+
+/**
+ * A TET slice sized so the WHOLE ride — riding to the trail, the slice, and
+ * riding home from its far end — lands near `targetMeters`.
+ *
+ * The TET is a linear trail, so a "loop" along it is really out along the
+ * trail and back by road. Sizing the slice alone at 0.8× target ignored the
+ * way home: from Kuldīga a 120 km slice ended 82 km straight-line from the
+ * start, the closing leg routed to 115 km, and a 150 km request delivered
+ * 334-401 km. Here the slice shrinks until entry + slice + return fits.
+ */
+export function pickTetSliceForRide(
+  start: { lat: number; lon: number },
+  targetMeters: number,
+  variant: 0 | 1 | 2,
+  viaCount: number = DEFAULT_VIA_COUNT,
+  roundTrip: boolean = true
+): TetSlice | null {
+  const origin: [number, number] = [start.lon, start.lat];
+  let best: TetSlice | null = null;
+  for (const share of [0.8, 0.65, 0.5, 0.4, 0.3, 0.22, 0.15]) {
+    const slice = pickTetSlice(start, targetMeters * share, variant, viaCount);
+    if (!slice) continue;
+    const first = slice.viaPoints[0];
+    const last = slice.viaPoints[slice.viaPoints.length - 1];
+    const entry = haversineMeters(origin, first) * APPROACH_DETOUR;
+    const back = roundTrip ? haversineMeters(last, origin) * APPROACH_DETOUR : 0;
+    const estimate = entry + slice.sliceKm * 1000 + back;
+    best = slice;
+    if (estimate <= targetMeters) return slice;
+  }
+  return best;
+}
+
 export function pickTetSlice(
   start: { lat: number; lon: number },
   targetSliceMeters: number,
-  variant: 0 | 1 | 2
+  variant: 0 | 1 | 2,
+  viaCount: number = DEFAULT_VIA_COUNT
 ): TetSlice | null {
   const sections = loadTetSections();
 
@@ -121,31 +134,29 @@ export function pickTetSlice(
   }
   if (!bestSection) return null;
 
+  const { cumulative, coordinates } = bestSection;
   const from = bestNearest.index;
   let startIdx: number, endIdx: number;
   if (variant === 0) {
     startIdx = from;
-    endIdx = indexAtOffset(bestSection, from, targetSliceMeters);
+    endIdx = indexAtOffset(cumulative, from, targetSliceMeters);
   } else if (variant === 1) {
-    startIdx = indexAtOffset(bestSection, from, -targetSliceMeters);
+    startIdx = indexAtOffset(cumulative, from, -targetSliceMeters);
     endIdx = from;
   } else {
-    startIdx = indexAtOffset(bestSection, from, -targetSliceMeters / 2);
-    endIdx = indexAtOffset(bestSection, from, targetSliceMeters / 2);
+    startIdx = indexAtOffset(cumulative, from, -targetSliceMeters / 2);
+    endIdx = indexAtOffset(cumulative, from, targetSliceMeters / 2);
   }
   if (endIdx - startIdx < 4) return null;
 
-  const sliceMeters =
-    bestSection.cumulative[endIdx] - bestSection.cumulative[startIdx];
+  const sliceMeters = cumulative[endIdx] - cumulative[startIdx];
 
-  // 3 evenly spaced via points across the slice
-  const viaPoints: [number, number][] = [0.1, 0.5, 0.9].map((t) => {
-    const idx = indexAtOffset(
-      bestSection,
-      startIdx,
-      sliceMeters * t
-    );
-    return bestSection.coordinates[idx];
+  // Evenly spaced via points across the slice, inset from both ends so the
+  // router approaches the trail rather than starting exactly on it.
+  const count = Math.max(2, Math.min(viaCount, endIdx - startIdx));
+  const viaPoints: [number, number][] = Array.from({ length: count }, (_, i) => {
+    const t = (i + 0.5) / count;
+    return coordinates[indexAtOffset(cumulative, startIdx, sliceMeters * t)];
   });
 
   return {
