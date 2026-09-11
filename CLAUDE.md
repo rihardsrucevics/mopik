@@ -224,6 +224,12 @@ Fidelity check: `BROUTER_BASE_URL=http://localhost:17777 npx tsx scripts/fidelit
   past the free band; when nothing fits, lead with the nearest and state
   "Prasīts ~2 h, šī versija ir 2 h 47 min." with one-tap ways out. A rider
   who typed 2 h and got 3 h 30 does not come back.
+- **Corridor offsets never depend on the budget alone.** `reach` has a
+  floor of 12 % of the leg (min 3 km): a flexible budget once left it at 1 km
+  and a 210 km there-and-back retraced 34–49 %. Round-trip ±side candidates
+  are mirror images — the −1 side is an asymmetric shape instead.
+- **High overlap talks.** Best version > 20 % repeated → the chat says so
+  with levers, route still on the map.
 - **The surroundings belong to the winding/complex versions, never the
   straight one.** For a via ride, `around-*` (ring around the stop) and
   `zig-*` (one-sided wiggles) candidates compete for those slots; `detour()`

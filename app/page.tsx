@@ -100,6 +100,25 @@ export default function Home() {
       // The lucky ride leads with the most interesting version.
       const complexIndex = (data as GenerateRouteResponse).routes.findIndex((r) => r.variant === "complex");
       setSelected(isLucky && complexIndex >= 0 ? complexIndex : 0);
+      // Riding the same road twice is the one thing every rider minds. When
+      // even the best version retraces a lot, the chat says so and offers
+      // the levers — the route stays on the map for those who accept it.
+      const OVERLAP_CHAT_PERCENT = 20;
+      const bestRepeat = Math.min(...(data as GenerateRouteResponse).routes.map((r) => r.overlap.repeatedPercent));
+      if (bestRepeat > OVERLAP_CHAT_PERCENT) {
+        setLucky(false);
+        const km = Math.round(route.overlap.repeatedKm);
+        setMessages([...conversation, { role: "assistant", content: `Šeit neizdevās atrast trasi bez atkārtošanās: labākā versija ${bestRepeat} % ceļa (${km} km) brauc pa jau nobrauktiem ceļiem. Trase ir kartē, bet es to labāk pārtaisītu. Ko darām?` }]);
+        setQuickReplies([
+          { label: "Mazāk atkārtojumu", message: "Mazāk atkārtojumu, atpakaļ pa citiem ceļiem." },
+          { label: "Var arī lielos ceļus", message: "Var izmantot arī lielos ceļus." },
+          ...(current.returnToStart && (current.viaPlaces.length > 0) ? [{ label: `Vienā virzienā līdz ${current.viaPlaces[current.viaPlaces.length - 1]}`, message: `Vienvirziena brauciens līdz ${current.viaPlaces[current.viaPlaces.length - 1]}.` }] : []),
+          { label: "Rādīt trasi tāpat", message: "", action: "show-routes" as const },
+        ]);
+        setChatting(true);
+        setRetry(null);
+        return;
+      }
       setChatting(false);
       setQuickReplies([]);
       const versions = (data as GenerateRouteResponse).routes.length;

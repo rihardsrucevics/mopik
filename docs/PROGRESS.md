@@ -1,5 +1,29 @@
 # Mopik — progress log
 
+## 2026-09-12 (late, 5) — Rīga → Valmiera → Rīga retraced 34 %: the offsets had no budget
+
+With a flexible duration the via ride planned against the 80 km loop
+default, so `spare = target − direct` was zero for a 210 km there-and-back,
+the corridor offsets shrank to the 1 km floor and every candidate ran back
+on the way out: 34–49 % repeated, 374–436 km. Three fixes, measured:
+
+- **Offset floor from the leg itself:** `reach = max(spare-based, 12 % of
+  the leg, 3 km)`, capped at 20 km. Valmiera: 34–49 % → **4–7 %** at
+  369–396 km.
+- **Flexible target for fixed places** = direct × 1.25 (min 80 km), so the
+  spare budget, drift and ring sizing make sense.
+- **Mirrored candidates were duplicates:** on a round trip the −1 side is
+  the +1 shape ridden the other way (identical km and overlap). It is now an
+  asymmetric shape (full offset out, ~55 % back, bent at 0.35/0.65), adding
+  real variety instead of a copy.
+- **Balanced picks plain corridors first**; rings and wiggles go to the
+  complex slot. Baldone 3 h: direct 1 %, balanced 1 %, complex = ring 12 %.
+- **The chat speaks when overlap is high:** if even the best version
+  retraces > 20 %, the result stays on the map and the chat says "Šeit
+  neizdevās atrast trasi bez atkārtošanās: labākā versija N % ceļa (X km)
+  brauc pa jau nobrauktiem ceļiem…" with taps: Mazāk atkārtojumu / Var arī
+  lielos ceļus / Vienā virzienā līdz … / Rādīt trasi tāpat.
+
 ## 2026-09-12 (late, 4) — the loader is a game
 
 **Correction, same evening:** the pickup alone was not the point. When the

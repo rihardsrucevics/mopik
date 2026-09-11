@@ -409,16 +409,29 @@ async function buildCandidates(
     const places = [start, ...requiredVia, destination ?? start];
     const directKm = places.slice(1).reduce((sum, p, i) => sum + Math.hypot((p.lat-places[i].lat)*111, (p.lon-places[i].lon)*61), 0);
     const spareMeters = Math.max(0, targetKm-directKm) * 1000;
-    const reach = Math.min(20000, Math.max(1000, spareMeters / (places.length * 5)));
+    // How far the corridors are pushed apart. From the spare budget when
+    // there is one, but never less than a share of the leg itself: with a
+    // flexible budget the 80 km default left Rīga → Valmiera → Rīga (210 km
+    // direct) no spare at all, the offsets shrank to 1 km, and the way back
+    // ran on the way out — 34-49% repeated on every candidate.
+    const legMeters = (directKm * 1000) / Math.max(1, places.length - 1);
+    const reach = Math.min(20000, Math.max(3000, spareMeters / (places.length * 5), legMeters * 0.12));
     const scales = intent.rideStyle === "direct" ? [0, 0.25, 0.5] : [0, 0.35, 0.7, 1, 1.4, 1.8, 2.2, 2.8];
     const candidates: Candidate[] = [];
+    // On a round trip the -1 side is the +1 shape ridden the other way round
+    // (same roads, same overlap — measured identical to the metre), so there
+    // it becomes a different shape instead: the way out at full offset, the
+    // way back at about half, bent at other points.
+    const roundTrip = !destination;
     for (const scale of scales) for (const side of (scale === 0 ? [1] : [1,-1])) {
-      candidates.push({ variant: `via-${scale}-${side}`, competing: true, run: async () => {
+      const asymmetric = roundTrip && side === -1;
+      candidates.push({ variant: `via-${scale}-${asymmetric ? "a" : side}`, competing: true, run: async () => {
         const points: [number, number][] = [startPt];
         for (let i = 1; i < places.length; i++) {
           if (scale) {
-            const fractions = intent.rideStyle === "explore" ? [0.3,0.7] : [0.5];
-            for (const fraction of fractions) points.push(perpendicularVia(places[i-1], places[i], fraction, reach*scale*side));
+            const fractions = asymmetric ? (i === 1 ? [0.3, 0.7] : [0.35, 0.65]) : intent.rideStyle === "explore" ? [0.3,0.7] : [0.5];
+            const legScale = asymmetric && i > 1 ? scale * 0.55 : scale;
+            for (const fraction of fractions) points.push(perpendicularVia(places[i-1], places[i], fraction, reach*legScale*(asymmetric ? 1 : side)));
           }
           points.push([places[i].lon, places[i].lat]);
         }
@@ -939,7 +952,14 @@ export async function POST(req: NextRequest) {
         start = focus;
       }
     }
-    let targetKm = body.plan?.budget.mode === "flexible" ? (remote ? 60 : body.lucky ? 120 : 80) : resolveTargetDistanceKm(intent);
+    // A flexible budget on a ride with fixed places means "as long as the
+    // places take, with room to wander": the direct distance plus a quarter,
+    // never below the plain-loop default.
+    const fixedPlaces = [start, ...requiredVia, destination ?? start];
+    const fixedDirectKm = fixedPlaces.slice(1).reduce((sum, p, i) => sum + Math.hypot((p.lat - fixedPlaces[i].lat) * 111, (p.lon - fixedPlaces[i].lon) * 61), 0);
+    let targetKm = body.plan?.budget.mode === "flexible"
+      ? (remote ? 60 : body.lucky ? 120 : (requiredVia.length || destination) ? Math.max(80, Math.round(fixedDirectKm * 1.25)) : 80)
+      : resolveTargetDistanceKm(intent);
 
     // Plain loops get a calibration route first (TET and one-way rides have
     // fixed shapes). It corrects the anchor radius — and, for a duration
@@ -1275,7 +1295,9 @@ export async function POST(req: NextRequest) {
       if (c) variantOf.set(c, variant);
     };
     pick("direct", [...selection].filter((c) => !detour(c)).sort((a, b) => directScore(a) - directScore(b)));
-    pick("balanced", selection);
+    // Balanced is the clean middle: plain corridors first, a ring or wiggle
+    // only if nothing else is left — those belong to the complex version.
+    pick("balanced", [...selection.filter((c) => !detour(c)), ...selection.filter(detour)]);
     // The complex version may run a little past the free band — a ring
     // around the stop on slow forest tracks costs minutes, and the panel
     // states the overshoot plainly — but only a little: 10% of the request.
