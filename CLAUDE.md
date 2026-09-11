@@ -295,6 +295,12 @@ runner: macOS then denies it Documents access and every route 500s with
 
 ## Known open items
 
+**Planned, decided 2026-09-12:** self-hosted BRouter on a small VPS for
+production (the real fix for time drift and single-version results on
+brouter.de; needs the rider's hosting account). **Shelved:** LVM GEO data —
+measured 0.1 % new road geometry vs OSM, no attributes; only gates/barriers
+add information (see `docs/LVM-GEO-2026-09-12.md`). Don't re-research it.
+
 **Rider's-eye audit (2026-09-03, `docs/PROGRESS.md`):** plan items 1–6 are built and measured (profile, speed model, calibration route, places/geocoding, TET sizing, dedupe). Claude parsing is live (`parser: llm`, 4–7 s per new prompt, cached after); BRouter is local; trail lever + forest discount + teardrop shapes + second pass are in (late entry in PROGRESS.md). Open: Riga-start loops still retrace ~36% on the corridors; calibrate `speed.ts` against ridden GPX; UI controls for `noSand`/`avoidTowns`/trail level.
 
 

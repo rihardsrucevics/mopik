@@ -1,5 +1,29 @@
 # Mopik — progress log
 
+## 2026-09-12 — LVM GEO evaluated and shelved; self-hosted BRouter goes to the plan
+
+**LVM GEO** (state forest data) was measured against OSM by a research agent
+(`docs/LVM-GEO-2026-09-12.md`, scripts in `scripts/lvm/`): in Baldone's
+10×10 km box OSM lacks 30 m of LVM's 40.5 km of forest road (0.1 %), LVM
+roads carry no class/surface attributes while OSM has surface for 39 km of
+them, and around Turaida LVM owns no roads at all. The only information OSM
+lacks is LVM's gates/barriers (4 in Baldone, none in OSM). Decision by the
+rider: **not worth including for now**; an implementation of gates + WMS
+overlay + fire-season advisory was started and reverted. Keep the report;
+revisit gates if riders report locked barriers.
+
+**Self-hosted BRouter — planned, not started.** Production routes on public
+brouter.de: fewer shapes, no mutations, ~1–3 s per call, 55 s for a Jelgava
+request against Vercel's 60 s cap; that is the root of the first user's
+time-limit complaint and of "one version for Ķekava". Plan: a small VPS
+(Hetzner CX22 class, ~5 €/month) running the same BRouter as
+`~/…/brouter-server` with Baltic segments behind Caddy/HTTPS, `BROUTER_BASE_URL`
+in Vercel, monthly segment refresh via one script. Half a day. Blocked only on
+the rider creating the hosting account.
+
+**Also planned (from the DMD comparison):** a base map that colours roads by
+surface/tracktype (DMD's strength), and turning route feedback into OSM fixes.
+
 ## 2026-09-12 (late, 6) — product analytics: PostHog (EU) beside GA
 
 `lib/analytics.ts` is the one `track(event, props)` for the app. It sends to
