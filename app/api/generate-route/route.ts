@@ -808,11 +808,20 @@ function mutations(shape: LoopShape): LoopShape[] {
  * the "bug" riders saw on long rides via the public BRouter. Below the cap the
  * search stops launching new batches and answers with the best it has.
  */
-const TIME_BUDGET_MS = process.env.BROUTER_BASE_URL ? 110_000 : 42_000;
+const TIME_BUDGET_MS = process.env.BROUTER_BASE_URL ? 110_000 : 40_000;
+
+/** Rejects when the budget runs out; the underlying fetch is left to finish alone. */
+function withDeadline<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error("time budget exhausted")), Math.max(0, ms));
+    promise.then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
+  });
+}
 
 export async function POST(req: NextRequest) {
   const startedAt = Date.now();
-  const outOfTime = () => Date.now() - startedAt > TIME_BUDGET_MS;
+  const remainingMs = () => TIME_BUDGET_MS - (Date.now() - startedAt);
+  const outOfTime = () => remainingMs() <= 0;
   let body;
   try {
     body = RequestSchema.parse(await req.json());
@@ -1017,7 +1026,9 @@ export async function POST(req: NextRequest) {
       for (let i = 0; i < cands.length; i += CONCURRENCY) {
         if (outOfTime()) { console.warn(`time budget: stopping after ${i} of ${cands.length} candidates`); break; }
         const batch = cands.slice(i, i + CONCURRENCY);
-        settled.push(...(await Promise.allSettled(batch.map((c) => c.run()))));
+        // A slow public instance with retries can hold one route for a minute;
+        // a batch may not outlive the budget, whatever BRouter is doing.
+        settled.push(...(await Promise.allSettled(batch.map((c) => withDeadline(c.run(), remainingMs())))));
       }
       const scored: Scored[] = [];
       settled.forEach((result, i) => {
