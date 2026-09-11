@@ -38,7 +38,7 @@ export function RoutePrompt({ messages, plan, hasRoute, phase, quickReplies, luc
   };
 
   return (
-    <section className="flex flex-col overflow-hidden rounded-2xl border border-stone-200 bg-[#faf9f6] md:h-[calc(100vh-7rem)]" aria-label="Brauciena saruna">
+    <section className={`flex flex-col overflow-hidden rounded-2xl border border-stone-200 bg-[#faf9f6] md:h-[calc(100vh-7rem)] ${hasRoute ? "h-[max(320px,calc(58dvh-8.5rem))]" : "h-[calc(100dvh-7.5rem)]"}`} aria-label="Brauciena saruna">
       <div className="border-b border-stone-200 px-4 py-3 md:px-5 md:py-4">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -50,7 +50,7 @@ export function RoutePrompt({ messages, plan, hasRoute, phase, quickReplies, luc
         {plan && <p className="mt-2 hidden line-clamp-2 text-[11px] leading-relaxed text-stone-500 md:block">{planSummary(plan, true)}</p>}
       </div>
 
-      <div className="max-h-[26dvh] flex-1 space-y-4 overflow-y-auto px-4 py-4 md:max-h-none md:space-y-5 md:px-5 md:py-5" role="log" aria-label="Sarunas ziņas" aria-live="polite">
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4 md:space-y-5 md:px-5 md:py-5" role="log" aria-label="Sarunas ziņas" aria-live="polite">
         {messages.length === 0 && (
           <div className="py-5 text-sm leading-7 text-stone-600">
             <p>Vari uzreiz pateikt visu, ko zini.</p>
