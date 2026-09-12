@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowLeft, ArrowUp, ChevronDown, ChevronUp, Download, LoaderCircle, Share2 } from "lucide-react";
+import { ArrowLeft, ArrowUp, ChevronDown, ChevronUp, Download, LoaderCircle, Share2, Bookmark } from "lucide-react";
 import { GeneratedRoute, GenerateRouteResponse } from "@/lib/types";
 import { RidePlan, planSummary } from "@/lib/chat/ride-plan";
 import { BeerPopup } from "@/components/beer-popup";
 import { track } from "@/lib/analytics";
 import { encodeRouteShare, shareUrl } from "@/lib/share/route-code";
+import { isSaved, removeRide, saveRide } from "@/lib/share/saved-rides";
 
 /**
  * The left column once routes exist: what was asked, the three versions,
@@ -57,6 +58,9 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
   const [details, setDetails] = useState(false);
   const [beer, setBeer] = useState(false);
   const [shared, setShared] = useState<"idle" | "copied">("idle");
+  // Which ride is currently saved, by its code: derived during render rather
+  // than mirrored into state, so switching versions needs no effect.
+  const [savedTick, setSavedTick] = useState(0);
   const [text, setText] = useState("");
   const route = routes[Math.min(selected, routes.length - 1)];
   if (!route) return null;
@@ -148,6 +152,23 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
     ].filter(Boolean).join("\n");
   };
 
+  // Saving keeps the ride on this device as the same self-contained code the
+  // share link uses, so it can be reopened and exported with no server.
+  const startLabel = route.stops?.[0]?.name ?? plan?.startPlace ?? "";
+  // savedTick is read so the value recomputes after a save; localStorage is
+  // not reactive on its own.
+  const saved = savedTick >= 0 && isSaved(route, startLabel, plan);
+  const toggleSave = () => {
+    if (saved) {
+      removeRide(encodeRouteShare(route, startLabel, plan).slice(0, 24));
+      track("ride_unsaved");
+    } else {
+      saveRide(route, startLabel, plan);
+      track("ride_saved", { km: Math.round(route.distanceMeters / 1000), variant: route.variant });
+    }
+    setSavedTick((n) => n + 1);
+  };
+
   const warnings: string[] = [];
   if (route.overlap.repeatedPercent > 15) warnings.push(`${route.overlap.repeatedKm} km atkārto jau nobrauktus ceļus — vari prasīt mazāk atkārtojumu.`);
   if (route.roadMix.trailKm > 0) warnings.push(`${route.roadMix.trailKm} km taku.`);
@@ -230,12 +251,18 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
               Pārbrauciens {remoteLoop.transitOutKm} km · {duration(remoteLoop.transitOutMinutes * 60)} → <span className="font-semibold text-stone-700">{remoteLoop.focus.label.split(",")[0]} aplis {remoteLoop.loops[selected]?.km ?? "–"} km · {duration((remoteLoop.loops[selected]?.minutes ?? 0) * 60)}</span> → atpakaļ {remoteLoop.transitBackKm} km · {duration(remoteLoop.transitBackMinutes * 60)}
             </p>
           )}
-          <div className="mt-3 flex items-center gap-2">
-            <button type="button" onClick={downloadGpx} className="flex h-11 flex-1 items-center justify-center gap-2 rounded-full bg-[#f56300] text-sm font-semibold text-white transition hover:bg-[#d85600]"><Download className="size-4" />Lejupielādēt GPX</button>
-            <button type="button" onClick={shareRoute} aria-label="Dalīties ar maršrutu" className="flex h-11 shrink-0 items-center gap-1 rounded-full border border-stone-200 px-3 text-xs font-medium text-stone-700 hover:bg-stone-50">
+          {/* GPX is the one thing every rider presses, so it gets its own full
+              width: four buttons on one row wrapped its label onto two lines. */}
+          <button type="button" onClick={downloadGpx} className="mt-3 flex h-11 w-full items-center justify-center gap-2 rounded-full bg-[#f56300] text-sm font-semibold text-white transition hover:bg-[#d85600]"><Download className="size-4" />Lejupielādēt GPX</button>
+          <div className="mt-2 grid grid-cols-3 gap-2">
+            <button type="button" onClick={toggleSave} aria-label={saved ? "Noņemt no saglabātajiem" : "Saglabāt vēlākam"} aria-pressed={saved}
+              className={`flex h-10 min-w-0 items-center justify-center gap-1 rounded-full border text-xs font-medium transition ${saved ? "border-[#f56300] bg-[#fff3ea] text-[#bd4b00]" : "border-stone-200 text-stone-700 hover:bg-stone-50"}`}>
+              <Bookmark className={`size-3.5 ${saved ? "fill-current" : ""}`} />{saved ? "Saglabāts" : "Saglabāt"}
+            </button>
+            <button type="button" onClick={shareRoute} aria-label="Dalīties ar maršrutu" className="flex h-10 min-w-0 items-center justify-center gap-1 rounded-full border border-stone-200 text-xs font-medium text-stone-700 hover:bg-stone-50">
               <Share2 className="size-3.5" />{shared === "copied" ? "Nokopēts" : "Dalīties"}
             </button>
-            <button type="button" onClick={() => setDetails(!details)} aria-expanded={details} className="flex h-11 shrink-0 items-center gap-1 rounded-full border border-stone-200 px-3 text-xs font-medium text-stone-700 hover:bg-stone-50">
+            <button type="button" onClick={() => setDetails(!details)} aria-expanded={details} className="flex h-10 min-w-0 items-center justify-center gap-1 rounded-full border border-stone-200 text-xs font-medium text-stone-700 hover:bg-stone-50">
               Detaļas{details ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
             </button>
           </div>

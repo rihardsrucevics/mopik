@@ -172,6 +172,17 @@ Fidelity check: `BROUTER_BASE_URL=http://localhost:17777 npx tsx scripts/fidelit
 - **`WayTags` carries only the keys the profile references.** `tracktype`/`smoothness` looked absent on every route until the profile mentioned them. To report a tag, reference it in the cost script (a no-op `assign` is enough). Node-context keys (`barrier`, `ford`) referenced in the way context → 500.
 - Public instance also answers 400 "operation killed by thread-priority-watchdog" under load — retry like a 403.
 
+**Off-road share is `track + trail`, never `unpaved`** — Latvian gravel farm
+roads are unpaved, so a loop can read 70% unpaved with almost no forest. The
+ranking targets 45% track+trail at trails=lots.
+
+**Entering a forest way must be nearly free when the rider asked for tracks.**
+`initialclassifier` has three levels (asphalt / unpaved road / forest way) and
+`trackEntryCost` is 15 m at lots. With two levels a gravel→track turn paid the
+full 150 m surface-switch penalty, which is 30% of a 500 m track: break-even
+sat at ~1.2 km and Latvian tracks are 300–800 m. Proof the network is not the
+limit: a direct leg through Sigulda forest routes 55% track+path.
+
 **Trails are the product for an adventure rider**, not a garnish: "Grūti" and
 "Sports" mean the dotted lines. Three places must agree or the share silently
 goes to zero — `highway=path` cost in `moto-profile.ts`, the trail shortfall

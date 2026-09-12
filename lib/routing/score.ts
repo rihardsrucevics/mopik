@@ -25,9 +25,20 @@ export function loopRank(intent: RouteIntent, metrics: {
   // target would just flatten the ranking.
   const trailTarget = intent.trailPreference === "lots" ? (intent.difficulty === "hard" ? 8 : 5) : intent.trailPreference === "some" ? 2 : 0;
   const trailShortfall = trailTarget ? Math.max(0, trailTarget - metrics.trailPercent) * 2.5 : 0;
+  // Off-road share, counted the way a rider counts it: forest tracks and
+  // trails, not "unpaved" — Latvian gravel farm roads are unpaved too, and a
+  // loop can score 70% unpaved while riding almost no forest. Measured near
+  // Sigulda: the area has 350 km of track+path, a direct leg through it
+  // routes 55% on them, yet loops came back at 17-29%. The shortfall term
+  // makes a candidate that found the forest beat one that found gravel road.
+  const offRoadTarget = intent.trailPreference === "lots" ? 45 : intent.trailPreference === "some" ? 25 : 0;
+  const offRoadShortfall = offRoadTarget
+    ? Math.max(0, offRoadTarget - (metrics.trackPercent + metrics.trailPercent)) * 0.9
+    : 0;
   return metrics.repeatedPercent * (intent.prioritizeLowOverlap ? 2 : 1)
     + (wantsUnpaved ? Math.max(0, 55 - metrics.unpavedPercent) : 0)
     + trailShortfall
+    + offRoadShortfall
     + (intent.preferForest ? Math.max(0, 100 - metrics.trackPercent - metrics.trailPercent) * 0.5 : 0)
     + metrics.excessDriftPercent
     + metrics.streetPercent * (intent.avoidTowns ? 1 : 0.3)

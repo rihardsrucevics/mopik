@@ -1301,7 +1301,7 @@ export async function POST(req: NextRequest) {
     // the woods for a while is a feature here, not a fault.
     const complexScore = (c: Scored) =>
       common(c) -
-      (c.classified.roadMix.trackPercent + c.classified.roadMix.trailPercent * 3) * 0.6 -
+      (c.classified.roadMix.trackPercent + c.classified.roadMix.trailPercent * 3) * 1.6 -
       roughShare(c) * 0.3 -
       (c.classified.quality.natureScore ?? 0) * 0.15 -
       c.classified.quality.turnsPer10Km * 1.2;

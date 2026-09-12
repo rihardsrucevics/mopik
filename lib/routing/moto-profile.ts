@@ -104,16 +104,16 @@ function trailLevers(o: MotoProfileOptions) {
     // a track: at 25× the router rode 13 km of forest to dodge 900 m of
     // primary, and no rider does that.
     case "lots":
-      return { track: (0.9 - 0.4 * t).toFixed(2), turnCost: 50, switchCost: 150, roadPenalty: 1.35 };
+      return { track: (0.9 - 0.4 * t).toFixed(2), turnCost: 50, switchCost: 150, trackEntryCost: 15, roadPenalty: 1.35 };
     // "lots" with hard difficulty is the rider asking for the dotted lines
     // themselves. Measured near Blīdene: at path 3.0 (6x a track) the router
     // never took one — 0% trail on every candidate — because a 300 m path
     // always had a track alternative that scored better. At 0.75 paths win
     // where they genuinely shortcut, and the trail share stops being zero.
     case "some":
-      return { track: (1.2 - 0.6 * t).toFixed(2), turnCost: 80, switchCost: 250, roadPenalty: 1.1 };
+      return { track: (1.2 - 0.6 * t).toFixed(2), turnCost: 80, switchCost: 250, trackEntryCost: 80, roadPenalty: 1.1 };
     default:
-      return { track: (2.0 - 1.5 * t).toFixed(2), turnCost: TURN_COST_M, switchCost: SURFACE_SWITCH_COST_M, roadPenalty: 1 };
+      return { track: (2.0 - 1.5 * t).toFixed(2), turnCost: TURN_COST_M, switchCost: SURFACE_SWITCH_COST_M, trackEntryCost: SURFACE_SWITCH_COST_M, roadPenalty: 1 };
   }
 }
 
@@ -133,6 +133,7 @@ function costs(o: MotoProfileOptions) {
     track: trails.track,
     turnCost: trails.turnCost,
     switchCost: trails.switchCost,
+    trackEntryCost: trails.trackEntryCost,
     unpavedBonus: (1 - 0.45 * t).toFixed(2),
     // Gravel roads get slightly dearer when the rider wants tracks, so the
     // forest track beside the road wins.
@@ -240,8 +241,24 @@ assign is_unpaved =
   or surface=dirt or surface=earth or surface=compacted or surface=unpaved
   or surface=sand or surface=grass or surface=mud or surface=pebblestone
   or tracktype=grade2 or tracktype=grade3 or tracktype=grade4 tracktype=grade5
-assign initialclassifier = switch is_unpaved 2 1
-assign initialcost = ${c.switchCost}
+#
+# The classifier has three levels, not two: asphalt (1), unpaved road (2) and
+# forest track/trail (3). With only two, gravel road -> forest track counted
+# as a full surface switch, and a rider who asked for tracks paid the
+# anti-ping-pong penalty for every turn INTO what they came for. Latvian
+# forest tracks are short — 300-800 m — so at switchCost 150 m a 500 m track
+# cost 288 against 226 for staying on the gravel road, even though the track
+# is 40% cheaper per km. Break-even sat at ~1.2 km, which is longer than most
+# tracks exist. Hence trackEntryCost: near-free entry into a track when the
+# rider asked for them, full price for asphalt <-> unpaved.
+assign is_forest_way = or highway=track or highway=path highway=bridleway
+assign initialclassifier =
+  switch is_forest_way 3
+  switch is_unpaved 2
+  1
+assign initialcost =
+  switch is_forest_way ${c.trackEntryCost}
+  ${c.switchCost}
 
 # Ways a motor vehicle may not legally use. Kept absolute on purpose: the
 # app must never route a rider onto private land or a foot/cycle path.

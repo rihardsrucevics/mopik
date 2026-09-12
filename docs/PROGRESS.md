@@ -1,5 +1,48 @@
 # Mopik — progress log
 
+## 2026-09-12 — forest share: the penalty was for entering, not for riding
+
+The rider was still seeing too few dashed and dotted lines. Measured rather
+than guessed, and the first hypothesis was wrong: per-km costs were already
+right (deep forest, hard/lots — gravel road 0.45, forest track 0.275, path
+0.23). The block was `initialcost`.
+
+- **Entering a forest track cost 150 m** via the two-level
+  `initialclassifier` (paved=1, unpaved=2): a gravel road → forest track turn
+  counted as a full surface switch, so the rider paid the anti-ping-pong
+  penalty for every turn *into* what they asked for. Latvian tracks are
+  300–800 m, so a 500 m track cost 288 against 226 for staying on gravel —
+  break-even was ~1.2 km, longer than most tracks exist. Now three levels
+  (asphalt 1, unpaved road 2, forest way 3) with `trackEntryCost` 15 m at
+  trails=lots, 80 at some, unchanged otherwise.
+- **The ranking measured the wrong thing.** `unpavedPercent` counts Latvian
+  gravel farm roads, so a loop could score 70% unpaved with almost no forest.
+  Added an off-road shortfall on `track + trail` against 45% (lots) / 25%
+  (some), weight 0.9. Proof the network was not the limit: a *direct* leg
+  through Sigulda forest routes 55% track+path, while loops came back at
+  17–29%.
+- `complexScore` weights off-road 1.6× (was 0.6), so "Sarežģītākā" is
+  actually the forest one.
+
+| ride (complex) | before | after |
+|---|---|---|
+| Sigulda 2 h | 25% off-road | **37–45%** |
+| Līgatne 2 h | — | **57%** (19.6 km track + 8.2 km trail) |
+| Tukums 2 h | 13% | **37%** |
+| Kandava 2 h | 2% | **19%** (area is genuinely gravel-road country) |
+
+**Saglabāt vēlākam** (`lib/share/saved-rides.ts`,
+`components/saved-rides.tsx`). A saved ride is the same self-contained share
+code the link uses, kept in localStorage (not cookies: cookies travel on
+every request and cap near 4 KB, less than one route). Up to 30, newest
+first, shown on the form screen, opening as `/r/<code>` — same renderer, same
+GPX. Events `ride_saved`, `ride_unsaved`, `saved_ride_opened`,
+`saved_ride_removed`.
+
+**Button row.** Four buttons on one line wrapped "Lejupielādēt GPX" onto two
+lines; GPX now has its own full-width row with Saglabāt / Dalīties / Detaļas
+in a three-column grid below.
+
 ## 2026-09-12 — trails are the point of "Grūti", not a garnish
 
 The rider's Pilsblīdene ride came back with almost no dotted lines. Three

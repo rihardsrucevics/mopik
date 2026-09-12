@@ -8,6 +8,7 @@ import { RoutePrompt } from "@/components/route-prompt";
 import { ResultPanel } from "@/components/result-panel";
 import { FeedbackDialog } from "@/components/feedback-dialog";
 import { InstallPrompt } from "@/components/install-prompt";
+import { SavedRides } from "@/components/saved-rides";
 import { track } from "@/lib/analytics";
 import { decodePlanShare } from "@/lib/share/route-code";
 import { IntroSplash } from "@/components/intro-splash";
@@ -246,6 +247,7 @@ export default function Home() {
       <div className="grid items-start gap-5 md:grid-cols-[minmax(340px,460px)_1fr]">
         <div className="min-w-0 space-y-4">
           <InstallPrompt show={Boolean(result) && !chatting} />
+          {entryMode === "form" && <SavedRides />}
           {entryMode === "form"
             ? <RideComposer key={plan ? planSummary(plan, false) : "new"} initialPlan={plan} profile={profile} onProfileChange={changeProfile} busy={phase !== "idle"} onGenerate={startFromForm} onUseChat={() => setEntryMode("chat")} />
             : result && result.routes.length > 0 && !chatting

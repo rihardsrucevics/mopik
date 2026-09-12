@@ -26,7 +26,11 @@ export type AnalyticsEvent =
   | "shared_gpx_downloaded"  // GPX from a shared page
   | "install_prompt_shown"   // Android: add-to-home-screen offered
   | "install_accepted"
-  | "install_dismissed";
+  | "install_dismissed"
+  | "ride_saved"             // kept on this device; props: km, variant
+  | "ride_unsaved"
+  | "saved_ride_opened"
+  | "saved_ride_removed";
 
 declare global {
   interface Window { gtag?: (...args: unknown[]) => void }
