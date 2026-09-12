@@ -183,6 +183,16 @@ full 150 m surface-switch penalty, which is 30% of a 500 m track: break-even
 sat at ~1.2 km and Latvian tracks are 300–800 m. Proof the network is not the
 limit: a direct leg through Sigulda forest routes 55% track+path.
 
+**Difficulty and the trail dial answer different questions.** Difficulty =
+how rough a surface may be (grade, smoothness, fords). Trails = how willingly
+the router leaves the road. They were conflated as `hard || lots` in the grade
+costs, which made "Viegli + Meži" ride like "Grūti". Never re-merge them.
+
+**A ford is priced by the water, not by the tag.** Node keeps a worst-case
+cost; `ford_factor` in the way context discounts it by `estimated_river_class`
+(small stream at hard: 0.80, i.e. better than no ford; class 5-6: 9x; easy
+refuses). BRouter's lookups have no `ford=stream`.
+
 **Trails are the product for an adventure rider**, not a garnish: "Grūti" and
 "Sports" mean the dotted lines. Three places must agree or the share silently
 goes to zero — `highway=path` cost in `moto-profile.ts`, the trail shortfall

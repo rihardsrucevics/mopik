@@ -1,5 +1,42 @@
 # Mopik — progress log
 
+## 2026-09-12 — free turns into the forest, fords priced by the water
+
+Rider: turning onto a forest track should carry no penalty at all, and a
+ford is two different things — a brook is desirable, a river without a bridge
+is not.
+
+- **`turncost` is now per-target.** Turning onto `track`/`path`/`bridleway`
+  costs 0 at trails=lots (25 at some); every other turn keeps its 50 m. The
+  penalty exists to stop road ping-pong, not to discourage the thing the
+  rider is looking for.
+- **Fords are sized by the river.** BRouter's lookups only know `ford=yes`
+  and `stepping_stones`, and `waterway` is a way tag, so the node keeps a
+  worst-case price and a new `ford_factor` in the way context discounts it by
+  `estimated_river_class`: on a small watercourse a ford is **cheaper than
+  the same track without one** at hard (0.80), while class 5–6 costs 9× and
+  the easy profile refuses it outright (10000). `stepping_stones` is now
+  explicitly near-forbidden.
+- **Difficulty and the trail dial were conflated.** `grade3/4/5` used
+  `hard || lots`, so "Viegli + Meži" priced grade-4/5 ruts exactly like
+  "Grūti" — a rider who asked for forest but not for suffering got 7 km of
+  trail and grade-5. Difficulty now decides how rough a surface may be, the
+  trail dial only how willingly the router leaves the road. `highway=path` is
+  2.6 at easy+lots (was 1.1).
+
+Līgatne 1 h, complex, same request at three difficulties:
+
+| difficulty | km | off-road | track | trail | rough |
+|---|---|---|---|---|---|
+| Viegli | 29.4 | 29% | 5.7 | 3.0 | 0.8 |
+| Vidēji | 24.4 | 61% | 7.9 | 7.1 | 1.2 |
+| Grūti | 20.6 | 59% | 7.1 | 4.8 | 1.2 |
+
+**Proof of the concept, asked for explicitly:** Līgatne, 1 h, Grūti + Sports
++ Meži → 24 km / 1 h 3 min, **65% gravel, 7.1 km of trail, 8% repeated**, the
+map showing mostly dashed and dotted line. Ķemeri is the counter-example
+(20% off-road, 0 km trail) and honestly so: the bog has few rideable tracks.
+
 ## 2026-09-12 — forest share: the penalty was for entering, not for riding
 
 The rider was still seeing too few dashed and dotted lines. Measured rather

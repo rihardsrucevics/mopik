@@ -104,16 +104,16 @@ function trailLevers(o: MotoProfileOptions) {
     // a track: at 25× the router rode 13 km of forest to dodge 900 m of
     // primary, and no rider does that.
     case "lots":
-      return { track: (0.9 - 0.4 * t).toFixed(2), turnCost: 50, switchCost: 150, trackEntryCost: 15, roadPenalty: 1.35 };
+      return { track: (0.9 - 0.4 * t).toFixed(2), turnCost: 50, switchCost: 150, trackEntryCost: 15, forestTurnCost: 0, roadPenalty: 1.35 };
     // "lots" with hard difficulty is the rider asking for the dotted lines
     // themselves. Measured near Blīdene: at path 3.0 (6x a track) the router
     // never took one — 0% trail on every candidate — because a 300 m path
     // always had a track alternative that scored better. At 0.75 paths win
     // where they genuinely shortcut, and the trail share stops being zero.
     case "some":
-      return { track: (1.2 - 0.6 * t).toFixed(2), turnCost: 80, switchCost: 250, trackEntryCost: 80, roadPenalty: 1.1 };
+      return { track: (1.2 - 0.6 * t).toFixed(2), turnCost: 80, switchCost: 250, trackEntryCost: 80, forestTurnCost: 25, roadPenalty: 1.1 };
     default:
-      return { track: (2.0 - 1.5 * t).toFixed(2), turnCost: TURN_COST_M, switchCost: SURFACE_SWITCH_COST_M, trackEntryCost: SURFACE_SWITCH_COST_M, roadPenalty: 1 };
+      return { track: (2.0 - 1.5 * t).toFixed(2), turnCost: TURN_COST_M, switchCost: SURFACE_SWITCH_COST_M, trackEntryCost: SURFACE_SWITCH_COST_M, forestTurnCost: TURN_COST_M, roadPenalty: 1 };
   }
 }
 
@@ -169,9 +169,15 @@ function costs(o: MotoProfileOptions) {
     // offers nothing else, hence the outright forbid for easy.
     // "lots" of dotted lines means the rough grades are the point of the ride;
     // "easy" still refuses grade5 unless the rider asked for lots of trails.
-    grade3: hard || lots ? "1.00" : "1.10",
-    grade4: hard || lots ? "1.00" : some ? "1.20" : easy ? "3.00" : "1.60",
-    grade5: hard || lots ? "1.10" : some ? "2.00" : easy ? "100000" : "3.00",
+    // Difficulty decides how rough a surface may be; the trail dial decides how
+    // willingly the router leaves the road for one. They are different questions
+    // and `hard || lots` conflated them: "Viegli + Meži" priced grade4-5 exactly
+    // like "Grūti", so a rider who asked for forest but not for suffering got
+    // 7 km of trail and grade-5 ruts. Now the trail dial only softens what
+    // difficulty allows, never overrides it.
+    grade3: hard ? "1.00" : lots ? "1.02" : "1.10",
+    grade4: hard ? "1.00" : easy ? "3.00" : lots ? "1.10" : some ? "1.20" : "1.60",
+    grade5: hard ? "1.10" : easy ? "100000" : lots ? "1.45" : some ? "2.00" : "3.00",
     // smoothness: very_horrible/impassable are for 4x4s and trials bikes.
     horrible: hard ? "2.00" : easy && !lots ? "100000" : "5.00",
     // A mapper's "impassable" is a car's impassable; a rider's plan crossed
@@ -207,7 +213,13 @@ function costs(o: MotoProfileOptions) {
 
     // Fords are the signature Baltic obstacle: a feature for an adventure
     // ride, something to price out of an easy one. Cost in metres.
-    fordNode: easy ? "3000" : hard ? "100" : "300",
+    // A ford on a node is priced for the worst case, because the node itself
+    // cannot say how big the water is (BRouter's lookups only know ford=yes /
+    // stepping_stones, and `waterway` is a way tag). The way context below
+    // discounts it back when the crossing is a small stream — see ford_factor.
+    fordNode: easy ? "4000" : hard ? "600" : "1800",
+    // Turning onto a forest way: free when the rider asked for tracks.
+    forestTurnCost: trails.forestTurnCost,
   };
 }
 
@@ -230,9 +242,18 @@ assign validForCars = 1
 
 ---context:way
 
+# Forest ways are the target of the ride, not a surface to be penalised for
+# entering: used by both turncost and initialcost below.
+assign is_forest_way = or highway=track or highway=path highway=bridleway
+
 # A 90-degree turn costs this many metres of riding: the router stops
-# zigzagging through every side track for a few metres of gravel.
-assign turncost = ${c.turnCost}
+# zigzagging through every side track for a few metres of gravel. But turning
+# ONTO a forest track or trail is the whole point of the ride when the rider
+# asked for them, so that turn is free — the penalty exists to stop road
+# ping-pong, not to discourage the thing being looked for.
+assign turncost =
+  switch is_forest_way ${c.forestTurnCost}
+  ${c.turnCost}
 
 # Switching between paved and unpaved costs something too, so short gravel
 # shortcuts off an asphalt road and back are no longer free.
@@ -251,7 +272,6 @@ assign is_unpaved =
 # is 40% cheaper per km. Break-even sat at ~1.2 km, which is longer than most
 # tracks exist. Hence trackEntryCost: near-free entry into a track when the
 # rider asked for them, full price for asphalt <-> unpaved.
-assign is_forest_way = or highway=track or highway=path highway=bridleway
 assign initialclassifier =
   switch is_forest_way 3
   switch is_unpaved 2
@@ -329,6 +349,17 @@ assign forest_factor =
 # A mild preference for roads near rivers. Candidate ranking decides the
 # overall landscape mix; this only lets a scenic parallel road win a close
 # choice inside one leg without causing a long river-seeking detour.
+# A ford is two different things. On a brook — no mapped river class, or the
+# smallest ones — a rider crosses without slowing down, and on a hard forest
+# ride it is a highlight, so it is cheaper than the same track without one. A
+# ford on a real river means no bridge, which is where bikes drown; it costs
+# heavily and the easy profile refuses it outright.
+assign ford_factor =
+  switch not ford=yes 1.0
+  switch or estimated_river_class=5 estimated_river_class=6 ${o.difficulty === "easy" ? "10000" : "9.0"}
+  switch or estimated_river_class=3 estimated_river_class=4 ${o.difficulty === "easy" ? "50.0" : o.difficulty === "hard" ? "2.2" : "4.0"}
+  ${o.difficulty === "easy" ? "3.0" : o.difficulty === "hard" ? "0.80" : "1.2"}
+
 assign river_factor =
   switch or estimated_river_class=5 estimated_river_class=6 0.92
   switch or estimated_river_class=3 estimated_river_class=4 0.97
@@ -362,13 +393,14 @@ assign report_only =
 
 assign costfactor
   switch motor_forbidden 100000
-  switch highway=path ${o.trails === "lots" ? (o.difficulty === "hard" ? "0.75" : "1.1") : o.trails === "some" ? "2.2" : "8.0"}
+  switch highway=path ${o.trails === "lots" ? (o.difficulty === "hard" ? "0.75" : o.difficulty === "easy" ? "2.6" : "1.1") : o.trails === "some" ? "2.2" : "8.0"}
   multiply surface_factor
   multiply grade_factor
   multiply smooth_factor
   multiply town_factor
   multiply forest_factor
   multiply river_factor
+  multiply ford_factor
   multiply noise_factor
   multiply traffic_factor
   switch highway=track         ${c.track}
@@ -395,6 +427,7 @@ assign initialcost =
   switch or barrier=gate or barrier=lift_gate or barrier=swing_gate barrier=cattle_grid 200
   switch or barrier=bollard or barrier=block or barrier=chain or barrier=fence or barrier=log or barrier=debris barrier=motorcycle_barrier 5000
   switch ford=yes ${c.fordNode}
+  switch ford=stepping_stones 8000
   0
 `;
 }
