@@ -105,6 +105,11 @@ function trailLevers(o: MotoProfileOptions) {
     // primary, and no rider does that.
     case "lots":
       return { track: (0.9 - 0.4 * t).toFixed(2), turnCost: 50, switchCost: 150, roadPenalty: 1.35 };
+    // "lots" with hard difficulty is the rider asking for the dotted lines
+    // themselves. Measured near Blīdene: at path 3.0 (6x a track) the router
+    // never took one — 0% trail on every candidate — because a 300 m path
+    // always had a track alternative that scored better. At 0.75 paths win
+    // where they genuinely shortcut, and the trail share stops being zero.
     case "some":
       return { track: (1.2 - 0.6 * t).toFixed(2), turnCost: 80, switchCost: 250, roadPenalty: 1.1 };
     default:
@@ -340,7 +345,7 @@ assign report_only =
 
 assign costfactor
   switch motor_forbidden 100000
-  switch highway=path ${o.trails === "lots" ? "3.0" : "8.0"}
+  switch highway=path ${o.trails === "lots" ? (o.difficulty === "hard" ? "0.75" : "1.1") : o.trails === "some" ? "2.2" : "8.0"}
   multiply surface_factor
   multiply grade_factor
   multiply smooth_factor

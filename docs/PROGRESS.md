@@ -1,5 +1,51 @@
 # Mopik — progress log
 
+## 2026-09-12 — trails are the point of "Grūti", not a garnish
+
+The rider's Pilsblīdene ride came back with almost no dotted lines. Three
+separate causes, all fixed and measured:
+
+1. **A path cost 6× a forest track.** `costfactor` had
+   `highway=path 3.0` against `track 0.50` and `unclassified 1.49`, so a
+   candidate only took a path when there was no alternative at all — every
+   Blīdene candidate scored 0% trail. Now `0.75` at trails=lots + hard,
+   `1.1` at lots, `2.2` at some.
+2. **Nothing in the ranking wanted trails.** `loopRank` rewarded unpaved and
+   forest but treated trail km as interchangeable with gravel road. Added a
+   trail shortfall term: target 8% of the ride at lots+hard (5% at lots, 2%
+   at some), weighted 2.5. Modest on purpose — Latvian path density is low
+   (Blīdene has 3.8 km of `highway=path` in a 15×13 km box) and an
+   unreachable target just flattens the ranking.
+3. **The trail-rich candidate landed under the wrong name.** Picks ran
+   direct → balanced → complex, so near Sigulda "Taisnākā" claimed the 15%
+   trail loop and "Sarežģītākā" got 4%. When trails=lots, complex now picks
+   first. `directScore` also penalises trail share, `complexScore` weights
+   it 3× track.
+
+Measured, same requests before → after:
+
+| ride | before | after |
+|---|---|---|
+| Sigulda 2 h (complex) | 4% trail, 3.6 km | **15% trail, 7.9 km** |
+| Rīga → Pilsblīdene 8 h (complex) | 0% trail, 0 km | **5% trail, 17.7 km** |
+| Kandava 2 h (complex) | 2% trail | 2% trail (area has few paths) |
+
+**What is not a bug:** the Pilsblīdene corridor is genuinely gravel-road
+country. In a 15×13 km box mid-route OSM has 275 km of `unclassified`
+(Latvian gravel farm roads, classified "road gravel") against 52 km of
+`track`. A 315 km crossing of Kurzeme cannot be mostly forest track because
+the forest track is not there. The honest lever is the trail share, now
+fixed, not the track share.
+
+**Hours field.** The presets and the text field are now independent: tapping
+2/4/6/8 no longer writes into the field, the field starts empty with a
+"cits" placeholder, and typing clears the chip. Before, typing 2.5 meant
+first deleting the 4 that Mopik had put there.
+
+**GPX contains no description** — only `<metadata><name>` and the track. The
+rider asked; worth adding the plan summary as `<desc>` so a file found six
+months later still says what it was for.
+
 ## 2026-09-12 — short share links (Vercel Blob), and the plan after this deploy
 
 **Short links.** `mopik.eu/r/<8 chars>` instead of a 4 KB code. `POST /api/share`

@@ -1301,7 +1301,7 @@ export async function POST(req: NextRequest) {
     // the woods for a while is a feature here, not a fault.
     const complexScore = (c: Scored) =>
       common(c) -
-      (c.classified.roadMix.trackPercent + c.classified.roadMix.trailPercent) * 0.6 -
+      (c.classified.roadMix.trackPercent + c.classified.roadMix.trailPercent * 3) * 0.6 -
       roughShare(c) * 0.3 -
       (c.classified.quality.natureScore ?? 0) * 0.15 -
       c.classified.quality.turnsPer10Km * 1.2;
@@ -1322,10 +1322,6 @@ export async function POST(req: NextRequest) {
       const c = ordered.find((x) => !variantOf.has(x) && distinct(x));
       if (c) variantOf.set(c, variant);
     };
-    pick("direct", [...selection].filter((c) => !detour(c)).sort((a, b) => directScore(a) - directScore(b)));
-    // Balanced is the clean middle: plain corridors first, a ring or wiggle
-    // only if nothing else is left — those belong to the complex version.
-    pick("balanced", [...selection.filter((c) => !detour(c)), ...selection.filter(detour)]);
     // The complex version may run a little past the free band — a ring
     // around the stop on slow forest tracks costs minutes, and the panel
     // states the overshoot plainly — but only a little: 10% of the request.
@@ -1333,7 +1329,17 @@ export async function POST(req: NextRequest) {
     const complexPool = budgeted && withinBudget.length
       ? worthShowing.filter((c) => withinTolerance(c) || (detour(c) && excessDriftPercent(c) <= COMPLEX_EXTRA_DRIFT))
       : selection;
-    pick("complex", [...complexPool].sort((a, b) => complexScore(a) - complexScore(b)));
+    const byComplex = [...complexPool].sort((a, b) => complexScore(a) - complexScore(b));
+    // A rider who asked for trails gets the trail-rich candidate in the
+    // version named for it. Picking in declaration order gave it to
+    // "Taisnākā" instead — measured near Sigulda: 15% trail under direct,
+    // 4% under complex, which reads as the app ignoring the request.
+    if (intent.trailPreference === "lots") pick("complex", byComplex);
+    pick("direct", [...selection].filter((c) => !detour(c)).sort((a, b) => directScore(a) - directScore(b)));
+    // Balanced is the clean middle: plain corridors first, a ring or wiggle
+    // only if nothing else is left — those belong to the complex version.
+    pick("balanced", [...selection.filter((c) => !detour(c)), ...selection.filter(detour)]);
+    pick("complex", byComplex);
     const order: RouteVariant[] = ["direct", "balanced", "complex"];
     const picked = [...variantOf.entries()].sort((a, b) => order.indexOf(a[1]) - order.indexOf(b[1])).map(([c]) => c);
     // Fewer than three distinct picks (the public BRouter routes far fewer

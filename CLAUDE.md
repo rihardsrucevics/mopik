@@ -172,6 +172,12 @@ Fidelity check: `BROUTER_BASE_URL=http://localhost:17777 npx tsx scripts/fidelit
 - **`WayTags` carries only the keys the profile references.** `tracktype`/`smoothness` looked absent on every route until the profile mentioned them. To report a tag, reference it in the cost script (a no-op `assign` is enough). Node-context keys (`barrier`, `ford`) referenced in the way context → 500.
 - Public instance also answers 400 "operation killed by thread-priority-watchdog" under load — retry like a 403.
 
+**Trails are the product for an adventure rider**, not a garnish: "Grūti" and
+"Sports" mean the dotted lines. Three places must agree or the share silently
+goes to zero — `highway=path` cost in `moto-profile.ts`, the trail shortfall
+term in `score.ts`, and the pick order in `route.ts` (complex picks first at
+trails=lots). Verify with Sigulda 2 h: complex should show >10% trail.
+
 ## Calibration constants (all measured, all in `app/api/generate-route/route.ts`)
 
 - **A calibration route now replaces the table per request** (`calibrateLoop`): one loop at the table radius gives the region's real perimeter factor (measured 6–18 vs table 11–32) and, for duration requests, its real average speed. `LOOP_PERIMETER_FACTOR` is only the starting guess and the fallback when the calibration route fails.
