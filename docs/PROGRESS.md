@@ -32,12 +32,15 @@ right (deep forest, hard/lots — gravel road 0.45, forest track 0.275, path
 | Kandava 2 h | 2% | **19%** (area is genuinely gravel-road country) |
 
 **Saglabāt vēlākam** (`lib/share/saved-rides.ts`,
-`components/saved-rides.tsx`). A saved ride is the same self-contained share
+`components/saved-rides.tsx`, full list at `/saglabatie`). A saved ride is the same self-contained share
 code the link uses, kept in localStorage (not cookies: cookies travel on
 every request and cap near 4 KB, less than one route). Up to 30, newest
-first, shown on the form screen, opening as `/r/<code>` — same renderer, same
-GPX. Events `ride_saved`, `ride_unsaved`, `saved_ride_opened`,
-`saved_ride_removed`.
+first. The form screen shows the three most recent with "Rādīt visus N";
+`/saglabatie` lists all of them with search by name, sorting (newest /
+length / name), the saved date, a direct GPX download and delete. Opening one
+goes to `/r/<code>` — same renderer, same GPX. Events `ride_saved`,
+`ride_unsaved`, `saved_ride_opened`, `saved_ride_removed`,
+`saved_gpx_downloaded`, `saved_list_opened`.
 
 **Button row.** Four buttons on one line wrapped "Lejupielādēt GPX" onto two
 lines; GPX now has its own full-width row with Saglabāt / Dalīties / Detaļas

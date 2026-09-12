@@ -30,7 +30,9 @@ export type AnalyticsEvent =
   | "ride_saved"             // kept on this device; props: km, variant
   | "ride_unsaved"
   | "saved_ride_opened"
-  | "saved_ride_removed";
+  | "saved_ride_removed"
+  | "saved_gpx_downloaded"
+  | "saved_list_opened";
 
 declare global {
   interface Window { gtag?: (...args: unknown[]) => void }
