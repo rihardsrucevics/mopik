@@ -73,7 +73,7 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
       const res = await fetch("/api/export-gpx", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: route.name, coordinates: route.geometry.coordinates }),
+        body: JSON.stringify({ name: route.name, coordinates: route.geometry.coordinates, description: gpxDescription() }),
       });
       if (!res.ok) return;
       const blob = await res.blob();
@@ -134,6 +134,18 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
     }
     try { await navigator.clipboard.writeText(url); setShared("copied"); setTimeout(() => setShared("idle"), 3500); track("route_shared", { method: "copy", km: Math.round(route.distanceMeters / 1000), variant: route.variant }); }
     catch { window.prompt("Kopē saiti:", url); }
+  };
+
+  // What the file is, in one paragraph: the request, the result, the surface.
+  const gpxDescription = () => {
+    const m = route.roadMix;
+    return [
+      plan ? planSummary(plan, true) : "",
+      `${Math.round(route.distanceMeters / 1000)} km · ${duration(route.durationSeconds)} · ${unpaved(route)} % grants un zemes ceļu · ${route.overlap.repeatedPercent} % atkārtoti`,
+      `Ceļi: ${m.roadKm} km ceļš, ${m.trackKm} km meža ceļš, ${m.trailKm} km takas`,
+      `${VARIANT_LABELS[route.variant]?.label ?? route.variant} versija · Mopik (mopik.eu) · laiks rēķināts pēc seguma`,
+      "Maršruts veidots no OpenStreetMap datiem — vienmēr ievēro ceļa zīmes.",
+    ].filter(Boolean).join("\n");
   };
 
   const warnings: string[] = [];

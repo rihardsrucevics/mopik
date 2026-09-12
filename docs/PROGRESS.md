@@ -42,9 +42,11 @@ fixed, not the track share.
 "cits" placeholder, and typing clears the chip. Before, typing 2.5 meant
 first deleting the 4 that Mopik had put there.
 
-**GPX contains no description** — only `<metadata><name>` and the track. The
-rider asked; worth adding the plan summary as `<desc>` so a file found six
-months later still says what it was for.
+**GPX now carries a description.** `<desc>` in both `<metadata>` and `<trk>`
+(OsmAnd and Garmin read different ones): the plan summary, km / time /
+unpaved % / repeated %, the road split, which version it was, and the OSM
+caveat. A file found on a phone six months later still says what it was for.
+The shared page writes its own shorter version.
 
 ## 2026-09-12 — short share links (Vercel Blob), and the plan after this deploy
 

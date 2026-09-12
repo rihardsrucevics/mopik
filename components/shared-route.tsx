@@ -42,7 +42,12 @@ export function SharedRouteView({ share, planCode }: { share: SharedRoute; planC
 
   const downloadGpx = async () => {
     track("shared_gpx_downloaded", { km: share.km, variant: share.variant });
-    const res = await fetch("/api/export-gpx", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: share.name, coordinates: share.points }) });
+    const res = await fetch("/api/export-gpx", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+      name: share.name, coordinates: share.points,
+      description: [`${share.name} · ${share.km} km · ${duration(share.minutes)} · ${share.unpavedPercent} % grants`,
+        `${share.repeatedPercent} % atkārtoti · sākums ${share.startLabel}`,
+        "Dalīts maršruts no Mopik (mopik.eu) — vienmēr ievēro ceļa zīmes."].join("\n"),
+    }) });
     if (!res.ok) return;
     const url = URL.createObjectURL(await res.blob());
     const a = document.createElement("a");
