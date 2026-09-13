@@ -24,6 +24,18 @@ saved versions they were not looking at — it now saves `routes.map(shownFor)`.
 
 `alternative_cycled` (variant, to) replaces `alternatives_shown`.
 
+**Then the rider found the bug that made it pointless: the map did not change.**
+The offset lived inside `ResultPanel`, but the map is drawn by `app/page.tsx`
+from `result.routes[selected]` — it knew nothing about the swap, so cycling a
+card updated its numbers, the summary and the GPX while the map kept drawing
+the previous line. The offset is now page state, read by both. Verified by
+screenshot: cycling Taisnākā from 123 km to 136 km redraws a visibly different
+loop and reframes the map.
+
+**And it did not look pressable.** A bare "⟳ 2/2" on the card's own background
+reads as a label. It is a filled strip now — white on the selected card, brand
+orange on the others — and says "Cits · 2/3": what it does, then where you are.
+
 ## 2026-09-13 (final) — the rest of the pool, on request
 
 The rider: three versions are shown but many more are generated; let him look

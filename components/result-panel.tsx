@@ -40,7 +40,7 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = false, lucky = false, remoteLoop, longerSuggestion, tolerancePercent = 20, busy, onSend, onBackToForm, resolvedPlaces, alternatives }: {
+export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = false, lucky = false, remoteLoop, longerSuggestion, tolerancePercent = 20, busy, onSend, onBackToForm, resolvedPlaces, alternatives, offset, onOffsetChange }: {
   routes: GeneratedRoute[];
   /** transit → loop → transit split, when the ride was built around a focus area */
   remoteLoop?: GenerateRouteResponse["remoteLoop"];
@@ -69,14 +69,18 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
    * three they were comparing.
    */
   alternatives?: GeneratedRoute[] | null;
+  /**
+   * Which ride each category is showing. Owned by the page, because the map
+   * reads it too — keeping it here meant cycling a card updated the numbers
+   * and left the map drawing the previous line.
+   */
+  offset: Record<string, number>;
+  onOffsetChange: (next: Record<string, number>) => void;
 }) {
   const [details, setDetails] = useState(false);
   // Alternatives are appended, never swapped in: the three the rider is
   // comparing stay exactly where they are.
-  // Which ride each category is currently showing. 0 is the API's pick; the
-  // card's own control walks through that category's alternatives, so the
-  // panel is always three cards and no new names are invented.
-  const [offset, setOffset] = useState<Record<string, number>>({});
+
   /** That category's rides in order: the API's pick first, then its runners-up. */
   const familyOf = (variant: string) => [
     ...routes.filter((r) => r.variant === variant),
@@ -282,13 +286,13 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
                     <button type="button"
                       onClick={() => {
                         const next = (at + 1) % family.length;
-                        setOffset((o) => ({ ...o, [card.variant]: next }));
+                        onOffsetChange({ ...offset, [card.variant]: next });
                         onSelect(index);
                         track("alternative_cycled", { variant: card.variant, to: next });
                       }}
-                      className={`mt-1 flex w-full items-center justify-center gap-1 rounded-b-xl border-t px-2 py-1.5 text-[10px] font-medium transition ${active ? "border-stone-700 text-stone-300 hover:bg-white/10" : "border-stone-200 text-stone-500 hover:bg-stone-100"}`}
+                      className={`mt-1.5 flex w-full items-center justify-center gap-1 rounded-b-xl border-t px-2 py-2 text-[10px] font-semibold transition ${active ? "border-stone-700 bg-white/10 text-white hover:bg-white/20" : "border-stone-200 bg-white text-[#bd4b00] hover:bg-[#fff4ec]"}`}
                       aria-label={`Rādīt citu ${meta.label.toLowerCase()} maršrutu (${at + 1} no ${family.length})`}>
-                      <RefreshCw className="size-3" />{at + 1}/{family.length}
+                      <RefreshCw className="size-3" />Cits · {at + 1}/{family.length}
                     </button>
                   ) : <div className="pb-2" />}
                 </div>

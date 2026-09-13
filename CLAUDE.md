@@ -337,6 +337,9 @@ trails=lots). Verify with Sigulda 2 h: complex should show >10% trail.
   `worthShowing` (capped at `MAX_EXCESS_DRIFT`), not `selection`: only ~11 of
   36 sit inside the budget. Selection is round-robin across categories because
   `distinct()` is stateful — draining one category first starves the others.
+  **The offset belongs to `app/page.tsx`, not the panel**: the map is drawn
+  there, so panel-local state meant cycling a card changed its numbers and left
+  the map on the old line.
 - **No placeholder may look like a value, and an error names its field.**
   A grey "Rīga" in the empty start field and a black "Baldone" below it are the
   same shape on a phone; the rider could not see which field was missing, and

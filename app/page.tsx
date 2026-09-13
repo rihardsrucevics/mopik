@@ -168,6 +168,7 @@ export default function Home() {
         return;
       }
       setResult(data);
+      setVariantOffset({});
       // The lucky ride leads with the most interesting version.
       const complexIndex = (data as GenerateRouteResponse).routes.findIndex((r) => r.variant === "complex");
       setSelected(isLucky && complexIndex >= 0 ? complexIndex : 0);
@@ -261,7 +262,21 @@ export default function Home() {
     try { if (retry.stage === "chat") await converse(retry.messages, retry.plan); else await generate(retry.plan, retry.messages); }
     finally { setPhase("idle"); busyRef.current = false; }
   }
-  const route = result?.routes[Math.min(selected, (result?.routes.length ?? 1) - 1)] ?? null;
+  // Which ride each category is currently showing. The card's ⟳ control moves
+  // this, and the map reads it too — the state used to live inside the result
+  // panel, so cycling a card changed its numbers and left the map on the old
+  // line. One source, one truth.
+  const [variantOffset, setVariantOffset] = useState<Record<string, number>>({});
+  const card = result?.routes[Math.min(selected, (result?.routes.length ?? 1) - 1)] ?? null;
+  const familyOf = (variant: string) => [
+    ...(result?.routes ?? []).filter((r) => r.variant === variant),
+    ...(result?.alternatives ?? []).filter((r) => r.variant === variant),
+  ];
+  const route = (() => {
+    if (!card) return null;
+    const family = familyOf(card.variant);
+    return family[(variantOffset[card.variant] ?? 0) % Math.max(1, family.length)] ?? card;
+  })();
   // What the API actually routed through, in riding order. These are the
   // coordinates worth keeping in a share code — they made this route, rather
   // than being a fresh guess at what the names mean.
@@ -313,7 +328,7 @@ export default function Home() {
           {entryMode === "form"
             ? <RideComposer key={plan ? planSummary(plan, false) : "new"} initialPlan={plan} initialPlaces={places} profile={profile} onProfileChange={changeProfile} busy={phase !== "idle"} onGenerate={startFromForm} onUseChat={() => setEntryMode("chat")} onPlacesChange={setPreviewPlaces} map={mapInComposer && mapVisible ? mapPanel : undefined} />
             : result && result.routes.length > 0 && !chatting
-              ? <ResultPanel routes={result.routes} selected={selected} onSelect={setSelected} plan={plan} avoidTowns={result.intent.avoidTowns ?? false} lucky={lucky} remoteLoop={result.remoteLoop} longerSuggestion={result.longerSuggestion} tolerancePercent={result.intent.distanceTolerancePercent} busy={phase !== "idle"} onSend={send} onBackToForm={() => setEntryMode("form")} resolvedPlaces={routedPlaces} alternatives={result.alternatives} />
+              ? <ResultPanel routes={result.routes} selected={selected} onSelect={setSelected} plan={plan} avoidTowns={result.intent.avoidTowns ?? false} lucky={lucky} remoteLoop={result.remoteLoop} longerSuggestion={result.longerSuggestion} tolerancePercent={result.intent.distanceTolerancePercent} busy={phase !== "idle"} onSend={send} onBackToForm={() => setEntryMode("form")} resolvedPlaces={routedPlaces} alternatives={result.alternatives} offset={variantOffset} onOffsetChange={setVariantOffset} />
               : <RoutePrompt messages={messages} plan={plan} hasRoute={Boolean(route)} phase={phase} quickReplies={quickReplies} lucky={lucky && !route} onSend={send} onBackToForm={() => setEntryMode("form")} originCode={origin?.code ?? null} onAction={() => { setChatting(false); setQuickReplies([]); }} />}
           {/* A ride that came from editing another one. Asked once, here,
               because only the rider knows whether the original is still
