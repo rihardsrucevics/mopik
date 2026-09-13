@@ -1,5 +1,41 @@
 # Mopik — progress log
 
+## 2026-09-13 — the day in one place
+
+Fourteen commits, all live at `977d80f`. Two halves: a long UI pass in the
+morning, then taking Mopik out of the Baltics.
+
+**Where the rider corrected me, and was right every time.** Worth recording
+because the pattern repeats: I shipped two drag-and-drop "fixes" that could
+only ever be verified against synthesised events, because there is no iOS
+simulator here — he told me three times it was still dead before I stopped
+guessing and used arrow buttons. I built a "show more variants" button that
+revealed all six at once, which is not *on request*, only a delayed all-at-once.
+I invented names ("Gluda 2") where a superlative belongs to one card. And I
+made cycling a card change its numbers while the map kept drawing the old line,
+because the state sat in the panel and the map is drawn by the page.
+
+**Where measurement contradicted me.** I warned that the Latvian `trunk` rule
+would misbehave abroad. It does not: 0.0 km of trunk in eight runs across
+Germany, Poland and France. The real bug was at home — `avoidMainRoads` priced
+trunk (12) below primary (20), so asking to avoid main roads moved 2.2 km of a
+Rīga→Sigulda ride *onto* the A-road. I also claimed all 36 candidates in a pool
+were usable; only 11 sit inside the time budget.
+
+**The morning:** two honest route categories (a superlative that lies is worse
+than a plain comparison), per-card alternatives, form placeholders that no
+longer look like values, geolocation, coordinates carried in share codes, POI
+suggestions with street addresses, Instagram replacing the feedback form, and
+the beer and cigarette removed from the loader animation at the rider's
+request — Mopik should not encourage riding and harmful habits in one breath.
+
+**The afternoon:** the four Europe steps, each with its own entry below.
+
+**What is not done:** POI for Europe — the rider asked for it explicitly and it
+is the one remaining Baltics-only piece. `build_poi_dataset.py` takes its
+countries from a list, so it is a data job; he also asked whether Google could
+supply this, which has not been costed.
+
 ## 2026-09-13 (final) — saying what is missing abroad (step 4)
 
 A ride outside LV/LT/EE routes fine and its numbers are real — measured on a
