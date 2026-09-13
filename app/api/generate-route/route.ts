@@ -27,6 +27,7 @@ import { joinPaths } from "@/lib/routing/join-paths";
 import { loopRank, meetsRideLimits } from "@/lib/routing/score";
 import { classifyRoute } from "@/lib/routing/classify";
 import { measureTetCoverage } from "@/lib/routing/tet-coverage";
+import { hasPlaceData } from "@/lib/geo/poi";
 import { pickTetSlice } from "@/lib/routing/tet";
 import { parseIsochrone, type IsoRing } from "@/lib/geo/isochrone";
 import { planLoop, type LoopStop } from "@/lib/routing/loop";
@@ -127,6 +128,17 @@ type Candidate = {
 
 /** How many loop shapes survive to the UI. */
 const SHOWN_VARIANTS = 2;
+
+/**
+ * The place's own name, without the region that labels carry for
+ * disambiguation. Labels are "Sigulda · Siguldas novads" and
+ * "München · Bayern" — the separator is a middle dot, and splitting on a comma
+ * left "München · Bayern Adventure Loop" in the route name once place search
+ * went worldwide. Handles both, since older saved labels use commas.
+ */
+function placeName(label: string): string {
+  return label.split(/[·,]/)[0].trim();
+}
 
 /**
  * The three versions shown, in this order: the smoothest and quickest way
@@ -963,7 +975,7 @@ export async function POST(req: NextRequest) {
         const outSeconds = classifyRoute(out).durationSeconds;
         const backSeconds = classifyRoute(back).durationSeconds;
         remote = { focus, out, back, outSeconds, backSeconds };
-        console.log(`remote loop: ${origin.label.split(",")[0]} → ${focus.label.split(",")[0]} ${(out.distanceMeters / 1000).toFixed(0)} km / ${Math.round(outSeconds / 60)} min out, ${(back.distanceMeters / 1000).toFixed(0)} km / ${Math.round(backSeconds / 60)} min back (shares ${Math.round(sharedWithOut(back) * 100)}%)`);
+        console.log(`remote loop: ${placeName(origin.label)} → ${placeName(focus.label)} ${(out.distanceMeters / 1000).toFixed(0)} km / ${Math.round(outSeconds / 60)} min out, ${(back.distanceMeters / 1000).toFixed(0)} km / ${Math.round(backSeconds / 60)} min back (shares ${Math.round(sharedWithOut(back) * 100)}%)`);
         if (body.plan.budgetScope === "total") {
           const transitHours = (outSeconds + backSeconds) / 3600;
           const transitKm = (out.distanceMeters + back.distanceMeters) / 1000;
@@ -1438,8 +1450,8 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const startName = start.label.split(",")[0];
-    const originName = origin.label.split(",")[0];
+    const startName = placeName(start.label);
+    const originName = placeName(origin.label);
     const locale = detectLocale(body.prompt);
 
     const toRoute = (chosenScored: Scored): GeneratedRoute => {
@@ -1453,7 +1465,7 @@ export async function POST(req: NextRequest) {
         // Loops are named after the places they visit; fixed-shape routes
         // (destination, TET) keep their existing descriptive names.
         name: destination
-          ? `${startName} → ${destination.label.split(",")[0]}${tet ? " via TET" : ""}`
+          ? `${startName} → ${placeName(destination.label)}${tet ? " via TET" : ""}`
           : (remote ? `${originName} → ` : "") + nameLoop({
                 startLabel: startName,
                 difficulty: intent.difficulty,
@@ -1471,7 +1483,7 @@ export async function POST(req: NextRequest) {
         surfaces: classified.surfaces,
         quality: classified.quality,
         overlap: classified.overlap,
-        stops: [...(remote ? [{ name: startName, category: "via" }] : []), ...requiredVia.map(p => ({ name: p.label.split(",")[0], category: "via" })), ...stopLabels(stops, locale)],
+        stops: [...(remote ? [{ name: startName, category: "via" }] : []), ...requiredVia.map(p => ({ name: placeName(p.label), category: "via" })), ...stopLabels(stops, locale)],
         profile: profileName(intent),
         sourcePrompt: body.prompt,
         variant: variantOf.get(chosenScored) ?? "balanced",
@@ -1597,6 +1609,8 @@ export async function POST(req: NextRequest) {
       destination: destination ?? undefined,
       via: remote ? [remote.focus, ...requiredVia] : requiredVia,
       routes,
+      // Outside LV/LT/EE the ride is real but its stops are unnamed; say so.
+      ...(hasPlaceData(start) ? {} : { sparsePlaceData: true }),
       ...(alternatives.length ? { alternatives } : {}),
       ...(remote
         ? {

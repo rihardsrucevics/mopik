@@ -1,5 +1,30 @@
 # Mopik — progress log
 
+## 2026-09-13 (final) — saying what is missing abroad (step 4)
+
+A ride outside LV/LT/EE routes fine and its numbers are real — measured on a
+München loop: 92 km, **0 % repeated**, which is the product's own headline
+measure. What is missing is the pre-baked POI dataset (16,410 places, LV 7551 /
+LT 6047 / EE 2812), so loop anchors are geometric rather than named.
+
+`sparsePlaceData` on the response says so, and the result panel puts it in the
+warnings list the rider already reads: *"Ārpus Baltijas Mopik vēl nezina vietu
+nosaukumus — maršruts un skaitļi ir īsti, bet pieturas paliek nenosauktas."*
+Better said plainly than discovered as an empty stop list.
+
+**A bug the wider search exposed.** Route names read "München · Bayern
+Adventure Loop" — the region twice. `route.ts` took a place's short name with
+`label.split(",")[0]`, but labels are separated by a middle dot
+("Sigulda · Siguldas novads"), which only started mattering when place search
+went worldwide and labels stopped being Latvian-only. One `placeName()` helper
+now handles both separators, replacing five copies of the split.
+
+Not done, deliberately: POI for the rest of Europe. `build_poi_dataset.py`
+takes its countries from a list, so it is a data job rather than a code one,
+and routes work without it.
+
+45/45 across the suites.
+
 ## 2026-09-13 (later still) — the trunk assumption, measured (step 3)
 
 Step 3 was meant to be "the Latvian `trunk` rule is wrong abroad, measure how

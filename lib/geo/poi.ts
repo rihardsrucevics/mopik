@@ -84,6 +84,20 @@ function load(): { all: Poi[]; cells: Map<string, Poi[]> } {
   return cache;
 }
 
+/**
+ * The bounding box the pre-baked POI dataset actually covers (LV/LT/EE, built
+ * by `scripts/build_poi_dataset.py`). Outside it a ride still routes, but its
+ * loop anchors are geometric rather than named places — the result panel says
+ * so instead of leaving the rider to notice missing stop names.
+ */
+export function hasPlaceData(point: { lat: number; lon: number }): boolean {
+  const pois = load().all;
+  if (!pois.length) return false;
+  // A degree of slack: a ride starting just outside the border still passes
+  // through the data.
+  return pois.some((p) => Math.abs(p.lat - point.lat) < 1 && Math.abs(p.lon - point.lon) < 1.5);
+}
+
 export function loadPois(): Poi[] {
   return load().all;
 }

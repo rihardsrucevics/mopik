@@ -253,6 +253,13 @@ export type GenerateRouteResponse = {
    */
   distanceWarning?: { targetKm: number; shortestKm: number };
   /**
+   * Set when the ride is outside the pre-baked POI dataset (LV/LT/EE). The
+   * route is real and the overlap figures are real; what is missing is the
+   * named stops that turn a loop into "Caur Turaidu un Krimuldu". Said out
+   * loud rather than left for the rider to notice.
+   */
+  sparsePlaceData?: boolean;
+  /**
    * Set when nothing came close to the request and `routes` are the nearest
    * rides instead: Rīga → Jelgava → Rīga on forest roads is at least ~4 h,
    * whatever the rider typed. Carries the minimum we routed and the direct
