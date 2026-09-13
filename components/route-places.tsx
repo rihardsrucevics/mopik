@@ -22,8 +22,13 @@ import type { ResolvedPlace } from "@/lib/chat/places";
  * name the room it needs. Keyboard users keep the same moves: the handle is a
  * button and ArrowUp/ArrowDown on it move the row.
  */
-export function RoutePlaces({ places, oneWay, busy, onChange, onPick, onUseLocation, locating }: {
+export function RoutePlaces({ places, oneWay, busy, onChange, onPick, onUseLocation, locating, near }: {
   places: string[];
+  /**
+   * The first place already pinned in this ride. Every other row searches
+   * around it, so a start in Latvia does not offer a Sigulda in Bavaria.
+   */
+  near?: { lat: number; lon: number } | null;
   oneWay: boolean;
   busy?: boolean;
   /** Fill the start from the device's location. Absent = no button. */
@@ -92,6 +97,7 @@ export function RoutePlaces({ places, oneWay, busy, onChange, onPick, onUseLocat
             value={place}
             onChange={(v) => onChange(places.map((p, j) => (j === i ? v : p)))}
             onPick={(p) => { if (p) track("place_picked", { row: i, start: i === 0 }); onPick(i, p); }}
+            near={near}
             icon={<MapPin className="size-3" />}
             label={label(i)}
             placeholder={placeholder(i)}

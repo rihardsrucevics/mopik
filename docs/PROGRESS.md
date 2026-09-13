@@ -1,5 +1,44 @@
 # Mopik — progress log
 
+## 2026-09-13 (later still) — place search goes worldwide (step 2)
+
+`Innsbruck` and `Warszawa` returned **0 results**: `photon.ts` and `geocode.ts`
+both fenced search to a Baltic bbox plus a country allowlist. Removing the
+fence is not enough on its own, because the fence was load-bearing — measured
+with no bbox, `Cēsīm` returns Ćesim in Bosnia and `Tukumu` returns Tukumunga
+in Papua New Guinea. The Latvian case-form handling *depended* on it.
+
+**Bias instead of a fence.** Photon takes `lat`/`lon` to sort by, a 2500 km
+cut-off drops other continents, and the bias point comes from, best first: a
+place already pinned in this ride (`?near=`), Vercel's IP geolocation headers,
+then Rīga. The composer passes the first confirmed place down to every other
+row, which is the behaviour the rider asked for: pick a start in Latvia and the
+other rows offer Latvian places.
+
+Measured end to end in the form: choosing **München** as the start makes the
+second row request `near=48.1371,11.5754` and lead with **Neustadt an der
+Donau** — the Bavarian one out of dozens of German Neustadts. With Hamburg as
+the bias it leads with Neustadt in Ostholstein instead.
+
+**A sort order that had to be got right.** Ranking by distance before
+importance was measured putting *Siguldas novads* above Sigulda and a hamlet
+named Warszawa above the capital: the nearest thing with the right name is
+rarely the one meant. It is kind → rank → distance, so distance only separates
+equals — exactly what "LV first" used to do, without assuming the rider lives
+in Latvia.
+
+`geocode.ts` gets the same treatment: `point` biases, the bbox is gone, and the
+`baltic` flag became `near` (within `FAR_KM` of the ride's anchor). All six
+Latvian case forms still resolve: Cēsīm→Cēsis, Tukumu→Tukums, Siguldā→Sigulda,
+Valmierai→Valmiera, Baldoni→Baldone, Ogri→Ogre. Innsbruck, Warszawa and Berlin
+now resolve too.
+
+Tests: `scripts/geo-bias.test.ts` pins both halves — foreign places findable,
+Baltic places still leading, the bias point actually changing the answer, and
+case forms resolving to the Latvian town. One of these caught an over-strict
+assertion of mine (the result *list* may contain Italian "Cesi"; what matters
+is that Cēsis leads). 45/45 across the suites.
+
 ## 2026-09-13 (later) — TET goes Europe-wide (step 1 of going worldwide)
 
 The rider supplied the official TET GPX for every European country — the one

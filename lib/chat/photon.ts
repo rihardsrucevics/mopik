@@ -1,15 +1,28 @@
 import type { ResolvedPlace } from "@/lib/chat/places";
 
 /**
- * Place lookup on Photon (komoot's OSM geocoder): settlements only, Baltic
- * countries only, Latvia first. Used by the form's picker and by the chat
- * when it needs coordinates to reason about a plan (how far is the focus
- * area from the start?) before anything is routed.
+ * Place lookup on Photon (komoot's OSM geocoder). Used by the form's picker
+ * and by the chat when it needs coordinates to reason about a plan (how far
+ * is the focus area from the start?) before anything is routed.
+ *
+ * **Worldwide, biased rather than fenced.** This was Baltics-only — a bbox
+ * plus a `{LV,LT,EE}` allowlist — which is why "Innsbruck" and "Warszawa"
+ * returned nothing at all. The fence cannot simply go, though: Latvian case
+ * forms depend on it. Measured without any bbox, "Cēsīm" returns Ćesim in
+ * Bosnia and "Tukumu" returns Tukumunga in Papua New Guinea. So results are
+ * *ranked* by distance from where the rider is instead, and the caller passes
+ * that home point.
  */
 const PHOTON = "https://photon.komoot.io/api/";
 const PHOTON_REVERSE = "https://photon.komoot.io/reverse";
-const BALTIC_BBOX = "20.9,53.8,28.3,59.7";
-const COUNTRIES = new Set(["LV", "LT", "EE"]);
+/** Where a rider is assumed to be until the app knows better. */
+export const DEFAULT_HOME = { lat: 56.9496, lon: 24.1052 };
+/**
+ * A hit this far from home is almost certainly the geocoder reaching for a
+ * same-spelled place on another continent, not what was typed. Generous
+ * enough to plan a ride across Europe from the Baltics.
+ */
+const FAR_KM = 2500;
 const CACHE_TTL_MS = 10 * 60 * 1000;
 
 type PhotonFeature = {
@@ -86,19 +99,30 @@ export type PlaceSuggestion = ResolvedPlace & {
   kindLabel: string;
 };
 
+/** Great-circle km; only used to rank and to cut off other continents. */
+function distanceKm(home: { lat: number; lon: number }, [lon, lat]: [number, number]): number {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(lat - home.lat), dLon = toRad(lon - home.lon);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(home.lat)) * Math.cos(toRad(lat)) * Math.sin(dLon / 2) ** 2;
+  return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 const cache = new Map<string, { at: number; places: PlaceSuggestion[] }>();
 
-export async function searchPlaces(q: string): Promise<PlaceSuggestion[]> {
+export async function searchPlaces(q: string, home = DEFAULT_HOME): Promise<PlaceSuggestion[]> {
   const query = q.trim();
   if (query.length < 2) return [];
-  const key = query.toLowerCase();
+  const key = `${query.toLowerCase()}|${home.lat.toFixed(1)},${home.lon.toFixed(1)}`;
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.places;
 
   const url = new URL(PHOTON);
   url.searchParams.set("q", query);
   url.searchParams.set("limit", "30");
-  url.searchParams.set("bbox", BALTIC_BBOX);
+  // Bias, not a fence: Photon sorts by distance from this point but still
+  // returns Innsbruck when Innsbruck is what was typed.
+  url.searchParams.set("lat", String(home.lat));
+  url.searchParams.set("lon", String(home.lon));
   // No osm_tag filter any more: addresses, fuel stops and landmarks are
   // wanted too. KIND_GROUP below decides what is rideable and in what order,
   // so a settlement still outranks a railway platform of the same name.
@@ -113,7 +137,9 @@ export async function searchPlaces(q: string): Promise<PlaceSuggestion[]> {
 
   const seen = new Set<string>();
   const places: PlaceSuggestion[] = features
-    .filter((f) => (f.properties.name || f.properties.street) && COUNTRIES.has(f.properties.countrycode ?? ""))
+    // Anything with a name, anywhere — except the far-flung namesakes that a
+    // Latvian case form drags in ("Cēsīm" → Ćesim, Bosnia).
+    .filter((f) => (f.properties.name || f.properties.street) && distanceKm(home, f.geometry.coordinates) <= FAR_KM)
     .flatMap((f) => {
       const kind = kindOf(f.properties);
       if (!kind) return [];
@@ -133,12 +159,17 @@ export async function searchPlaces(q: string): Promise<PlaceSuggestion[]> {
         name, label: suffix ? `${name} · ${suffix}` : name,
         lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0],
         kind: q.osm_value ?? "place", kindLabel: kind.label,
-        group: kind.group, rank: RANK[q.osm_value ?? ""] ?? 0, lv: q.countrycode === "LV",
+        group: kind.group, rank: RANK[q.osm_value ?? ""] ?? 0, distanceKm: distanceKm(home, f.geometry.coordinates),
       }];
     })
     // Settlements first, then addresses, stops and landmarks; Latvia before
     // its neighbours; bigger places before smaller ones of the same name.
-    .sort((a, b) => a.group - b.group || Number(b.lv) - Number(a.lv) || b.rank - a.rank)
+    // Kind, then importance, then nearness. Sorting on distance before rank
+    // was measured putting "Siguldas novads" above Sigulda and a hamlet called
+    // Warszawa above the capital: the nearest thing with the right name is
+    // rarely the one meant. Distance only separates equals — which is exactly
+    // what "LV first" used to do, without assuming the rider is in Latvia.
+    .sort((a, b) => a.group - b.group || b.rank - a.rank || a.distanceKm - b.distanceKm)
     .filter((x) => {
       const k = `${x.label}|${x.lat.toFixed(4)}|${x.lon.toFixed(4)}`;
       if (seen.has(k)) return false;
@@ -153,8 +184,8 @@ export async function searchPlaces(q: string): Promise<PlaceSuggestion[]> {
 }
 
 /** The most likely place for a typed name, or null when Photon has nothing. */
-export async function lookupPlace(name: string): Promise<PlaceSuggestion | null> {
-  return (await searchPlaces(name))[0] ?? null;
+export async function lookupPlace(name: string, home = DEFAULT_HOME): Promise<PlaceSuggestion | null> {
+  return (await searchPlaces(name, home))[0] ?? null;
 }
 
 // The pre-routing arithmetic lives in `feasibility.ts` (pure, shared with the

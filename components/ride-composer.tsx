@@ -208,6 +208,11 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   // the state updater: calling a parent's setState while rendering is exactly
   // what React warns about.
   const confirmed = places.map((_, i) => picked[i]).filter((p): p is ResolvedPlace => Boolean(p));
+  // The first pinned place biases every other row's search: choosing Sigulda
+  // as the start should offer Latvian places below it, not a same-named
+  // village on another continent. Until something is pinned the server falls
+  // back to the rider's own region.
+  const anchor = confirmed[0] ?? null;
   const confirmedKey = confirmed.map((p) => `${p.lat},${p.lon}`).join("|");
   useEffect(() => {
     onPlacesChange?.(confirmed);
@@ -252,7 +257,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
             shape of the ride is asking the rider to guess. */}
         <ChoiceRow label="Maršruta veids" value={tripType} onChange={(v) => { track("trip_type_changed", { to: v }); setTripType(v); }} choices={[{ value: "one_way", label: "Vienā virzienā" }, { value: "round_trip", label: "Turp un atpakaļ" }]} />
 
-        <RoutePlaces places={places} oneWay={tripType === "one_way"} busy={busy} onChange={reorder} onPick={setPick} onUseLocation={useMyLocation} locating={locating} />
+        <RoutePlaces places={places} oneWay={tripType === "one_way"} busy={busy} onChange={reorder} onPick={setPick} onUseLocation={useMyLocation} locating={locating} near={anchor} />
 
         {/* The map is worth a look when a place needs confirming, not on every
             visit — it is the tallest thing on the page and most rides are

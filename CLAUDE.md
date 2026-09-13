@@ -123,6 +123,31 @@ always rejected after the 2026-09-10 Rīga–Ainaži beach regression.
 
 
 
+## Place search is worldwide and biased, never fenced (2026-09-13)
+
+Search used a Baltic bbox plus a `{LV,LT,EE}` allowlist, which is why
+"Innsbruck" and "Warszawa" returned **0 results**. The fence could not simply
+go: it was also what made Latvian case forms work. Measured with no bbox,
+`Cēsīm` → Ćesim (Bosnia) and `Tukumu` → Tukumunga (Papua New Guinea).
+
+So results are **ranked** around a bias point instead, and a 2500 km cut-off
+drops other continents. The bias point, best first:
+1. `?near=` — a place already pinned in this ride. The composer passes the
+   first confirmed place, so a Munich start offers Bavarian places below it
+   (measured: `Neustadt` → *Neustadt an der Donau*, not one of the dozens).
+2. Vercel's IP headers (`x-vercel-ip-latitude/longitude`) — city-level, free,
+   no permission prompt, read as plain headers rather than via a dependency.
+3. Rīga.
+
+**Sort by kind, then rank, then distance.** Distance before rank was measured
+putting "Siguldas novads" above Sigulda and a hamlet named Warszawa above the
+capital. Distance only separates equals — which is what "LV first" did, without
+assuming where the rider lives.
+
+`geocode.ts` follows the same shape: `point` biases, no bbox, and the old
+`baltic` flag is now `near` (within `FAR_KM` of the anchor). All six Latvian
+case forms still resolve correctly; `scripts/geo-bias.test.ts` pins both halves.
+
 ## TET is Europe-wide (2026-09-13)
 
 33 countries, 400 sections, 118,246 km — built from the official per-country

@@ -14,12 +14,13 @@ const KIND_LABEL: Record<string, string> = {
 };
 
 /**
- * A place field with suggestions. Typing shows Baltic settlements matching
- * the text; picking one stores its coordinates (`onPick`), so "Valmiera"
- * is the city the rider meant and not whatever a geocoder guesses later.
- * Typing without picking still works — the API then geocodes the name.
+ * A place field with suggestions. Typing shows matching places — worldwide,
+ * ranked nearest to `near` or to the rider's own region; picking one stores
+ * its coordinates (`onPick`), so "Valmiera" is the city the rider meant and
+ * not whatever a geocoder guesses later. Typing without picking still works —
+ * the API then geocodes the name.
  */
-export function PlaceInput({ value, onChange, onPick, placeholder, icon, label, className, trailing }: {
+export function PlaceInput({ value, onChange, onPick, placeholder, icon, label, className, trailing, near }: {
   value: string;
   onChange: (value: string) => void;
   onPick: (place: ResolvedPlace | null) => void;
@@ -27,6 +28,12 @@ export function PlaceInput({ value, onChange, onPick, placeholder, icon, label, 
   icon?: ReactNode;
   label?: ReactNode;
   className?: string;
+  /**
+   * A place already chosen in this ride, used to bias the search. Picking
+   * Sigulda as the start should make the other rows offer Latvian places
+   * rather than whatever shares the name worldwide.
+   */
+  near?: { lat: number; lon: number } | null;
   /**
    * Controls that belong to this field — clear it, reorder its row — rendered
    * inside the frame, on the right. Inside rather than beside it so the field
@@ -49,7 +56,8 @@ export function PlaceInput({ value, onChange, onPick, placeholder, icon, label, 
     const timer = setTimeout(async () => {
       if (q.length < 2) { setSuggestions([]); return; }
       try {
-        const res = await fetch(`/api/places?q=${encodeURIComponent(q)}`, { signal: controller.signal });
+        const nearParam = near ? `&near=${near.lat.toFixed(4)},${near.lon.toFixed(4)}` : "";
+        const res = await fetch(`/api/places?q=${encodeURIComponent(q)}${nearParam}`, { signal: controller.signal });
         if (!res.ok) return;
         const data = (await res.json()) as { places: Suggestion[] };
         setSuggestions(data.places);
