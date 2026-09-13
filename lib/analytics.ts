@@ -19,7 +19,7 @@ export type AnalyticsEvent =
   | "gpx_downloaded"         // the GPX button; props: variant, km, minutes, repeated
   | "beer_popup"             // the thank-you shown
   | "beer_click"             // the Revolut link tapped
-  | "feedback_sent"          // feedback dialog submitted
+  | "instagram_opened"        // "Raksti mums" tapped; props: from (header|beer)
   | "map_fullscreen"         // phone map expanded
   | "route_shared"           // share button; props: method (share|copy), km, variant
   | "shared_route_viewed"    // /r/<code> opened
@@ -64,7 +64,7 @@ export function startAnalytics(): void {
     // Anonymous riders stay anonymous; nobody signs in to Mopik.
     person_profiles: "identified_only",
     // Replays are the "ieraksti": on, with text in inputs masked (places are
-    // fine to see, the feedback form is not).
+    // fine to see, a typed message is not).
     session_recording: { maskAllInputs: false, maskInputOptions: { password: true, email: true } },
     autocapture: false,
   });

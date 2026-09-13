@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import Image from "next/image";
+import { InstagramLink } from "@/components/instagram-link";
 import { X } from "lucide-react";
 import { track } from "@/lib/analytics";
 
@@ -48,7 +49,17 @@ export function BeerPopup({ open, onClose }: { open: boolean; onClose: () => voi
           <Image src="/revolut-qr-dark.svg" alt="QR kods: revolut.me/rucijs" width={132} height={132} unoptimized className="rounded-xl" />
           <span className="text-[11px] text-stone-500">Noskenē ar telefonu</span>
         </div>
-        <button type="button" onClick={onClose} className="mt-5 text-xs text-stone-400 underline decoration-stone-600 underline-offset-4 hover:text-stone-200">Varbūt citreiz</button>
+        {/* Not everyone wants to pay, and following costs nothing — so the
+            second way to say thanks sits right next to the first. */}
+        {/* Each on its own line: the parent is `text-center`, not a column, so
+            two inline-flex children flowed together into one row. */}
+        <div className="mt-4">
+          <InstagramLink from="beer" label="Seko Instagram"
+            className="inline-flex items-center gap-2 rounded-full border border-stone-700 px-4 py-2 text-xs font-medium text-stone-200 transition hover:border-stone-500 hover:bg-white/5" />
+        </div>
+        <div className="mt-5">
+          <button type="button" onClick={onClose} className="text-xs text-stone-400 underline decoration-stone-600 underline-offset-4 hover:text-stone-200">Varbūt citreiz</button>
+        </div>
         {/* Who is behind it, quietly, at the very bottom. */}
         <p className="mt-6 text-[11px] text-stone-600">
           Rihards · @rucijs · <a href="mailto:rihards.rucevics@gmail.com" className="hover:text-stone-400">rihards.rucevics@gmail.com</a>

@@ -6,9 +6,9 @@ import { useRef, useState, useEffect } from "react";
 import { RouteMap } from "@/components/route-map";
 import { RoutePrompt } from "@/components/route-prompt";
 import { ResultPanel } from "@/components/result-panel";
-import { FeedbackDialog } from "@/components/feedback-dialog";
 import { InstallPrompt } from "@/components/install-prompt";
 import { MapPanel } from "@/components/map-panel";
+import { InstagramLink } from "@/components/instagram-link";
 import Link from "next/link";
 import { track } from "@/lib/analytics";
 import { decodePlanPlaces, decodePlanShare } from "@/lib/share/route-code";
@@ -75,7 +75,6 @@ export default function Home() {
   // surprised. The loader and the result say so, and the deepest version leads.
   const [lucky, setLucky] = useState(false);
   // Phone only: the map over the whole screen, on request.
-  const [feedbackOpen, setFeedbackOpen] = useState(false);
   // Places picked in the form, with coordinates; sent with every generation
   // so chat corrections keep pointing at the same towns.
   const [places, setPlaces] = useState<ResolvedPlace[]>([]);
@@ -304,11 +303,10 @@ export default function Home() {
             above the form pushed the ride down on every visit, for something
             a rider wants occasionally; the icon carries the meaning here. */}
         <Link href="/saglabatie" onClick={() => track("saved_list_opened")} className="inline-flex items-center gap-1 text-xs text-stone-500 hover:text-stone-900"><Bookmark className="size-3.5" />Saglabātie</Link>
-        <button type="button" onClick={() => setFeedbackOpen(true)} className="text-xs text-stone-500 underline decoration-stone-300 underline-offset-4 hover:text-stone-900">Atsauksme</button>
+        <InstagramLink from="header" />
         {(messages.length > 0 || plan) && <button disabled={phase !== "idle"} onClick={() => { setEntryMode("form"); setMessages([]); setPlan(null); setPlaces([]); setResult(null); setChatting(false); setError(null); setRetry(null); setQuickReplies([]); }} className="inline-flex items-center gap-1 text-xs text-stone-500 underline underline-offset-4 disabled:opacity-40"><Plus className="size-3.5" />Jauns brauciens</button>}
         </div>
       </header>
-      <FeedbackDialog open={feedbackOpen} onClose={() => setFeedbackOpen(false)} context={[plan ? planSummary(plan, true) : "", route ? `${route.name} (${Math.round(route.distanceMeters / 1000)} km)` : ""].filter(Boolean).join(" · ") || undefined} />
       <div className="grid items-start gap-5 md:grid-cols-[minmax(340px,460px)_1fr]">
         <div className="min-w-0 space-y-4">
           <InstallPrompt show={Boolean(result) && !chatting} />

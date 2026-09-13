@@ -1,5 +1,36 @@
 # Mopik — progress log
 
+## 2026-09-13 (last) — feedback is a DM
+
+The feedback form mailed one address through Resend, where nobody but the
+author could see the reply. Riders already talk about routes on Instagram, and
+an answer there helps the next rider too.
+
+- **`components/instagram-link.tsx`** — the link and the mark, shared. Two
+  placements: the header ("Sazinies", replacing "Atsauksme") and the beer
+  popup ("Seko Instagram", under the Revolut button — not everyone wants to
+  pay, and following costs nothing). `instagram_opened` carries `from`, so the
+  analytics say which placement works.
+- **The glyph is drawn here**, gradient and all: `lucide-react` has no brand
+  icons in this version and `AtSign` reads as a generic camera next to grey
+  text. Each instance takes its gradient id from `useId` — a module counter
+  would disagree between the server and client renders.
+- **Removed:** `components/feedback-dialog.tsx`, `app/api/feedback/route.ts`,
+  the `feedbackOpen` state and the `feedback_sent` event. `RESEND_API_KEY` is
+  no longer read and can be dropped from Vercel.
+- Layout bug found while testing: the popup's container is `text-center`, not a
+  flex column, so the Instagram pill and "Varbūt citreiz" flowed into one row.
+  Each is wrapped in its own block now (measured: 457 px vs 516 px).
+
+**Not done, next up:** showing more of the candidate pool. Measured on a
+Sigulda 2 h request: **36 candidates are routed and classified, all 36 pass the
+acceptance checks, and 3 are shown.** Discarded ones include a 69.7 km ride at
+0 % repeated and 74 % unpaved. The rider wants a "more like this" button per
+category that *adds* variants rather than replacing the three already on
+screen. The numbers are already in `debugCandidates`; the cost is geometry —
+the response would grow roughly 3x if nine full routes travelled instead of
+three.
+
 ## 2026-09-13 (latest) — the drag is gone; reordering is arrows again
 
 The rider reported touch reordering broken three times. Two fixes shipped in

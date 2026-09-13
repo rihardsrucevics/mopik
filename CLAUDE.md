@@ -458,8 +458,10 @@ build into connection refusals; the script rotates mirrors.
   Success; dashboard "Mopik lietojums" 947311. Set in Vercel production.
   `track()` in `lib/analytics.ts` is a no-op without it. Add new events to
   the `AnalyticsEvent` union and the table in PROGRESS.md.
-- `RESEND_API_KEY` (optional): rider feedback e-mails via Resend to
-  rihards.rucevics@gmail.com; without it the form falls back to a mailto: link.
+- Feedback is a DM, not a form: the header and the beer popup link to
+  instagram.com/mopik.eu (`components/instagram-link.tsx`). The Resend mail
+  form, its dialog and `/api/feedback` were removed — `RESEND_API_KEY` is no
+  longer used and can be dropped from Vercel.
 
 **Gotcha:** `vercel blob create-store --yes` (and `vercel env pull` to
 `.env.local`) OVERWRITES `.env.local`, keeping only what Vercel knows. It
