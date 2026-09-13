@@ -57,8 +57,13 @@ export function BeerPopup({ open, onClose }: { open: boolean; onClose: () => voi
               badly or squeezes the popup. The mark leads, the text sits left
               of centre so both lines share an edge and stay readable. */}
           <InstagramLink from="beer"
-            label={<span className="text-left leading-snug">Tago <span className="font-semibold text-stone-100">@mopik.eu</span> savos braucienos<br />un sūti savas atsauksmes</span>}
-            className="mx-auto inline-flex max-w-[17rem] items-center gap-2.5 rounded-2xl border border-stone-700 px-4 py-3 text-xs text-stone-300 transition hover:border-stone-500 hover:bg-white/5" />
+            label={(
+              <span className="min-w-0 flex-1 text-left">
+                <span className="block text-xs font-semibold text-stone-100">Piesekot @mopik.eu</span>
+                <span className="mt-0.5 block text-[11px] leading-snug text-stone-400">Tago Mopik savos braucienos, sūti atsauksmes un idejas.</span>
+              </span>
+            )}
+            className="flex w-full items-center gap-3 rounded-2xl border border-stone-700 px-4 py-3 transition hover:border-stone-500 hover:bg-white/5" />
         </div>
         {/* Who is behind it, quietly, at the very bottom — the author's own
             account, not Mopik's, so the two links mean different things. */}
