@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { composeRidePlan } from "../lib/chat/compose-plan";
+import { composeRidePlan, placesFromPlan } from "../lib/chat/compose-plan";
 import {
   DEFAULT_PROFILE,
   PROFILE_PRESETS,
@@ -12,7 +12,7 @@ import {
 } from "../lib/chat/ride-profile";
 import { nextPlanQuestion } from "../lib/chat/ride-plan";
 
-const base = { start: "Rīga", destination: "", stops: [], tripType: "round_trip" as const, durationMode: "hours" as const, hours: 2 };
+const base = { places: ["Rīga"], tripType: "round_trip" as const, durationMode: "hours" as const, hours: 2 };
 
 test("the default profile is the adventure rider: technical, riding, forest", () => {
   const plan = composeRidePlan({ ...base, profile: DEFAULT_PROFILE });
@@ -64,4 +64,34 @@ test("a chat seeded with the profile only asks where and how long", () => {
   assert.match(nextPlanQuestion(seed, false)!, /start/);
   const placed = { ...seed, startPlace: "Tukums", returnToStart: true, budget: { mode: "duration" as const, value: 2, constraint: "target" as const, minimumValue: null } };
   assert.equal(nextPlanQuestion(placed, false), null);
+});
+
+test("an ordered list becomes a plan, and survives the round trip back", () => {
+  const round = composeRidePlan({ ...base, places: ["Rīga", "Baldone", "Ķekava"], profile: DEFAULT_PROFILE });
+  assert.equal(round.startPlace, "Rīga");
+  assert.deepEqual(round.viaPlaces, ["Baldone", "Ķekava"]);
+  assert.equal(round.destinationPlace, null, "a round trip has no destination — it returns to the start");
+  assert.equal(round.returnToStart, true);
+  assert.deepEqual(placesFromPlan(round), ["Rīga", "Baldone", "Ķekava"]);
+
+  const oneWay = composeRidePlan({ ...base, places: ["Rīga", "Baldone", "Cēsis"], tripType: "one_way", profile: DEFAULT_PROFILE });
+  assert.deepEqual(oneWay.viaPlaces, ["Baldone"], "everything before the last place is a waypoint");
+  assert.equal(oneWay.destinationPlace, "Cēsis");
+  assert.equal(oneWay.returnToStart, false);
+  assert.deepEqual(placesFromPlan(oneWay), ["Rīga", "Baldone", "Cēsis"]);
+});
+
+test("order is the rider's, and blanks are dropped", () => {
+  const plan = composeRidePlan({ ...base, places: ["Rīga", "  ", "Sigulda", "Līgatne"], profile: DEFAULT_PROFILE });
+  assert.deepEqual(plan.viaPlaces, ["Sigulda", "Līgatne"], "empty rows never become stops");
+  const swapped = composeRidePlan({ ...base, places: ["Rīga", "Līgatne", "Sigulda"], profile: DEFAULT_PROFILE });
+  assert.deepEqual(swapped.viaPlaces, ["Līgatne", "Sigulda"], "reordering changes the ride");
+});
+
+test("a plan with neither stops nor destination is just a loop from home", () => {
+  const plan = composeRidePlan({ ...base, places: ["Tukums"], profile: DEFAULT_PROFILE });
+  assert.equal(plan.startPlace, "Tukums");
+  assert.deepEqual(plan.viaPlaces, []);
+  assert.equal(plan.returnToStart, true);
+  assert.deepEqual(placesFromPlan(null), ["Rīga"], "an empty form starts at Rīga");
 });

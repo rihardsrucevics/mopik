@@ -190,6 +190,16 @@ export function RouteMap({ segments, start, destination, via, showTet, onToggleT
           for (const c of f.geometry.coordinates) bounds.extend(c as [number, number]);
         }
         map.fitBounds(bounds, { padding: 48, duration: 800 });
+      } else if (start || (via && via.length)) {
+        // No route yet — frame the places the rider has confirmed, so the map
+        // answers "is this the right Valmiera?" before a generation is spent.
+        const pins = [...(start ? [start] : []), ...(via ?? [])];
+        if (pins.length === 1) map.easeTo({ center: [pins[0].lon, pins[0].lat], zoom: 11, duration: 600 });
+        else if (pins.length > 1) {
+          const bounds = new maplibregl.LngLatBounds();
+          for (const p of pins) bounds.extend([p.lon, p.lat]);
+          map.fitBounds(bounds, { padding: 64, maxZoom: 12, duration: 700 });
+        }
       }
     };
 

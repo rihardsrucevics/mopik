@@ -209,6 +209,10 @@ trails=lots). Verify with Sigulda 2 h: complex should show >10% trail.
 
 ## UX decisions already settled
 
+- **The ride is one ordered list of places, and trip type is asked first.**
+  Start, then stops, in riding order; a round trip does not repeat the start.
+  Do not reintroduce a separate "Uz" field — on a loop it silently became the
+  last stop and nothing could be reordered.
 - **The structured composer is the primary input.** Its From/Destination/stop
   fields and finite choices create `RidePlan` directly. Do not send them
   through prompt parsing.

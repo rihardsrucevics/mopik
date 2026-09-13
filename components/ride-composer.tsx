@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ArrowRight, ChevronDown, ChevronUp, MapPin, Plus, Route, Sparkles, X } from "lucide-react";
 import { RidePlan } from "@/lib/chat/ride-plan";
-import { composeRidePlan } from "@/lib/chat/compose-plan";
-import { PlaceInput } from "@/components/place-input";
+import { composeRidePlan, placesFromPlan } from "@/lib/chat/compose-plan";
+import { RoutePlaces } from "@/components/route-places";
 import type { ResolvedPlace } from "@/lib/chat/places";
 import {
   PROFILE_LABELS,
@@ -92,7 +92,7 @@ function ProfileLine({ profile, onChange }: { profile: RideProfile; onChange: (p
   );
 }
 
-export function RideComposer({ initialPlan, profile, onProfileChange, busy, onGenerate, onUseChat }: {
+export function RideComposer({ initialPlan, profile, onProfileChange, busy, onGenerate, onUseChat, onPlacesChange }: {
   initialPlan: RidePlan | null;
   /** the rider's standing profile, remembered on the device */
   profile: RideProfile;
@@ -100,10 +100,10 @@ export function RideComposer({ initialPlan, profile, onProfileChange, busy, onGe
   busy: boolean;
   onGenerate: (plan: RidePlan, places: ResolvedPlace[]) => void;
   onUseChat: () => void;
+  /** Picked places, in riding order, so the map can confirm them before a ride exists. */
+  onPlacesChange?: (places: ResolvedPlace[]) => void;
 }) {
-  const [start, setStart] = useState(initialPlan?.startPlace ?? "Rīga");
-  const [destination, setDestination] = useState(initialPlan?.returnToStart ? initialPlan.viaPlaces.at(-1) ?? "" : initialPlan?.destinationPlace ?? "");
-  const [stops, setStops] = useState<string[]>(initialPlan?.returnToStart ? initialPlan.viaPlaces.slice(0, -1) : initialPlan?.viaPlaces ?? []);
+  const [places, setPlaces] = useState<string[]>(placesFromPlan(initialPlan));
   const [tripType, setTripType] = useState<"round_trip" | "one_way">(initialPlan?.returnToStart === false ? "one_way" : "round_trip");
   const [durationMode, setDurationMode] = useState<"flexible" | "hours">(initialPlan?.budget.mode === "duration" ? "hours" : "flexible");
   // The chips and the field are two ways to say the same thing, never mirrored
@@ -115,23 +115,43 @@ export function RideComposer({ initialPlan, profile, onProfileChange, busy, onGe
   const [preset, setPreset] = useState<number | null>(initialHours && PRESETS.includes(initialHours) ? initialHours : initialHours ? null : 4);
   const [hours, setHours] = useState(initialHours && !PRESETS.includes(initialHours) ? String(initialHours) : "");
   const [error, setError] = useState<string | null>(null);
-  // Picked places by field: "start", "destination", "stop-0"… Typing again
-  // clears the pick, so a changed name is geocoded rather than silently
-  // kept at the old coordinates.
-  const [picked, setPicked] = useState<Record<string, ResolvedPlace | null>>({});
-  const setPick = (key: string, place: ResolvedPlace | null) => setPicked((prev) => ({ ...prev, [key]: place }));
+  // Picked places by row index. Typing again clears the pick, so a changed
+  // name is geocoded rather than silently kept at the old coordinates.
+  const [picked, setPicked] = useState<Record<number, ResolvedPlace | null>>({});
+  const setPick = (index: number, place: ResolvedPlace | null) => setPicked((prev) => ({ ...prev, [index]: place }));
+  // Reordering moves the rows; the coordinates must follow their row, so the
+  // picks are re-keyed by matching name rather than by the old index.
+  const reorder = (next: string[]) => {
+    const byName = new Map<string, ResolvedPlace>();
+    for (const [i, p] of Object.entries(picked)) if (p && places[Number(i)]) byName.set(places[Number(i)].trim().toLowerCase(), p);
+    setPlaces(next);
+    setPicked(Object.fromEntries(next.map((name, i) => [i, byName.get(name.trim().toLowerCase()) ?? null])));
+  };
+
+  // Report picked places upward in riding order, so the map can draw a pin per
+  // confirmed place and the rider sees that "Brīvības iela 105" is the one
+  // they meant before spending a generation on it. In an effect, not inside
+  // the state updater: calling a parent's setState while rendering is exactly
+  // what React warns about.
+  const confirmed = places.map((_, i) => picked[i]).filter((p): p is ResolvedPlace => Boolean(p));
+  const confirmedKey = confirmed.map((p) => `${p.lat},${p.lon}`).join("|");
+  useEffect(() => {
+    onPlacesChange?.(confirmed);
+    // `confirmed` is rebuilt each render; the key is what actually changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [confirmedKey]);
 
   // A plan the chat has modified carries its own profile; otherwise the
   // rider's remembered one applies.
   const effectiveProfile = initialPlan ? profileFromPlan(initialPlan) : profile;
 
-  const addStop = () => { if (stops.length < 4) setStops([...stops, ""]); };
   const submit = () => {
-    if (!start.trim()) { setError("Norādi brauciena sākumu."); return; }
-    if (tripType === "one_way" && !destination.trim()) { setError("Vienvirziena braucienam norādi galamērķi."); return; }
+    const filled = places.map((p) => p.trim()).filter(Boolean);
+    if (!filled.length) { setError("Norādi brauciena sākumu."); return; }
+    if (tripType === "one_way" && filled.length < 2) { setError("Vienvirziena braucienam norādi galamērķi."); return; }
     const value = hours.trim() ? Number(hours.replace(",", ".")) : preset ?? NaN;
     if (durationMode === "hours" && (!Number.isFinite(value) || value < 0.5 || value > 16)) { setError("Ilgumam jābūt no 0,5 līdz 16 stundām."); return; }
-    const plan = composeRidePlan({ start, destination, stops, tripType, durationMode, hours: value, profile: effectiveProfile });
+    const plan = composeRidePlan({ places, tripType, durationMode, hours: value, profile: effectiveProfile });
     setError(null);
     onGenerate(plan, Object.values(picked).filter((p): p is ResolvedPlace => p !== null));
   };
@@ -147,15 +167,14 @@ export function RideComposer({ initialPlan, profile, onProfileChange, busy, onGe
       {/* Scrolls inside the fixed-height column when the profile panel is
           open; overflow-hidden on the section otherwise trapped the content. */}
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4 md:gap-5 md:p-5">
-        <div className="grid gap-2">
-          <PlaceInput value={start} onChange={setStart} onPick={(p) => setPick("start", p)} icon={<MapPin className="size-3" />} label="No" placeholder="Rīga" />
-          <PlaceInput value={destination} onChange={setDestination} onPick={(p) => setPick("destination", p)} icon={<ArrowRight className="size-3" />} label="Uz" placeholder={tripType === "round_trip" ? "Nav obligāts — aplis" : "Ainaži"} />
-        </div>
+        {/* Trip type first: it decides what the last row means — a waypoint on
+            the way home, or the finish. Asking for places before knowing the
+            shape of the ride is asking the rider to guess. */}
+        <ChoiceRow label="Maršruta veids" value={tripType} onChange={setTripType} choices={[{ value: "round_trip", label: "Turp un atpakaļ" }, { value: "one_way", label: "Vienā virzienā" }]} />
 
-        <div className="grid gap-4">
-          <ChoiceRow label="Maršruta veids" value={tripType} onChange={setTripType} choices={[{ value: "round_trip", label: "Turp un atpakaļ" }, { value: "one_way", label: "Vienā virzienā" }]} />
-          <ChoiceRow label="Ilgums" value={durationMode} onChange={setDurationMode} choices={[{ value: "flexible", label: "Brīvs" }, { value: "hours", label: "Konkrēts" }]} />
-        </div>
+        <RoutePlaces places={places} picked={picked} oneWay={tripType === "one_way"} busy={busy} onChange={reorder} onPick={setPick} />
+
+        <ChoiceRow label="Ilgums" value={durationMode} onChange={setDurationMode} choices={[{ value: "flexible", label: "Brīvs" }, { value: "hours", label: "Konkrēts" }]} />
         {durationMode === "hours" && (
           <div className="flex items-stretch gap-1.5" role="group" aria-label="Stundas">
             {/* The usual days as one tap each; the field is for everything else. */}
@@ -175,16 +194,6 @@ export function RideComposer({ initialPlan, profile, onProfileChange, busy, onGe
             </label>
           </div>
         )}
-
-        <div>
-          {stops.map((stop, index) => (
-            <div key={index} className="mb-2 flex items-start gap-2">
-              <PlaceInput className="min-w-0 flex-1" value={stop} onChange={(v) => setStops(stops.map((item, i) => i === index ? v : item))} onPick={(p) => setPick(`stop-${index}`, p)} icon={<Route className="size-3" />} label={`Pieturvieta ${index + 1}`} placeholder="Piemēram, Limbaži" />
-              <button type="button" onClick={() => { setStops(stops.filter((_, i) => i !== index)); setPick(`stop-${index}`, null); }} aria-label="Noņemt pieturvietu" className="mt-4"><X className="size-4 text-stone-400" /></button>
-            </div>
-          ))}
-          <button type="button" onClick={addStop} disabled={stops.length >= 4} className="inline-flex items-center gap-1 text-xs font-medium text-[#bd4b00] disabled:opacity-40"><Plus className="size-3.5" />Pievienot pieturvietu</button>
-        </div>
 
         <ProfileLine profile={effectiveProfile} onChange={onProfileChange} />
 

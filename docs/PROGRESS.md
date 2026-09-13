@@ -1,5 +1,35 @@
 # Mopik — progress log
 
+## 2026-09-13 — the ride is one ordered list, and the trip type is asked first
+
+The old form had From, To and separate stops. On a round trip "Uz" was
+appended to the stops (`composeRidePlan`), so two fields did the same job,
+the rider could not reorder anything, and an empty "Uz" on a loop meant
+nothing at all.
+
+- **`ComposerValues.places` is one ordered list** (start first, then every
+  stop; a round trip does not repeat the start). `placesFromPlan` converts
+  back, so a plan edited in the chat reopens in the right order.
+- **Trip type is the first question.** It decides what the last row *means* —
+  a waypoint on the way home, or the finish — so asking for places first was
+  asking the rider to guess. Labels follow: `Sākums`, `Caur (1)`,
+  `Galamērķis` only on a one-way ride; a round trip shows "↩ Atpakaļ uz
+  Rīga" instead of an empty field.
+- **`components/route-places.tsx`**: every row can move up, move down or be
+  removed; the start stays put. Picked coordinates are re-keyed by name on
+  reorder so they follow their row rather than their old index.
+- **The map confirms places before a ride exists.** Picking "Brīvības iela
+  105" drops a pin and frames it (`easeTo` for one place, `fitBounds` for
+  several), so a wrong Valmiera is caught before a generation is spent. On
+  phones the map appears as soon as the first place is confirmed.
+- Bug found and fixed while testing: the upward report called the parent's
+  setState inside a state updater — React's "cannot update a component while
+  rendering a different component". Moved into an effect keyed on the
+  coordinates.
+
+Tests: `scripts/compose-plan.test.ts` covers the list → plan conversion both
+ways, blank rows, and reordering changing the ride. 9/9.
+
 ## 2026-09-13 (later still) — the map control travels with the map; From and To get their own rows
 
 - **`components/map-panel.tsx`** now owns the full-screen behaviour (fixed

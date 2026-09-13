@@ -93,6 +93,9 @@ export default function Home() {
   // Places picked in the form, with coordinates; sent with every generation
   // so chat corrections keep pointing at the same towns.
   const [places, setPlaces] = useState<ResolvedPlace[]>([]);
+  // Places confirmed in the form but not yet routed: the map shows them so a
+  // wrong "Valmiera" is caught before a generation is spent on it.
+  const [previewPlaces, setPreviewPlaces] = useState<ResolvedPlace[]>([]);
   // The rider's standing profile (how rough, why, where): remembered on the
   // device, applied to the form and used to seed a fresh chat so it only has
   // to ask where and how long.
@@ -243,7 +246,7 @@ export default function Home() {
           <InstallPrompt show={Boolean(result) && !chatting} />
           {entryMode === "form" && <SavedRides />}
           {entryMode === "form"
-            ? <RideComposer key={plan ? planSummary(plan, false) : "new"} initialPlan={plan} profile={profile} onProfileChange={changeProfile} busy={phase !== "idle"} onGenerate={startFromForm} onUseChat={() => setEntryMode("chat")} />
+            ? <RideComposer key={plan ? planSummary(plan, false) : "new"} initialPlan={plan} profile={profile} onProfileChange={changeProfile} busy={phase !== "idle"} onGenerate={startFromForm} onUseChat={() => setEntryMode("chat")} onPlacesChange={setPreviewPlaces} />
             : result && result.routes.length > 0 && !chatting
               ? <ResultPanel routes={result.routes} selected={selected} onSelect={setSelected} plan={plan} avoidTowns={result.intent.avoidTowns ?? false} lucky={lucky} remoteLoop={result.remoteLoop} longerSuggestion={result.longerSuggestion} tolerancePercent={result.intent.distanceTolerancePercent} busy={phase !== "idle"} onSend={send} onBackToForm={() => setEntryMode("form")} />
               : <RoutePrompt messages={messages} plan={plan} hasRoute={Boolean(route)} phase={phase} quickReplies={quickReplies} lucky={lucky && !route} onSend={send} onBackToForm={() => setEntryMode("form")} onAction={() => { setChatting(false); setQuickReplies([]); }} />}
@@ -251,14 +254,19 @@ export default function Home() {
         </div>
         {/* Sticky on the desktop; on the phone the map only appears once
             there is a route to show, above the result. Nothing overlays it. */}
-        <div className={`order-first min-w-0 md:order-none md:sticky md:top-5 ${result ? "" : "hidden md:block"}`}>
+        <div className={`order-first min-w-0 md:order-none md:sticky md:top-5 ${result || previewPlaces.length ? "" : "hidden md:block"}`}>
           {/* Phone heights: 42dvh with the result panel, 26dvh while the chat
               has something to say (the words matter more than the picture
               then), the whole screen when asked. */}
           <MapPanel
             className={`overflow-hidden rounded-2xl border border-stone-200 md:h-[calc(100vh-7rem)] ${result && chatting ? "h-[26dvh]" : "h-[42dvh]"}`}
             expandedClassName="md:relative md:inset-auto md:z-auto md:h-[calc(100vh-7rem)] md:overflow-hidden md:rounded-2xl md:border md:border-stone-200">
-            <RouteMap segments={route?.segments ?? null} start={result?.start ?? null} destination={result?.destination ?? null} via={result?.via} showTet={showTet} onToggleTet={setShowTet} />
+            <RouteMap
+              segments={route?.segments ?? null}
+              start={result?.start ?? previewPlaces[0] ?? null}
+              destination={result?.destination ?? null}
+              via={result ? result.via : previewPlaces.slice(1)}
+              showTet={showTet} onToggleTet={setShowTet} />
           </MapPanel>
         </div>
       </div>
