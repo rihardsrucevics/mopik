@@ -52,13 +52,15 @@ export function BeerPopup({ open, onClose }: { open: boolean; onClose: () => voi
         {/* Not everyone wants to pay, and following costs nothing — so the
             second way to say thanks sits right next to the first. */}
         {/* Each on its own line: the parent is `text-center`, not a column, so
-            two inline-flex children flowed together into one row. */}
+            two inline-flex children flowed together into one row.
+            Declining sits directly under the ask it answers; following is a
+            separate offer and comes after it. */}
         <div className="mt-4">
-          <InstagramLink from="beer" label="Seko Instagram"
-            className="inline-flex items-center gap-2 rounded-full border border-stone-700 px-4 py-2 text-xs font-medium text-stone-200 transition hover:border-stone-500 hover:bg-white/5" />
+          <button type="button" onClick={onClose} className="text-xs text-stone-400 underline decoration-stone-600 underline-offset-4 hover:text-stone-200">Nākamreiz</button>
         </div>
         <div className="mt-5">
-          <button type="button" onClick={onClose} className="text-xs text-stone-400 underline decoration-stone-600 underline-offset-4 hover:text-stone-200">Varbūt citreiz</button>
+          <InstagramLink from="beer" label="Seko Instagram"
+            className="inline-flex items-center gap-2 rounded-full border border-stone-700 px-4 py-2 text-xs font-medium text-stone-200 transition hover:border-stone-500 hover:bg-white/5" />
         </div>
         {/* Who is behind it, quietly, at the very bottom. */}
         <p className="mt-6 text-[11px] text-stone-600">
