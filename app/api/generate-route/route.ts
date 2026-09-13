@@ -140,6 +140,8 @@ export type RouteVariant = "direct" | "balanced" | "complex";
 
 /** Two loops sharing more than this share of their road pieces are one option. */
 const DUPLICATE_SHARE = 0.8;
+/** Alternatives only need to be a different ride, not a different-looking one. */
+const ALTERNATIVE_DUPLICATE_SHARE = 0.95;
 
 /** Undirected road pieces of a shape, the same keying `measureOverlap` uses. */
 function roadPieceKeys(coordinates: [number, number][]): Set<string> {
@@ -1308,12 +1310,12 @@ export async function POST(req: NextRequest) {
     const detour = (c: Scored) => /^(around|zig)-/.test(c.variant);
     const variantOf = new Map<Scored, RouteVariant>();
     const takenKeys: Set<string>[] = [];
-    const distinct = (c: Scored) => {
+    const distinct = (c: Scored, threshold = DUPLICATE_SHARE) => {
       const keys = roadPieceKeys(c.path.coordinates);
       const dup = takenKeys.some((k) => {
         let shared = 0;
         for (const key of keys) if (k.has(key)) shared++;
-        return shared / Math.min(keys.size, k.size) > DUPLICATE_SHARE;
+        return shared / Math.min(keys.size, k.size) > threshold;
       });
       if (!dup) takenKeys.push(keys);
       return !dup;
@@ -1364,11 +1366,64 @@ export async function POST(req: NextRequest) {
     if (infeasible) picked.sort(byNearest);
     const chosen = [...fixed, ...picked].slice(0, SHOWN_VARIANTS);
 
+    /**
+     * The runners-up, per category.
+     *
+     * 36 candidates are routed and all of them pass the acceptance checks;
+     * three are shown. A rider who does not like the three should be able to
+     * look further rather than spend another generation — so each category
+     * carries its next best alternatives, scored exactly the way the shown one
+     * was, and `distinct()` keeps them from being the same roads again.
+     *
+     * They travel as full routes because the rider puts them on the map; that
+     * is what costs, hence a hard cap rather than the whole pool.
+     */
+    const ALTERNATIVES_PER_VARIANT = 2;
+    const alternativesFor = new Map<RouteVariant, Scored[]>();
+    if (!infeasible) {
+      // A wider pool than the three headline picks draw from. Measured on a
+      // Sigulda 2 h request: 36 candidates routed, but only 11 sit inside the
+      // budget and three of those are already shown — so ranking alternatives
+      // over `selection` yielded one. Alternatives may run over the free band
+      // (the panel prints every duration, so nothing is hidden); they may not
+      // run past MAX_EXCESS_DRIFT, which is the "don't waste my day" line.
+      const pool = worthShowing.filter((c) => excessDriftPercent(c) <= MAX_EXCESS_DRIFT);
+      const ranking: Record<RouteVariant, Scored[]> = {
+        direct: [...pool].filter((c) => !detour(c)).sort((a, b) => directScore(a) - directScore(b)),
+        balanced: [...pool.filter((c) => !detour(c)), ...pool.filter(detour)],
+        complex: [...pool].sort((a, b) => complexScore(a) - complexScore(b)),
+      };
+      // Round-robin, not category by category. `distinct` is stateful — it
+      // records every route it accepts — so running "direct" to exhaustion
+      // first took every remaining road set and left the other two categories
+      // empty (measured: 2 alternatives, both direct). One per category per
+      // pass gives each an equal claim on what is left.
+      const cursor = new Map<RouteVariant, number>(order.map((v) => [v, 0]));
+      for (let round = 0; round < ALTERNATIVES_PER_VARIANT; round++) {
+        for (const variant of order) {
+          const list = ranking[variant] ?? [];
+          let i = cursor.get(variant) ?? 0;
+          while (i < list.length) {
+            const c = list[i++];
+            if (variantOf.has(c) || chosen.includes(c)) continue;
+            // A looser bar than the three headline picks. Those must read as
+            // three different rides at a glance; an alternative only has to be
+            // a different ride, and at 0.8 almost every runner-up was rejected
+            // as "the same roads".
+            if (!distinct(c, ALTERNATIVE_DUPLICATE_SHARE)) continue;
+            alternativesFor.set(variant, [...(alternativesFor.get(variant) ?? []), c]);
+            break;
+          }
+          cursor.set(variant, i);
+        }
+      }
+    }
+
     const startName = start.label.split(",")[0];
     const originName = origin.label.split(",")[0];
     const locale = detectLocale(body.prompt);
 
-    const routes: GeneratedRoute[] = chosen.map((chosenScored) => {
+    const toRoute = (chosenScored: Scored): GeneratedRoute => {
       const { stops } = chosenScored;
       // A remote loop is shown and exported whole: out, round, back.
       const path = remote ? joinPaths([remote.out, chosenScored.path, remote.back]) : chosenScored.path;
@@ -1413,7 +1468,13 @@ export async function POST(req: NextRequest) {
             }
           : {}),
       };
-    });
+    };
+
+    const routes: GeneratedRoute[] = chosen.map(toRoute);
+    // The runners-up, built the same way and labelled with the category they
+    // belong to, so the panel can add them under the card they extend.
+    const alternatives: GeneratedRoute[] = [...alternativesFor.entries()]
+      .flatMap(([variant, list]) => list.map((c) => ({ ...toRoute(c), variant })));
 
     // The whole pool with its numbers — on the 422 as well, because "why did
     // nothing come back" is exactly the question that response raises.
@@ -1517,6 +1578,7 @@ export async function POST(req: NextRequest) {
       destination: destination ?? undefined,
       via: remote ? [remote.focus, ...requiredVia] : requiredVia,
       routes,
+      ...(alternatives.length ? { alternatives } : {}),
       ...(remote
         ? {
             remoteLoop: {

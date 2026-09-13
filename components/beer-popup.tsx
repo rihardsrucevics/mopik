@@ -39,25 +39,18 @@ export function BeerPopup({ open, onClose }: { open: boolean; onClose: () => voi
           <circle cx="17" cy="26" r="0.9" fill="#fff7d6" /><circle cx="21" cy="22" r="0.7" fill="#fff7d6" /><circle cx="23" cy="29" r="0.8" fill="#fff7d6" />
         </svg>
         <h2 id="beer-title" className="mt-3 text-2xl font-bold tracking-tight">Lai labi braucas!</h2>
-        <p className="mt-2 text-sm text-stone-400">Un tagad uzsauc man aliņu.</p>
         <a href={BEER_LINK} target="_blank" rel="noopener noreferrer" onClick={onBeer}
           className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[#f56300] text-sm font-semibold text-white transition hover:bg-[#ff7a1f]">
-          5 € caur Revolut 🍺
+          Uzsaukt aliņu 🍺
         </a>
         {/* Desktop: the phone scans this. */}
         <div className="mt-5 hidden flex-col items-center gap-2 md:flex">
           <Image src="/revolut-qr-dark.svg" alt="QR kods: revolut.me/rucijs" width={132} height={132} unoptimized className="rounded-xl" />
           <span className="text-[11px] text-stone-500">Noskenē ar telefonu</span>
         </div>
-        {/* Not everyone wants to pay, and following costs nothing — so the
-            second way to say thanks sits right next to the first. */}
-        {/* Each on its own line: the parent is `text-center`, not a column, so
-            two inline-flex children flowed together into one row.
-            Declining sits directly under the ask it answers; following is a
-            separate offer and comes after it. */}
-        <div className="mt-4">
-          <button type="button" onClick={onClose} className="text-xs text-stone-400 underline decoration-stone-600 underline-offset-4 hover:text-stone-200">Uzsaukšu nākamreiz</button>
-        </div>
+        {/* Not everyone wants to pay, and tagging costs nothing — so the
+            second way to say thanks sits under the first. Closing is the ✕ or
+            a tap outside; a "maybe later" button only added a third way. */}
         <div className="mt-5">
           {/* Two lines, not a pill: this is an invitation with an instruction
               in it, and a 40-character label in a rounded button either wraps

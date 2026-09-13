@@ -225,6 +225,13 @@ export type GenerateRouteResponse = {
   via?: { lat: number; lon: number; label: string }[];
   routes: GeneratedRoute[];
   /**
+   * The runners-up per category — the rest of the pool the rider never saw.
+   * 36 candidates are routed for a typical request and three are shown; these
+   * let a rider who dislikes all three look further without spending another
+   * generation. Each carries the `variant` of the card it extends.
+   */
+  alternatives?: GeneratedRoute[];
+  /**
    * Set when the ride was built as transit → loop → transit around a focus
    * area away from the start ("meža aplis Baldones mežos, no Rīgas"). The UI
    * shows the split so the rider sees where the time goes.

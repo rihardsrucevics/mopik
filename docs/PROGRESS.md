@@ -1,5 +1,44 @@
 # Mopik — progress log
 
+## 2026-09-13 (final) — the rest of the pool, on request
+
+The rider: three versions are shown but many more are generated; let him look
+at the others, and **new ones must be added, not swap out the three already on
+screen.**
+
+**What the pool actually holds** — the first measurement was wrong and worth
+recording. A Sigulda 2 h request routes **36 candidates and all 36 pass the
+quality checks**, but only **11 sit inside the time budget** (9 at or under,
+2 within 20 % over) and three of those are already shown. Ranking alternatives
+over `selection` (the in-budget pool) therefore yielded **one**. Alternatives
+now rank over `worthShowing` capped at `MAX_EXCESS_DRIFT` — they may run past
+the free band, never past the "don't waste my day" line, and the panel prints
+every duration so nothing is hidden.
+
+**Two more fixes it took to get a full set:**
+- `distinct()` is stateful — it records every route it accepts. Running
+  "direct" to exhaustion first took every remaining road set and left the other
+  two categories empty (measured: 2 alternatives, both direct). Selection is
+  round-robin now, one per category per pass.
+- The 0.8 duplicate bar is right for three cards that must read as different
+  rides at a glance; an alternative only has to *be* a different ride, so it
+  uses 0.95 (`ALTERNATIVE_DUPLICATE_SHARE`).
+
+**The result:** a free Sigulda loop offers "Rādīt vēl 6 variantus" and goes
+3 → 9 cards, two per category, the original three untouched at the front.
+Among them a 65 km / 2 h 9 min / 76 % gravel "Sarežģītākā" that would never
+have been seen. Switching to one behaves like any other route: panel, map and
+GPX all follow. `alternatives_shown` says whether the extra pool is wanted.
+
+**Also, beer popup copy:** the orange button is "Uzsaukt aliņu 🍺" (the amount
+belongs on the payment page, not on the ask), "Un tagad uzsauc man aliņu" is
+gone as it repeated the button, and so is "Uzsaukšu nākamreiz" — ✕ and a tap
+outside already close the popup, and a third way to leave was noise. The
+Instagram line now reads "Tago @mopik.eu savos braucienos un sūti savas
+atsauksmes" as a two-line card.
+
+Tests 38/38; tsc, lint and build clean.
+
 ## 2026-09-13 (last) — feedback is a DM
 
 The feedback form mailed one address through Resend, where nobody but the

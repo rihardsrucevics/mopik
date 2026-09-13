@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowLeft, ArrowUp, ChevronDown, ChevronUp, Download, LoaderCircle, Share2, Bookmark } from "lucide-react";
+import { ArrowLeft, ArrowUp, ChevronDown, ChevronUp, Download, LoaderCircle, Plus, Share2, Bookmark } from "lucide-react";
 import { GeneratedRoute, GenerateRouteResponse } from "@/lib/types";
 import { RidePlan, planSummary } from "@/lib/chat/ride-plan";
 import { BeerPopup } from "@/components/beer-popup";
@@ -39,7 +39,7 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = false, lucky = false, remoteLoop, longerSuggestion, tolerancePercent = 20, busy, onSend, onBackToForm, resolvedPlaces }: {
+export function ResultPanel({ routes: shownRoutes, selected, onSelect, plan, avoidTowns = false, lucky = false, remoteLoop, longerSuggestion, tolerancePercent = 20, busy, onSend, onBackToForm, resolvedPlaces, alternatives }: {
   routes: GeneratedRoute[];
   /** transit → loop → transit split, when the ride was built around a focus area */
   remoteLoop?: GenerateRouteResponse["remoteLoop"];
@@ -62,8 +62,18 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
    * the rider picked instead of being geocoded again.
    */
   resolvedPlaces?: ResolvedPlace[] | null;
+  /**
+   * The runners-up the API kept back. Shown on request and *added* to the
+   * cards already on screen — a rider who asks to see more must not lose the
+   * three they were comparing.
+   */
+  alternatives?: GeneratedRoute[] | null;
 }) {
   const [details, setDetails] = useState(false);
+  // Alternatives are appended, never swapped in: the three the rider is
+  // comparing stay exactly where they are.
+  const [showMore, setShowMore] = useState(false);
+  const routes = showMore && alternatives?.length ? [...shownRoutes, ...alternatives] : shownRoutes;
   const [beer, setBeer] = useState(false);
   const [shared, setShared] = useState<"idle" | "copied">("idle");
   // Which ride is currently saved, by its code: derived during render rather
@@ -228,7 +238,7 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
           </div>
         )}
         {routes.length > 1 && (
-          <div role="tablist" aria-label="Maršruta versijas" className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${routes.length}, minmax(0, 1fr))` }}>
+          <div role="tablist" aria-label="Maršruta versijas" className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${Math.min(routes.length, 3)}, minmax(0, 1fr))` }}>
             {routes.map((r, index) => {
               const active = index === selected;
               const meta = VARIANT_LABELS[r.variant] ?? { label: `Versija ${index + 1}`, detail: "" };
@@ -243,6 +253,16 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
               );
             })}
           </div>
+        )}
+        {/* The pool is bigger than the three: a typical request routes dozens
+            of rides and shows three. A rider who likes none of them should be
+            able to look further without spending another generation. */}
+        {!showMore && alternatives && alternatives.length > 0 && (
+          <button type="button" onClick={() => { setShowMore(true); track("alternatives_shown", { count: alternatives.length }); }}
+            className="inline-flex items-center gap-1 self-start text-xs font-medium text-[#bd4b00]">
+            <Plus className="size-3.5" />
+            Rādīt vēl {alternatives.length} {alternatives.length === 1 ? "variantu" : "variantus"}
+          </button>
         )}
 
         <div className="rounded-xl border border-stone-200 p-3">
