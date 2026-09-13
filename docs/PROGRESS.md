@@ -58,6 +58,11 @@ a caption under them. The beer mug is **✌️** — the wave riders give each o
 which thanks without selling anything. The desktop QR moved below both buttons;
 between them it split the pair.
 
+**One line too many above "Ko mainīt?".** The scrolling content ends in a
+bordered card and the correction form carried its own `border-t`, so with only
+the padding between them they read as a double rule. The form's rule is gone —
+the card's own frame already separates them.
+
 Tests 38/38; tsc, lint and build clean.
 
 ## 2026-09-13 (final, corrected) — "not this one, then", per card

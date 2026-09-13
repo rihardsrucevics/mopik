@@ -396,7 +396,10 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
         )}
       </div>
 
-      <form onSubmit={(e) => { e.preventDefault(); submit(); }} className="border-t border-stone-200 bg-white p-3">
+      {/* No `border-t`: the scrolling content ends in a bordered card, so a
+          rule right under it read as a double line with only the padding
+          between them. The white ground already separates the two. */}
+      <form onSubmit={(e) => { e.preventDefault(); submit(); }} className="bg-white px-3 pb-3 pt-1">
         <label htmlFor="ride-correction" className="mb-1.5 block px-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-400">Ko mainīt?</label>
         <div className="flex items-end gap-2 rounded-xl border border-stone-200 p-2 focus-within:border-[#f56300]">
           <textarea id="ride-correction" value={text} onChange={(e) => setText(e.target.value)} rows={1} maxLength={6000} disabled={busy}
