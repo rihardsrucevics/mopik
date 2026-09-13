@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { ChevronDown, ChevronUp, Sparkles } from "lucide-react";
+import { ChevronDown, ChevronUp, Map as MapIcon, Sparkles } from "lucide-react";
 import { RidePlan } from "@/lib/chat/ride-plan";
 import { composeRidePlan, placesFromPlan } from "@/lib/chat/compose-plan";
 import { RoutePlaces } from "@/components/route-places";
+import { track } from "@/lib/analytics";
 import type { ResolvedPlace } from "@/lib/chat/places";
 import {
   PROFILE_LABELS,
@@ -92,8 +93,14 @@ function ProfileLine({ profile, onChange }: { profile: RideProfile; onChange: (p
   );
 }
 
-export function RideComposer({ initialPlan, profile, onProfileChange, busy, onGenerate, onUseChat, onPlacesChange, map }: {
+export function RideComposer({ initialPlan, initialPlaces, profile, onProfileChange, busy, onGenerate, onUseChat, onPlacesChange, map }: {
   initialPlan: RidePlan | null;
+  /**
+   * Coordinates the plan arrived with, matched to its rows by name. A ride
+   * reopened for editing then keeps the exact place it was built from instead
+   * of being geocoded again — the "Valmiera in Rīga" failure.
+   */
+  initialPlaces?: ResolvedPlace[] | null;
   /** the rider's standing profile, remembered on the device */
   profile: RideProfile;
   onProfileChange: (profile: RideProfile) => void;
@@ -126,17 +133,38 @@ export function RideComposer({ initialPlan, profile, onProfileChange, busy, onGe
   const [preset, setPreset] = useState<number | null>(initialHours && PRESETS.includes(initialHours) ? initialHours : initialHours ? null : 4);
   const [hours, setHours] = useState(initialHours && !PRESETS.includes(initialHours) ? String(initialHours) : "");
   const [error, setError] = useState<string | null>(null);
+  // Phone only: the map is opened on request, and stays open once it is.
+  const [mapOpen, setMapOpen] = useState(false);
   // Picked places by row index. Typing again clears the pick, so a changed
   // name is geocoded rather than silently kept at the old coordinates.
-  const [picked, setPicked] = useState<Record<number, ResolvedPlace | null>>({});
+  const [picked, setPicked] = useState<Record<number, ResolvedPlace | null>>(() => {
+    if (!initialPlaces?.length) return {};
+    // Matched by name rather than by position: the plan's rows and the routed
+    // places can differ in length (a round trip repeats its start).
+    const byName = new Map(initialPlaces.map((p) => [p.name.trim().toLowerCase(), p]));
+    const seeded: Record<number, ResolvedPlace | null> = {};
+    placesFromPlan(initialPlan).forEach((name, i) => {
+      const found = byName.get(name.trim().toLowerCase());
+      if (found) seeded[i] = found;
+    });
+    return seeded;
+  });
   const setPick = (index: number, place: ResolvedPlace | null) => setPicked((prev) => ({ ...prev, [index]: place }));
   // Reordering moves the rows; the coordinates must follow their row, so the
   // picks are re-keyed by matching name rather than by the old index.
   const reorder = (next: string[]) => {
     const byName = new Map<string, ResolvedPlace>();
-    for (const [i, p] of Object.entries(picked)) if (p && places[Number(i)]) byName.set(places[Number(i)].trim().toLowerCase(), p);
+    for (const [i, p] of Object.entries(picked)) {
+      const name = places[Number(i)]?.trim().toLowerCase();
+      if (p && name) byName.set(name, p);
+    }
     setPlaces(next);
-    setPicked(Object.fromEntries(next.map((name, i) => [i, byName.get(name.trim().toLowerCase()) ?? null])));
+    // An emptied row keeps no coordinates: matching is by name, and "" must
+    // never inherit the pick of some other blank row.
+    setPicked(Object.fromEntries(next.map((name, i) => {
+      const key = name.trim().toLowerCase();
+      return [i, key ? byName.get(key) ?? null : null];
+    })));
   };
 
   // Report picked places upward in riding order, so the map can draw a pin per
@@ -188,7 +216,23 @@ export function RideComposer({ initialPlan, profile, onProfileChange, busy, onGe
 
         <RoutePlaces places={places} picked={picked} oneWay={tripType === "one_way"} busy={busy} onChange={reorder} onPick={setPick} />
 
-        {map && <div className="md:hidden">{map}</div>}
+        {/* The map is worth a look when a place needs confirming, not on every
+            visit — it is the tallest thing on the page and most rides are
+            planned without ever glancing at it. So it opens on request, and
+            the toggle only appears once there is a confirmed place to show. */}
+        {map && (
+          <div className="md:hidden">
+            <button type="button" onClick={() => setMapOpen((v) => { if (!v) track("form_map_opened"); return !v; })} aria-expanded={mapOpen}
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-[#bd4b00]">
+              <MapIcon className="size-3.5" />
+              {mapOpen ? "Paslēpt karti" : "Rādīt kartē"}
+              {mapOpen ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+            </button>
+            {/* Mounted only while open: MapLibre in a hidden container comes
+                up sized zero and stays that way until something resizes it. */}
+            {mapOpen && <div className="mt-2">{map}</div>}
+          </div>
+        )}
 
         <ChoiceRow label="Ilgums" value={durationMode} onChange={setDurationMode} choices={[{ value: "flexible", label: "Brīvs" }, { value: "hours", label: "Konkrēts" }]} />
         {durationMode === "hours" && (

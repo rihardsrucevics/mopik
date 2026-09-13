@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus } from "lucide-react";
+import { Bookmark, Map as MapIcon, Plus } from "lucide-react";
 
 import { useRef, useState, useEffect } from "react";
 import { RouteMap } from "@/components/route-map";
@@ -8,11 +8,10 @@ import { RoutePrompt } from "@/components/route-prompt";
 import { ResultPanel } from "@/components/result-panel";
 import { FeedbackDialog } from "@/components/feedback-dialog";
 import { InstallPrompt } from "@/components/install-prompt";
-import { SavedRides } from "@/components/saved-rides";
 import { MapPanel } from "@/components/map-panel";
 import Link from "next/link";
 import { track } from "@/lib/analytics";
-import { decodePlanShare } from "@/lib/share/route-code";
+import { decodePlanPlaces, decodePlanShare } from "@/lib/share/route-code";
 import { isCodeSaved, removeRide, rideId } from "@/lib/share/saved-rides";
 import { IntroSplash } from "@/components/intro-splash";
 import { RideComposer } from "@/components/ride-composer";
@@ -77,6 +76,13 @@ export default function Home() {
   const [lucky, setLucky] = useState(false);
   // Phone only: the map over the whole screen, on request.
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  // Places picked in the form, with coordinates; sent with every generation
+  // so chat corrections keep pointing at the same towns.
+  const [places, setPlaces] = useState<ResolvedPlace[]>([]);
+  // Places confirmed in the form but not yet routed: the map shows them so a
+  // wrong "Valmiera" is caught before a generation is spent on it.
+  const [previewPlaces, setPreviewPlaces] = useState<ResolvedPlace[]>([]);
+
   /**
    * The ride the rider arrived from, when they came from one: "Rediģēt formā"
    * or "Pielāgot čatā" on a shared or saved route. It is the way back to that
@@ -110,17 +116,16 @@ export default function Home() {
       if (shared) {
         setPlan(shared);
         setEntryMode(mode);
+        // Coordinates that travelled with the plan: the ride reopens on the
+        // exact places it was built from, rather than on whatever the names
+        // geocode to today. Older links carry none and fall back to names.
+        const carried = decodePlanPlaces(p);
+        if (carried.length) { setPlaces(carried); setPreviewPlaces(carried); }
         if (from) { const o = { code: from, saved: isCodeSaved(from) }; originRef.current = o; setOrigin(o); }
       }
       window.history.replaceState(null, "", window.location.pathname);
     }, 0);
   }, []);
-  // Places picked in the form, with coordinates; sent with every generation
-  // so chat corrections keep pointing at the same towns.
-  const [places, setPlaces] = useState<ResolvedPlace[]>([]);
-  // Places confirmed in the form but not yet routed: the map shows them so a
-  // wrong "Valmiera" is caught before a generation is spent on it.
-  const [previewPlaces, setPreviewPlaces] = useState<ResolvedPlace[]>([]);
   // The rider's standing profile (how rough, why, where): remembered on the
   // device, applied to the form and used to seed a fresh chat so it only has
   // to ask where and how long.
@@ -258,6 +263,13 @@ export default function Home() {
     finally { setPhase("idle"); busyRef.current = false; }
   }
   const route = result?.routes[Math.min(selected, (result?.routes.length ?? 1) - 1)] ?? null;
+  // What the API actually routed through, in riding order. These are the
+  // coordinates worth keeping in a share code — they made this route, rather
+  // than being a fresh guess at what the names mean.
+  const routedPlaces: ResolvedPlace[] | null = result
+    ? [result.start, ...(result.via ?? []), ...(result.destination ? [result.destination] : [])]
+        .map((p) => ({ name: p.label, label: p.label, lat: p.lat, lon: p.lon }))
+    : null;
   // One map, two homes. On a desktop it is the sticky right column; on a phone
   // it belongs inside the ride block, under the places it confirms — above the
   // whole page it outranked even "Saglabātie" and read as a separate thing.
@@ -288,7 +300,10 @@ export default function Home() {
         <div className="flex items-baseline gap-3">{/* eslint-disable-next-line @next/next/no-html-link-for-pages -- full reload on purpose: a fresh plan */}
             <h1 className="text-2xl font-bold tracking-tight"><a href="/" aria-label="Mopik — uz sākumu">Mopik<span className="text-[#f56300]">.</span></a></h1><p className="hidden text-xs text-stone-500 sm:block">Mazāk plānošanas. Vairāk braukšanas.</p></div>
         <div className="flex items-center gap-4">
-        <Link href="/saglabatie" className="text-xs text-stone-500 underline decoration-stone-300 underline-offset-4 hover:text-stone-900">Saglabātie</Link>
+        {/* The only entrance to the saved rides. The block that used to sit
+            above the form pushed the ride down on every visit, for something
+            a rider wants occasionally; the icon carries the meaning here. */}
+        <Link href="/saglabatie" onClick={() => track("saved_list_opened")} className="inline-flex items-center gap-1 text-xs text-stone-500 hover:text-stone-900"><Bookmark className="size-3.5" />Saglabātie</Link>
         <button type="button" onClick={() => setFeedbackOpen(true)} className="text-xs text-stone-500 underline decoration-stone-300 underline-offset-4 hover:text-stone-900">Atsauksme</button>
         {(messages.length > 0 || plan) && <button disabled={phase !== "idle"} onClick={() => { setEntryMode("form"); setMessages([]); setPlan(null); setPlaces([]); setResult(null); setChatting(false); setError(null); setRetry(null); setQuickReplies([]); }} className="inline-flex items-center gap-1 text-xs text-stone-500 underline underline-offset-4 disabled:opacity-40"><Plus className="size-3.5" />Jauns brauciens</button>}
         </div>
@@ -297,11 +312,10 @@ export default function Home() {
       <div className="grid items-start gap-5 md:grid-cols-[minmax(340px,460px)_1fr]">
         <div className="min-w-0 space-y-4">
           <InstallPrompt show={Boolean(result) && !chatting} />
-          {entryMode === "form" && <SavedRides />}
           {entryMode === "form"
-            ? <RideComposer key={plan ? planSummary(plan, false) : "new"} initialPlan={plan} profile={profile} onProfileChange={changeProfile} busy={phase !== "idle"} onGenerate={startFromForm} onUseChat={() => setEntryMode("chat")} onPlacesChange={setPreviewPlaces} map={mapInComposer && mapVisible ? mapPanel : undefined} />
+            ? <RideComposer key={plan ? planSummary(plan, false) : "new"} initialPlan={plan} initialPlaces={places} profile={profile} onProfileChange={changeProfile} busy={phase !== "idle"} onGenerate={startFromForm} onUseChat={() => setEntryMode("chat")} onPlacesChange={setPreviewPlaces} map={mapInComposer && mapVisible ? mapPanel : undefined} />
             : result && result.routes.length > 0 && !chatting
-              ? <ResultPanel routes={result.routes} selected={selected} onSelect={setSelected} plan={plan} avoidTowns={result.intent.avoidTowns ?? false} lucky={lucky} remoteLoop={result.remoteLoop} longerSuggestion={result.longerSuggestion} tolerancePercent={result.intent.distanceTolerancePercent} busy={phase !== "idle"} onSend={send} onBackToForm={() => setEntryMode("form")} />
+              ? <ResultPanel routes={result.routes} selected={selected} onSelect={setSelected} plan={plan} avoidTowns={result.intent.avoidTowns ?? false} lucky={lucky} remoteLoop={result.remoteLoop} longerSuggestion={result.longerSuggestion} tolerancePercent={result.intent.distanceTolerancePercent} busy={phase !== "idle"} onSend={send} onBackToForm={() => setEntryMode("form")} resolvedPlaces={routedPlaces} />
               : <RoutePrompt messages={messages} plan={plan} hasRoute={Boolean(route)} phase={phase} quickReplies={quickReplies} lucky={lucky && !route} onSend={send} onBackToForm={() => setEntryMode("form")} originCode={origin?.code ?? null} onAction={() => { setChatting(false); setQuickReplies([]); }} />}
           {/* A ride that came from editing another one. Asked once, here,
               because only the rider knows whether the original is still

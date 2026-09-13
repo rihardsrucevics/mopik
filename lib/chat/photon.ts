@@ -121,8 +121,13 @@ export async function searchPlaces(q: string): Promise<PlaceSuggestion[]> {
       const street = [q.street ?? q.name, q.housenumber].filter(Boolean).join(" ");
       const name = kind.group === 1 && street ? street : q.name ?? street;
       if (!name) return [];
+      // A named POI needs its street: Rīga has a dozen Circle K, and
+      // "Circle K · degviela · Rīga" is the same line for every one of them.
+      // The address is what tells them apart, so it goes between the kind and
+      // the town. Addresses already carry theirs in `name`.
+      const at = kind.group > 1 && street && street !== name ? street : "";
       const where = q.city ?? q.district ?? q.county ?? q.state ?? "";
-      const suffix = [kind.label, where && where !== name ? where : ""].filter(Boolean).join(" · ");
+      const suffix = [kind.label, at, where && where !== name ? where : ""].filter(Boolean).join(" · ");
       return [{
         name, label: suffix ? `${name} · ${suffix}` : name,
         lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0],

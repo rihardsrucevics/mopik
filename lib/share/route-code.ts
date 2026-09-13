@@ -1,5 +1,6 @@
 import type { GeneratedRoute, RoadClass, RouteSegmentProperties, SurfaceClass } from "@/lib/types";
 import { RidePlanSchema, type RidePlan } from "@/lib/chat/ride-plan";
+import type { ResolvedPlace } from "@/lib/chat/places";
 
 /**
  * A route as a link, with no database behind it.
@@ -135,7 +136,7 @@ function classAtOriginalIndex(route: GeneratedRoute): string[] {
   return out;
 }
 
-export function encodeRouteShare(route: GeneratedRoute, startLabel: string, plan?: RidePlan | null): string {
+export function encodeRouteShare(route: GeneratedRoute, startLabel: string, plan?: RidePlan | null, places?: ResolvedPlace[] | null): string {
   const coords = route.geometry.coordinates as Pt[];
   let keep = simplifyIndices(coords, SIMPLIFY_TOLERANCE_M);
   if (keep.length > MAX_POINTS) {
@@ -172,7 +173,7 @@ export function encodeRouteShare(route: GeneratedRoute, startLabel: string, plan
       r1(route.quality.unverifiedPathKm), r1(route.quality.roughTrackKm), r1(route.quality.sandKm), r1(route.quality.streetKm)],
   };
   const parts = [SHARE_VERSION, toBase64Url(JSON.stringify(meta)), encodeVarints(deltas), encodeVarints(runs)];
-  if (plan) parts.push(encodePlanShare(plan));
+  if (plan) parts.push(encodePlanShare(plan, places));
   return parts.join("~");
 }
 
@@ -240,14 +241,43 @@ export function sharedRouteSegments(share: SharedRoute): GeoJSON.FeatureCollecti
   return { type: "FeatureCollection", features };
 }
 
-/** Only the fields that decide a ride; the rest are defaults on decode. */
-export function encodePlanShare(plan: RidePlan): string {
-  const compact = {
+/**
+ * Only the fields that decide a ride; the rest are defaults on decode.
+ *
+ * `places` travels alongside as `pl` when it is given: the plan holds place
+ * *names*, so a ride reopened for editing was geocoded afresh and "Valmiera"
+ * could come back as a different Valmiera. Coordinates are rounded to 5
+ * decimals (~1 m) to keep the link short. Old links simply carry no `pl` and
+ * still decode — the names are then resolved as before.
+ */
+export function encodePlanShare(plan: RidePlan, places?: ResolvedPlace[] | null): string {
+  const compact: Record<string, unknown> = {
     s: plan.startPlace, v: plan.viaPlaces, d: plan.destinationPlace, f: plan.focusArea, bs: plan.budgetScope, r: plan.returnToStart,
     b: plan.budget, df: plan.difficulty, st: plan.rideStyle, g: plan.gravelPreference, t: plan.trailPreference, a: plan.accessPolicy,
     pf: plan.preferForest, am: plan.avoidMainRoads, si: plan.includeSightseeing, su: plan.surroundings,
   };
+  if (places?.length) {
+    compact.pl = places.map((p) => [p.name, p.label, Number(p.lat.toFixed(5)), Number(p.lon.toFixed(5))]);
+  }
   return toBase64Url(JSON.stringify(compact));
+}
+
+/**
+ * The resolved places a plan code carries, if it carries any. Returns an empty
+ * array for the older codes that predate `pl`, so the caller falls back to
+ * geocoding the names.
+ */
+export function decodePlanPlaces(code: string): ResolvedPlace[] {
+  try {
+    const c = JSON.parse(fromBase64Url(code));
+    if (!Array.isArray(c.pl)) return [];
+    return c.pl
+      .filter((p: unknown): p is [string, string, number, number] =>
+        Array.isArray(p) && typeof p[0] === "string" && Number.isFinite(p[2]) && Number.isFinite(p[3]))
+      .map(([name, label, lat, lon]: [string, string, number, number]) => ({ name, label: label || name, lat, lon }));
+  } catch {
+    return [];
+  }
 }
 export function decodePlanShare(code: string): RidePlan | null {
   try {

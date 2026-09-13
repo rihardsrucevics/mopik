@@ -7,6 +7,7 @@ import { RidePlan, planSummary } from "@/lib/chat/ride-plan";
 import { BeerPopup } from "@/components/beer-popup";
 import { track } from "@/lib/analytics";
 import { encodeRouteShare, shareUrl } from "@/lib/share/route-code";
+import type { ResolvedPlace } from "@/lib/chat/places";
 import { isSaved, removeRide, rideId, saveRide } from "@/lib/share/saved-rides";
 import { gpxFilename } from "@/lib/gpx/filename";
 
@@ -38,7 +39,7 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = false, lucky = false, remoteLoop, longerSuggestion, tolerancePercent = 20, busy, onSend, onBackToForm }: {
+export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = false, lucky = false, remoteLoop, longerSuggestion, tolerancePercent = 20, busy, onSend, onBackToForm, resolvedPlaces }: {
   routes: GeneratedRoute[];
   /** transit → loop → transit split, when the ride was built around a focus area */
   remoteLoop?: GenerateRouteResponse["remoteLoop"];
@@ -55,6 +56,12 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
   busy: boolean;
   onSend: (text: string) => void;
   onBackToForm: () => void;
+  /**
+   * The places the API actually routed through, with coordinates. They travel
+   * in the share code so a ride reopened for editing keeps the exact "Circle K"
+   * the rider picked instead of being geocoded again.
+   */
+  resolvedPlaces?: ResolvedPlace[] | null;
 }) {
   const [details, setDetails] = useState(false);
   const [beer, setBeer] = useState(false);
@@ -123,7 +130,7 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
   // opens its own sheet, which nobody wants for a link), so there the link
   // goes to the clipboard with a visible confirmation.
   const shareRoute = async () => {
-    const code = encodeRouteShare(route, route.stops?.[0]?.name ?? plan?.startPlace ?? "", plan);
+    const code = encodeRouteShare(route, route.stops?.[0]?.name ?? plan?.startPlace ?? "", plan, resolvedPlaces);
     // Short id from the store when it answers quickly; the long self-contained
     // link otherwise. Both open the same page.
     let url = shareUrl(code, window.location.origin);
@@ -165,13 +172,13 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
   const startLabel = route.stops?.[0]?.name ?? plan?.startPlace ?? "";
   // savedTick is read so the value recomputes after a save; localStorage is
   // not reactive on its own.
-  const saved = savedTick >= 0 && isSaved(route, startLabel, plan);
+  const saved = savedTick >= 0 && isSaved(route, startLabel, plan, resolvedPlaces);
   const toggleSave = () => {
     if (saved) {
-      removeRide(rideId(encodeRouteShare(route, startLabel, plan)));
+      removeRide(rideId(encodeRouteShare(route, startLabel, plan, resolvedPlaces)));
       track("ride_unsaved");
     } else {
-      saveRide(route, startLabel, plan, { alternatives: routes, prompt: plan ? planSummary(plan, true) : route.sourcePrompt });
+      saveRide(route, startLabel, plan, { alternatives: routes, prompt: plan ? planSummary(plan, true) : route.sourcePrompt, places: resolvedPlaces });
       track("ride_saved", { km: Math.round(route.distanceMeters / 1000), variant: route.variant });
     }
     setSavedTick((n) => n + 1);

@@ -1,5 +1,43 @@
 # Mopik — progress log
 
+## 2026-09-13 (evening) — coordinates ride in the link, POIs carry their street, and three form fixes
+
+- **A bug that blocked generating.** With "Rīga" and "Ķekava" both filled the
+  form still said "norādi vismaz vienu vietu". `remove()` called `onChange`
+  *and* `onPick(i, null)`; `onChange` (the composer's `reorder`) already
+  re-keys the picks against the new list, so the extra `onPick` wrote a null at
+  an index that by then belonged to a different row. Rows and picks disagreed
+  about how many places the ride had. `remove` now only calls `onChange`, and
+  `reorder` refuses to let a blank row inherit any pick.
+- **Reordering did not work on a phone.** `endDrag` read `dragging` from the
+  closure of listeners created at pointerdown — where the state set in that
+  same tick is still `null`, so the move never ran. The source row is passed in
+  now. `rowAt` also picks the *nearest* row rather than requiring a strict hit,
+  since a finger between two rows is the common case, and the handle
+  `preventDefault`s its pointerdown because it sits inside the field's
+  `<label>` and the browser otherwise kept the gesture for focusing the input.
+- **POI suggestions carry their street.** Rīga has a dozen Circle K and every
+  one of them read "Circle K · degviela · Rīga". Now:
+  "Circle K · degviela · Lubānas iela 119A · Rīga". Addresses already had
+  theirs; settlements are unchanged.
+- **Coordinates travel in the share code** (`pl` in the plan part, ~1 m
+  rounding). A ride reopened for editing keeps the exact Circle K the rider
+  picked instead of being geocoded again — the "Valmiera in Rīga" failure the
+  previous entry left open. `decodePlanPlaces` returns `[]` for older links, so
+  they still decode and fall back to names. The coordinates come from what the
+  API says it actually routed (`result.start/via/destination`), not from a
+  fresh guess. Verified end to end: saved ride reopens with two map pins and no
+  geocoding.
+- **"Saglabātie maršruti" left the form.** The block pushed the ride down on
+  every visit for something wanted occasionally; the header link now carries a
+  bookmark icon and is the only entrance. `components/saved-rides.tsx` deleted.
+- **The map in the form opens on request.** It is the tallest thing on the page
+  and most rides are planned without looking at it. The toggle appears only
+  once a place is confirmed, and the map mounts only while open — MapLibre in a
+  hidden container comes up sized zero.
+
+Tests 31/31; tsc, lint and build clean.
+
 ## 2026-09-13 (latest) — one way by default, and the full-screen map could not be closed
 
 Rider feedback on the deployed form, three things.

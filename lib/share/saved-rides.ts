@@ -1,6 +1,7 @@
 "use client";
 
 import { encodeRouteShare, decodeRouteShare, type SharedRoute } from "@/lib/share/route-code";
+import type { ResolvedPlace } from "@/lib/chat/places";
 import type { GeneratedRoute } from "@/lib/types";
 import type { RidePlan } from "@/lib/chat/ride-plan";
 
@@ -103,12 +104,12 @@ export function isCodeSaved(code: string): boolean {
 }
 
 /** The id is the route's own code, so saving the same ride twice is one entry. */
-export function saveRide(route: GeneratedRoute, startLabel: string, plan: RidePlan | null, context?: { alternatives?: GeneratedRoute[]; prompt?: string }): SavedRide {
-  const code = encodeRouteShare(route, startLabel, plan);
+export function saveRide(route: GeneratedRoute, startLabel: string, plan: RidePlan | null, context?: { alternatives?: GeneratedRoute[]; prompt?: string; places?: ResolvedPlace[] | null }): SavedRide {
+  const code = encodeRouteShare(route, startLabel, plan, context?.places);
   const alternatives = (context?.alternatives ?? [])
     .filter((r) => r.id !== route.id)
     .map((r) => ({
-      code: encodeRouteShare(r, startLabel, plan),
+      code: encodeRouteShare(r, startLabel, plan, context?.places),
       name: r.name, km: Math.round(r.distanceMeters / 1000), minutes: Math.round(r.durationSeconds / 60),
       unpavedPercent: r.surfaces.gravelPercent + r.surfaces.dirtPercent, variant: r.variant,
     }));
@@ -132,8 +133,8 @@ export function removeRide(id: string): void {
   write(read().filter((r) => r.id !== id));
 }
 
-export function isSaved(route: GeneratedRoute, startLabel: string, plan: RidePlan | null): boolean {
-  return isCodeSaved(encodeRouteShare(route, startLabel, plan));
+export function isSaved(route: GeneratedRoute, startLabel: string, plan: RidePlan | null, places?: ResolvedPlace[] | null): boolean {
+  return isCodeSaved(encodeRouteShare(route, startLabel, plan, places));
 }
 
 export function decodeSaved(ride: SavedRide): SharedRoute | null {

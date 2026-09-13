@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { decodeRouteShare, encodeRouteShare, sharedRouteSegments, decodePlanShare, encodePlanShare, planPart } from "../lib/share/route-code";
+import { decodeRouteShare, encodeRouteShare, sharedRouteSegments, decodePlanShare, encodePlanShare, planPart, decodePlanPlaces } from "../lib/share/route-code";
 import { RidePlanSchema } from "../lib/chat/ride-plan";
 import type { GeneratedRoute } from "../lib/types";
 
@@ -82,4 +82,31 @@ test("the plan part is what prefills the form for editing", () => {
   // Older links and any code encoded without a plan: no edit button, not a crash.
   assert.equal(planPart(encodeRouteShare(fakeRoute(), "Sigulda")), null);
   assert.equal(planPart("1~meta~coords~classes"), null);
+});
+
+test("resolved places ride along, so an edited route is not geocoded again", () => {
+  const plan = RidePlanSchema.parse({
+    startPlace: "Rīga", viaPlaces: ["Circle K"], destinationPlace: null, directionPlace: null, focusArea: null, returnToStart: true,
+    budget: { mode: "flexible", value: null, constraint: "target", minimumValue: null }, difficulty: "adventure", rideStyle: "explore",
+    gravelPreference: 70, trailPreference: "some", accessPolicy: "allow_unverified", preferForest: true, noSand: false, avoidTowns: false,
+    avoidMainRoads: true, includeTet: false, includeSightseeing: false,
+  });
+  // The exact Circle K the rider picked — one of a dozen in Rīga.
+  const places = [
+    { name: "Rīga", label: "Rīga", lat: 56.94965, lon: 24.10518 },
+    { name: "Circle K", label: "Circle K · degviela · Lubānas iela 119A · Rīga", lat: 56.91234, lon: 24.18765 },
+  ];
+  const code = encodePlanShare(plan, places);
+  const back = decodePlanPlaces(code);
+  assert.equal(back.length, 2);
+  assert.equal(back[1].label, "Circle K · degviela · Lubānas iela 119A · Rīga");
+  // ~1 m of rounding is all that may be lost.
+  assert.ok(Math.abs(back[1].lat - 56.91234) < 1e-5);
+  assert.ok(Math.abs(back[1].lon - 24.18765) < 1e-5);
+  // The plan itself still decodes unchanged.
+  assert.equal(decodePlanShare(code)?.startPlace, "Rīga");
+
+  // Older links carry no coordinates, and must decode rather than throw.
+  assert.deepEqual(decodePlanPlaces(encodePlanShare(plan)), []);
+  assert.deepEqual(decodePlanPlaces("nonsense"), []);
 });

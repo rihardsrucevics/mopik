@@ -314,6 +314,20 @@ trails=lots). Verify with Sigulda 2 h: complex should show >10% trail.
   and the second row must visibly be optional rather than unfinished. Deleting
   the last row empties it instead of removing it. Never go back to one row, and
   never prefill a row with a real value that looks like a hint.
+- **A share code carries the resolved coordinates** (`pl` in the plan part),
+  taken from what the API says it routed. Without them an edited ride was
+  geocoded afresh and "Circle K" could become a different Circle K. Older
+  codes carry none; `decodePlanPlaces` returns `[]` and the names are resolved
+  as before. Never drop `pl` from the encoder without bumping the version.
+- **A POI suggestion shows its street.** "Circle K · degviela · Rīga" is the
+  same line for a dozen filling stations; the address is what tells them apart.
+- **`remove()` on a place row calls only `onChange`.** The composer's `reorder`
+  re-keys the picked coordinates itself, so an extra `onPick(i, null)` writes a
+  null at an index that now means a different row — rows and picks then
+  disagree about how many places the ride has, and generating is refused.
+- **Drag state must be passed into the drag's end, not read back.** Listeners
+  created at pointerdown close over `dragging === null`; reading it there meant
+  touch reordering silently did nothing.
 - **A place field is always full width; its controls live inside it.**
   `PlaceInput`'s `trailing` slot, not a column beside the field — a reserved
   column is blank space whenever the control is absent, and the place name is

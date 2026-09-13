@@ -46,16 +46,26 @@ export function RoutePlaces({ places, picked, oneWay, busy, onChange, onPick }: 
     onChange(next);
   };
 
+  // The row the finger is over — or, between rows and past the ends, the
+  // nearest one. A strict hit test dropped the gesture whenever the finger sat
+  // in a gap, which on a phone is most of the time.
   const rowAt = (clientY: number) => {
+    let best: number | null = null;
+    let bestDistance = Infinity;
     for (let i = 1; i < places.length; i += 1) {
       const rect = rowRefs.current[i]?.getBoundingClientRect();
-      if (rect && clientY >= rect.top && clientY <= rect.bottom) return i;
+      if (!rect) continue;
+      const distance = Math.abs(clientY - (rect.top + rect.height / 2));
+      if (distance < bestDistance) { bestDistance = distance; best = i; }
     }
-    return null;
+    return best;
   };
 
-  const endDrag = (target: number | null) => {
-    if (dragging !== null && target !== null) move(dragging, target);
+  // `endDrag` is called from listeners created at pointerdown, whose closure
+  // still sees `dragging === null` — the state set in that same tick has not
+  // been applied yet. So the source row is passed in rather than read back.
+  const endDrag = (from: number | null, target: number | null) => {
+    if (from !== null && target !== null) move(from, target);
     setDragging(null);
     setOver(null);
   };
@@ -77,13 +87,16 @@ export function RoutePlaces({ places, picked, oneWay, busy, onChange, onPick }: 
   // deleting the row, so the form never falls back to a single field the rider
   // has to expand again.
   const remove = (i: number) => {
+    // Only `onChange`. It re-keys the picked coordinates against the new list
+    // (see `reorder` in the composer), so following it with `onPick(i, null)`
+    // wrote a null at an index that now belongs to a different row — the
+    // coordinates of an untouched place were dropped, and the rows and the
+    // picks disagreed about how many places the ride had.
     if (places.length <= MIN_ROWS) {
       onChange(places.map((p, j) => (j === i ? "" : p)));
-      onPick(i, null);
       return;
     }
     onChange(places.filter((_, j) => j !== i));
-    onPick(i, null);
   };
 
   return (
@@ -93,7 +106,7 @@ export function RoutePlaces({ places, picked, oneWay, busy, onChange, onPick }: 
           key={i}
           ref={(el) => { rowRefs.current[i] = el; }}
           onDragOver={(e) => { if (dragging !== null && i > 0) { e.preventDefault(); setOver(i); } }}
-          onDrop={(e) => { e.preventDefault(); endDrag(i); }}
+          onDrop={(e) => { e.preventDefault(); endDrag(dragging, i); }}
           className={`rounded-xl transition ${dragging === i ? "opacity-40" : ""} ${over === i && dragging !== i ? "ring-2 ring-[#f56300]/40" : ""}`}
         >
           <PlaceInput
@@ -115,10 +128,17 @@ export function RoutePlaces({ places, picked, oneWay, busy, onChange, onPick }: 
                     type="button"
                     disabled={busy}
                     draggable={!busy}
-                    onDragStart={() => setDragging(i)}
-                    onDragEnd={() => endDrag(over)}
+                    onDragStart={(e) => { e.stopPropagation(); setDragging(i); }}
+                    onClick={(e) => e.preventDefault()}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onDragEnd={() => endDrag(i, over)}
                     onPointerDown={(e) => {
                       if (busy || e.pointerType === "mouse") return;
+                      // The handle sits inside the field's <label>, so without
+                      // this the touch focuses the input and the browser keeps
+                      // the gesture — the row never moved on a phone.
+                      e.preventDefault();
+                      e.stopPropagation();
                       // Touch: follow the finger by hit-testing the rows.
                       setDragging(i);
                       const target = e.currentTarget;
@@ -128,7 +148,7 @@ export function RoutePlaces({ places, picked, oneWay, busy, onChange, onPick }: 
                         target.releasePointerCapture(ev.pointerId);
                         target.removeEventListener("pointermove", onMove);
                         target.removeEventListener("pointerup", onUp);
-                        endDrag(rowAt(ev.clientY));
+                        endDrag(i, rowAt(ev.clientY));
                       };
                       target.addEventListener("pointermove", onMove);
                       target.addEventListener("pointerup", onUp);
