@@ -1,5 +1,34 @@
 # Mopik — progress log
 
+## 2026-09-13 (later still) — the trunk assumption, measured (step 3)
+
+Step 3 was meant to be "the Latvian `trunk` rule is wrong abroad, measure how
+badly". The measurement said the opposite, and found a real bug at home.
+
+**Abroad it is a non-issue.** `scripts/measure-trunk.ts` routes the same legs
+with `avoidMainRoads` on and off and counts kilometres per highway class.
+München→Ingolstadt, Hamburg→Lüneburg, Warszawa→Radom, Lyon→Grenoble, on both
+the adventure and the asphalt-only profile: **`trunk` was 0.0 km in all eight
+runs.** The turn costs, surface costs and offRoad preference keep the router
+off big roads long before the class price is consulted. My earlier warning that
+German routes "would happily use trunk roads a rider expected to avoid" was a
+reasonable inference from the OSM semantics and simply not what happens.
+
+**At home it was broken.** `primary` rises to 20 under `avoidMainRoads` while
+`trunk` stayed at 12 — so the flag made trunk the cheapest big road available.
+Measured Rīga → Sigulda on the asphalt profile: flag off → 5.6 km primary,
+0 km trunk; flag **on** → 2.2 km *trunk*. Asking to avoid main roads put the
+ride on a bigger one.
+
+Fixed by pricing `trunk: 26` when the flag is set — above `primary` at 20,
+still never forbidden. Same leg after: 0.1 km trunk, and the route is 4.9 km
+shorter than the broken version (80.2 vs 85.1 km). The regression the original
+comment warns about (forbidding trunk cost a rider's last 5 km home a 44 km
+detour) does not return: measured on the river-crossing leg, 37.3 km → 43.0 km
+with trunk still available at 0.1 km.
+
+45/45 across the suites, including the six rider regressions.
+
 ## 2026-09-13 (later still) — place search goes worldwide (step 2)
 
 `Innsbruck` and `Warszawa` returned **0 results**: `photon.ts` and `geocode.ts`

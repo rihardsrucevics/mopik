@@ -160,7 +160,14 @@ function costs(o: MotoProfileOptions) {
     // way across a river or into a suburb. Forbidding them cost a rider's
     // last 5 km home a 44 km detour. Dear, never forbidden; only
     // `motorway` is refused with avoidMotorways.
-    trunk: o.avoidMotorways ? "12.0" : "6.0",
+    //
+    // `avoidMainRoads` must also raise it above `primary` (20), or the flag
+    // does the opposite of what it says. Measured on Rīga → Sigulda: with the
+    // flag off the route rode 5.6 km of primary and no trunk; switching it on
+    // moved 2.2 km onto *trunk*, because trunk at 12 had become the cheapest
+    // big road on the map. This is wrong in Latvia and worse elsewhere, where
+    // trunk is a limited-access dual carriageway rather than an A-road.
+    trunk: o.avoidMainRoads ? "26.0" : o.avoidMotorways ? "12.0" : "6.0",
     motorway: o.avoidMotorways ? "100000" : "8.0",
 
     // tracktype: grade1-2 are the adventure roads a rider wants; grade4-5 are

@@ -123,6 +123,25 @@ always rejected after the 2026-09-10 Rīga–Ainaži beach regression.
 
 
 
+## `avoidMainRoads` must price trunk above primary (2026-09-13, measured)
+
+The flag did the opposite of its name, **in Latvia**, and nobody had measured
+it. `primary` goes to 20 when avoiding main roads while `trunk` stayed at 12,
+so trunk became the cheapest big road on the map. Measured Rīga → Sigulda,
+asphalt profile: flag off rode 5.6 km primary / 0 trunk; flag **on** rode
+2.2 km *trunk*. Now `trunk: 26` under the flag — same leg, 0.1 km trunk, and
+4.9 km shorter than before the fix.
+
+This was found while checking whether the Latvian `trunk` assumption breaks
+abroad. **It does not**: measured on München→Ingolstadt, Hamburg→Lüneburg,
+Warszawa→Radom and Lyon→Grenoble, both profiles, `trunk` was **0.0 km in all
+eight runs** — the turn, surface and offRoad costs keep the router off big
+roads long before the class cost matters. The problem was at home.
+
+The 44 km-detour regression is not back: trunk is dearer, never forbidden
+(measured 37.3 → 43.0 km on the river-crossing leg, trunk still available).
+Re-run with `BROUTER_BASE_URL=https://brouter.de npx tsx scripts/measure-trunk.ts`.
+
 ## Place search is worldwide and biased, never fenced (2026-09-13)
 
 Search used a Baltic bbox plus a `{LV,LT,EE}` allowlist, which is why
