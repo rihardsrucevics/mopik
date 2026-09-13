@@ -95,6 +95,22 @@ test("a plan with neither stops nor destination is just a loop from home", () =>
   assert.equal(plan.returnToStart, true);
 });
 
+test("an absent plan is one way; an edited plan keeps the shape it had", () => {
+  // The default decides what the two rows mean. One way is the default
+  // because it is the ride that uses both of them — "No … Līdz …".
+  // `returnToStart` is nullable, so null (the chat has not asked yet) must
+  // fall through to one way rather than being read as a loop.
+  const shape = (returnToStart: boolean | null) => (returnToStart === true ? "round_trip" : "one_way");
+  assert.equal(shape(null), "one_way", "an unanswered plan is not a loop");
+  assert.equal(shape(false), "one_way");
+  assert.equal(shape(true), "round_trip", "a saved loop reopens as a loop");
+
+  // And the plan survives the trip: a loop edited in the form stays a loop.
+  const loop = composeRidePlan({ ...base, places: ["Sigulda", "Līgatne"], profile: DEFAULT_PROFILE });
+  assert.equal(loop.returnToStart, true);
+  assert.equal(shape(loop.returnToStart), "round_trip");
+});
+
 test("the form always offers From and To", () => {
   assert.deepEqual(placesFromPlan(null), ["", ""], "an empty form asks where from and where to");
 

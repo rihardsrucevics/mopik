@@ -275,9 +275,12 @@ export default function Home() {
         showTet={showTet} onToggleTet={setShowTet} />
     </MapPanel>
   );
-  // The form hosts the map itself; every other phone view keeps it on top,
-  // where a result and its map belong together.
-  const mapInComposer = !desktop && entryMode === "form" && mapVisible;
+  // Where the map lives depends only on the viewport and the view — never on
+  // whether it currently has anything to show. Folding `mapVisible` in here
+  // meant the placement flipped at the same moment the map appeared, and the
+  // map could be left in the hidden desktop cell: zero-sized, taking its
+  // full-screen button down to 0 x 0 px with it.
+  const mapInComposer = !desktop && entryMode === "form";
   return (
     <main className="mx-auto min-h-screen w-full max-w-[1600px] px-4 py-5 md:px-7">
       <IntroSplash />
@@ -296,7 +299,7 @@ export default function Home() {
           <InstallPrompt show={Boolean(result) && !chatting} />
           {entryMode === "form" && <SavedRides />}
           {entryMode === "form"
-            ? <RideComposer key={plan ? planSummary(plan, false) : "new"} initialPlan={plan} profile={profile} onProfileChange={changeProfile} busy={phase !== "idle"} onGenerate={startFromForm} onUseChat={() => setEntryMode("chat")} onPlacesChange={setPreviewPlaces} map={mapInComposer ? mapPanel : undefined} />
+            ? <RideComposer key={plan ? planSummary(plan, false) : "new"} initialPlan={plan} profile={profile} onProfileChange={changeProfile} busy={phase !== "idle"} onGenerate={startFromForm} onUseChat={() => setEntryMode("chat")} onPlacesChange={setPreviewPlaces} map={mapInComposer && mapVisible ? mapPanel : undefined} />
             : result && result.routes.length > 0 && !chatting
               ? <ResultPanel routes={result.routes} selected={selected} onSelect={setSelected} plan={plan} avoidTowns={result.intent.avoidTowns ?? false} lucky={lucky} remoteLoop={result.remoteLoop} longerSuggestion={result.longerSuggestion} tolerancePercent={result.intent.distanceTolerancePercent} busy={phase !== "idle"} onSend={send} onBackToForm={() => setEntryMode("form")} />
               : <RoutePrompt messages={messages} plan={plan} hasRoute={Boolean(route)} phase={phase} quickReplies={quickReplies} lucky={lucky && !route} onSend={send} onBackToForm={() => setEntryMode("form")} originCode={origin?.code ?? null} onAction={() => { setChatting(false); setQuickReplies([]); }} />}

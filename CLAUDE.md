@@ -298,12 +298,27 @@ trails=lots). Verify with Sigulda 2 h: complex should show >10% trail.
   Start, then stops, in riding order; a round trip does not repeat the start.
   Do not reintroduce a separate "Uz" field — on a loop it silently became the
   last stop and nothing could be reordered.
+- **One way is the trip-type default and sits on the left**; a round trip is
+  the deliberate choice on the right. Two rows reading "No … Līdz …" is what a
+  rider expects on open. `returnToStart` is nullable — only `true` is a loop,
+  so an unanswered plan must not be read as one.
+- **`MapPanel` expanded is `flex flex-col` with the map in `relative min-h-0
+  flex-1`**, and where the map lives never depends on whether it has anything
+  to show. Both rules exist because the full-screen map became unclosable: a
+  zero-height layer, or the map left in the `hidden md:block` desktop cell,
+  takes the close button down to 0 x 0 px with it. Check the button's measured
+  size, not just that it renders.
 - **The form always shows at least two rows** (`MIN_ROWS`, `placesFromPlan`),
   both empty with placeholders — "Rīga" and **"Man vienalga"**. A rider should
   be able to say where from and where to without first finding an add button,
   and the second row must visibly be optional rather than unfinished. Deleting
   the last row empties it instead of removing it. Never go back to one row, and
   never prefill a row with a real value that looks like a hint.
+- **A place field is always full width; its controls live inside it.**
+  `PlaceInput`'s `trailing` slot, not a column beside the field — a reserved
+  column is blank space whenever the control is absent, and the place name is
+  the one thing that must not be truncated. The controls are conditional: ✕
+  only when the row has text, the grip only from three rows up.
 - **Reordering places is a drag handle, never up/down arrows.** Three ~22 px
   targets per row cost more width than the field and none was tappable; one
   36 px grip plus one 36 px ✕ is the same total width. The handle appears only

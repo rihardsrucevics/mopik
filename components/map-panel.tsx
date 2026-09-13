@@ -30,8 +30,13 @@ export function MapPanel({ children, className = "", expandedClassName = "" }: {
   }, [expanded]);
 
   return (
-    <div className={expanded ? `fixed inset-0 z-40 bg-[#faf9f6] ${expandedClassName}` : `relative ${className}`}>
-      {children}
+    <div className={expanded ? `fixed inset-0 z-40 flex flex-col bg-[#faf9f6] ${expandedClassName}` : `relative ${className}`}>
+      {/* The map must fill the fixed layer itself. Inside the composer's flex
+          column a plain child of `fixed inset-0` collapsed to zero height,
+          which took the close button (positioned against it) down to 0 x 0 px
+          and made leaving full screen impossible. `flex-1 min-h-0` gives the
+          map the whole layer and the button something to sit on. */}
+      <div className={expanded ? "relative min-h-0 flex-1" : "contents"}>{children}</div>
       <button type="button" onClick={() => setExpanded((v) => { if (!v) track("map_fullscreen"); return !v; })}
         aria-label={expanded ? "Aizvērt pilnekrāna karti" : "Karte pa visu ekrānu"}
         className="absolute bottom-3 left-3 flex size-10 items-center justify-center rounded-full border border-stone-200 bg-white/95 text-stone-700 shadow-sm backdrop-blur md:hidden">

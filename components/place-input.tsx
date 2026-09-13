@@ -19,7 +19,7 @@ const KIND_LABEL: Record<string, string> = {
  * is the city the rider meant and not whatever a geocoder guesses later.
  * Typing without picking still works — the API then geocodes the name.
  */
-export function PlaceInput({ value, onChange, onPick, placeholder, icon, label, className }: {
+export function PlaceInput({ value, onChange, onPick, placeholder, icon, label, className, trailing }: {
   value: string;
   onChange: (value: string) => void;
   onPick: (place: ResolvedPlace | null) => void;
@@ -27,6 +27,14 @@ export function PlaceInput({ value, onChange, onPick, placeholder, icon, label, 
   icon?: ReactNode;
   label?: ReactNode;
   className?: string;
+  /**
+   * Controls that belong to this field — clear it, reorder its row — rendered
+   * inside the frame, on the right. Inside rather than beside it so the field
+   * itself is always full width: a column reserved next to the field is empty
+   * space whenever the control is not there, and a place name is exactly the
+   * thing that must not be truncated.
+   */
+  trailing?: ReactNode;
 }) {
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [open, setOpen] = useState(false);
@@ -65,7 +73,8 @@ export function PlaceInput({ value, onChange, onPick, placeholder, icon, label, 
 
   return (
     <div className={`relative ${className ?? ""}`}>
-      <label className="block rounded-xl border border-stone-200 px-3 py-2 focus-within:border-[#f56300]">
+      <label className="flex items-center gap-2 rounded-xl border border-stone-200 px-3 py-2 focus-within:border-[#f56300]">
+        <span className="min-w-0 flex-1">
         {label && <span className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-stone-400">{icon}{label}</span>}
         <input
           value={value}
@@ -86,6 +95,8 @@ export function PlaceInput({ value, onChange, onPick, placeholder, icon, label, 
           className="mt-1 w-full bg-transparent text-base font-medium outline-none md:text-sm"
           placeholder={placeholder}
         />
+        </span>
+        {trailing}
       </label>
       {show && (
         <ul id={listId} role="listbox" className="absolute left-0 right-0 top-full z-20 mt-1 overflow-hidden rounded-xl border border-stone-200 bg-white shadow-lg">

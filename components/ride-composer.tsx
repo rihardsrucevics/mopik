@@ -111,7 +111,11 @@ export function RideComposer({ initialPlan, profile, onProfileChange, busy, onGe
   map?: ReactNode;
 }) {
   const [places, setPlaces] = useState<string[]>(placesFromPlan(initialPlan));
-  const [tripType, setTripType] = useState<"round_trip" | "one_way">(initialPlan?.returnToStart === false ? "one_way" : "round_trip");
+  // One way is the default: it is the ride that needs both rows, so the form
+  // reads "No … Līdz …" on open. A plan being edited keeps the shape it had —
+  // `returnToStart` is explicit on every stored plan, so only a genuinely
+  // absent plan falls through to the default.
+  const [tripType, setTripType] = useState<"round_trip" | "one_way">(initialPlan?.returnToStart === true ? "round_trip" : "one_way");
   const [durationMode, setDurationMode] = useState<"flexible" | "hours">(initialPlan?.budget.mode === "duration" ? "hours" : "flexible");
   // The chips and the field are two ways to say the same thing, never mirrored
   // into each other: a rider who wants 2.5 h should type it, not first delete a
@@ -180,7 +184,7 @@ export function RideComposer({ initialPlan, profile, onProfileChange, busy, onGe
         {/* Trip type first: it decides what the last row means — a waypoint on
             the way home, or the finish. Asking for places before knowing the
             shape of the ride is asking the rider to guess. */}
-        <ChoiceRow label="Maršruta veids" value={tripType} onChange={setTripType} choices={[{ value: "round_trip", label: "Turp un atpakaļ" }, { value: "one_way", label: "Vienā virzienā" }]} />
+        <ChoiceRow label="Maršruta veids" value={tripType} onChange={setTripType} choices={[{ value: "one_way", label: "Vienā virzienā" }, { value: "round_trip", label: "Turp un atpakaļ" }]} />
 
         <RoutePlaces places={places} picked={picked} oneWay={tripType === "one_way"} busy={busy} onChange={reorder} onPick={setPick} />
 

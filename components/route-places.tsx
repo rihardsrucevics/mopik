@@ -71,11 +71,11 @@ export function RoutePlaces({ places, picked, oneWay, busy, onChange, onPick }: 
   // Nothing after the start is compulsory. "Man vienalga" says so in the
   // field itself, so a rider who only knows where he is leaving from can hit
   // generate without first working out whether the row may be left empty.
-  const placeholder = (i: number) =>
-    i === 0 ? "Rīga" : i === places.length - 1 && oneWay ? "Man vienalga — kaut kur uz ziemeļiem" : "Man vienalga";
+  const placeholder = (i: number) => (i === 0 ? "Rīga" : "Man vienalga");
 
-  // Two rows is the floor: removing the last one empties it instead, so the
-  // form never falls back to a single field the rider has to expand again.
+  // Two rows is the floor: clearing one of them empties the field instead of
+  // deleting the row, so the form never falls back to a single field the rider
+  // has to expand again.
   const remove = (i: number) => {
     if (places.length <= MIN_ROWS) {
       onChange(places.map((p, j) => (j === i ? "" : p)));
@@ -94,65 +94,69 @@ export function RoutePlaces({ places, picked, oneWay, busy, onChange, onPick }: 
           ref={(el) => { rowRefs.current[i] = el; }}
           onDragOver={(e) => { if (dragging !== null && i > 0) { e.preventDefault(); setOver(i); } }}
           onDrop={(e) => { e.preventDefault(); endDrag(i); }}
-          className={`flex items-start gap-1.5 rounded-lg transition ${dragging === i ? "opacity-40" : ""} ${over === i && dragging !== i ? "ring-2 ring-[#f56300]/40" : ""}`}
+          className={`rounded-xl transition ${dragging === i ? "opacity-40" : ""} ${over === i && dragging !== i ? "ring-2 ring-[#f56300]/40" : ""}`}
         >
           <PlaceInput
-            className="min-w-0 flex-1"
             value={place}
             onChange={(v) => onChange(places.map((p, j) => (j === i ? v : p)))}
             onPick={(p) => onPick(i, p)}
             icon={<MapPin className="size-3" />}
             label={label(i)}
             placeholder={placeholder(i)}
+            trailing={i === 0 ? null : (
+              // Inside the field, and only when there is something to do:
+              // an empty optional row shows nothing at all, so the field runs
+              // the full width instead of leaving a column of blank space
+              // beside it. Clearing appears with the text; reordering appears
+              // once there is more than one row that can move.
+              <span className="flex shrink-0 items-center">
+                {places.length > 2 && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    draggable={!busy}
+                    onDragStart={() => setDragging(i)}
+                    onDragEnd={() => endDrag(over)}
+                    onPointerDown={(e) => {
+                      if (busy || e.pointerType === "mouse") return;
+                      // Touch: follow the finger by hit-testing the rows.
+                      setDragging(i);
+                      const target = e.currentTarget;
+                      target.setPointerCapture(e.pointerId);
+                      const onMove = (ev: PointerEvent) => setOver(rowAt(ev.clientY));
+                      const onUp = (ev: PointerEvent) => {
+                        target.releasePointerCapture(ev.pointerId);
+                        target.removeEventListener("pointermove", onMove);
+                        target.removeEventListener("pointerup", onUp);
+                        endDrag(rowAt(ev.clientY));
+                      };
+                      target.addEventListener("pointermove", onMove);
+                      target.addEventListener("pointerup", onUp);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "ArrowUp") { e.preventDefault(); move(i, i - 1); }
+                      if (e.key === "ArrowDown") { e.preventDefault(); move(i, i + 1); }
+                    }}
+                    aria-label={`Pārkārtot ${place || "vietu"} — velc vai lieto bultiņas`}
+                    className="flex size-8 touch-none cursor-grab items-center justify-center rounded-lg text-stone-300 transition hover:bg-stone-100 hover:text-stone-600 active:cursor-grabbing disabled:opacity-30"
+                  >
+                    <GripVertical className="size-4" />
+                  </button>
+                )}
+                {place.trim() && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => remove(i)}
+                    aria-label={`Noņemt ${place}`}
+                    className="flex size-8 items-center justify-center rounded-lg text-stone-400 transition hover:bg-stone-100 hover:text-stone-700"
+                  >
+                    <X className="size-4" />
+                  </button>
+                )}
+              </span>
+            )}
           />
-          {/* The start stays put; everything after it can be reordered or cleared. */}
-          {i > 0 && (
-            <div className="mt-3.5 flex shrink-0 items-center">
-              {/* Only worth dragging when there is something to reorder. */}
-              {places.length > 2 && (
-                <button
-                  type="button"
-                  disabled={busy}
-                  draggable={!busy}
-                  onDragStart={() => setDragging(i)}
-                  onDragEnd={() => endDrag(over)}
-                  onPointerDown={(e) => {
-                    if (busy || e.pointerType === "mouse") return;
-                    // Touch: follow the finger by hit-testing the rows.
-                    setDragging(i);
-                    const target = e.currentTarget;
-                    target.setPointerCapture(e.pointerId);
-                    const onMove = (ev: PointerEvent) => setOver(rowAt(ev.clientY));
-                    const onUp = (ev: PointerEvent) => {
-                      target.releasePointerCapture(ev.pointerId);
-                      target.removeEventListener("pointermove", onMove);
-                      target.removeEventListener("pointerup", onUp);
-                      endDrag(rowAt(ev.clientY));
-                    };
-                    target.addEventListener("pointermove", onMove);
-                    target.addEventListener("pointerup", onUp);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "ArrowUp") { e.preventDefault(); move(i, i - 1); }
-                    if (e.key === "ArrowDown") { e.preventDefault(); move(i, i + 1); }
-                  }}
-                  aria-label={`Pārkārtot ${place || "vietu"} — velc vai lieto bultiņas`}
-                  className="flex size-9 touch-none cursor-grab items-center justify-center rounded-lg text-stone-300 transition hover:bg-stone-100 hover:text-stone-600 active:cursor-grabbing disabled:opacity-30"
-                >
-                  <GripVertical className="size-4" />
-                </button>
-              )}
-              <button
-                type="button"
-                disabled={busy || (places.length <= MIN_ROWS && !place.trim())}
-                onClick={() => remove(i)}
-                aria-label={`Noņemt ${place || "vietu"}`}
-                className="flex size-9 items-center justify-center rounded-lg text-stone-300 transition hover:bg-stone-100 hover:text-stone-600 disabled:opacity-0"
-              >
-                <X className="size-4" />
-              </button>
-            </div>
-          )}
         </div>
       ))}
 

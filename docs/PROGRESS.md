@@ -1,5 +1,46 @@
 # Mopik — progress log
 
+## 2026-09-13 (latest) — one way by default, and the full-screen map could not be closed
+
+Rider feedback on the deployed form, three things.
+
+- **"Man vienalga — kaut kur uz ziemeļiem" is now just "Man vienalga".** The
+  direction was an example masquerading as a hint.
+- **"Vienā virzienā" moved to the left and became the default**, with "Turp un
+  atpakaļ" as the deliberate choice on the right. This also settles the "Caur
+  (1)" oddity from the previous entry: on a one-way ride the second row is
+  **Līdz**, so the form opens reading "No … Līdz …" — which is what two fields
+  lead a rider to expect. A plan being edited keeps the shape it had;
+  `returnToStart` is nullable, so only `true` means a loop and an unanswered
+  plan falls through to one way.
+- **The full-screen map could not be closed** (rider: the button does nothing).
+  Two separate faults, both introduced when the map moved into the ride block:
+  1. `mapInComposer` included `mapVisible`, so placement flipped at the same
+     moment the map appeared and the map could end up rendered in the
+     `hidden md:block` desktop cell — `display:none`, hence **0 × 0 px**, and
+     the close button positioned against it was 0 × 0 too. Placement now
+     depends only on viewport and view; visibility is decided separately.
+  2. `fixed inset-0` with a plain child inside the composer's flex column left
+     the map with no height. The expanded layer is now `flex flex-col` with the
+     map in a `relative min-h-0 flex-1` child.
+  Measured after: close button **40 × 40 px** at (12, 760), map 375 × 812,
+  clicking it restores the inline map (307 × 339) and unlocks body scroll.
+  (`document.elementFromPoint` reports the Next.js dev indicator over the
+  button — that portal does not exist in production.)
+
+- **The row controls moved inside the field.** Rider: the second row is not
+  full width, and until something is added there is just empty space where the
+  ✕ would go. Correct — the controls sat in a column *beside* the field, so the
+  field lost ~78 px whether or not anything was in that column. `PlaceInput`
+  now takes a `trailing` slot rendered inside its frame, and the controls are
+  conditional: ✕ only once the row has text, the grip only from three rows up.
+  Measured on 375 px: every field **309 px** (was 231 px for rows with
+  controls), unchanged whether empty or filled; desktop 418 px. An empty
+  optional row now shows no control at all.
+
+Tests: a new case pins the trip-type default, including `returnToStart: null`
+not being read as a loop. 30/30 across the four suites.
+
 ## 2026-09-13 (later) — the form asks From and To, the map joins the ride block, and a kept ride can be edited
 
 Five things the rider asked for in one turn, all in the form and the way back
