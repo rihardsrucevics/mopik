@@ -1,5 +1,20 @@
 # Mopik — progress log
 
+## 2026-09-13 — keep a ride someone sent you, and GPX files that sort themselves
+
+- **Saving works on a shared route too.** `/r/<code>` gains "Saglabāt sev";
+  the ride lands in the same localStorage list as one's own, marked
+  `from: "shared"` and shown as "Atsūtīts · saglabāts" in `/saglabatie`.
+  The saved flag is read through `useSyncExternalStore` rather than an
+  effect — localStorage is not reactive and does not exist during the server
+  render. Events `shared_ride_saved`, `shared_ride_unsaved`.
+- **GPX filenames follow one shape** (`lib/gpx/filename.ts`, used by the API
+  and all three download paths):
+  `Mopik 2026-09-13 Kekava-Baldone-loks 54km.gpx`. Date first so a downloads
+  folder sorts chronologically; places in riding order; a loop named once;
+  Latvian letters folded to ASCII because Garmin and older head units mangle
+  non-ASCII filenames over USB. Tests in `scripts/gpx-filename.test.ts`.
+
 ## 2026-09-12 — free turns into the forest, fords priced by the water
 
 Rider: turning onto a forest track should carry no penalty at all, and a

@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
-import { ChevronDown, ChevronUp, Download, MessageCircle, Sparkles } from "lucide-react";
+import { Bookmark, ChevronDown, ChevronUp, Download, MessageCircle, Sparkles } from "lucide-react";
 import { RouteMap } from "@/components/route-map";
 import { track } from "@/lib/analytics";
 import { sharedRouteSegments, type SharedRoute } from "@/lib/share/route-code";
+import { isCodeSaved, removeRide, saveSharedRide } from "@/lib/share/saved-rides";
+import { gpxFilename } from "@/lib/gpx/filename";
 
 const VARIANT_LABELS: Record<string, string> = { direct: "Taisnākā", balanced: "Līkumotākā", complex: "Sarežģītākā" };
 
@@ -21,9 +23,20 @@ function duration(minutes: number): string {
  * A route someone shared: the same map and numbers the rider saw, a GPX
  * button, and the way into Mopik — generate a similar ride, or your own.
  */
-export function SharedRouteView({ share, planCode }: { share: SharedRoute; planCode: string | null }) {
+export function SharedRouteView({ share, planCode, code }: { share: SharedRoute; planCode: string | null; code: string }) {
   const [showTet, setShowTet] = useState(false);
   const [details, setDetails] = useState(false);
+  // Someone else's ride can be kept too: same store as one's own. localStorage
+  // is not reactive and is unavailable while rendering on the server, so the
+  // flag is read through useSyncExternalStore — no effect, no hydration gap.
+  const saved = useSyncExternalStore(
+    (onChange) => {
+      window.addEventListener("mopik:saved-changed", onChange);
+      return () => window.removeEventListener("mopik:saved-changed", onChange);
+    },
+    () => isCodeSaved(code),
+    () => false,
+  );
   const d = share.details;
   // The same honesty as the result panel, from the numbers that travelled in the link.
   const warnings: string[] = [];
@@ -40,10 +53,15 @@ export function SharedRouteView({ share, planCode }: { share: SharedRoute; planC
   const start = { lat: share.points[0][1], lon: share.points[0][0] };
   useEffect(() => { track("shared_route_viewed", { km: share.km, variant: share.variant }); }, [share.km, share.variant]);
 
+  const toggleSave = () => {
+    if (saved) { removeRide(code.slice(0, 24)); track("shared_ride_unsaved"); }
+    else { saveSharedRide(code, share); track("shared_ride_saved", { km: share.km }); }
+  };
+
   const downloadGpx = async () => {
     track("shared_gpx_downloaded", { km: share.km, variant: share.variant });
     const res = await fetch("/api/export-gpx", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
-      name: share.name, coordinates: share.points,
+      name: share.name, coordinates: share.points, km: share.km, places: [share.startLabel],
       description: [`${share.name} · ${share.km} km · ${duration(share.minutes)} · ${share.unpavedPercent} % grants`,
         `${share.repeatedPercent} % atkārtoti · sākums ${share.startLabel}`,
         "Dalīts maršruts no Mopik (mopik.eu) — vienmēr ievēro ceļa zīmes."].join("\n"),
@@ -51,7 +69,7 @@ export function SharedRouteView({ share, planCode }: { share: SharedRoute; planC
     if (!res.ok) return;
     const url = URL.createObjectURL(await res.blob());
     const a = document.createElement("a");
-    a.href = url; a.download = share.name.toLowerCase().replace(/[^a-z0-9]+/g, "-") + ".gpx"; a.rel = "noopener";
+    a.href = url; a.download = gpxFilename({ places: [share.startLabel, share.startLabel], name: share.name, km: share.km }); a.rel = "noopener";
     document.body.appendChild(a); a.click();
     setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 4000);
   };
@@ -81,6 +99,10 @@ export function SharedRouteView({ share, planCode }: { share: SharedRoute; planC
             {planCode && (
               <Link href={`/?p=${planCode}`} className="flex h-11 items-center justify-center gap-2 rounded-full border border-stone-900 text-sm font-semibold text-stone-900 transition hover:bg-stone-900 hover:text-white"><Sparkles className="size-4" />Ģenerēt līdzīgu sev</Link>
             )}
+            <button type="button" onClick={toggleSave} aria-pressed={saved}
+              className={`flex h-11 items-center justify-center gap-2 rounded-full border text-sm font-semibold transition ${saved ? "border-[#f56300] bg-[#fff3ea] text-[#bd4b00]" : "border-stone-200 text-stone-700 hover:bg-stone-50"}`}>
+              <Bookmark className={`size-4 ${saved ? "fill-current" : ""}`} />{saved ? "Saglabāts manos" : "Saglabāt sev"}
+            </button>
             <div className="flex gap-2">
               {planCode && (
                 <Link href={`/?p=${planCode}&mode=chat`} className="flex h-10 flex-1 items-center justify-center gap-1.5 rounded-full border border-stone-200 text-xs font-medium text-stone-700 transition hover:bg-stone-50"><MessageCircle className="size-3.5" />Pielāgot čatā</Link>

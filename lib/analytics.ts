@@ -32,7 +32,9 @@ export type AnalyticsEvent =
   | "saved_ride_opened"
   | "saved_ride_removed"
   | "saved_gpx_downloaded"
-  | "saved_list_opened";
+  | "saved_list_opened"
+  | "shared_ride_saved"      // kept a ride someone else sent
+  | "shared_ride_unsaved";
 
 declare global {
   interface Window { gtag?: (...args: unknown[]) => void }

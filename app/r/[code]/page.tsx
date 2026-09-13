@@ -36,5 +36,5 @@ export default async function SharedRoutePage({ params }: Params) {
   const resolved = await resolveShare(code);
   if (!resolved) notFound();
   const planCode = resolved.code.split("~")[4] ?? null;
-  return <SharedRouteView share={resolved.share} planCode={planCode} />;
+  return <SharedRouteView share={resolved.share} planCode={planCode} code={resolved.code} />;
 }

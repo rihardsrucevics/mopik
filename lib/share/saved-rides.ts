@@ -25,6 +25,8 @@ export type SavedRide = {
   unpavedPercent: number;
   variant: string;
   savedAt: number;
+  /** "shared" when it arrived as someone else's link. */
+  from?: "shared";
 };
 
 function read(): SavedRide[] {
@@ -49,6 +51,32 @@ function write(list: SavedRide[]): void {
 
 export function listSaved(): SavedRide[] {
   return read().sort((a, b) => b.savedAt - a.savedAt);
+}
+
+/**
+ * Save a ride that arrived as a link — someone else's route, decoded from
+ * `/r/<code>`. Same store, same list, same id rule as a ride of one's own;
+ * `from` marks where it came from so the list can say so.
+ */
+export function saveSharedRide(code: string, share: { name: string; km: number; minutes: number; unpavedPercent: number; variant: string }): SavedRide {
+  const entry: SavedRide = {
+    id: code.slice(0, 24),
+    code,
+    name: share.name,
+    km: share.km,
+    minutes: share.minutes,
+    unpavedPercent: share.unpavedPercent,
+    variant: share.variant,
+    savedAt: Date.now(),
+    from: "shared",
+  };
+  write([entry, ...read().filter((r) => r.id !== entry.id)]);
+  return entry;
+}
+
+export function isCodeSaved(code: string): boolean {
+  const id = code.slice(0, 24);
+  return read().some((r) => r.id === id);
 }
 
 /** The id is the route's own code, so saving the same ride twice is one entry. */

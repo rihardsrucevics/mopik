@@ -8,6 +8,7 @@ import { BeerPopup } from "@/components/beer-popup";
 import { track } from "@/lib/analytics";
 import { encodeRouteShare, shareUrl } from "@/lib/share/route-code";
 import { isSaved, removeRide, saveRide } from "@/lib/share/saved-rides";
+import { gpxFilename } from "@/lib/gpx/filename";
 
 /**
  * The left column once routes exist: what was asked, the three versions,
@@ -77,14 +78,14 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
       const res = await fetch("/api/export-gpx", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: route.name, coordinates: route.geometry.coordinates, description: gpxDescription() }),
+        body: JSON.stringify({ name: route.name, coordinates: route.geometry.coordinates, description: gpxDescription(), places: ridePlaces(), km: route.distanceMeters / 1000 }),
       });
       if (!res.ok) return;
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = route.name.toLowerCase().replace(/[^a-z0-9]+/g, "-") + ".gpx";
+      a.download = gpxFilename({ places: ridePlaces(), name: route.name, km: route.distanceMeters / 1000 });
       a.rel = "noopener";
       // Attached to the document: some mobile browsers ignore clicks on detached anchors.
       document.body.appendChild(a);
@@ -138,6 +139,13 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
     }
     try { await navigator.clipboard.writeText(url); setShared("copied"); setTimeout(() => setShared("idle"), 3500); track("route_shared", { method: "copy", km: Math.round(route.distanceMeters / 1000), variant: route.variant }); }
     catch { window.prompt("Kopē saiti:", url); }
+  };
+
+  // The places the ride actually visits, in order, for the filename.
+  const ridePlaces = () => {
+    if (!plan) return route.stops?.map((s) => s.name) ?? [];
+    const end = plan.returnToStart ? plan.startPlace : plan.destinationPlace;
+    return [plan.startPlace, plan.focusArea, ...plan.viaPlaces, end].filter((p): p is string => Boolean(p));
   };
 
   // What the file is, in one paragraph: the request, the result, the surface.

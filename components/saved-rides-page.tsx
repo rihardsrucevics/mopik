@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ArrowLeft, Bookmark, Download, Search, Trash2 } from "lucide-react";
 import { track } from "@/lib/analytics";
 import { listSaved, removeRide, decodeSaved, type SavedRide } from "@/lib/share/saved-rides";
+import { gpxFilename } from "@/lib/gpx/filename";
 
 const VARIANT_LABELS: Record<string, string> = { direct: "Taisnākā", balanced: "Līkumotākā", complex: "Sarežģītākā" };
 type SortKey = "recent" | "km" | "name";
@@ -40,14 +41,14 @@ export function SavedRidesPage() {
     const res = await fetch("/api/export-gpx", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        name: ride.name, coordinates: share.points,
+        name: ride.name, coordinates: share.points, km: ride.km, places: share.startLabel ? [share.startLabel] : undefined,
         description: `${ride.name} · ${ride.km} km · ${duration(ride.minutes)} · ${ride.unpavedPercent} % grants\nSaglabāts ${savedOn(ride.savedAt)} · Mopik (mopik.eu)`,
       }),
     });
     if (!res.ok) return;
     const url = URL.createObjectURL(await res.blob());
     const a = document.createElement("a");
-    a.href = url; a.download = ride.name.toLowerCase().replace(/[^a-z0-9]+/g, "-") + ".gpx"; a.rel = "noopener";
+    a.href = url; a.download = gpxFilename({ places: share.startLabel ? [share.startLabel, share.startLabel] : [], name: ride.name, km: ride.km, date: new Date(ride.savedAt) }); a.rel = "noopener";
     document.body.appendChild(a); a.click();
     setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 4000);
   };
@@ -95,7 +96,7 @@ export function SavedRidesPage() {
                   <div className="truncate text-[11px] tabular-nums text-stone-500">
                     {r.km} km · {duration(r.minutes)} · {r.unpavedPercent} % grants · {VARIANT_LABELS[r.variant] ?? r.variant}
                   </div>
-                  <div className="truncate text-[10px] text-stone-400">Saglabāts {savedOn(r.savedAt)}</div>
+                  <div className="truncate text-[10px] text-stone-400">{r.from === "shared" ? "Atsūtīts · saglabāts" : "Saglabāts"} {savedOn(r.savedAt)}</div>
                 </Link>
                 <button type="button" onClick={() => downloadGpx(r)} aria-label={`Lejupielādēt ${r.name} GPX`}
                   className="shrink-0 rounded-full border border-stone-200 p-2 text-stone-600 transition hover:bg-stone-50"><Download className="size-4" /></button>
