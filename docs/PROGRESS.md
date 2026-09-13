@@ -1,5 +1,47 @@
 # Mopik — progress log
 
+## 2026-09-13 (late) — no placeholder may look like a value, and four more fixes
+
+- **The empty start field read as filled in.** "Rīga" as a placeholder and
+  "Baldone" as a value are the same shape on a phone in daylight, so the rider
+  hit generate, was refused, and could not see which field was missing. Both
+  placeholders are now neutral: "Pilsēta, adrese vai vieta" and
+  "Nav obligāts — man vienalga". **And the error message was lying** — with
+  "Līdz" filled and "No" empty it said "norādi vismaz vienu vietu, uz kuru
+  doties", which is about the field the rider *had* filled. Errors now name the
+  field: "Aizpildi “No” — no kurienes sāksim braucienu?"
+- **"Mana vieta": the start from the device.** A crosshair button inside the
+  start field — the icon alone, since every map app uses it and the label was
+  spending a third of the field on what the icon already says. Offered, never
+  applied on load: the permission prompt at first sight of a form loses riders,
+  and an IP guess is often the wrong town. New `reverseGeocode` in `photon.ts`
+  (`/api/places?lat=&lon=`) names the point so the rider recognises it; a failed
+  lookup still fills the field with the coordinates.
+- **Adding a stop ate the destination.** "Pievienot pieturvietu" appended an
+  empty row — which on a one-way ride *is* the destination slot, so Liepāja
+  silently stopped being the finish. A stop is now inserted before the last row
+  on a one-way ride; a round trip still appends, having no finish to protect.
+- **Reordering on iOS, take two.** The pointer-capture drag could not be
+  verified here (no iOS simulator on this machine), and the rider reported it
+  still dead. Rather than ship another unverifiable drag fix, the handle now
+  **also moves the row up on a tap** — repeat it to walk a row to the top. The
+  drag itself is rewritten with native non-passive touch listeners, since React
+  attaches its touch handlers passively and `preventDefault` in `onTouchMove`
+  is ignored, so Safari scrolled instead of dragging. Both paths verified with
+  real `TouchEvent`s.
+- **PostHog audit.** Declared events and fired events match (`install_accepted`
+  and `install_dismissed` are fired dynamically). Three gaps from this stretch
+  are now covered, each answering a question: `places_reordered` with
+  `how: drag|tap|keyboard` says whether the touch drag actually works on real
+  phones or the tap is carrying it; `place_picked` says whether the new POI
+  street labels get used; `trip_type_changed` says whether one-way is the right
+  default.
+- **One loader frame is for sale.** After 3 s a "Brīva vieta reklāmai" frame on
+  the brand orange takes the animation's place for 2.4 s. A pickup outranks it,
+  and a fast generation never shows it. Verified at 3450 ms.
+
+Tests 32/32; tsc, lint and build clean.
+
 ## 2026-09-13 (evening) — coordinates ride in the link, POIs carry their street, and three form fixes
 
 - **A bug that blocked generating.** With "Rīga" and "Ķekava" both filled the

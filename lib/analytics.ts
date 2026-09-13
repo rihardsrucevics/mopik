@@ -37,6 +37,10 @@ export type AnalyticsEvent =
   | "shared_ride_unsaved"
   | "saved_alternative_opened" // opened another version of a saved ride
   | "form_map_opened"         // the map opened on request in the form (phones)
+  | "form_location_used"      // "Mana vieta" filled the start from the device
+  | "places_reordered"        // a stop moved; props: how (drag|tap|keyboard) — is the iOS path used?
+  | "place_picked"            // a suggestion chosen; props: kind, group — are POIs actually picked?
+  | "trip_type_changed"       // props: to (one_way|round_trip) — is the new default right?
   | "ride_edit_opened"        // "Rediģēt formā" on a shared or saved ride; props: from, saved
   | "edited_ride_kept"        // the edit produced a new ride and the original stays
   | "edited_ride_replaced";   // the edit replaced the ride it started from

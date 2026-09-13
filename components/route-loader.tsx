@@ -56,6 +56,16 @@ export function RouteLoader({ phase, className }: { phase: "thinking" | "routing
     return () => clearInterval(t);
   }, [lines.length]);
   const BREAK_MS = 2400;
+  // One frame of the loader is for sale. It shows once per generation, a few
+  // seconds in — late enough that a quick route never sees it, long enough to
+  // read while the router works. Nothing is sold yet; the frame says so.
+  const ADVERT_AFTER_MS = 3000;
+  const [advert, setAdvert] = useState(false);
+  useEffect(() => {
+    const show = setTimeout(() => setAdvert(true), ADVERT_AFTER_MS);
+    const hide = setTimeout(() => setAdvert(false), ADVERT_AFTER_MS + BREAK_MS);
+    return () => { clearTimeout(show); clearTimeout(hide); };
+  }, []);
   const onPickup = (kind: Pickup) => {
     setScore((s) => ({ ...s, [kind]: s[kind] + 1 }));
     setOverride(PICKUP_LINE[kind]);
@@ -72,6 +82,13 @@ export function RouteLoader({ phase, className }: { phase: "thinking" | "routing
         {breakScene && (
           <div className="mopik-fade-in absolute inset-0 bg-[#faf9f6]">
             {breakScene === "cigarette" ? <CigaretteScene className="h-28 w-full" /> : <BeerScene className="h-28 w-full" />}
+          </div>
+        )}
+        {/* A pickup outranks it: the game frame is the one the rider earned. */}
+        {advert && !breakScene && (
+          <div className="mopik-fade-in absolute inset-0 flex h-28 flex-col items-center justify-center bg-[#f56300] text-center">
+            <span className="text-sm font-semibold tracking-tight text-white">Brīva vieta reklāmai</span>
+            <span className="mt-0.5 text-[11px] text-white/80">mopik.eu</span>
           </div>
         )}
       </div>

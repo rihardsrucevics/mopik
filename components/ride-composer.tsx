@@ -135,6 +135,41 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   const [error, setError] = useState<string | null>(null);
   // Phone only: the map is opened on request, and stays open once it is.
   const [mapOpen, setMapOpen] = useState(false);
+  const [locating, setLocating] = useState(false);
+
+  /**
+   * "Mana vieta": the device's coordinates, named. Offered rather than applied
+   * on load — the permission prompt at first sight of a form is a good way to
+   * lose a rider, and an IP guess is often the wrong town. The point itself is
+   * kept; the reverse lookup only supplies a name the rider recognises, and a
+   * failed lookup still fills the field with the coordinates.
+   */
+  const useMyLocation = () => {
+    if (!navigator.geolocation || locating) return;
+    setLocating(true);
+    setError(null);
+    navigator.geolocation.getCurrentPosition(
+      async ({ coords }) => {
+        const { latitude: lat, longitude: lon } = coords;
+        let place: ResolvedPlace = { name: `${lat.toFixed(4)}, ${lon.toFixed(4)}`, label: "Mana atrašanās vieta", lat, lon };
+        try {
+          const res = await fetch(`/api/places?lat=${lat}&lon=${lon}`);
+          if (res.ok) {
+            const found = ((await res.json()) as { places: ResolvedPlace[] }).places?.[0];
+            if (found) place = found;
+          }
+        } catch {
+          // Keep the coordinates: the ride can still be planned from them.
+        }
+        setPlaces((prev) => prev.map((p, i) => (i === 0 ? place.name : p)));
+        setPick(0, place);
+        setLocating(false);
+        track("form_location_used");
+      },
+      () => { setLocating(false); setError("Neizdevās noteikt atrašanās vietu. Ieraksti sākumu pats."); },
+      { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 },
+    );
+  };
   // Picked places by row index. Typing again clears the pick, so a changed
   // name is geocoded rather than silently kept at the old coordinates.
   const [picked, setPicked] = useState<Record<number, ResolvedPlace | null>>(() => {
@@ -186,11 +221,14 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
 
   const submit = () => {
     const filled = places.map((p) => p.trim()).filter(Boolean);
-    if (!filled.length) { setError("Norādi, no kurienes brauksim."); return; }
+    // Name the field that is missing. "Norādi vismaz vienu vietu" was shown to
+    // a rider who had filled in "Līdz" and left "No" empty — technically about
+    // the count, but read as a lie about the field he had just typed into.
+    if (!places[0]?.trim()) { setError("Aizpildi “No” — no kurienes sāksim braucienu?"); return; }
     // An empty "Līdz" is a real answer — "man vienalga", the same ride the
     // lucky mode already handles — so only a one-way request with nothing but
     // a start is refused: there is no direction to send it in.
-    if (tripType === "one_way" && filled.length < 2) { setError("Vienvirziena braucienam norādi vismaz vienu vietu, uz kuru doties."); return; }
+    if (tripType === "one_way" && filled.length < 2) { setError("Aizpildi “Līdz” vai pievieno pieturvietu — vienvirziena braucienam vajag, uz kurieni doties."); return; }
     const value = hours.trim() ? Number(hours.replace(",", ".")) : preset ?? NaN;
     if (durationMode === "hours" && (!Number.isFinite(value) || value < 0.5 || value > 16)) { setError("Ilgumam jābūt no 0,5 līdz 16 stundām."); return; }
     const plan = composeRidePlan({ places, tripType, durationMode, hours: value, profile: effectiveProfile });
@@ -212,9 +250,9 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
         {/* Trip type first: it decides what the last row means — a waypoint on
             the way home, or the finish. Asking for places before knowing the
             shape of the ride is asking the rider to guess. */}
-        <ChoiceRow label="Maršruta veids" value={tripType} onChange={setTripType} choices={[{ value: "one_way", label: "Vienā virzienā" }, { value: "round_trip", label: "Turp un atpakaļ" }]} />
+        <ChoiceRow label="Maršruta veids" value={tripType} onChange={(v) => { track("trip_type_changed", { to: v }); setTripType(v); }} choices={[{ value: "one_way", label: "Vienā virzienā" }, { value: "round_trip", label: "Turp un atpakaļ" }]} />
 
-        <RoutePlaces places={places} picked={picked} oneWay={tripType === "one_way"} busy={busy} onChange={reorder} onPick={setPick} />
+        <RoutePlaces places={places} oneWay={tripType === "one_way"} busy={busy} onChange={reorder} onPick={setPick} onUseLocation={useMyLocation} locating={locating} />
 
         {/* The map is worth a look when a place needs confirming, not on every
             visit — it is the tallest thing on the page and most rides are

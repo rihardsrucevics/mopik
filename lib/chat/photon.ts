@@ -7,6 +7,7 @@ import type { ResolvedPlace } from "@/lib/chat/places";
  * area from the start?) before anything is routed.
  */
 const PHOTON = "https://photon.komoot.io/api/";
+const PHOTON_REVERSE = "https://photon.komoot.io/reverse";
 const BALTIC_BBOX = "20.9,53.8,28.3,59.7";
 const COUNTRIES = new Set(["LV", "LT", "EE"]);
 const CACHE_TTL_MS = 10 * 60 * 1000;
@@ -159,3 +160,46 @@ export async function lookupPlace(name: string): Promise<PlaceSuggestion | null>
 // The pre-routing arithmetic lives in `feasibility.ts` (pure, shared with the
 // client); re-exported here for the callers that reason about places.
 export { estimateTransit } from "./feasibility";
+
+
+/**
+ * Coordinates → the place they are in, for "Mana atrašanās vieta" in the form.
+ *
+ * The browser gives a point; a rider needs a name they recognise before
+ * spending a generation on it. Photon's reverse endpoint answers with the same
+ * feature shape as the search, so the label is built the same way — a rider
+ * sees "Ķekava" or "Brīvības iela 105 · adrese · Rīga", not a pair of numbers.
+ * Returns null rather than throwing: the caller falls back to typing.
+ */
+export async function reverseGeocode(lat: number, lon: number): Promise<PlaceSuggestion | null> {
+  const url = new URL(PHOTON_REVERSE);
+  url.searchParams.set("lat", String(lat));
+  url.searchParams.set("lon", String(lon));
+  url.searchParams.set("limit", "1");
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(6000), headers: { "User-Agent": "Mopik/0.1 (adventure motorcycle route planner)" } });
+    if (!res.ok) return null;
+    const features = ((await res.json()) as { features?: PhotonFeature[] }).features ?? [];
+    const f = features[0];
+    if (!f) return null;
+    const q = f.properties;
+    const street = [q.street ?? q.name, q.housenumber].filter(Boolean).join(" ");
+    // A point in a field has no name of its own; the town it sits in is the
+    // useful answer, so fall back through the administrative levels.
+    const name = q.name ?? street ?? q.city ?? q.district ?? q.county ?? q.state ?? "";
+    if (!name) return null;
+    const where = q.city ?? q.district ?? q.county ?? q.state ?? "";
+    return {
+      name,
+      label: where && where !== name ? `${name} · ${where}` : name,
+      // The browser's point, not Photon's — the rider is standing here, and
+      // the match is only there to give the place a name.
+      lat, lon,
+      kind: q.osm_value ?? "place",
+      kindLabel: "",
+    };
+  } catch (err) {
+    console.warn("reverse geocode failed:", err);
+    return null;
+  }
+}

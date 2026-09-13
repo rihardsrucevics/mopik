@@ -132,3 +132,23 @@ test("the form always offers From and To", () => {
   assert.equal(vienalga.destinationPlace, null, "an empty Līdz is no destination, not a blank one");
   assert.deepEqual(vienalga.viaPlaces, []);
 });
+
+test("adding a stop never eats the destination", () => {
+  // The rider's report: on a one-way ride "Pievienot pieturvietu" appended an
+  // empty row, which *is* the destination slot — so Liepāja stopped being the
+  // finish and became a waypoint the moment a stop was added.
+  const addStop = (list: string[], oneWay: boolean) =>
+    !oneWay || list.length < 2 ? [...list, ""] : [...list.slice(0, -1), "", list[list.length - 1]];
+
+  assert.deepEqual(addStop(["Rīga", "Liepāja"], true), ["Rīga", "", "Liepāja"], "the finish stays last");
+  assert.deepEqual(addStop(["Rīga", "", "Liepāja"], true), ["Rīga", "", "", "Liepāja"]);
+  // A round trip has no destination to protect; the end is the right place.
+  assert.deepEqual(addStop(["Rīga", "Sigulda"], false), ["Rīga", "Sigulda", ""]);
+  // And with only a start there is nothing to insert before.
+  assert.deepEqual(addStop(["Rīga"], true), ["Rīga", ""]);
+
+  // The plan agrees: Liepāja is the destination, the blank is dropped.
+  const plan = composeRidePlan({ ...base, places: ["Rīga", "", "Liepāja"], tripType: "one_way", profile: DEFAULT_PROFILE });
+  assert.equal(plan.destinationPlace, "Liepāja");
+  assert.deepEqual(plan.viaPlaces, []);
+});
