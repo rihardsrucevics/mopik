@@ -38,7 +38,7 @@ export function BeerPopup({ open, onClose }: { open: boolean; onClose: () => voi
         <h2 id="beer-title" className="mt-3 text-2xl font-bold tracking-tight">Lai labi braucas!</h2>
         <a href={BEER_LINK} target="_blank" rel="noopener noreferrer" onClick={onBeer}
           className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[#f56300] text-sm font-semibold text-white transition hover:bg-[#ff7a1f]">
-          Uzsaukt aliņu
+          Uzsaukt @rucijs aliņu 🍺
         </a>
         {/* Two ways to say thanks, offered as equals: pay, or follow. Neither
             is the small print of the other. Closing is the ✕ or a tap outside;

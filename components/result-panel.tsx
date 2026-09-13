@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { ArrowLeft, ArrowUp, ChevronDown, ChevronUp, Download, LoaderCircle, RefreshCw, Share2, Bookmark } from "lucide-react";
 import { GeneratedRoute, GenerateRouteResponse } from "@/lib/types";
 import { RidePlan, planSummary } from "@/lib/chat/ride-plan";
@@ -19,10 +19,18 @@ import { gpxFilename } from "@/lib/gpx/filename";
  * history competes with the result.
  */
 
+/**
+ * Two categories, named by comparison rather than by superlative.
+ *
+ * "Taisnākā" claimed to be *the* straightest and was measured coming back
+ * 43 km / 1 h 22 next to a "Līkumotākā" of 25 km / 1 h 8 — a label that lies.
+ * "Ātrāks" only claims to be the quicker of the two, which it now is by
+ * construction. `balanced` is kept for share codes made before the change.
+ */
 const VARIANT_LABELS: Record<string, { label: string; detail: string }> = {
-  direct: { label: "Taisnākā", detail: "gludi un ātri" },
-  balanced: { label: "Līkumotākā", detail: "līdzsvars" },
-  complex: { label: "Sarežģītākā", detail: "mežs, pagriezieni, apkārtne" },
+  direct: { label: "Ātrāks", detail: "gludāk, mazāk pagriezienu" },
+  balanced: { label: "Līdzsvarots", detail: "pa vidu" },
+  complex: { label: "Sarežģītāks", detail: "mežs, takas, pagriezieni" },
 };
 
 
@@ -40,7 +48,7 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = false, lucky = false, remoteLoop, longerSuggestion, tolerancePercent = 20, busy, onSend, onBackToForm, resolvedPlaces, alternatives, offset, onOffsetChange }: {
+export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = false, lucky = false, remoteLoop, longerSuggestion, tolerancePercent = 20, busy, onSend, onBackToForm, resolvedPlaces, alternatives, offset, onOffsetChange, map }: {
   routes: GeneratedRoute[];
   /** transit → loop → transit split, when the ride was built around a focus area */
   remoteLoop?: GenerateRouteResponse["remoteLoop"];
@@ -76,6 +84,12 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
    */
   offset: Record<string, number>;
   onOffsetChange: (next: Record<string, number>) => void;
+  /**
+   * The map, on phones only. It belongs under the ride's own heading and above
+   * the versions it illustrates — floating above the whole page it read as a
+   * separate thing, and the versions were the first thing a rider saw.
+   */
+  map?: ReactNode;
 }) {
   const [details, setDetails] = useState(false);
   // Alternatives are appended, never swapped in: the three the rider is
@@ -145,7 +159,13 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
   const requestedLabel = requestedMinutes !== null ? duration(requestedMinutes * 60) : "";
   const timeVerdict = over
     ? `Prasīts ${isMaximum ? "līdz" : "~"}${requestedLabel}, šī versija ir ${duration(deliveredMinutes * 60)}.`
-    : under ? `Prasīts ~${requestedLabel}, šī versija ir tikai ${duration(deliveredMinutes * 60)}.` : null;
+    : under
+      // Say why. A bare "this one is only 1 h 22" reads as the app failing at
+      // its one job; the real reason is that a longer ride here would have to
+      // retrace roads, and not riding the same road twice is the thing this
+      // product optimises. The rider can still ask for the longer one.
+      ? `Prasīts ~${requestedLabel}, šī versija ir tikai ${duration(deliveredMinutes * 60)} — garākas trases šajā apvidū sāk atkārtot tos pašus ceļus.`
+      : null;
   const timeActions: { label: string; message: string }[] = [];
   if (over && requestedMinutes) timeActions.push({ label: `Meklēt īsāku (līdz ${requestedLabel})`, message: `Īsāku — ne vairāk kā ${plan!.budget.value} stundas.` });
   if (under && requestedMinutes) timeActions.push({ label: `Meklēt garāku (~${requestedLabel})`, message: `Garāku — apmēram ${plan!.budget.value} stundas, var vairāk pieturu.` });
@@ -259,6 +279,7 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
             )}
           </div>
         )}
+        {map && <div className="md:hidden">{map}</div>}
         {routes.length > 1 && (
           <div role="tablist" aria-label="Maršruta versijas" className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${routes.length}, minmax(0, 1fr))` }}>
             {routes.map((card, index) => {

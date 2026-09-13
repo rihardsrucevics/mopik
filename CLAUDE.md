@@ -328,7 +328,13 @@ trails=lots). Verify with Sigulda 2 h: complex should show >10% trail.
 - **Drag state must be passed into the drag's end, not read back.** Listeners
   created at pointerdown close over `dragging === null`; reading it there meant
   touch reordering silently did nothing.
-- **Three cards, three names, always.** A typical request routes ~36
+- **Two categories, named by comparison.** "Ātrāks" and "Sarežģītāks" — a
+  superlative can lie, and "Taisnākā" did: measured 43 km / 1 h 22 against a
+  "Līkumotākā" of 25 km / 1 h 8, because `directScore` ranked length against
+  `targetKm` alone and the longest could win on smoothness. Length is ranked
+  against the quickest ride found. `balanced` stays in `RouteVariant` and in
+  `VARIANT_LABELS` for share codes that predate the change.
+- **Two cards, two names, always.** A typical request routes ~36
   candidates; the API returns the three picks plus `alternatives` (two per
   category) and each card cycles through its own kind with a `⟳ n/m` control.
   Do not add cards and do not invent names: a superlative belongs to one card,

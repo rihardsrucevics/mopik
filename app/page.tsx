@@ -307,6 +307,8 @@ export default function Home() {
   // map could be left in the hidden desktop cell: zero-sized, taking its
   // full-screen button down to 0 x 0 px with it.
   const mapInComposer = !desktop && entryMode === "form";
+  // The result panel hosts it too: under the ride heading, above the versions.
+  const mapInResult = !desktop && entryMode === "chat" && Boolean(result) && !chatting;
   return (
     <main className="mx-auto min-h-screen w-full max-w-[1600px] px-4 py-5 md:px-7">
       <IntroSplash />
@@ -328,7 +330,7 @@ export default function Home() {
           {entryMode === "form"
             ? <RideComposer key={plan ? planSummary(plan, false) : "new"} initialPlan={plan} initialPlaces={places} profile={profile} onProfileChange={changeProfile} busy={phase !== "idle"} onGenerate={startFromForm} onUseChat={() => setEntryMode("chat")} onPlacesChange={setPreviewPlaces} map={mapInComposer && mapVisible ? mapPanel : undefined} />
             : result && result.routes.length > 0 && !chatting
-              ? <ResultPanel routes={result.routes} selected={selected} onSelect={setSelected} plan={plan} avoidTowns={result.intent.avoidTowns ?? false} lucky={lucky} remoteLoop={result.remoteLoop} longerSuggestion={result.longerSuggestion} tolerancePercent={result.intent.distanceTolerancePercent} busy={phase !== "idle"} onSend={send} onBackToForm={() => setEntryMode("form")} resolvedPlaces={routedPlaces} alternatives={result.alternatives} offset={variantOffset} onOffsetChange={setVariantOffset} />
+              ? <ResultPanel routes={result.routes} selected={selected} onSelect={setSelected} plan={plan} avoidTowns={result.intent.avoidTowns ?? false} lucky={lucky} remoteLoop={result.remoteLoop} longerSuggestion={result.longerSuggestion} tolerancePercent={result.intent.distanceTolerancePercent} busy={phase !== "idle"} onSend={send} onBackToForm={() => setEntryMode("form")} map={mapInResult && mapVisible ? mapPanel : undefined} resolvedPlaces={routedPlaces} alternatives={result.alternatives} offset={variantOffset} onOffsetChange={setVariantOffset} />
               : <RoutePrompt messages={messages} plan={plan} hasRoute={Boolean(route)} phase={phase} quickReplies={quickReplies} lucky={lucky && !route} onSend={send} onBackToForm={() => setEntryMode("form")} originCode={origin?.code ?? null} onAction={() => { setChatting(false); setQuickReplies([]); }} />}
           {/* A ride that came from editing another one. Asked once, here,
               because only the rider knows whether the original is still
@@ -356,8 +358,8 @@ export default function Home() {
             above the result otherwise. Phone heights: 42dvh with the result
             panel, 26dvh while the chat has something to say (the words matter
             more than the picture then), the whole screen when asked. */}
-        <div className={`order-first min-w-0 md:order-none md:sticky md:top-5 ${mapVisible && !mapInComposer ? "" : "hidden md:block"}`}>
-          {!mapInComposer && mapPanel}
+        <div className={`order-first min-w-0 md:order-none md:sticky md:top-5 ${mapVisible && !mapInComposer && !mapInResult ? "" : "hidden md:block"}`}>
+          {!mapInComposer && !mapInResult && mapPanel}
         </div>
       </div>
     </main>

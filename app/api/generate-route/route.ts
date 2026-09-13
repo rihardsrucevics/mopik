@@ -126,7 +126,7 @@ type Candidate = {
 };
 
 /** How many loop shapes survive to the UI. */
-const SHOWN_VARIANTS = 3;
+const SHOWN_VARIANTS = 2;
 
 /**
  * The three versions shown, in this order: the smoothest and quickest way
@@ -135,6 +135,11 @@ const SHOWN_VARIANTS = 3;
  * pool and pass the same acceptance checks; they differ only in what they
  * optimise. A loop cannot be "straight", so for loops "direct" means few
  * turns and few rough tracks; for one-way rides it is close to the direct road.
+ */
+/**
+ * `balanced` is no longer shown — two categories a rider can tell apart beat
+ * three that blur — but it stays in the type because share codes created
+ * before this carry it and must keep decoding.
  */
 export type RouteVariant = "direct" | "balanced" | "complex";
 
@@ -1282,8 +1287,16 @@ export async function POST(req: NextRequest) {
     // the rider cares about the time first and the overlap second, so the
     // nearest-to-budget versions lead and the UI says how far off they are.
     const withinBudget = worthShowing.filter(withinTolerance);
+    // Inside the free band, closest to what was actually asked for leads.
+    // `withinTolerance` is a yes/no — 98 min and 118 min both "fit" a 2 h
+    // request — so without this the panel could answer "~2 h" with 1 h 22 and
+    // then apologise for it, while a 2 h ride sat unused in the pool.
+    const shortfallMinutes = (s: Scored) =>
+      targetMinutes ? Math.abs(s.classified.durationSeconds / 60 - targetMinutes) : 0;
     const selection = budgeted
-      ? (withinBudget.length ? withinBudget : [...worthShowing].sort((a, b) => excessDriftPercent(a) - excessDriftPercent(b)))
+      ? (withinBudget.length
+          ? [...withinBudget].sort((a, b) => shortfallMinutes(a) - shortfallMinutes(b))
+          : [...worthShowing].sort((a, b) => excessDriftPercent(a) - excessDriftPercent(b)))
       : worthShowing;
 
     // Three versions from one pool. `selection` is already in balanced-rank
@@ -1293,11 +1306,20 @@ export async function POST(req: NextRequest) {
     const roughShare = (c: Scored) => (c.classified.quality.roughTrackKm / Math.max(1, km(c))) * 100;
     const streetShare = (c: Scored) => (c.classified.quality.streetKm / Math.max(1, km(c))) * 100;
     const common = (c: Scored) => c.classified.overlap.repeatedPercent + excessDriftPercent(c) + streetShare(c) * 0.3;
-    // "Direct" also means not longer than it needs to be: a smooth 87 km
-    // loop should not outrank a smooth 65 km one on a 2-hour request.
+    // The quick one must genuinely be the quickest of the pair. Scoring the
+    // length only against `targetKm` meant that when every candidate sat under
+    // the budget the *longest* could win on smoothness alone — measured on a
+    // Ķekava → Baldone request: "Taisnākā" came back 43 km / 1 h 22 against a
+    // "Līkumotākā" of 25 km / 1 h 8, which makes the label a lie. Ranking is
+    // now against the shortest ride actually found, so length always counts.
+    const quickestMinutes = Math.min(...selection.map((c) => c.classified.durationSeconds / 60), Infinity);
+    // Length is ranked against the quickest ride actually found, not against
+    // `targetKm`: with every candidate under budget the *longest* could win on
+    // smoothness alone, which is how "Taisnākā" came back 43 km / 1 h 22
+    // against a "Līkumotākā" of 25 km / 1 h 8 and made the label a lie.
     const directScore = (c: Scored) =>
       common(c) + c.classified.quality.turnsPer10Km * 4 + roughShare(c) * 0.8 + c.classified.roadMix.trackPercent * 0.5 +
-      (km(c) / Math.max(1, targetKm)) * 25;
+      ((c.classified.durationSeconds / 60) / Math.max(1, quickestMinutes)) * 30;
     // The complex version is the interesting one: tracks, trails, forest and
     // as many turns as the roads offer. A route that doubles back through
     // the woods for a while is a feature here, not a fault.
@@ -1338,11 +1360,8 @@ export async function POST(req: NextRequest) {
     // 4% under complex, which reads as the app ignoring the request.
     if (intent.trailPreference === "lots") pick("complex", byComplex);
     pick("direct", [...selection].filter((c) => !detour(c)).sort((a, b) => directScore(a) - directScore(b)));
-    // Balanced is the clean middle: plain corridors first, a ring or wiggle
-    // only if nothing else is left — those belong to the complex version.
-    pick("balanced", [...selection.filter((c) => !detour(c)), ...selection.filter(detour)]);
     pick("complex", byComplex);
-    const order: RouteVariant[] = ["direct", "balanced", "complex"];
+    const order: RouteVariant[] = ["direct", "complex"];
     const picked = [...variantOf.entries()].sort((a, b) => order.indexOf(a[1]) - order.indexOf(b[1])).map(([c]) => c);
     // Fewer than three distinct picks (the public BRouter routes far fewer
     // shapes than a self-hosted one, and two shapes can converge on the same

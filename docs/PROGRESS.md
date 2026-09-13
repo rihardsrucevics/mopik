@@ -1,5 +1,39 @@
 # Mopik — progress log
 
+## 2026-09-13 (final) — two honest categories, and the map moves inside the ride
+
+Four things off one screenshot, and the second was a real bug.
+
+**"Taisnākā" was lying.** Measured on Ķekava → Baldone: it came back 43 km /
+1 h 22 next to a "Līkumotākā" of 25 km / 1 h 8. Cause: `directScore` ranked
+length against `targetKm` only, so when every candidate sat under the budget
+the *longest* could win on smoothness alone. Length is now ranked against the
+quickest ride actually found, so it always counts.
+
+**Two categories instead of three.** "Ātrāks · gludāk, mazāk pagriezienu" and
+"Sarežģītāks · mežs, takas, pagriezieni" — comparative, not superlative, so
+they cannot lie the way "the straightest" can. `balanced` stays in the type and
+in `VARIANT_LABELS`: share codes made before this carry it, and a saved one was
+checked to still open (200, "Līdzsvarots", 34 km). Each card keeps its ⟳
+control, so the pool is still reachable.
+
+**The time notice says why.** "Prasīts ~2 h, šī versija ir tikai 1 h 22" read
+as the app failing; it now adds "garākas trases šajā apvidū sāk atkārtot tos
+pašus ceļus." That is the measured reason — the 138 min candidate in the pool
+loses on 12 % overlap against 7 %, and not riding the same road twice is what
+this product optimises. **Not** a scoring change: an attempt to pull the picks
+toward the requested duration was measured making things worse (the quick
+version grew to 56 km for the same 99 min) and was reverted. `selection` inside
+the free band is now ordered by closeness to the request, which is the part
+that was genuinely missing.
+
+**The map moved inside the ride.** On a phone it floated above the whole page,
+so the first thing after the header was the version cards. It now sits under
+the "MARŠRUTS" heading and above the options it illustrates — the same slot
+pattern the form already uses, one MapLibre instance either way.
+
+Tests 38/38; tsc, lint and build clean.
+
 ## 2026-09-13 (last) — the beer and the cigarette leave the animation
 
 Rider: encouraging riding and harmful habits in the same breath is not right.
