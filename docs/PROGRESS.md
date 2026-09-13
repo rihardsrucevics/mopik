@@ -1,5 +1,33 @@
 # Mopik — progress log
 
+## 2026-09-13 (latest) — the drag is gone; reordering is arrows again
+
+The rider reported touch reordering broken three times. Two fixes shipped in
+between — pointer capture, then native non-passive touch listeners — and
+neither worked on his phone; there is no iOS simulator on this machine, so
+both were verified only against synthesised events, which is not the same
+thing. A third attempt would have been a fourth guess.
+
+**Up/down arrows, as before the drag.** A tap needs no gesture, so Safari has
+nothing to claim, and an arrow is its own affordance — a grip asks the rider to
+discover that it drags. The width problem that motivated the grip is solved by
+something else now: ✕ only renders once the row has text, so the cluster is two
+32 px buttons and the field still measures 309 px on a 375 px screen. First
+movable row cannot climb above the start; last cannot descend past the end.
+`places_reordered` keeps firing with `how: "tap"`.
+
+−119 lines: `dragging`/`over` state, `rowRefs`, `handleRefs`, the drag ref, the
+native touch effect, `rowAt`, `endDrag` and the row's drop handlers are all
+gone.
+
+**The loader rebuild was reverted at the rider's request** — the close-up film
+(one camera, four frames, a sponsor banner) is parked, not deleted from the
+record: it lived in `route-loader.tsx` and can be rebuilt from this entry. The
+existing pickup game and the "Brīva vieta reklāmai" frame are untouched and
+verified still working.
+
+Tests 32/32; tsc, lint and build clean.
+
 ## 2026-09-13 (late) — no placeholder may look like a value, and four more fixes
 
 - **The empty start field read as filled in.** "Rīga" as a placeholder and

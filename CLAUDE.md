@@ -333,11 +333,12 @@ trails=lots). Verify with Sigulda 2 h: complex should show >10% trail.
   same shape on a phone; the rider could not see which field was missing, and
   the message talked about the field he had filled. Placeholders say what to
   type or that the row is optional — never an example that reads as an answer.
-- **Reordering must work without a drag.** The handle moves the row up on tap
-  as well as by dragging: a 32 px drag target inside a scrolling form is
-  fragile on iOS, and two unverifiable drag fixes shipped before this. Touch
-  listeners are native and non-passive — React's are passive, so
-  `preventDefault` in `onTouchMove` is ignored and Safari scrolls instead.
+- **Reordering places is up/down arrows. Do not reintroduce drag-and-drop.**
+  Three attempts failed on the rider's iPhone (arrows → grip, pointer capture,
+  native non-passive touch listeners); there is no iOS simulator here, so a
+  drag can only ever be verified against synthesised events. A tap needs no
+  gesture for Safari to claim. The width that motivated the grip is bought back
+  by rendering ✕ only when the row has text.
 - **A stop is inserted before the destination on a one-way ride.** Appending it
   made the new empty row the last one, which *is* the finish — adding a stop
   silently threw the destination away. A round trip appends, having no finish.

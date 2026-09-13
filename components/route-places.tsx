@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { GripVertical, LocateFixed, MapPin, Plus, X } from "lucide-react";
+
+import { ChevronDown, ChevronUp, LocateFixed, MapPin, Plus, X } from "lucide-react";
 import { PlaceInput } from "@/components/place-input";
 import { track } from "@/lib/analytics";
 import { MIN_ROWS } from "@/lib/chat/compose-plan";
@@ -33,17 +33,6 @@ export function RoutePlaces({ places, oneWay, busy, onChange, onPick, onUseLocat
   /** Called with the new index order so picked coordinates travel with the row. */
   onPick: (index: number, place: ResolvedPlace | null) => void;
 }) {
-  // The row being dragged and the row it is currently over, so the list can
-  // show where it would land.
-  const [dragging, setDragging] = useState<number | null>(null);
-  const [over, setOver] = useState<number | null>(null);
-  // Touch drags do not fire dragover; the pointer position is matched against
-  // the row rectangles instead.
-  const rowRefs = useRef<(HTMLDivElement | null)[]>([]);
-  const handleRefs = useRef<(HTMLButtonElement | null)[]>([]);
-  // The live drag, kept in a ref because the native listeners below are
-  // registered once and would otherwise close over a stale render.
-  const drag = useRef<{ from: number; moved: boolean } | null>(null);
 
 
   const addStop = (list: string[], toDestination: boolean) => {
@@ -63,80 +52,6 @@ export function RoutePlaces({ places, oneWay, busy, onChange, onPick, onUseLocat
     next.splice(to, 0, row);
     onChange(next);
   };
-
-  // The row the finger is over — or, between rows and past the ends, the
-  // nearest one. A strict hit test dropped the gesture whenever the finger sat
-  // in a gap, which on a phone is most of the time.
-  const rowAt = (clientY: number) => {
-    let best: number | null = null;
-    let bestDistance = Infinity;
-    for (let i = 1; i < places.length; i += 1) {
-      const rect = rowRefs.current[i]?.getBoundingClientRect();
-      if (!rect) continue;
-      const distance = Math.abs(clientY - (rect.top + rect.height / 2));
-      if (distance < bestDistance) { bestDistance = distance; best = i; }
-    }
-    return best;
-  };
-
-  // `endDrag` is called from listeners created at pointerdown, whose closure
-  // still sees `dragging === null` — the state set in that same tick has not
-  // been applied yet. So the source row is passed in rather than read back.
-  const endDrag = (from: number | null, target: number | null) => {
-    if (from !== null && target !== null) move(from, target);
-    setDragging(null);
-    setOver(null);
-  };
-
-  // Native, non-passive touch listeners. React attaches its touch handlers
-  // passively, so `preventDefault` in `onTouchMove` is ignored and iOS scrolls
-  // the page instead of letting the row follow the finger. Registered per
-  // handle, re-registered whenever the rows change.
-  useEffect(() => {
-    const handles = handleRefs.current.slice(0, places.length);
-    const cleanups: (() => void)[] = [];
-    handles.forEach((el, i) => {
-      if (!el || i === 0) return;
-      const onStart = (e: TouchEvent) => {
-        if (busy) return;
-        drag.current = { from: i, moved: false };
-        setDragging(i);
-        e.stopPropagation();
-      };
-      const onMove = (e: TouchEvent) => {
-        if (!drag.current) return;
-        // Non-passive, so this actually stops the page scrolling.
-        e.preventDefault();
-        drag.current.moved = true;
-        setOver(rowAt(e.touches[0].clientY));
-      };
-      const onEnd = (e: TouchEvent) => {
-        const d = drag.current;
-        drag.current = null;
-        if (!d) return;
-        // A tap (no movement) is handled by onClick; only a real drag lands here.
-        if (d.moved) {
-          e.preventDefault();
-          endDrag(d.from, rowAt(e.changedTouches[0].clientY));
-        } else {
-          setDragging(null);
-          setOver(null);
-        }
-      };
-      el.addEventListener("touchstart", onStart, { passive: false });
-      el.addEventListener("touchmove", onMove, { passive: false });
-      el.addEventListener("touchend", onEnd, { passive: false });
-      el.addEventListener("touchcancel", onEnd, { passive: false });
-      cleanups.push(() => {
-        el.removeEventListener("touchstart", onStart);
-        el.removeEventListener("touchmove", onMove);
-        el.removeEventListener("touchend", onEnd);
-        el.removeEventListener("touchcancel", onEnd);
-      });
-    });
-    return () => cleanups.forEach((fn) => fn());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [places, busy]);
 
   // "No" and "Līdz" name the two rows the form always offers; anything added
   // between them is a waypoint and is numbered.
@@ -172,13 +87,7 @@ export function RoutePlaces({ places, oneWay, busy, onChange, onPick, onUseLocat
   return (
     <div className="grid gap-2">
       {places.map((place, i) => (
-        <div
-          key={i}
-          ref={(el) => { rowRefs.current[i] = el; }}
-          onDragOver={(e) => { if (dragging !== null && i > 0) { e.preventDefault(); setOver(i); } }}
-          onDrop={(e) => { e.preventDefault(); endDrag(dragging, i); }}
-          className={`rounded-xl transition ${dragging === i ? "opacity-40" : ""} ${over === i && dragging !== i ? "ring-2 ring-[#f56300]/40" : ""}`}
-        >
+        <div key={i}>
           <PlaceInput
             value={place}
             onChange={(v) => onChange(places.map((p, j) => (j === i ? v : p)))}
@@ -208,32 +117,33 @@ export function RoutePlaces({ places, oneWay, busy, onChange, onPick, onUseLocat
               // beside it. Clearing appears with the text; reordering appears
               // once there is more than one row that can move.
               <span className="flex shrink-0 items-center">
+                {/* Arrows, not a drag handle. Dragging a small target inside
+                    a scrolling form never worked on iOS — Safari kept the
+                    gesture for scrolling — and three attempts to fix it failed
+                    on the rider's own phone. An arrow is a tap: it works
+                    everywhere, needs no gesture, and is its own affordance.
+                    They appear only when there is something to reorder. */}
                 {places.length > 2 && (
-                  <button
-                    ref={(el) => { handleRefs.current[i] = el; }}
-                    type="button"
-                    disabled={busy}
-                    draggable={!busy}
-                    onDragStart={(e) => { e.stopPropagation(); setDragging(i); }}
-                    onDragEnd={() => endDrag(i, over)}
-                    onMouseDown={(e) => e.preventDefault()}
-                    // A tap moves the row up one place. Dragging a 32 px handle
-                    // inside a scrolling form is fragile on iOS — Safari claims
-                    // the gesture for scrolling often enough that the rider is
-                    // left with a control that does nothing. A tap always
-                    // works, and repeating it walks the row to the top; the
-                    // drag stays for pointers that give us the gesture.
-                    onClick={() => { if (!busy) move(i, i - 1, "tap"); }}
-                    onKeyDown={(e) => {
-                      if (e.key === "ArrowUp") { e.preventDefault(); move(i, i - 1, "keyboard"); }
-                      if (e.key === "ArrowDown") { e.preventDefault(); move(i, i + 1, "keyboard"); }
-                    }}
-                    aria-label={`Pārvietot ${place || "vietu"} augstāk — vai velc, lai pārkārtotu`}
-                    title="Pārvietot augstāk — vai velc"
-                    className="flex size-8 touch-none items-center justify-center rounded-lg text-stone-300 transition hover:bg-stone-100 hover:text-stone-600 disabled:opacity-30"
-                  >
-                    <GripVertical className="size-4" />
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      disabled={busy || i <= 1}
+                      onClick={() => move(i, i - 1, "tap")}
+                      aria-label={`Pārvietot ${place || "vietu"} augstāk`}
+                      className="flex size-8 items-center justify-center rounded-lg text-stone-400 transition hover:bg-stone-100 hover:text-stone-700 disabled:opacity-20"
+                    >
+                      <ChevronUp className="size-4" />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy || i >= places.length - 1}
+                      onClick={() => move(i, i + 1, "tap")}
+                      aria-label={`Pārvietot ${place || "vietu"} zemāk`}
+                      className="flex size-8 items-center justify-center rounded-lg text-stone-400 transition hover:bg-stone-100 hover:text-stone-700 disabled:opacity-20"
+                    >
+                      <ChevronDown className="size-4" />
+                    </button>
+                  </>
                 )}
                 {place.trim() && (
                   <button
