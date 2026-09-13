@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { Bookmark, ChevronDown, ChevronUp, Download, MessageCircle, Sparkles } from "lucide-react";
 import { RouteMap } from "@/components/route-map";
+import { MapPanel } from "@/components/map-panel";
 import { track } from "@/lib/analytics";
 import { sharedRouteSegments, type SharedRoute } from "@/lib/share/route-code";
 import { isCodeSaved, removeRide, saveSharedRide } from "@/lib/share/saved-rides";
@@ -141,9 +142,11 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
           <p className="mt-4 text-[11px] leading-relaxed text-stone-500">Mopik uzzīmē adventure maršrutus pa grants un meža ceļiem no pāris vārdiem: no kurienes, cik ilgi, cik dziļi mežā. GPX der DMD2, OsmAnd, Garmin, Locus. Vienmēr ievēro ceļa zīmes.</p>
         </section>
         <div className="order-first min-w-0 md:order-none">
-          <div className="relative h-[46dvh] overflow-hidden rounded-2xl border border-stone-200 md:h-[calc(100vh-7rem)]">
+          <MapPanel
+            className="h-[46dvh] overflow-hidden rounded-2xl border border-stone-200 md:h-[calc(100vh-7rem)]"
+            expandedClassName="md:relative md:inset-auto md:z-auto md:h-[calc(100vh-7rem)] md:overflow-hidden md:rounded-2xl md:border md:border-stone-200">
             <RouteMap segments={segments} start={start} destination={null} showTet={showTet} onToggleTet={setShowTet} />
-          </div>
+          </MapPanel>
         </div>
       </div>
     </main>

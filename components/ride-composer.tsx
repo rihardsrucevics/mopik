@@ -147,9 +147,9 @@ export function RideComposer({ initialPlan, profile, onProfileChange, busy, onGe
       {/* Scrolls inside the fixed-height column when the profile panel is
           open; overflow-hidden on the section otherwise trapped the content. */}
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4 md:gap-5 md:p-5">
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid gap-2">
           <PlaceInput value={start} onChange={setStart} onPick={(p) => setPick("start", p)} icon={<MapPin className="size-3" />} label="No" placeholder="Rīga" />
-          <PlaceInput value={destination} onChange={setDestination} onPick={(p) => setPick("destination", p)} icon={<ArrowRight className="size-3" />} label="Uz" placeholder={tripType === "round_trip" ? "Nav obligāts" : "Ainaži"} />
+          <PlaceInput value={destination} onChange={setDestination} onPick={(p) => setPick("destination", p)} icon={<ArrowRight className="size-3" />} label="Uz" placeholder={tripType === "round_trip" ? "Nav obligāts — aplis" : "Ainaži"} />
         </div>
 
         <div className="grid gap-4">

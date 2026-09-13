@@ -1,5 +1,18 @@
 # Mopik — progress log
 
+## 2026-09-13 (later still) — the map control travels with the map; From and To get their own rows
+
+- **`components/map-panel.tsx`** now owns the full-screen behaviour (fixed
+  inset-0, body scroll locked, Escape closes, phones only) and wraps the map
+  everywhere it appears. It was previously inline in `page.tsx`, so a shared
+  or saved route — exactly the ones a rider opens on a phone from a
+  message — had no way to enlarge the map.
+- **From and To are full-width rows.** Half a phone screen truncated
+  "Circle K · degviela · Sigulda" to "Circle K · degv…", which is not a
+  choice a rider can make. Measured after: field 309 px on a 375 px screen,
+  suggestion text not clipped. The round-trip placeholder now says
+  "Nav obligāts — aplis" so the empty field explains itself.
+
 ## 2026-09-13 (later) — addresses and landmarks are pickable again, warnings move under Detaļas
 
 - **Place search accepts more than settlements** (`lib/chat/photon.ts`).

@@ -263,6 +263,8 @@ trails=lots). Verify with Sigulda 2 h: complex should show >10% trail.
   keeps them out of the direct pick. Rings are small and on the rider's
   profile because forest rings near a town run ~15 km/h and the budget is
   time. Chat: "vairāk apkārtnes" → `surroundings: "more"`.
+- **The full-screen control belongs to `MapPanel`, not to a page.** Any map a
+  rider can open — planner, shared, saved — must be enlargeable on a phone.
 - **On the phone the map yields to words.** 26dvh while the chat speaks,
   42dvh with the result panel, full screen on request (button on the map).
   The chat log scrolls to the start of the latest reply, inside the log only.
