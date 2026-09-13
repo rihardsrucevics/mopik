@@ -22,7 +22,7 @@ an answer there helps the next rider too.
   flex column, so the Instagram pill and "Varbūt citreiz" flowed into one row.
   Each is wrapped in its own block now (measured: 457 px vs 516 px).
 - **Wording, after the rider read it back:** "Uzsaukšu nākamreiz" (a promise,
-  not a dismissal), "Pieseko @mopik.eu instagram" (says which account), and the
+  not a dismissal), "Tago @mopik.eu savos braucienos un sūti savas atsauksmes" — an invitation with an instruction in it, so it is a two-line card rather than a pill (40 characters wrap badly in a rounded button); `InstagramLink` takes a `ReactNode` label for it, and the
   credit line is "Autors @rucijs" linking to **instagram.com/rucijs** — the
   author's own account, a different one from Mopik's, replacing the mailto.
   No mark on that line: the pill above already carries one, and a second on

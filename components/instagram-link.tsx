@@ -1,6 +1,6 @@
 "use client";
 
-import { useId } from "react";
+import { useId, type ReactNode } from "react";
 import { track } from "@/lib/analytics";
 
 export const INSTAGRAM_URL = "https://www.instagram.com/mopik.eu";
@@ -45,7 +45,7 @@ export function InstagramGlyph({ className = "size-4" }: { className?: string })
 export function InstagramLink({ from, label = "Sazinies", className, href = INSTAGRAM_URL }: {
   /** where the link was tapped, so the analytics say which placement works */
   from: string;
-  label?: string;
+  label?: ReactNode;
   className?: string;
   /** Defaults to the Mopik account; the author's own is a different one. */
   href?: string;

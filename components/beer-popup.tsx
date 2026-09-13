@@ -59,8 +59,13 @@ export function BeerPopup({ open, onClose }: { open: boolean; onClose: () => voi
           <button type="button" onClick={onClose} className="text-xs text-stone-400 underline decoration-stone-600 underline-offset-4 hover:text-stone-200">Uzsaukšu nākamreiz</button>
         </div>
         <div className="mt-5">
-          <InstagramLink from="beer" label="Pieseko @mopik.eu instagram"
-            className="inline-flex items-center gap-2 rounded-full border border-stone-700 px-4 py-2 text-xs font-medium text-stone-200 transition hover:border-stone-500 hover:bg-white/5" />
+          {/* Two lines, not a pill: this is an invitation with an instruction
+              in it, and a 40-character label in a rounded button either wraps
+              badly or squeezes the popup. The mark leads, the text sits left
+              of centre so both lines share an edge and stay readable. */}
+          <InstagramLink from="beer"
+            label={<span className="text-left leading-snug">Tago <span className="font-semibold text-stone-100">@mopik.eu</span> savos braucienos<br />un sūti savas atsauksmes</span>}
+            className="mx-auto inline-flex max-w-[17rem] items-center gap-2.5 rounded-2xl border border-stone-700 px-4 py-3 text-xs text-stone-300 transition hover:border-stone-500 hover:bg-white/5" />
         </div>
         {/* Who is behind it, quietly, at the very bottom — the author's own
             account, not Mopik's, so the two links mean different things. */}
