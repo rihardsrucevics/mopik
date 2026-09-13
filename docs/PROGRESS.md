@@ -30,6 +30,13 @@ Among them a 65 km / 2 h 9 min / 76 % gravel "Sarežģītākā" that would never
 have been seen. Switching to one behaves like any other route: panel, map and
 GPX all follow. `alternatives_shown` says whether the extra pool is wanted.
 
+**A superlative can only belong to one card.** Three cards reading "Taisnākā"
+one under the other is a contradiction — it means *the* straightest. Only the
+first of each family keeps the superlative; the rest are "Gluda 1", "Gluda 2",
+"Līdzsvarota 1"… The short forms are deliberate: "Vēl viena līdzsvarota"
+truncated to "Vēl viena līd…" in a third of a 375 px screen, and the detail
+line under the label already says what the family is (measured: 0 truncated).
+
 **Also, beer popup copy:** the orange button is "Uzsaukt aliņu 🍺" (the amount
 belongs on the payment page, not on the ask), "Un tagad uzsauc man aliņu" is
 gone as it repeated the button, and so is "Uzsaukšu nākamreiz" — ✕ and a tap

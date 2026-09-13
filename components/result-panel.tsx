@@ -25,6 +25,18 @@ const VARIANT_LABELS: Record<string, { label: string; detail: string }> = {
   complex: { label: "Sarežģītākā", detail: "mežs, pagriezieni, apkārtne" },
 };
 
+/**
+ * The alternatives are of the same kind, not more superlatives. "Taisnākā"
+ * means *the* straightest; three cards called that, one under the other, is a
+ * contradiction — so only the first of each family keeps the superlative and
+ * the rest say what family they belong to.
+ */
+const FAMILY_LABELS: Record<string, string> = {
+  direct: "Gluda",
+  balanced: "Līdzsvarota",
+  complex: "Sarežģīta",
+};
+
 function duration(seconds: number): string {
   const m = Math.round(seconds / 60);
   return m >= 60 ? `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ""}` : `${m} min`;
@@ -241,7 +253,15 @@ export function ResultPanel({ routes: shownRoutes, selected, onSelect, plan, avo
           <div role="tablist" aria-label="Maršruta versijas" className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${Math.min(routes.length, 3)}, minmax(0, 1fr))` }}>
             {routes.map((r, index) => {
               const active = index === selected;
-              const meta = VARIANT_LABELS[r.variant] ?? { label: `Versija ${index + 1}`, detail: "" };
+              // Only the first card of a family carries the superlative; the
+              // rest are numbered within it, so two cards never read the same.
+              const sameKind = routes.filter((x) => x.variant === r.variant);
+              const rank = sameKind.indexOf(r);
+              const base = VARIANT_LABELS[r.variant] ?? { label: `Versija ${index + 1}`, detail: "" };
+              const family = FAMILY_LABELS[r.variant] ?? base.label;
+              const meta = rank === 0
+                ? base
+                : { label: sameKind.length > 2 ? `${family} ${rank}` : family, detail: base.detail };
               return (
                 <button key={r.id} role="tab" type="button" aria-selected={active} onClick={() => { track("route_version_selected", { variant: r.variant, km: Math.round(r.distanceMeters / 1000) }); onSelect(index); }}
                   className={`min-w-0 rounded-xl border px-2.5 py-2 text-left transition ${active ? "border-stone-900 bg-stone-900 text-white" : "border-stone-200 bg-[#faf9f6] text-stone-700 hover:border-stone-300"}`}>
