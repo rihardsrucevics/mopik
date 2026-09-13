@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Bookmark, Download, Search, Trash2 } from "lucide-react";
+import { ArrowLeft, Bookmark, Download, Plus, Search, Trash2 } from "lucide-react";
 import { track } from "@/lib/analytics";
 import { listSaved, removeRide, decodeSaved, type SavedRide } from "@/lib/share/saved-rides";
 import { gpxFilename } from "@/lib/gpx/filename";
@@ -57,7 +57,13 @@ export function SavedRidesPage() {
     <main className="mx-auto min-h-screen w-full max-w-3xl px-4 py-5 md:px-7">
       <header className="mb-5 flex items-center justify-between border-b border-stone-200 pb-4">
         <h1 className="text-2xl font-bold tracking-tight"><Link href="/" aria-label="Mopik — uz sākumu">Mopik<span className="text-[#f56300]">.</span></Link></h1>
-        <Link href="/" className="inline-flex items-center gap-1 text-xs text-stone-500 underline decoration-stone-300 underline-offset-4 hover:text-stone-900"><ArrowLeft className="size-3.5" />Jauns brauciens</Link>
+        <div className="flex items-center gap-4">
+          <button type="button" onClick={() => (history.length > 1 ? history.back() : (window.location.href = "/"))}
+            className="inline-flex items-center gap-1 text-xs text-stone-500 underline decoration-stone-300 underline-offset-4 hover:text-stone-900">
+            <ArrowLeft className="size-3.5" />Atpakaļ
+          </button>
+          <Link href="/" className="inline-flex items-center gap-1 text-xs text-stone-500 underline decoration-stone-300 underline-offset-4 hover:text-stone-900"><Plus className="size-3.5" />Jauns brauciens</Link>
+        </div>
       </header>
 
       <div className="flex items-center gap-2">

@@ -109,12 +109,12 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
               )}
               {d && (
                 <button type="button" onClick={() => setDetails(!details)} aria-expanded={details} className="flex h-10 flex-1 items-center justify-center gap-1 rounded-full border border-stone-200 text-xs font-medium text-stone-700 hover:bg-stone-50">
-                  Detaļas{details ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+                  Detaļas{warnings.length > 0 && !details ? ` · ${warnings.length} ⚠️` : ""}{details ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
                 </button>
               )}
             </div>
           </div>
-          {warnings.length > 0 && (
+          {details && warnings.length > 0 && (
             <ul className="mt-3 space-y-1 rounded-xl bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-900">
               {warnings.map((w) => <li key={w}>⚠️ {w}</li>)}
             </ul>

@@ -3,7 +3,7 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import type { ResolvedPlace } from "@/lib/chat/places";
 
-type Suggestion = ResolvedPlace & { kind: string };
+type Suggestion = ResolvedPlace & { kind: string; kindLabel?: string };
 
 const KIND_LABEL: Record<string, string> = {
   city: "pilsēta",
@@ -94,7 +94,7 @@ export function PlaceInput({ value, onChange, onPick, placeholder, icon, label, 
               onMouseDown={(e) => { e.preventDefault(); pick(s); }}
               className={`flex cursor-pointer items-baseline justify-between gap-3 px-3 py-2 text-sm ${i === active ? "bg-[#fff3ea]" : "hover:bg-stone-50"}`}>
               <span className="truncate"><span className="font-medium text-stone-900">{s.name}</span>{s.label !== s.name && <span className="text-stone-500">{s.label.slice(s.name.length)}</span>}</span>
-              <span className="shrink-0 text-[10px] uppercase tracking-wider text-stone-400">{KIND_LABEL[s.kind] ?? s.kind}</span>
+              <span className="shrink-0 text-[10px] uppercase tracking-wider text-stone-400">{s.kindLabel ? "" : KIND_LABEL[s.kind] ?? ""}</span>
             </li>
           ))}
         </ul>

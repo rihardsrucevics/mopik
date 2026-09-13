@@ -350,6 +350,9 @@ add information (see `docs/LVM-GEO-2026-09-12.md`). Don't re-research it.
   60 s timeout page parsed as JSON. Generation has a wall-clock budget
   (`TIME_BUDGET_MS`); the client reads bodies as text first. Never let a
   request run to the platform cap.
+- Place search ranks rather than excludes (`KIND_GROUP` in `photon.ts`):
+  settlements, then addresses, then fuel/food, then landmarks. Do not add back
+  an `osm_tag=place:*` query parameter — it silently drops every POI.
 - Free-text geocoding: Photon settlement lookup first (same as the picker), GraphHopper fallback. Picked places travel as `places[]` and are never geocoded again — and `generate()` must receive them as an argument, not read them from state set in the same tick (the Valmiera-in-Rīga bug).
 - **The Stadia free tier forbids commercial use.** Both routers can be
   self-hosted (BRouter and Valhalla are both open source) — that's the path if

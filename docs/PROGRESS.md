@@ -1,5 +1,24 @@
 # Mopik — progress log
 
+## 2026-09-13 (later) — addresses and landmarks are pickable again, warnings move under Detaļas
+
+- **Place search accepts more than settlements** (`lib/chat/photon.ts`).
+  Settlements-only was the Valmiera fix; the rule is now ordering, not
+  exclusion. `KIND_GROUP` ranks: settlements (0) → addresses (1) → stops a
+  rider makes, fuel/food/beds (2) → landmarks worth riding past (3).
+  `EXCLUDED_KEYS` still refuses what a motorcycle cannot reach — information
+  boards, railway platforms, shops, offices. Each suggestion carries a
+  Latvian `kindLabel`, so the list reads "Circle K · degviela · Sigulda" and
+  "Turaidas mūra pils · muzejs · Sigulda". **The bug found while doing it:**
+  the old `osm_tag=place:*` query parameter was still being appended, which
+  silently discarded every POI regardless of the new ranking.
+- **Warnings live inside Detaļas** on both the result panel and the shared
+  page; the closed button says `Detaļas · 3 ⚠️` so nothing disappears
+  silently.
+- **Navigation:** a permanent "Saglabātie" link in the main header (the list
+  was unreachable when fewer than four rides were saved), "Atpakaļ" on the
+  saved page, and `+` instead of the arrow on "Jauns brauciens".
+
 ## 2026-09-13 — keep a ride someone sent you, and GPX files that sort themselves
 
 - **Saving works on a shared route too.** `/r/<code>` gains "Saglabāt sev";

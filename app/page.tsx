@@ -1,6 +1,6 @@
 "use client";
 
-import { Maximize2, Minimize2 } from "lucide-react";
+import { Maximize2, Minimize2, Plus } from "lucide-react";
 
 import { useRef, useState, useEffect } from "react";
 import { RouteMap } from "@/components/route-map";
@@ -9,6 +9,7 @@ import { ResultPanel } from "@/components/result-panel";
 import { FeedbackDialog } from "@/components/feedback-dialog";
 import { InstallPrompt } from "@/components/install-prompt";
 import { SavedRides } from "@/components/saved-rides";
+import Link from "next/link";
 import { track } from "@/lib/analytics";
 import { decodePlanShare } from "@/lib/share/route-code";
 import { IntroSplash } from "@/components/intro-splash";
@@ -239,8 +240,9 @@ export default function Home() {
         <div className="flex items-baseline gap-3">{/* eslint-disable-next-line @next/next/no-html-link-for-pages -- full reload on purpose: a fresh plan */}
             <h1 className="text-2xl font-bold tracking-tight"><a href="/" aria-label="Mopik — uz sākumu">Mopik<span className="text-[#f56300]">.</span></a></h1><p className="hidden text-xs text-stone-500 sm:block">Mazāk plānošanas. Vairāk braukšanas.</p></div>
         <div className="flex items-center gap-4">
+        <Link href="/saglabatie" className="text-xs text-stone-500 underline decoration-stone-300 underline-offset-4 hover:text-stone-900">Saglabātie</Link>
         <button type="button" onClick={() => setFeedbackOpen(true)} className="text-xs text-stone-500 underline decoration-stone-300 underline-offset-4 hover:text-stone-900">Atsauksme</button>
-        {(messages.length > 0 || plan) && <button disabled={phase !== "idle"} onClick={() => { setEntryMode("form"); setMessages([]); setPlan(null); setPlaces([]); setResult(null); setChatting(false); setError(null); setRetry(null); setQuickReplies([]); }} className="text-xs text-stone-500 underline underline-offset-4 disabled:opacity-40">Jauns brauciens</button>}
+        {(messages.length > 0 || plan) && <button disabled={phase !== "idle"} onClick={() => { setEntryMode("form"); setMessages([]); setPlan(null); setPlaces([]); setResult(null); setChatting(false); setError(null); setRetry(null); setQuickReplies([]); }} className="inline-flex items-center gap-1 text-xs text-stone-500 underline underline-offset-4 disabled:opacity-40"><Plus className="size-3.5" />Jauns brauciens</button>}
         </div>
       </header>
       <FeedbackDialog open={feedbackOpen} onClose={() => setFeedbackOpen(false)} context={[plan ? planSummary(plan, true) : "", route ? `${route.name} (${Math.round(route.distanceMeters / 1000)} km)` : ""].filter(Boolean).join(" · ") || undefined} />
