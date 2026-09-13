@@ -96,18 +96,34 @@ export function SavedRidesPage() {
 
           <ul className="mt-3 space-y-2">
             {visible.map((r) => (
-              <li key={r.id} className="flex items-center gap-3 rounded-2xl border border-stone-200 bg-white p-3">
+              <li key={r.id} className="rounded-2xl border border-stone-200 bg-white p-3">
+                <div className="flex items-center gap-3">
                 <Link href={`/r/${r.code}`} onClick={() => track("saved_ride_opened", { km: r.km })} className="min-w-0 flex-1">
                   <div className="truncate text-sm font-semibold text-stone-900">{r.name}</div>
                   <div className="truncate text-[11px] tabular-nums text-stone-500">
                     {r.km} km · {duration(r.minutes)} · {r.unpavedPercent} % grants · {VARIANT_LABELS[r.variant] ?? r.variant}
                   </div>
                   <div className="truncate text-[10px] text-stone-400">{r.from === "shared" ? "Atsūtīts · saglabāts" : "Saglabāts"} {savedOn(r.savedAt)}</div>
+                  {r.prompt && <div className="truncate text-[10px] text-stone-400">{r.prompt}</div>}
                 </Link>
                 <button type="button" onClick={() => downloadGpx(r)} aria-label={`Lejupielādēt ${r.name} GPX`}
                   className="shrink-0 rounded-full border border-stone-200 p-2 text-stone-600 transition hover:bg-stone-50"><Download className="size-4" /></button>
                 <button type="button" onClick={() => { removeRide(r.id); track("saved_ride_removed"); }} aria-label={`Dzēst ${r.name}`}
                   className="shrink-0 rounded-full p-2 text-stone-400 transition hover:bg-stone-100 hover:text-stone-700"><Trash2 className="size-4" /></button>
+                </div>
+                {/* The other versions of the same request, kept when the ride
+                    was saved: switching to the straighter one costs nothing. */}
+                {r.alternatives && r.alternatives.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5 border-t border-stone-100 pt-2">
+                    <span className="self-center text-[10px] uppercase tracking-wider text-stone-400">Citas versijas</span>
+                    {r.alternatives.map((alt) => (
+                      <Link key={`${r.id}-${alt.variant}`} href={`/r/${alt.code}`} onClick={() => track("saved_alternative_opened", { variant: alt.variant })}
+                        className="rounded-full border border-stone-200 px-2.5 py-1 text-[11px] text-stone-700 transition hover:border-stone-300 hover:bg-stone-50">
+                        {VARIANT_LABELS[alt.variant] ?? alt.variant} · {alt.km} km
+                      </Link>
+                    ))}
+                  </div>
+                )}
               </li>
             ))}
           </ul>

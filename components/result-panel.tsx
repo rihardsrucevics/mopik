@@ -7,7 +7,7 @@ import { RidePlan, planSummary } from "@/lib/chat/ride-plan";
 import { BeerPopup } from "@/components/beer-popup";
 import { track } from "@/lib/analytics";
 import { encodeRouteShare, shareUrl } from "@/lib/share/route-code";
-import { isSaved, removeRide, saveRide } from "@/lib/share/saved-rides";
+import { isSaved, removeRide, rideId, saveRide } from "@/lib/share/saved-rides";
 import { gpxFilename } from "@/lib/gpx/filename";
 
 /**
@@ -168,10 +168,10 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
   const saved = savedTick >= 0 && isSaved(route, startLabel, plan);
   const toggleSave = () => {
     if (saved) {
-      removeRide(encodeRouteShare(route, startLabel, plan).slice(0, 24));
+      removeRide(rideId(encodeRouteShare(route, startLabel, plan)));
       track("ride_unsaved");
     } else {
-      saveRide(route, startLabel, plan);
+      saveRide(route, startLabel, plan, { alternatives: routes, prompt: plan ? planSummary(plan, true) : route.sourcePrompt });
       track("ride_saved", { km: Math.round(route.distanceMeters / 1000), variant: route.variant });
     }
     setSavedTick((n) => n + 1);

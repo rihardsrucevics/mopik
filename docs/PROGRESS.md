@@ -1,5 +1,20 @@
 # Mopik — progress log
 
+## 2026-09-13 — saving keeps all three versions, and what was asked for
+
+A rider who liked the ride but wanted the straighter version of it had to
+spend another generation to get it back. Now `saveRide` also stores the other
+two versions as their own share codes plus the plan summary, so `/saglabatie`
+shows the request under each ride and offers "Citas versijas · Taisnākā ·
+119 km" as links. No new generation, no server.
+
+**Bug found while testing, and it was already shipped:** the saved id was
+`code.slice(0, 24)` — but those 24 characters are the metadata prefix, which
+is *identical* for the three versions of one request. Saving the winding
+version silently replaced the straight one. Ids are now a hash of the whole
+code (`rideId`), with a regression test that asserts the prefixes really do
+collide.
+
 ## 2026-09-13 — the ride is one ordered list, and the trip type is asked first
 
 The old form had From, To and separate stops. On a round trip "Uz" was

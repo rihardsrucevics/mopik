@@ -7,7 +7,7 @@ import { RouteMap } from "@/components/route-map";
 import { MapPanel } from "@/components/map-panel";
 import { track } from "@/lib/analytics";
 import { sharedRouteSegments, type SharedRoute } from "@/lib/share/route-code";
-import { isCodeSaved, removeRide, saveSharedRide } from "@/lib/share/saved-rides";
+import { isCodeSaved, removeRide, rideId, saveSharedRide } from "@/lib/share/saved-rides";
 import { gpxFilename } from "@/lib/gpx/filename";
 
 const VARIANT_LABELS: Record<string, string> = { direct: "Taisnākā", balanced: "Līkumotākā", complex: "Sarežģītākā" };
@@ -55,7 +55,7 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
   useEffect(() => { track("shared_route_viewed", { km: share.km, variant: share.variant }); }, [share.km, share.variant]);
 
   const toggleSave = () => {
-    if (saved) { removeRide(code.slice(0, 24)); track("shared_ride_unsaved"); }
+    if (saved) { removeRide(rideId(code)); track("shared_ride_unsaved"); }
     else { saveSharedRide(code, share); track("shared_ride_saved", { km: share.km }); }
   };
 

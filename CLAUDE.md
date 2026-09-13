@@ -278,6 +278,9 @@ trails=lots). Verify with Sigulda 2 h: complex should show >10% trail.
   estimates) and the chat explains and offers chips; the chat also does the
   via-distance arithmetic before routing (`lib/chat/feasibility.ts`). 422 is
   only for "nothing routed at all".
+- **A saved ride id is `rideId(code)`, a hash of the whole share code.** The
+  first 24 characters are the metadata prefix and collide across the three
+  versions of one request — the old id silently overwrote them.
 - **Shared routes live in the URL**, not in storage (`lib/share/route-code.ts`,
   version prefix `1~`). Changing the encoding means bumping the version and
   keeping the old decoder: links in riders' chats must keep working.

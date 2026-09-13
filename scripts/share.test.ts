@@ -53,3 +53,15 @@ test("the plan rides along and comes back complete", () => {
   assert.equal(decodePlanShare(encodePlanShare(plan))?.startPlace, "Rīga");
   assert.equal(decodePlanShare("nope"), null);
 });
+
+import { rideId } from "../lib/share/saved-rides";
+test("a ride id distinguishes the three versions of one request", () => {
+  // The first 24 characters are the metadata prefix, identical across the
+  // versions of one request: keying on them meant saving the winding version
+  // silently replaced the straight one.
+  const direct = "1~eyJuIjoiVGVzdCIsInZhIjoiZGlyZWN0In0~aaa~bbb";
+  const complex = "1~eyJuIjoiVGVzdCIsInZhIjoiZGlyZWN0In0~ccc~ddd";
+  assert.equal(direct.slice(0, 24), complex.slice(0, 24), "the prefixes really do collide");
+  assert.notEqual(rideId(direct), rideId(complex));
+  assert.equal(rideId(direct), rideId(direct), "and it is stable");
+});

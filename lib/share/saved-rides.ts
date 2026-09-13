@@ -5,6 +5,21 @@ import type { GeneratedRoute } from "@/lib/types";
 import type { RidePlan } from "@/lib/chat/ride-plan";
 
 /**
+ * An id for a saved ride. The first 24 characters of a share code are the
+ * metadata prefix, which is identical for the three versions of one request —
+ * using them as the id meant saving the winding version silently replaced the
+ * straight one. Hash the whole code instead.
+ */
+export function rideId(code: string): string {
+  let h1 = 0x811c9dc5, h2 = 0x01000193;
+  for (let i = 0; i < code.length; i++) {
+    h1 = Math.imul(h1 ^ code.charCodeAt(i), 0x01000193);
+    h2 = Math.imul(h2 + code.charCodeAt(i), 0x85ebca6b) ^ (h2 >>> 13);
+  }
+  return (h1 >>> 0).toString(36) + (h2 >>> 0).toString(36);
+}
+
+/**
  * "Saglabāt vēlākam" — rides kept on this device, nothing on a server.
  *
  * A saved ride is the same self-contained share code the link uses, so a
@@ -27,6 +42,14 @@ export type SavedRide = {
   savedAt: number;
   /** "shared" when it arrived as someone else's link. */
   from?: "shared";
+  /**
+   * The other versions of the same request, as their own share codes. Saving
+   * keeps all three, so a rider who liked the ride but wants the straighter
+   * version of it does not have to spend another generation to get it back.
+   */
+  alternatives?: { code: string; name: string; km: number; minutes: number; unpavedPercent: number; variant: string }[];
+  /** What was asked for, so the list reads like a history of requests. */
+  prompt?: string;
 };
 
 function read(): SavedRide[] {
@@ -60,7 +83,7 @@ export function listSaved(): SavedRide[] {
  */
 export function saveSharedRide(code: string, share: { name: string; km: number; minutes: number; unpavedPercent: number; variant: string }): SavedRide {
   const entry: SavedRide = {
-    id: code.slice(0, 24),
+    id: rideId(code),
     code,
     name: share.name,
     km: share.km,
@@ -75,15 +98,22 @@ export function saveSharedRide(code: string, share: { name: string; km: number; 
 }
 
 export function isCodeSaved(code: string): boolean {
-  const id = code.slice(0, 24);
+  const id = rideId(code);
   return read().some((r) => r.id === id);
 }
 
 /** The id is the route's own code, so saving the same ride twice is one entry. */
-export function saveRide(route: GeneratedRoute, startLabel: string, plan: RidePlan | null): SavedRide {
+export function saveRide(route: GeneratedRoute, startLabel: string, plan: RidePlan | null, context?: { alternatives?: GeneratedRoute[]; prompt?: string }): SavedRide {
   const code = encodeRouteShare(route, startLabel, plan);
+  const alternatives = (context?.alternatives ?? [])
+    .filter((r) => r.id !== route.id)
+    .map((r) => ({
+      code: encodeRouteShare(r, startLabel, plan),
+      name: r.name, km: Math.round(r.distanceMeters / 1000), minutes: Math.round(r.durationSeconds / 60),
+      unpavedPercent: r.surfaces.gravelPercent + r.surfaces.dirtPercent, variant: r.variant,
+    }));
   const entry: SavedRide = {
-    id: code.slice(0, 24),
+    id: rideId(code),
     code,
     name: route.name,
     km: Math.round(route.distanceMeters / 1000),
@@ -91,6 +121,8 @@ export function saveRide(route: GeneratedRoute, startLabel: string, plan: RidePl
     unpavedPercent: route.surfaces.gravelPercent + route.surfaces.dirtPercent,
     variant: route.variant,
     savedAt: Date.now(),
+    ...(alternatives.length ? { alternatives } : {}),
+    ...(context?.prompt ? { prompt: context.prompt } : {}),
   };
   write([entry, ...read().filter((r) => r.id !== entry.id)]);
   return entry;
@@ -101,8 +133,7 @@ export function removeRide(id: string): void {
 }
 
 export function isSaved(route: GeneratedRoute, startLabel: string, plan: RidePlan | null): boolean {
-  const id = encodeRouteShare(route, startLabel, plan).slice(0, 24);
-  return read().some((r) => r.id === id);
+  return isCodeSaved(encodeRouteShare(route, startLabel, plan));
 }
 
 export function decodeSaved(ride: SavedRide): SharedRoute | null {
