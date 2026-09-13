@@ -1,5 +1,31 @@
 # Mopik — progress log
 
+## 2026-09-13 (last) — the beer and the cigarette leave the animation
+
+Rider: encouraging riding and harmful habits in the same breath is not right.
+He is correct, and it was the loader doing it — the bike collected a cigarette
+and a beer on the road, each with its own full-frame close-up and a counter
+("🚬 1 · 🍺 0") while someone waited for a route they were about to go ride.
+
+**Removed entirely:** the pickup game (`Pickup`, `PICKUPS`, the collision
+tracking on the SVG clock), `CigaretteScene`, `BeerScene`, the score, the
+`PICKUP_LINE` overrides, and nine keyframe blocks in `globals.css`. The loader
+is the route drawing itself plus the sponsor frame. `RouteScene` no longer
+takes `pickups`/`onPickup`.
+
+**Caught while deleting:** the reduced-motion block lost its `animation: none`
+line along with the names being removed from it, which would have left the
+remaining animations running for riders who ask for less motion. Restored, and
+`mopik-bob` (now unused) went with the pickups.
+
+**The download popup offers two equal choices,** not one offer with a footnote:
+"Uzsaukt aliņu" and "Piesekot @mopik.eu", both 277 × 48 px, the tagging line as
+a caption under them. The beer mug is **✌️** — the wave riders give each other,
+which thanks without selling anything. The desktop QR moved below both buttons;
+between them it split the pair.
+
+Tests 38/38; tsc, lint and build clean.
+
 ## 2026-09-13 (final, corrected) — "not this one, then", per card
 
 The first attempt at showing more of the pool was wrong twice, and the rider

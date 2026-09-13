@@ -35,57 +35,31 @@ const STATUS: Record<"thinking" | "routing" | "lucky", string[]> = {
   ],
 };
 
-/**
- * The loader is a small game: the bike rides the route that is being drawn,
- * a cigarette and a beer lie on the road ahead of it, and when it runs over
- * one the item pops, the counter ticks and the status line says "Uzpīpēju…"
- * or "Iedzeru aliņu…". One pickup per lap, alternating. The real work
- * continues underneath; the status lines keep cycling between pickups.
- */
-const PICKUP_LINE: Record<Pickup, string> = { cigarette: "Uzpīpēju…", beer: "Iedzeru aliņu…" };
 
 export function RouteLoader({ phase, className }: { phase: "thinking" | "routing" | "lucky"; className?: string }) {
   const lines = STATUS[phase];
   const [index, setIndex] = useState(0);
-  const [override, setOverride] = useState<string | null>(null);
-  // The big break scene laid over the route for a moment after a pickup.
-  const [breakScene, setBreakScene] = useState<Pickup | null>(null);
-  const [score, setScore] = useState<Record<Pickup, number>>({ cigarette: 0, beer: 0 });
   useEffect(() => {
     const t = setInterval(() => setIndex((i) => (i + 1) % lines.length), 2200);
     return () => clearInterval(t);
   }, [lines.length]);
-  const BREAK_MS = 2400;
-  // One frame of the loader is for sale. It shows once per generation, a few
-  // seconds in — late enough that a quick route never sees it, long enough to
-  // read while the router works. Nothing is sold yet; the frame says so.
+  // One frame of the loader is for sale. It shows a few seconds in — late
+  // enough that a quick route never sees it, long enough to read.
   const ADVERT_AFTER_MS = 3000;
+  const ADVERT_MS = 2400;
   const [advert, setAdvert] = useState(false);
   useEffect(() => {
     const show = setTimeout(() => setAdvert(true), ADVERT_AFTER_MS);
-    const hide = setTimeout(() => setAdvert(false), ADVERT_AFTER_MS + BREAK_MS);
+    const hide = setTimeout(() => setAdvert(false), ADVERT_AFTER_MS + ADVERT_MS);
     return () => { clearTimeout(show); clearTimeout(hide); };
   }, []);
-  const onPickup = (kind: Pickup) => {
-    setScore((s) => ({ ...s, [kind]: s[kind] + 1 }));
-    setOverride(PICKUP_LINE[kind]);
-    setBreakScene(kind);
-    setTimeout(() => { setOverride(null); setBreakScene(null); }, BREAK_MS);
-  };
-  const line = override ?? lines[index];
+  const line = lines[index];
 
   return (
     <div role="status" aria-live="polite" className={`overflow-hidden rounded-2xl border border-stone-200 bg-[#faf9f6] ${className ?? ""}`}>
       <div className="relative">
-        <RouteScene className="h-28 w-full" pickups={phase !== "thinking"} onPickup={onPickup} />
-        {/* The ride keeps running underneath so the game state survives the break. */}
-        {breakScene && (
-          <div className="mopik-fade-in absolute inset-0 bg-[#faf9f6]">
-            {breakScene === "cigarette" ? <CigaretteScene className="h-28 w-full" /> : <BeerScene className="h-28 w-full" />}
-          </div>
-        )}
-        {/* A pickup outranks it: the game frame is the one the rider earned. */}
-        {advert && !breakScene && (
+        <RouteScene className="h-28 w-full" />
+        {advert && (
           <div className="mopik-fade-in absolute inset-0 flex h-28 flex-col items-center justify-center bg-[#f56300] text-center">
             <span className="text-sm font-semibold tracking-tight text-white">Brīva vieta reklāmai</span>
             <span className="mt-0.5 text-[11px] text-white/80">mopik.eu</span>
@@ -94,76 +68,17 @@ export function RouteLoader({ phase, className }: { phase: "thinking" | "routing
       </div>
       <div className="flex items-center gap-2 px-4 pb-3">
         <span className="size-1.5 animate-pulse rounded-full bg-[#f56300]" />
-        <span key={line} className={`mopik-fade-in text-xs font-medium ${override ? "text-[#bd4b00]" : "text-stone-700"}`}>{line}</span>
-        {(score.cigarette > 0 || score.beer > 0) && (
-          <span className="ml-auto text-[11px] tabular-nums text-stone-400" aria-label="Savāktais">
-            🚬 {score.cigarette} · 🍺 {score.beer}
-          </span>
-        )}
+        <span key={line} className="mopik-fade-in text-xs font-medium text-stone-700">{line}</span>
       </div>
     </div>
   );
 }
 
-type Pickup = "cigarette" | "beer";
-/** Where on the route the items lie (path fraction) and which lap each shows on. */
-const PICKUPS: { kind: Pickup; at: number; lap: 0 | 1 }[] = [
-  { kind: "cigarette", at: 0.36, lap: 0 },
-  { kind: "beer", at: 0.7, lap: 1 },
-];
-/** The bike covers the whole path in this share of a lap (see keyTimes below). */
-const RIDE_SHARE = 0.78;
-
-/** The drawing itself, reused by the intro at a larger size. */
-export function RouteScene({ className, speed = 1, pickups = false, onPickup }: { className?: string; speed?: number; pickups?: boolean; onPickup?: (kind: Pickup) => void }) {
+export function RouteScene({ className, speed = 1 }: { className?: string; speed?: number }) {
   const seconds = 3.6 / speed;
   const dur = `${seconds}s`;
   const svgRef = useRef<SVGSVGElement>(null);
   const pathRef = useRef<SVGPathElement>(null);
-  const [points, setPoints] = useState<{ x: number; y: number }[] | null>(null);
-  // Which items are lying on the road right now, and which are popping.
-  const [state, setState] = useState<Record<Pickup, "road" | "pop" | "gone">>({ cigarette: "gone", beer: "gone" });
-  const onPickupRef = useRef(onPickup);
-  useEffect(() => { onPickupRef.current = onPickup; }, [onPickup]);
-
-  useEffect(() => {
-    if (!pickups) return;
-    const path = pathRef.current;
-    const svg = svgRef.current;
-    if (!path || !svg) return;
-    const total = path.getTotalLength();
-    setPoints(PICKUPS.map((p) => { const pt = path.getPointAtLength(p.at * total); return { x: pt.x, y: pt.y }; }));
-    // The bike is SMIL and runs on the SVG document clock, so the pickups
-    // read that same clock: lap = floor(t / dur), progress = fraction ridden.
-    const seen = new Set<string>();
-    let current: Record<Pickup, "road" | "pop" | "gone"> = { cigarette: "gone", beer: "gone" };
-    const commit = (next: typeof current) => {
-      if (next.cigarette === current.cigarette && next.beer === current.beer) return;
-      current = next;
-      setState(next);
-    };
-    const tick = () => {
-      const t = svg.getCurrentTime();
-      const lap = Math.floor(t / seconds);
-      const progress = Math.min(1, ((t % seconds) / seconds) / RIDE_SHARE);
-      const next = { ...current };
-      const collected: Pickup[] = [];
-      for (const p of PICKUPS) {
-        const key = `${p.kind}:${lap}`;
-        if (lap % 2 !== p.lap) { if (current[p.kind] !== "pop") next[p.kind] = "gone"; continue; }
-        if (progress < p.at) { if (!seen.has(key)) next[p.kind] = "road"; }
-        else if (!seen.has(key)) { seen.add(key); next[p.kind] = "pop"; collected.push(p.kind); }
-      }
-      commit(next);
-      // Callbacks and the pop timeout run here, outside any React render.
-      for (const kind of collected) {
-        onPickupRef.current?.(kind);
-        setTimeout(() => commit({ ...current, [kind]: "gone" }), 500);
-      }
-    };
-    const id = setInterval(tick, 80);
-    return () => clearInterval(id);
-  }, [pickups, seconds]);
 
   return (
     <svg ref={svgRef} viewBox="0 0 326 130" className={className} aria-hidden="true" style={{ ["--mopik-dur" as string]: dur }}>
@@ -194,37 +109,6 @@ export function RouteScene({ className, speed = 1, pickups = false, onPickup }: 
       <path d={ROUTE_D} pathLength={1} fill="none" stroke="#faf9f6" strokeWidth="3" strokeLinecap="round" strokeDasharray="0.02 0.03" strokeDashoffset="-0.42" className="mopik-draw-mask" />
       <path d={ROUTE_D} pathLength={1} fill="none" stroke="#faf9f6" strokeWidth="3" strokeLinecap="round" strokeDasharray="0.006 0.02" strokeDashoffset="-0.72" className="mopik-draw-mask" />
 
-      {/* Pickups on the road: a cigarette and a beer (no handle). Each pops
-          when the bike reaches it; the burst is CSS. */}
-      {pickups && points && PICKUPS.map((p, i) => {
-        const st = state[p.kind];
-        if (st === "gone") return null;
-        const { x, y } = points[i];
-        return (
-          <g key={p.kind} transform={`translate(${x} ${y - 9})`} className={st === "pop" ? "mopik-pop" : "mopik-bob"} style={{ transformOrigin: `${x}px ${y - 9}px` }}>
-            {p.kind === "cigarette" ? (
-              <g transform="rotate(-20)">
-                <rect x="-8" y="-2.2" width="16" height="4.4" rx="1.2" fill="#ffffff" stroke="#a8a29e" strokeWidth="0.8" />
-                <rect x="3.5" y="-2.2" width="4.5" height="4.4" rx="1" fill="#d9a066" />
-                <circle cx="-8.2" cy="0" r="1.6" fill="#f56300" />
-                <path d="M -9 -4 c -2 -2, 2 -4, 0 -7" fill="none" stroke="#a8a29e" strokeWidth="0.8" strokeLinecap="round" />
-              </g>
-            ) : (
-              <g>
-                <path d="M -4.5 -6 L 4.5 -6 L 3.6 6 Q 0 7.2 -3.6 6 Z" fill="#f5b733" stroke="#a8a29e" strokeWidth="0.8" strokeLinejoin="round" />
-                <path d="M -4.5 -6 L 4.5 -6 L 4.2 -2.5 L -4.2 -2.5 Z" fill="#fffaf0" />
-                <circle cx="-2.5" cy="-6.5" r="1.6" fill="#fffaf0" /><circle cx="0.5" cy="-7.4" r="2" fill="#fffaf0" /><circle cx="3" cy="-6.5" r="1.5" fill="#fffaf0" />
-              </g>
-            )}
-            {st === "pop" && (
-              <g className="mopik-burst" fill="none" stroke="#f56300" strokeWidth="1" strokeLinecap="round">
-                <path d="M 0 -12 v -3 M 8 -8 l 2 -2 M -8 -8 l -2 -2 M 11 0 h 3 M -11 0 h -3" />
-              </g>
-            )}
-          </g>
-        );
-      })}
-
       {/* The bike, side view, nose along the path: two wheels, a tank and
           seat, a rider hunched forward, a headlight beam ahead. */}
       <g className="mopik-bike">
@@ -241,80 +125,6 @@ export function RouteScene({ className, speed = 1, pickups = false, onPickup }: 
           <mpath href="#mopik-route" />
         </animateMotion>
       </g>
-    </svg>
-  );
-}
-
-/** The big break: a cigarette burning down while the line says Uzpīpēju… */
-export function CigaretteScene({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 326 130" className={className} aria-hidden="true">
-      <defs>
-        <radialGradient id="mopik-ember" cx="0.5" cy="0.5" r="0.5">
-          <stop offset="0%" stopColor="#ffb347" />
-          <stop offset="60%" stopColor="#f56300" />
-          <stop offset="100%" stopColor="#f56300" stopOpacity="0" />
-        </radialGradient>
-      </defs>
-      {/* the same hill, so the break happens on the same ride */}
-      <g fill="none" stroke="#e4e0d8" strokeWidth="1">
-        <path d="M -10 116 C 60 100, 120 106, 180 118 S 280 130, 340 110" />
-        <path d="M -10 96 C 50 70, 90 70, 130 88 S 210 120, 260 96 S 320 72, 340 84" />
-      </g>
-      {/* filter */}
-      <rect x="196" y="60" width="42" height="14" rx="3" fill="#d9a066" />
-      <rect x="196" y="60" width="42" height="14" rx="3" fill="none" stroke="#b9874f" strokeWidth="1" />
-      {/* paper, burning from the left towards the filter */}
-      <g className="mopik-cig-body" style={{ transformOrigin: "196px 67px" }}>
-        <rect x="90" y="60" width="106" height="14" rx="2" fill="#ffffff" stroke="#d6d3d1" strokeWidth="1" />
-      </g>
-      {/* ember and smoke travel with the burn line */}
-      <g className="mopik-cig-ember">
-        <rect x="86" y="60" width="6" height="14" rx="2" fill="#57534e" />
-        <circle cx="89" cy="67" r="9" fill="url(#mopik-ember)" />
-        <g fill="none" stroke="#a8a29e" strokeWidth="1.4" strokeLinecap="round">
-          <path className="mopik-smoke" d="M 88 52 c -6 -6, 6 -10, 0 -18" style={{ animationDelay: "0s" }} />
-          <path className="mopik-smoke" d="M 92 50 c -6 -6, 6 -10, 0 -18" style={{ animationDelay: "0.7s" }} />
-          <path className="mopik-smoke" d="M 84 54 c -6 -6, 6 -10, 0 -18" style={{ animationDelay: "1.4s" }} />
-        </g>
-      </g>
-    </svg>
-  );
-}
-
-/** The big break: a beer (no handle) emptied while the line says Iedzeru aliņu… */
-export function BeerScene({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 326 130" className={className} aria-hidden="true">
-      <g fill="none" stroke="#e4e0d8" strokeWidth="1">
-        <path d="M -10 116 C 60 100, 120 106, 180 118 S 280 130, 340 110" />
-        <path d="M -10 96 C 50 70, 90 70, 130 88 S 210 120, 260 96 S 320 72, 340 84" />
-      </g>
-      <defs>
-        <clipPath id="mopik-glass-clip"><path d="M 143 32 L 183 32 L 179 106 Q 163 112 147 106 Z" /></clipPath>
-      </defs>
-      {/* beer, draining towards the bottom */}
-      <g clipPath="url(#mopik-glass-clip)">
-        <g className="mopik-beer" style={{ transformOrigin: "163px 106px" }}>
-          <rect x="140" y="44" width="46" height="64" fill="#f5b733" />
-          <rect x="140" y="44" width="46" height="4" fill="#fde68a" />
-        </g>
-        <g fill="#fff7d6" fillOpacity="0.9">
-          <circle className="mopik-bubble" cx="152" cy="100" r="1.6" style={{ animationDelay: "0s" }} />
-          <circle className="mopik-bubble" cx="163" cy="104" r="1.2" style={{ animationDelay: "0.5s" }} />
-          <circle className="mopik-bubble" cx="172" cy="98" r="1.4" style={{ animationDelay: "1s" }} />
-          <circle className="mopik-bubble" cx="158" cy="102" r="1" style={{ animationDelay: "1.5s" }} />
-        </g>
-        {/* foam, riding down on the beer */}
-        <g className="mopik-foam">
-          <ellipse cx="163" cy="44" rx="23" ry="5" fill="#fffaf0" />
-          <circle cx="150" cy="41" r="4" fill="#fffaf0" />
-          <circle cx="163" cy="39" r="5" fill="#fffaf0" />
-          <circle cx="176" cy="41" r="4" fill="#fffaf0" />
-        </g>
-      </g>
-      {/* glass and handle */}
-      <path d="M 143 32 L 183 32 L 179 106 Q 163 112 147 106 Z" fill="none" stroke="#a8a29e" strokeWidth="1.6" strokeLinejoin="round" />
     </svg>
   );
 }

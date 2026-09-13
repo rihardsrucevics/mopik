@@ -396,10 +396,10 @@ trails=lots). Verify with Sigulda 2 h: complex should show >10% trail.
   correction is being processed → result again. The map stays visible.
 - **Animation is one SVG scene reused twice** (`RouteScene`): the intro splash
   and the in-chat loader. Bike follows the drawn path via SMIL `mpath`; keep
-  the route id `#mopik-route` in sync if you change it.
-  The loader adds pickups (cigarette, beer) on the path, collected by the
-  bike; they are timed on `svg.getCurrentTime()` because SMIL runs on the SVG
-  document clock, not on `Date.now()`.
+  the route id `#mopik-route` in sync if you change it. **No alcohol or
+  tobacco in it** — the loader used to have a cigarette and a beer collected
+  along the way, and the rider removed them: Mopik should not encourage riding
+  and harmful habits in the same breath. Do not reintroduce them.
 - **Lucky ride** = start only + no destination + flexible time. Not a mode the
   rider picks; detected in `app/page.tsx`, sent as `lucky: true`, and the
   API aims for ~120 km and the result opens on *Sarežģītākā*.
