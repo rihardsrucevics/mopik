@@ -2,6 +2,84 @@
 
 # Mopik — adventure motorcycle route generator
 
+## Where this stands — handover, 2026-09-13
+
+Everything below is committed and live on www.mopik.eu. Working tree clean at
+`09703ae`. Read this section first in a new session; the rest of the file is
+the accumulated rules.
+
+### Built in the 09-12/09-13 stretch (all measured, all deployed)
+
+**Route quality.** Off-road share is `track + trail`, never `unpaved` (Latvian
+gravel farm roads are unpaved). Three separate causes of "too few dashed and
+dotted lines" were found and fixed, in this order of impact: entering a forest
+way cost a 150 m surface-switch penalty (break-even sat at ~1.2 km, longer than
+most Latvian tracks exist — now a third classifier level with `trackEntryCost`
+15 m); the ranking had no off-road term (now a shortfall against 45% at
+trails=lots); and the trail-rich candidate landed under "Taisnākā" (complex now
+picks first). Turning *onto* a forest way is free. Fords are priced by
+`estimated_river_class` — a brook at hard difficulty is 0.80, cheaper than the
+same track without one; a class 5–6 river costs 9x and easy refuses outright.
+Difficulty and the trail dial were conflated as `hard || lots` in the grade
+costs, so "Viegli + Meži" rode like "Grūti"; they are now separate. Measured
+(complex): Sigulda 25% → 45% off-road, Līgatne → 57%, Tukums 13% → 37%.
+
+**Honesty.** Generation has a wall-clock budget (`TIME_BUDGET_MS`, 40 s on the
+public BRouter) and the client reads response bodies as text before parsing —
+the Safari "string did not match the expected pattern" bug was Vercel's 60 s
+timeout page being parsed as JSON. "Nothing fits" is never an error: the API
+returns the nearest rides plus `infeasible`, and the chat explains with chips.
+
+**Sharing and keeping.** A route is a URL (`lib/share/route-code.ts`); short
+links go through Vercel Blob with the long self-contained link as fallback.
+Rides are saved in localStorage — one's own and ones arriving as links — with
+all three versions and the plan summary, so switching versions costs no
+generation. `/saglabatie` has search, sorting, GPX and delete.
+
+**The form.** The ride is one ordered list of places, trip type asked first,
+rows reorderable, and confirmed places pinned on the map before any route
+exists. Place search ranks rather than excludes: settlements, addresses, fuel
+and food, landmarks.
+
+**Also:** GPX files carry a description and a sortable filename; PostHog EU is
+wired with a dashboard; Google Analytics; feedback form; "Uzsauc man aliņu"
+popup; Android add-to-home-screen; intro and loader animations with the
+cigarette/beer pickups.
+
+### What the rider asked for next, in his priority order
+
+1. **Prompt history with results.** Not started. The mechanism exists — a saved
+   ride already carries `prompt` and every version — so this is mostly a view
+   over the same store plus saving on generation rather than on a button.
+2. **Chat: avoid a place or area.** "Man nepatīk, ka pirmā ved cauri Jūrmalai."
+   BRouter supports `nogos` (lon,lat,radius); the chat would extract
+   `avoidPlaces`, the API geocode them into ~4–6 km circles. Today the chat says
+   it cannot.
+3. **Chat: "izdomā" / "tu izlem".** When the rider delegates the choice, the
+   chat must pick a sensible option rather than ask again.
+4. **Chat: "mix of two versions".** Not a real operation on routes; interpret as
+   a profile adjustment and say so.
+5. **Self-hosted BRouter on a VPS** (~5 €/month). The real fix for production
+   time drift and thin candidate pools on brouter.de. Blocked only on the rider
+   creating the hosting account.
+
+### Traps this project has already sprung — do not re-learn these
+
+- `vercel env pull` into `.env.local` and `vercel blob create-store --yes`
+  **overwrite** the file, keeping only what Vercel knows. It cost the local
+  Anthropic/GraphHopper/Stadia keys on 09-12; **four keys in `.env.local` are
+  still placeholders and the rider must paste them back** — production is
+  unaffected because Vercel holds its own copy.
+- Backticks and `->` inside a commit message or a Python heredoc get executed
+  or break the template literal. Commit from a file (`git commit -F`).
+- macOS has no `timeout` command.
+- A dev server reached through the preview tool dies between sessions; the local
+  BRouter (`../brouter-server/start.sh`) must be started from a terminal or
+  routes silently fall back to the throttled public instance and results mislead.
+- The browser console buffer keeps errors from previous page loads. Verify a
+  "fixed" warning by reloading and checking the message still names live code.
+
+
 ## Current product decision — 2026-09-11 (takes precedence)
 
 Read `docs/CHAT-MVP-2026-09-10.md`. The primary UI is a structured,
