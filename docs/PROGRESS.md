@@ -119,9 +119,10 @@ right (deep forest, hard/lots — gravel road 0.45, forest track 0.275, path
 `components/saved-rides.tsx`, full list at `/saglabatie`). A saved ride is the same self-contained share
 code the link uses, kept in localStorage (not cookies: cookies travel on
 every request and cap near 4 KB, less than one route). Up to 30, newest
-first. The form screen shows only the most recent with "Rādīt visus N →"
-(the block sits above the form, so every row it takes is a row the form loses
-on a phone);
+first. The form screen shows no ride at all — just a one-line entrance
+("Saglabātie maršruti · N maršruti šajā ierīcē", 63 px against 151 for the
+old three-row list), because that block sits above the form and someone on
+the first screen came to plan a new ride;
 `/saglabatie` lists all of them with search by name, sorting (newest /
 length / name), the saved date, a direct GPX download and delete. Opening one
 goes to `/r/<code>` — same renderer, same GPX. Events `ride_saved`,
