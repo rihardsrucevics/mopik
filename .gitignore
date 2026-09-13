@@ -48,3 +48,7 @@ next-env.d.ts
 # agent worktrees
 .claude/worktrees/
 .env*.local
+
+# TET source GPX: 117 MB, re-downloadable from transeurotrail.org, and the
+# built output in public/tet* is what the app actually reads.
+/data/tet-gpx/

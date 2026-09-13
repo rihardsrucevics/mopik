@@ -123,6 +123,30 @@ always rejected after the 2026-09-10 Rīga–Ainaži beach regression.
 
 
 
+## TET is Europe-wide (2026-09-13)
+
+33 countries, 400 sections, 118,246 km — built from the official per-country
+GPX by `npx tsx scripts/build-tet.ts`. Sources live in `data/tet-gpx/`, which
+is **git-ignored**: 117 MB against a 6.6 MB repo, and re-downloadable from
+transeurotrail.org (the rider has an account; they are not public files).
+
+Two outputs, because one does not serve both readers:
+- `public/tet.geojson` — the router's reference layer, 12 m tolerance, 11 MB.
+  Fidelity matters here: the coverage match works to 35 m, so simplifying to
+  20 m (8.5 MB) would sit at 57 % of the tolerance and start matching quietly
+  wrong.
+- `public/tet/<CC>.geojson` + `index.json` — the map overlay, ~231 KB per
+  country. One combined overlay is 4.3 MB, and simplifying it phone-small
+  destroys the shape: 1.1 points/km against the 7.1 the Latvia-only layer had.
+  The map reads `index.json` (2.4 KB of bounding boxes) to decide what is on
+  screen, fetches those countries and caches them; `moveend` fills in more.
+
+**`tet-coverage.ts` projects per area, never at a fixed latitude.** It used
+`cos(57°)` — Latvia. At Spain's 43°N that is **26 % off** in the x axis, enough
+for the 35 m tolerance to stop matching with no error anywhere. `measureTetCoverage`
+now filters sections to the route's own bounding box first (also keeping the
+grid off 585k points) and derives the scale from those sections.
+
 ## TET clarification (2026-09-09, later)
 
 TET is optional, not an exclusive routing mode. Nearby short TET candidates

@@ -20,6 +20,49 @@ type Props = {
 
 const EMPTY: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
 
+/**
+ * The TET overlay, fetched per country for whatever the map is showing.
+ *
+ * The trail is 118,246 km across 33 countries — 4 MB of GeoJSON as one file,
+ * and simplifying it to a phone-sized download costs the shape (1.1 points/km
+ * against the 7.1 the Latvia-only layer had). `public/tet/index.json` carries
+ * a bounding box per country, so the map can decide what it needs before
+ * downloading anything, and each country is ~231 KB — the same scale that
+ * already worked.
+ */
+type TetIndex = Record<string, { bbox: [number, number, number, number] }>;
+let tetIndex: TetIndex | null = null;
+const tetLoaded = new Map<string, GeoJSON.Feature[]>();
+
+async function loadTet(map: maplibregl.Map) {
+  try {
+    tetIndex ??= (await (await fetch("/tet/index.json")).json()) as TetIndex;
+    const b = map.getBounds();
+    const visible = Object.entries(tetIndex)
+      .filter(([, { bbox }]) =>
+        bbox[0] <= b.getEast() && bbox[2] >= b.getWest() &&
+        bbox[1] <= b.getNorth() && bbox[3] >= b.getSouth())
+      .map(([country]) => country);
+
+    const missing = visible.filter((c) => !tetLoaded.has(c));
+    if (!missing.length) return;
+    await Promise.all(missing.map(async (country) => {
+      // Mark it taken first: panning fires this faster than a fetch returns,
+      // and the same country must not be downloaded twice.
+      tetLoaded.set(country, []);
+      const res = await fetch(`/tet/${country}.geojson`);
+      if (!res.ok) { tetLoaded.delete(country); return; }
+      const fc = (await res.json()) as GeoJSON.FeatureCollection;
+      tetLoaded.set(country, fc.features);
+    }));
+
+    const source = map.getSource("tet") as maplibregl.GeoJSONSource | undefined;
+    source?.setData({ type: "FeatureCollection", features: [...tetLoaded.values()].flat() });
+  } catch {
+    // An optional overlay must never break the map.
+  }
+}
+
 // Our own consistent adventure legend — deliberately NOT a copy of any OSM renderer.
 // Line COLOR encodes the surface, line STYLE encodes the road class:
 // solid = road, dashed = track, dotted = trail. A gravel public road is a
@@ -50,6 +93,7 @@ export function RouteMap({ segments, start, destination, via, showTet, onToggleT
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const markerRef = useRef<maplibregl.Marker | null>(null);
+  const showTetRef = useRef(false);
   const destMarkerRef = useRef<maplibregl.Marker | null>(null);
   const loadedRef = useRef(false);
   const viaMarkersRef = useRef<maplibregl.Marker[]>([]);
@@ -83,9 +127,16 @@ export function RouteMap({ segments, start, destination, via, showTet, onToggleT
       (window as unknown as Record<string, unknown>).__map = map;
     }
 
+    // Panning into a country whose file is not loaded yet must fill it in;
+    // the ref keeps the handler reading the current toggle rather than the
+    // value captured when the map was created.
+    map.on("moveend", () => { if (showTetRef.current) void loadTet(map); });
+
     map.on("load", () => {
       // TET overlay sits below the generated route.
-      map.addSource("tet", { type: "geojson", data: "/tet-lv.geojson" });
+      // Empty to start: the TET is 33 countries and 4 MB of line. What is on
+      // screen is fetched when the layer is switched on — see `loadTet`.
+      map.addSource("tet", { type: "geojson", data: EMPTY });
       map.addLayer({
         id: "tet-line",
         type: "line",
@@ -158,6 +209,8 @@ export function RouteMap({ segments, start, destination, via, showTet, onToggleT
 
       if (map.getLayer("tet-line")) {
         map.setLayoutProperty("tet-line", "visibility", showTet ? "visible" : "none");
+        showTetRef.current = showTet;
+        if (showTet) void loadTet(map);
       }
 
       if (start) {
@@ -230,7 +283,7 @@ export function RouteMap({ segments, start, destination, via, showTet, onToggleT
           className="inline-block h-[3px] w-4 rounded-full"
           style={{ background: TET_COLOR, opacity: showTet ? 0.9 : 0.3 }}
         />
-        TET Latvija
+        TET
         <span
           className={`flex h-4 w-7 items-center rounded-full p-0.5 transition-colors ${
             showTet ? "justify-end bg-[#f56300]" : "justify-start bg-[#e9e9eb]"

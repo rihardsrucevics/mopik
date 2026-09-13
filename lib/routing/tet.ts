@@ -3,12 +3,14 @@ import path from "path";
 import { cumulativeDistances, haversineMeters, indexAtOffset } from "@/lib/geo/geometry";
 
 /**
- * TET (Trans Euro Trail) Latvia support.
+ * TET (Trans Euro Trail) support.
  *
  * The TET is a community-maintained network of legal-to-ride adventure roads,
- * so "ride a part of the TET near town X" is a first-class request. We keep
- * the official GPX (downsampled) as GeoJSON in /public/tet-lv.geojson — the
- * same file the map overlay uses.
+ * so "ride a part of the TET near town X" is a first-class request. The
+ * official per-country GPX files are converted by `scripts/build-tet.ts` into
+ * /public/tet.geojson — 400 sections across 33 countries. The map overlay
+ * reads the per-country files under /public/tet/ instead, because the whole
+ * continent is 4 MB and a phone should only fetch what is on screen.
  *
  * We pick a slice of the nearest TET section and hand the router via points
  * sampled along it — the TET runs on routable roads, so the calculated route
@@ -29,10 +31,10 @@ let sectionsCache: TetSection[] | null = null;
 export function loadTetSections(): TetSection[] {
   if (sectionsCache) return sectionsCache;
 
-  const file = path.join(process.cwd(), "public", "tet-lv.geojson");
+  const file = path.join(process.cwd(), "public", "tet.geojson");
   const fc = JSON.parse(fs.readFileSync(file, "utf-8")) as GeoJSON.FeatureCollection<
     GeoJSON.LineString,
-    { name: string; lengthKm: number }
+    { name: string; lengthKm: number; country?: string }
   >;
 
   sectionsCache = fc.features.map((f) => {

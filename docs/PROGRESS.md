@@ -1,5 +1,48 @@
 # Mopik — progress log
 
+## 2026-09-13 (later) — TET goes Europe-wide (step 1 of going worldwide)
+
+The rider supplied the official TET GPX for every European country — the one
+input I could not obtain myself, since transeurotrail.org distributes them to
+registered users per country.
+
+**34 files in, 33 countries out.** `BY.gpx` (Belarus) holds a single point and
+is skipped automatically. `LV-2.gpx` is a newer Latvia than the old
+`tet-lv.geojson` (2,548 km vs 2,517). 1,552,250 raw points across 400 sections.
+
+**The scale is the thing that shapes the design:** the TET in Europe is
+118,246 km against Latvia's 2,517 — **47x**. So `scripts/build-tet.ts` writes
+two products rather than one:
+
+- `public/tet.geojson`, 12 m tolerance, 11 MB — the router's layer. Kept fine
+  on purpose: the coverage matcher works to 35 m, and 20 m tolerance (8.5 MB)
+  would sit at 57 % of that, close enough to start matching wrong silently.
+- `public/tet/<CC>.geojson`, ~231 KB each, plus a 2.4 KB `index.json` of
+  bounding boxes — the map overlay. One combined file is 4.3 MB; simplifying it
+  to phone size costs the shape (1.1 points/km against the 7.1 the Latvia layer
+  had). The map now fetches only the countries on screen, and `moveend` fills
+  in more as you pan. Measured: switching TET on in Latvia fetches index.json
+  (1 KB) + LV.geojson (44 KB) and **nothing before the toggle is pressed**;
+  panning to Hamburg then fetches DE.geojson and draws the German TET.
+
+**A latent bug the wider data exposed.** `tet-coverage.ts` projected with a
+hardcoded `cos(57°)` — Latvia's latitude. At Spain's 43°N the x scale is
+**26 % off** (60,561 vs 81,342 m/°), which shrinks the effective 35 m tolerance
+until the match fails with no error. The projection is now derived from the
+sections in play, and `measureTetCoverage` filters them to the route's bounding
+box first — which also stops it building a grid from 585k points on every
+request. Measured after: a slice of the real trail is recognised at 43°N
+(52 km), 60°N (65 km), 41°N (77 km) and 56°N (74 km); one German slice matches
+in 9 ms.
+
+Also: the map toggle said "TET Latvija" and now says "TET";
+`public/tet-lv.geojson` is deleted; the source GPX moved from `public/tet trails/`
+to git-ignored `data/tet-gpx/` — under `public/` they were being served to
+anyone who guessed the URL.
+
+Tests: `scripts/tet.test.ts` pins the European coverage, the cross-latitude
+matching and the no-TET-nearby case. 41/41 across the suites.
+
 ## 2026-09-13 (final) — two honest categories, and the map moves inside the ride
 
 Four things off one screenshot, and the second was a real bug.
