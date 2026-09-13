@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowLeft, ArrowUp, ChevronDown, ChevronUp, Download, LoaderCircle, Plus, Share2, Bookmark } from "lucide-react";
+import { ArrowLeft, ArrowUp, ChevronDown, ChevronUp, Download, LoaderCircle, RefreshCw, Share2, Bookmark } from "lucide-react";
 import { GeneratedRoute, GenerateRouteResponse } from "@/lib/types";
 import { RidePlan, planSummary } from "@/lib/chat/ride-plan";
 import { BeerPopup } from "@/components/beer-popup";
@@ -25,17 +25,6 @@ const VARIANT_LABELS: Record<string, { label: string; detail: string }> = {
   complex: { label: "Sarežģītākā", detail: "mežs, pagriezieni, apkārtne" },
 };
 
-/**
- * The alternatives are of the same kind, not more superlatives. "Taisnākā"
- * means *the* straightest; three cards called that, one under the other, is a
- * contradiction — so only the first of each family keeps the superlative and
- * the rest say what family they belong to.
- */
-const FAMILY_LABELS: Record<string, string> = {
-  direct: "Gluda",
-  balanced: "Līdzsvarota",
-  complex: "Sarežģīta",
-};
 
 function duration(seconds: number): string {
   const m = Math.round(seconds / 60);
@@ -51,7 +40,7 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function ResultPanel({ routes: shownRoutes, selected, onSelect, plan, avoidTowns = false, lucky = false, remoteLoop, longerSuggestion, tolerancePercent = 20, busy, onSend, onBackToForm, resolvedPlaces, alternatives }: {
+export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = false, lucky = false, remoteLoop, longerSuggestion, tolerancePercent = 20, busy, onSend, onBackToForm, resolvedPlaces, alternatives }: {
   routes: GeneratedRoute[];
   /** transit → loop → transit split, when the ride was built around a focus area */
   remoteLoop?: GenerateRouteResponse["remoteLoop"];
@@ -84,15 +73,29 @@ export function ResultPanel({ routes: shownRoutes, selected, onSelect, plan, avo
   const [details, setDetails] = useState(false);
   // Alternatives are appended, never swapped in: the three the rider is
   // comparing stay exactly where they are.
-  const [showMore, setShowMore] = useState(false);
-  const routes = showMore && alternatives?.length ? [...shownRoutes, ...alternatives] : shownRoutes;
+  // Which ride each category is currently showing. 0 is the API's pick; the
+  // card's own control walks through that category's alternatives, so the
+  // panel is always three cards and no new names are invented.
+  const [offset, setOffset] = useState<Record<string, number>>({});
+  /** That category's rides in order: the API's pick first, then its runners-up. */
+  const familyOf = (variant: string) => [
+    ...routes.filter((r) => r.variant === variant),
+    ...(alternatives ?? []).filter((r) => r.variant === variant),
+  ];
+  /** The ride a card is currently showing. */
+  const shownFor = (r: GeneratedRoute) => {
+    const family = familyOf(r.variant);
+    return family[(offset[r.variant] ?? 0) % Math.max(1, family.length)] ?? r;
+  };
   const [beer, setBeer] = useState(false);
   const [shared, setShared] = useState<"idle" | "copied">("idle");
   // Which ride is currently saved, by its code: derived during render rather
   // than mirrored into state, so switching versions needs no effect.
   const [savedTick, setSavedTick] = useState(0);
   const [text, setText] = useState("");
-  const route = routes[Math.min(selected, routes.length - 1)];
+  // Everything below — the numbers, the GPX, the share code — reads the ride
+  // the selected card is actually showing, not the API's original pick.
+  const route = shownFor(routes[Math.min(selected, routes.length - 1)]);
   if (!route) return null;
   const q = route.quality;
   const unpaved = (r: GeneratedRoute) => r.surfaces.gravelPercent + r.surfaces.dirtPercent;
@@ -200,7 +203,10 @@ export function ResultPanel({ routes: shownRoutes, selected, onSelect, plan, avo
       removeRide(rideId(encodeRouteShare(route, startLabel, plan, resolvedPlaces)));
       track("ride_unsaved");
     } else {
-      saveRide(route, startLabel, plan, { alternatives: routes, prompt: plan ? planSummary(plan, true) : route.sourcePrompt, places: resolvedPlaces });
+      // The three the rider is looking at, not the API's original picks: a
+      // card that has been swapped shows a different ride, and "citas
+      // versijas" in the saved list must match what was on screen.
+      saveRide(route, startLabel, plan, { alternatives: routes.map(shownFor), prompt: plan ? planSummary(plan, true) : route.sourcePrompt, places: resolvedPlaces });
       track("ride_saved", { km: Math.round(route.distanceMeters / 1000), variant: route.variant });
     }
     setSavedTick((n) => n + 1);
@@ -250,41 +256,46 @@ export function ResultPanel({ routes: shownRoutes, selected, onSelect, plan, avo
           </div>
         )}
         {routes.length > 1 && (
-          <div role="tablist" aria-label="Maršruta versijas" className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${Math.min(routes.length, 3)}, minmax(0, 1fr))` }}>
-            {routes.map((r, index) => {
+          <div role="tablist" aria-label="Maršruta versijas" className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${routes.length}, minmax(0, 1fr))` }}>
+            {routes.map((card, index) => {
               const active = index === selected;
-              // Only the first card of a family carries the superlative; the
-              // rest are numbered within it, so two cards never read the same.
-              const sameKind = routes.filter((x) => x.variant === r.variant);
-              const rank = sameKind.indexOf(r);
-              const base = VARIANT_LABELS[r.variant] ?? { label: `Versija ${index + 1}`, detail: "" };
-              const family = FAMILY_LABELS[r.variant] ?? base.label;
-              const meta = rank === 0
-                ? base
-                : { label: sameKind.length > 2 ? `${family} ${rank}` : family, detail: base.detail };
+              const meta = VARIANT_LABELS[card.variant] ?? { label: `Versija ${index + 1}`, detail: "" };
+              // The card keeps its name and shows whichever ride of that kind
+              // is currently chosen — the names are the three the product
+              // promises, never invented ones like "Gluda 2".
+              const family = familyOf(card.variant);
+              const at = (offset[card.variant] ?? 0) % Math.max(1, family.length);
+              const r = family[at] ?? card;
               return (
-                <button key={r.id} role="tab" type="button" aria-selected={active} onClick={() => { track("route_version_selected", { variant: r.variant, km: Math.round(r.distanceMeters / 1000) }); onSelect(index); }}
-                  className={`min-w-0 rounded-xl border px-2.5 py-2 text-left transition ${active ? "border-stone-900 bg-stone-900 text-white" : "border-stone-200 bg-[#faf9f6] text-stone-700 hover:border-stone-300"}`}>
-                  <div className="truncate text-xs font-semibold">{meta.label}</div>
-                  <div className={`truncate text-[10px] ${active ? "text-stone-300" : "text-stone-500"}`}>{meta.detail}</div>
-                  <div className="mt-1 truncate text-xs font-semibold tabular-nums">{Math.round(r.distanceMeters / 1000)} km</div>
-                  <div className={`truncate text-[10px] tabular-nums ${active ? "text-stone-300" : "text-stone-500"}`}><span className={requestedMinutes !== null && r.durationSeconds / 60 > requestedMinutes + (isMaximum ? 0 : freeMinutes) ? (active ? "text-amber-300" : "text-amber-700") : ""}>{duration(r.durationSeconds)}</span> · {unpaved(r)} % grants</div>
-                </button>
+                <div key={card.variant} className={`min-w-0 rounded-xl border transition ${active ? "border-stone-900 bg-stone-900 text-white" : "border-stone-200 bg-[#faf9f6] text-stone-700 hover:border-stone-300"}`}>
+                  <button role="tab" type="button" aria-selected={active} onClick={() => { track("route_version_selected", { variant: card.variant, km: Math.round(r.distanceMeters / 1000) }); onSelect(index); }}
+                    className="block w-full min-w-0 px-2.5 pt-2 text-left">
+                    <div className="truncate text-xs font-semibold">{meta.label}</div>
+                    <div className={`truncate text-[10px] ${active ? "text-stone-300" : "text-stone-500"}`}>{meta.detail}</div>
+                    <div className="mt-1 truncate text-xs font-semibold tabular-nums">{Math.round(r.distanceMeters / 1000)} km</div>
+                    <div className={`truncate text-[10px] tabular-nums ${active ? "text-stone-300" : "text-stone-500"}`}><span className={requestedMinutes !== null && r.durationSeconds / 60 > requestedMinutes + (isMaximum ? 0 : freeMinutes) ? (active ? "text-amber-300" : "text-amber-700") : ""}>{duration(r.durationSeconds)}</span> · {unpaved(r)} % grants</div>
+                  </button>
+                  {/* Only where another ride of this kind exists. On request,
+                      one at a time: the pool is not a list to browse, it is a
+                      "not this one, then" for the card in front of you. */}
+                  {family.length > 1 ? (
+                    <button type="button"
+                      onClick={() => {
+                        const next = (at + 1) % family.length;
+                        setOffset((o) => ({ ...o, [card.variant]: next }));
+                        onSelect(index);
+                        track("alternative_cycled", { variant: card.variant, to: next });
+                      }}
+                      className={`mt-1 flex w-full items-center justify-center gap-1 rounded-b-xl border-t px-2 py-1.5 text-[10px] font-medium transition ${active ? "border-stone-700 text-stone-300 hover:bg-white/10" : "border-stone-200 text-stone-500 hover:bg-stone-100"}`}
+                      aria-label={`Rādīt citu ${meta.label.toLowerCase()} maršrutu (${at + 1} no ${family.length})`}>
+                      <RefreshCw className="size-3" />{at + 1}/{family.length}
+                    </button>
+                  ) : <div className="pb-2" />}
+                </div>
               );
             })}
           </div>
         )}
-        {/* The pool is bigger than the three: a typical request routes dozens
-            of rides and shows three. A rider who likes none of them should be
-            able to look further without spending another generation. */}
-        {!showMore && alternatives && alternatives.length > 0 && (
-          <button type="button" onClick={() => { setShowMore(true); track("alternatives_shown", { count: alternatives.length }); }}
-            className="inline-flex items-center gap-1 self-start text-xs font-medium text-[#bd4b00]">
-            <Plus className="size-3.5" />
-            Rādīt vēl {alternatives.length} {alternatives.length === 1 ? "variantu" : "variantus"}
-          </button>
-        )}
-
         <div className="rounded-xl border border-stone-200 p-3">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">

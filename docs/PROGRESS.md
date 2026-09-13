@@ -1,5 +1,29 @@
 # Mopik — progress log
 
+## 2026-09-13 (final, corrected) — "not this one, then", per card
+
+The first attempt at showing more of the pool was wrong twice, and the rider
+said so: a button that revealed all six at once is not "on request", only a
+delayed *all at once*; and "Gluda 1", "Līdzsvarota 2" were invented names that
+say nothing. A superlative belongs to one card — "Taisnākā" means *the*
+straightest.
+
+**The panel is always three cards with the three names the product promises.**
+Each carries a small `⟳ 1/3` control; tapping it swaps that card to the next
+ride of its own kind and selects it. Nothing is added, nothing is renamed, and
+the pool stays out of the way until a rider looks at a specific card and thinks
+"not this one". The control only appears where another ride of that kind
+exists.
+
+Measured on a free Sigulda loop: Taisnākā cycles 85 km → 123 → 136 → back to
+85, the panel, map and GPX following each step; the card count stays 3.
+
+Bug caught while building it: `saveRide` was passing the API's original three
+as the saved ride's "other versions". A rider who had swapped a card would have
+saved versions they were not looking at — it now saves `routes.map(shownFor)`.
+
+`alternative_cycled` (variant, to) replaces `alternatives_shown`.
+
 ## 2026-09-13 (final) — the rest of the pool, on request
 
 The rider: three versions are shown but many more are generated; let him look

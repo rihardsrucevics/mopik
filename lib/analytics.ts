@@ -16,7 +16,7 @@ export type AnalyticsEvent =
   | "route_infeasible"       // nothing fits the time; props: requested/minimum minutes
   | "overlap_chat_shown"     // best version retraces > 20 %
   | "route_version_selected" // Taisnākā / Līkumotākā / Sarežģītākā
-  | "alternatives_shown"      // "Rādīt vēl" — is the extra pool wanted? props: count
+  | "alternative_cycled"      // a card swapped to another ride of its kind; props: variant, to
   | "gpx_downloaded"         // the GPX button; props: variant, km, minutes, repeated
   | "beer_popup"             // the thank-you shown
   | "beer_click"             // the Revolut link tapped

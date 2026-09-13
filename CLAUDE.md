@@ -328,14 +328,15 @@ trails=lots). Verify with Sigulda 2 h: complex should show >10% trail.
 - **Drag state must be passed into the drag's end, not read back.** Listeners
   created at pointerdown close over `dragging === null`; reading it there meant
   touch reordering silently did nothing.
-- **The three shown versions are not the whole pool, and "more" adds to them.**
-  A typical request routes ~36 candidates; the API returns the three plus
-  `alternatives` (two per category), and the panel appends them on request —
-  never swapping out the cards the rider is comparing. Alternatives rank over
+- **Three cards, three names, always.** A typical request routes ~36
+  candidates; the API returns the three picks plus `alternatives` (two per
+  category) and each card cycles through its own kind with a `⟳ n/m` control.
+  Do not add cards and do not invent names: a superlative belongs to one card,
+  and "Gluda 2" says nothing. Revealing the whole pool behind one button is not
+  "on request" either — it is a delayed *all at once*. Alternatives rank over
   `worthShowing` (capped at `MAX_EXCESS_DRIFT`), not `selection`: only ~11 of
-  36 sit inside the budget, so the in-budget pool yields almost nothing.
-  Selection is round-robin across categories because `distinct()` is stateful —
-  draining one category first starves the others.
+  36 sit inside the budget. Selection is round-robin across categories because
+  `distinct()` is stateful — draining one category first starves the others.
 - **No placeholder may look like a value, and an error names its field.**
   A grey "Rīga" in the empty start field and a black "Baldone" below it are the
   same shape on a phone; the rider could not see which field was missing, and
