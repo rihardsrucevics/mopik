@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
-import { Bookmark, ChevronDown, ChevronUp, Download, MessageCircle, Sparkles } from "lucide-react";
+import { Bookmark, ChevronDown, ChevronUp, Download, MessageCircle, SlidersHorizontal, Sparkles } from "lucide-react";
 import { RouteMap } from "@/components/route-map";
 import { MapPanel } from "@/components/map-panel";
 import { track } from "@/lib/analytics";
@@ -104,9 +104,18 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
               className={`flex h-11 items-center justify-center gap-2 rounded-full border text-sm font-semibold transition ${saved ? "border-[#f56300] bg-[#fff3ea] text-[#bd4b00]" : "border-stone-200 text-stone-700 hover:bg-stone-50"}`}>
               <Bookmark className={`size-4 ${saved ? "fill-current" : ""}`} />{saved ? "Saglabāts manos" : "Saglabāt sev"}
             </button>
+            {/* Editing is the form first: the same fields that made the ride,
+                filled in with it, so a rider changes a stop or the time
+                without describing the whole ride again. The chat stays for
+                what a form cannot say. `from` carries this ride's code, so
+                the new one knows what it was made from. */}
+            {planCode && (
+              <Link href={`/?p=${planCode}&from=${encodeURIComponent(code)}`} onClick={() => track("ride_edit_opened", { from: "shared", saved })}
+                className="flex h-11 items-center justify-center gap-2 rounded-full border border-stone-200 text-sm font-semibold text-stone-700 transition hover:bg-stone-50"><SlidersHorizontal className="size-4" />Rediģēt formā</Link>
+            )}
             <div className="flex gap-2">
               {planCode && (
-                <Link href={`/?p=${planCode}&mode=chat`} className="flex h-10 flex-1 items-center justify-center gap-1.5 rounded-full border border-stone-200 text-xs font-medium text-stone-700 transition hover:bg-stone-50"><MessageCircle className="size-3.5" />Pielāgot čatā</Link>
+                <Link href={`/?p=${planCode}&mode=chat&from=${encodeURIComponent(code)}`} className="flex h-10 flex-1 items-center justify-center gap-1.5 rounded-full border border-stone-200 text-xs font-medium text-stone-700 transition hover:bg-stone-50"><MessageCircle className="size-3.5" />Pielāgot čatā</Link>
               )}
               {d && (
                 <button type="button" onClick={() => setDetails(!details)} aria-expanded={details} className="flex h-10 flex-1 items-center justify-center gap-1 rounded-full border border-stone-200 text-xs font-medium text-stone-700 hover:bg-stone-50">

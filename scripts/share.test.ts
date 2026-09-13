@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { decodeRouteShare, encodeRouteShare, sharedRouteSegments, decodePlanShare, encodePlanShare } from "../lib/share/route-code";
+import { decodeRouteShare, encodeRouteShare, sharedRouteSegments, decodePlanShare, encodePlanShare, planPart } from "../lib/share/route-code";
 import { RidePlanSchema } from "../lib/chat/ride-plan";
 import type { GeneratedRoute } from "../lib/types";
 
@@ -64,4 +64,22 @@ test("a ride id distinguishes the three versions of one request", () => {
   assert.equal(direct.slice(0, 24), complex.slice(0, 24), "the prefixes really do collide");
   assert.notEqual(rideId(direct), rideId(complex));
   assert.equal(rideId(direct), rideId(direct), "and it is stable");
+});
+
+test("the plan part is what prefills the form for editing", () => {
+  const plan = RidePlanSchema.parse({
+    startPlace: "Sigulda", viaPlaces: ["Līgatne"], destinationPlace: null, directionPlace: null, focusArea: null, returnToStart: true,
+    budget: { mode: "duration", value: 2, constraint: "target", minimumValue: null }, difficulty: "adventure", rideStyle: "explore",
+    gravelPreference: 70, trailPreference: "some", accessPolicy: "allow_unverified", preferForest: true, noSand: false, avoidTowns: false,
+    avoidMainRoads: true, includeTet: false, includeSightseeing: false,
+  });
+  const withPlan = encodeRouteShare(fakeRoute(), "Sigulda", plan);
+  const part = planPart(withPlan);
+  assert.ok(part, "a code encoded with a plan carries one");
+  assert.deepEqual(decodePlanShare(part!)?.startPlace, "Sigulda", "and it decodes back to the plan");
+  assert.deepEqual(decodePlanShare(part!)?.viaPlaces, ["Līgatne"]);
+
+  // Older links and any code encoded without a plan: no edit button, not a crash.
+  assert.equal(planPart(encodeRouteShare(fakeRoute(), "Sigulda")), null);
+  assert.equal(planPart("1~meta~coords~classes"), null);
 });

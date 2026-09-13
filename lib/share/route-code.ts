@@ -176,6 +176,16 @@ export function encodeRouteShare(route: GeneratedRoute, startLabel: string, plan
   return parts.join("~");
 }
 
+/**
+ * The plan part of a share code, or null when the code carries none (older
+ * links, and any code encoded without a plan). This is what prefills the form
+ * for editing, so a saved ride can be reopened in the composer without first
+ * decoding the whole route.
+ */
+export function planPart(code: string): string | null {
+  return code.split("~")[4] || null;
+}
+
 export function decodeRouteShare(code: string): SharedRoute | null {
   try {
     const parts = code.split("~");

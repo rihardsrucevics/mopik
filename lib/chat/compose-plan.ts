@@ -1,6 +1,9 @@
 import { RidePlanSchema, type RidePlan } from "@/lib/chat/ride-plan";
 import { profileToPlanFields, type RideProfile } from "@/lib/chat/ride-profile";
 
+/** From and To are always offered; see `placesFromPlan`. */
+export const MIN_ROWS = 2;
+
 export type ComposerTripType = "round_trip" | "one_way";
 export type ComposerDuration = "flexible" | "hours";
 
@@ -46,11 +49,19 @@ export function composeRidePlan(values: ComposerValues): RidePlan {
   });
 }
 
-/** The reverse: a plan back into the ordered list the form edits. */
+/**
+ * The reverse: a plan back into the ordered list the form edits.
+ *
+ * Always at least two rows. A rider opening Mopik should be able to say where
+ * from and where to without first finding an "add" button; the second row is
+ * optional (its placeholder says so) and an empty one is dropped on submit,
+ * so the cost of offering it is nothing.
+ */
 export function placesFromPlan(plan: RidePlan | null): string[] {
-  if (!plan) return ["Rīga"];
+  if (!plan) return ["", ""];
   const tail = plan.returnToStart
     ? plan.viaPlaces
     : [...plan.viaPlaces, ...(plan.destinationPlace ? [plan.destinationPlace] : [])];
-  return [plan.startPlace ?? "", ...tail];
+  const places = [plan.startPlace ?? "", ...tail];
+  return places.length >= MIN_ROWS ? places : [...places, ...Array(MIN_ROWS - places.length).fill("")];
 }

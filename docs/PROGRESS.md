@@ -1,5 +1,65 @@
 # Mopik — progress log
 
+## 2026-09-13 (later) — the form asks From and To, the map joins the ride block, and a kept ride can be edited
+
+Five things the rider asked for in one turn, all in the form and the way back
+out of it.
+
+- **From and To are always offered.** `placesFromPlan(null)` returned
+  `["Rīga"]` — one row, with "Rīga" as a real value rather than a hint, and a
+  second place only after finding "Pievienot vietu". It now returns `["", ""]`
+  (`MIN_ROWS`), both rows empty with placeholders: "Rīga" on the start and
+  **"Man vienalga"** on the second, so leaving it alone is visibly a valid
+  answer rather than an unfinished form. Removing the last row empties it
+  instead of deleting it, so the form never collapses back to one field.
+  Labels are `No` / `Līdz`, with anything added between them numbered `Caur (n)`.
+- **Reordering is a drag handle, not two arrows.** Three controls per row
+  (↑ ↓ ✕) at `size-3.5` inside `p-1` were ~22 px targets and took more width
+  than they were worth. Now one grip plus one ✕, both **36 × 36 px** — and the
+  cluster is **72 px**, no wider than the three small buttons it replaces,
+  because the handle only appears once there are three rows to reorder (two
+  rows: 36 px). Dragging works with a mouse (HTML5 drag) and with a finger
+  (pointer capture + hit-testing the rows, since touch fires no `dragover`);
+  ArrowUp/ArrowDown on the focused handle keep the keyboard path.
+- **On a phone the map lives inside the ride block.** It was `order-first` on
+  the grid, so the moment a place was confirmed it appeared above everything —
+  above "Saglabātie", above the "Kur un cik ilgi brauksim?" heading — and read
+  as a separate thing. It is now rendered under the places it confirms.
+  Measured on a 375 px screen: saved block 89 → heading 198 → fields 360 →
+  **map 527** → duration 883 → generate 1045. The desktop column is unchanged
+  (map at x=509, 742 × 786). One MapLibre instance either way: `useMediaQuery`
+  (`lib/use-media-query.ts`) moves the single node rather than rendering it
+  twice and hiding one, which would have cost a second WebGL context.
+- **"Ievades forma" becomes "Maršruts" when there is a route to go back to.**
+  Arriving from `/r/<code>` via "Pielāgot čatā" left `result` null, so the only
+  way out was a form the rider never filled in. The origin travels as
+  `&from=<code>`; while it is set and no new route exists, the chat's back
+  control is a link to that ride.
+- **A shared or saved ride can be edited in the form.** "Rediģēt formā" on
+  `/r/<code>` and a grip-height button in `/saglabatie` link to
+  `/?p=<plan>&from=<code>` — one hop, not two, and named for what it does
+  ("Ģenerēt līdzīgu sev" stays, deliberately carrying no origin). Verified end
+  to end: the saved Līgatne ride reopens with "Līgatne", Turp un atpakaļ,
+  Brīvs and the profile "Vidēji · Sports · Meži" restored.
+- **After an edit generates, the rider chooses.** "Paturēt abus" or "Aizstāt
+  veco" — asked once, because replacing silently loses a ride and keeping both
+  silently fills the list with near-duplicates. Events `ride_edit_opened`,
+  `edited_ride_kept`, `edited_ride_replaced`.
+
+`planPart()` in `route-code.ts` is now the one place that knows the plan is the
+5th `~` part; `app/r/[code]/page.tsx` and the saved list both use it.
+
+Tests: `compose-plan.test.ts` covers the two-row default, a one-place plan
+keeping its empty second row, and an empty "Līdz" decoding to no destination
+rather than a blank one; `share.test.ts` covers `planPart` including codes
+with no plan. 29/29 across the four suites.
+
+**Still open from this turn:** a share code carries place *names*, not the
+resolved coordinates, so a ride reopened for editing is geocoded afresh — the
+"Valmiera-in-Rīga" shape of bug. The form shows its pins before generating, so
+a wrong match is visible, but carrying coordinates in the code would remove
+the risk entirely.
+
 ## 2026-09-13 — saving keeps all three versions, and what was asked for
 
 A rider who liked the ride but wanted the straighter version of it had to

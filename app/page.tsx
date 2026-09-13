@@ -13,6 +13,7 @@ import { MapPanel } from "@/components/map-panel";
 import Link from "next/link";
 import { track } from "@/lib/analytics";
 import { decodePlanShare } from "@/lib/share/route-code";
+import { isCodeSaved, removeRide, rideId } from "@/lib/share/saved-rides";
 import { IntroSplash } from "@/components/intro-splash";
 import { RideComposer } from "@/components/ride-composer";
 import { ChatMessage, ChatQuickReply, ChatResponse, RidePlan, planSummary } from "@/lib/chat/ride-plan";
@@ -20,6 +21,7 @@ import { describeInfeasible, minutesLabel } from "@/lib/chat/feasibility";
 import { seedPlanFromProfile } from "@/lib/chat/ride-profile";
 import type { ResolvedPlace } from "@/lib/chat/places";
 import { useRideProfile } from "@/lib/chat/use-ride-profile";
+import { DESKTOP_QUERY, useMediaQuery } from "@/lib/use-media-query";
 import { GenerateRouteResponse } from "@/lib/types";
 
 type Retry = { stage: "chat"; messages: ChatMessage[]; plan: RidePlan | null } | { stage: "route"; messages: ChatMessage[]; plan: RidePlan };
@@ -75,18 +77,41 @@ export default function Home() {
   const [lucky, setLucky] = useState(false);
   // Phone only: the map over the whole screen, on request.
   const [feedbackOpen, setFeedbackOpen] = useState(false);
-  // "Ģenerēt līdzīgu sev" from a shared route: the plan arrives in ?p= and
-  // pre-fills the form; the URL is cleaned so a reload does not re-apply it.
+  /**
+   * The ride the rider arrived from, when they came from one: "Rediģēt formā"
+   * or "Pielāgot čatā" on a shared or saved route. It is the way back to that
+   * route until a new one is generated, and it decides what happens to the
+   * original afterwards — kept alongside the new ride, or replaced by it.
+   */
+  const [origin, setOrigin] = useState<{ code: string; saved: boolean } | null>(null);
+  // `generate` reads this after an await, by which time its closure's copy of
+  // `origin` may be a render behind. The ref is the current answer.
+  const originRef = useRef<{ code: string; saved: boolean } | null>(null);
+  // A ride generated from an origin: the rider is asked whether it replaces
+  // the one they were editing or is kept as a second ride.
+  const [keepChoice, setKeepChoice] = useState<{ code: string; saved: boolean } | null>(null);
+  // "Ģenerēt līdzīgu sev" / "Rediģēt formā" from a shared route: the plan
+  // arrives in ?p= and pre-fills the form; the URL is cleaned so a reload does
+  // not re-apply it.
   useEffect(() => {
-    const p = new URLSearchParams(window.location.search).get("p");
+    const params = new URLSearchParams(window.location.search);
+    const p = params.get("p");
     if (!p) return;
     const shared = decodePlanShare(p);
-    const mode = new URLSearchParams(window.location.search).get("mode") === "chat" ? "chat" : "form";
+    const mode = params.get("mode") === "chat" ? "chat" : "form";
+    // `from` is the share code of the ride being edited, present only on the
+    // edit paths — "Ģenerēt līdzīgu sev" deliberately starts a ride of its own
+    // and carries no origin.
+    const from = params.get("from");
     // No cleanup on purpose: development StrictMode runs the effect twice and
     // a cancelled timer meant the plan never arrived. The URL is cleaned only
     // once the plan is applied.
     setTimeout(() => {
-      if (shared) { setPlan(shared); setEntryMode(mode); }
+      if (shared) {
+        setPlan(shared);
+        setEntryMode(mode);
+        if (from) { const o = { code: from, saved: isCodeSaved(from) }; originRef.current = o; setOrigin(o); }
+      }
       window.history.replaceState(null, "", window.location.pathname);
     }, 0);
   }, []);
@@ -164,6 +189,11 @@ export default function Home() {
       }
       setChatting(false);
       setQuickReplies([]);
+      // Editing an existing ride produced a new one. Ask what becomes of the
+      // original rather than guessing: silently replacing loses a ride the
+      // rider may still want, silently keeping both fills the list with
+      // near-duplicates.
+      if (originRef.current) { setKeepChoice(originRef.current); originRef.current = null; setOrigin(null); }
       const versions = (data as GenerateRouteResponse).routes.length;
       // The numbers are in the result card; the message only says what to do next.
       const notes = [
@@ -228,6 +258,26 @@ export default function Home() {
     finally { setPhase("idle"); busyRef.current = false; }
   }
   const route = result?.routes[Math.min(selected, (result?.routes.length ?? 1) - 1)] ?? null;
+  // One map, two homes. On a desktop it is the sticky right column; on a phone
+  // it belongs inside the ride block, under the places it confirms — above the
+  // whole page it outranked even "Saglabātie" and read as a separate thing.
+  const desktop = useMediaQuery(DESKTOP_QUERY);
+  const mapVisible = Boolean(result) || previewPlaces.length > 0;
+  const mapPanel = (
+    <MapPanel
+      className={`overflow-hidden rounded-2xl border border-stone-200 md:h-[calc(100vh-7rem)] ${result && chatting ? "h-[26dvh]" : "h-[42dvh]"}`}
+      expandedClassName="md:relative md:inset-auto md:z-auto md:h-[calc(100vh-7rem)] md:overflow-hidden md:rounded-2xl md:border md:border-stone-200">
+      <RouteMap
+        segments={route?.segments ?? null}
+        start={result?.start ?? previewPlaces[0] ?? null}
+        destination={result?.destination ?? null}
+        via={result ? result.via : previewPlaces.slice(1)}
+        showTet={showTet} onToggleTet={setShowTet} />
+    </MapPanel>
+  );
+  // The form hosts the map itself; every other phone view keeps it on top,
+  // where a result and its map belong together.
+  const mapInComposer = !desktop && entryMode === "form" && mapVisible;
   return (
     <main className="mx-auto min-h-screen w-full max-w-[1600px] px-4 py-5 md:px-7">
       <IntroSplash />
@@ -246,28 +296,38 @@ export default function Home() {
           <InstallPrompt show={Boolean(result) && !chatting} />
           {entryMode === "form" && <SavedRides />}
           {entryMode === "form"
-            ? <RideComposer key={plan ? planSummary(plan, false) : "new"} initialPlan={plan} profile={profile} onProfileChange={changeProfile} busy={phase !== "idle"} onGenerate={startFromForm} onUseChat={() => setEntryMode("chat")} onPlacesChange={setPreviewPlaces} />
+            ? <RideComposer key={plan ? planSummary(plan, false) : "new"} initialPlan={plan} profile={profile} onProfileChange={changeProfile} busy={phase !== "idle"} onGenerate={startFromForm} onUseChat={() => setEntryMode("chat")} onPlacesChange={setPreviewPlaces} map={mapInComposer ? mapPanel : undefined} />
             : result && result.routes.length > 0 && !chatting
               ? <ResultPanel routes={result.routes} selected={selected} onSelect={setSelected} plan={plan} avoidTowns={result.intent.avoidTowns ?? false} lucky={lucky} remoteLoop={result.remoteLoop} longerSuggestion={result.longerSuggestion} tolerancePercent={result.intent.distanceTolerancePercent} busy={phase !== "idle"} onSend={send} onBackToForm={() => setEntryMode("form")} />
-              : <RoutePrompt messages={messages} plan={plan} hasRoute={Boolean(route)} phase={phase} quickReplies={quickReplies} lucky={lucky && !route} onSend={send} onBackToForm={() => setEntryMode("form")} onAction={() => { setChatting(false); setQuickReplies([]); }} />}
+              : <RoutePrompt messages={messages} plan={plan} hasRoute={Boolean(route)} phase={phase} quickReplies={quickReplies} lucky={lucky && !route} onSend={send} onBackToForm={() => setEntryMode("form")} originCode={origin?.code ?? null} onAction={() => { setChatting(false); setQuickReplies([]); }} />}
+          {/* A ride that came from editing another one. Asked once, here,
+              because only the rider knows whether the original is still
+              wanted — and the answer is one tap either way. */}
+          {keepChoice && (
+            <div className="rounded-xl border border-stone-200 bg-[#faf9f6] p-4 text-sm">
+              <p className="text-stone-700">Šis ir pārtaisīts maršruts. Ko darām ar to, no kura sāki?</p>
+              <div className="mt-2.5 flex flex-wrap gap-2">
+                <button type="button" onClick={() => { track("edited_ride_kept", { was_saved: keepChoice.saved }); setKeepChoice(null); }}
+                  className="rounded-full border border-stone-900 px-3.5 py-1.5 text-xs font-semibold text-stone-900 transition hover:bg-stone-900 hover:text-white">
+                  Paturēt abus
+                </button>
+                <button type="button" onClick={() => { if (keepChoice.saved) removeRide(rideId(keepChoice.code)); track("edited_ride_replaced", { was_saved: keepChoice.saved }); setKeepChoice(null); }}
+                  className="rounded-full border border-stone-200 px-3.5 py-1.5 text-xs font-medium text-stone-600 transition hover:bg-white">
+                  {keepChoice.saved ? "Aizstāt veco" : "Neglabāt veco"}
+                </button>
+              </div>
+              {!keepChoice.saved && <p className="mt-2 text-[11px] text-stone-500">Vecais nebija saglabāts — saite uz to joprojām darbosies.</p>}
+            </div>
+          )}
           {error && <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><p>{error}</p>{retry && <button onClick={retryLast} disabled={phase !== "idle"} className="mt-2 underline underline-offset-4 disabled:opacity-40">Mēģināt vēlreiz</button>}</div>}
         </div>
-        {/* Sticky on the desktop; on the phone the map only appears once
-            there is a route to show, above the result. Nothing overlays it. */}
-        <div className={`order-first min-w-0 md:order-none md:sticky md:top-5 ${result || previewPlaces.length ? "" : "hidden md:block"}`}>
-          {/* Phone heights: 42dvh with the result panel, 26dvh while the chat
-              has something to say (the words matter more than the picture
-              then), the whole screen when asked. */}
-          <MapPanel
-            className={`overflow-hidden rounded-2xl border border-stone-200 md:h-[calc(100vh-7rem)] ${result && chatting ? "h-[26dvh]" : "h-[42dvh]"}`}
-            expandedClassName="md:relative md:inset-auto md:z-auto md:h-[calc(100vh-7rem)] md:overflow-hidden md:rounded-2xl md:border md:border-stone-200">
-            <RouteMap
-              segments={route?.segments ?? null}
-              start={result?.start ?? previewPlaces[0] ?? null}
-              destination={result?.destination ?? null}
-              via={result ? result.via : previewPlaces.slice(1)}
-              showTet={showTet} onToggleTet={setShowTet} />
-          </MapPanel>
+        {/* Sticky on the desktop. On the phone the map appears once there is
+            something to show — inside the ride block while the form is open,
+            above the result otherwise. Phone heights: 42dvh with the result
+            panel, 26dvh while the chat has something to say (the words matter
+            more than the picture then), the whole screen when asked. */}
+        <div className={`order-first min-w-0 md:order-none md:sticky md:top-5 ${mapVisible && !mapInComposer ? "" : "hidden md:block"}`}>
+          {!mapInComposer && mapPanel}
         </div>
       </div>
     </main>

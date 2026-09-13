@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { ArrowRight, ChevronDown, ChevronUp, MapPin, Plus, Route, Sparkles, X } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
+import { ChevronDown, ChevronUp, Sparkles } from "lucide-react";
 import { RidePlan } from "@/lib/chat/ride-plan";
 import { composeRidePlan, placesFromPlan } from "@/lib/chat/compose-plan";
 import { RoutePlaces } from "@/components/route-places";
@@ -92,7 +92,7 @@ function ProfileLine({ profile, onChange }: { profile: RideProfile; onChange: (p
   );
 }
 
-export function RideComposer({ initialPlan, profile, onProfileChange, busy, onGenerate, onUseChat, onPlacesChange }: {
+export function RideComposer({ initialPlan, profile, onProfileChange, busy, onGenerate, onUseChat, onPlacesChange, map }: {
   initialPlan: RidePlan | null;
   /** the rider's standing profile, remembered on the device */
   profile: RideProfile;
@@ -102,6 +102,13 @@ export function RideComposer({ initialPlan, profile, onProfileChange, busy, onGe
   onUseChat: () => void;
   /** Picked places, in riding order, so the map can confirm them before a ride exists. */
   onPlacesChange?: (places: ResolvedPlace[]) => void;
+  /**
+   * The map, on phones only. It belongs to the places it confirms, so it sits
+   * under them inside this block rather than above the whole page — where it
+   * pushed even the saved-rides entry down and read as something separate
+   * from the ride being described. The desktop keeps its own sticky column.
+   */
+  map?: ReactNode;
 }) {
   const [places, setPlaces] = useState<string[]>(placesFromPlan(initialPlan));
   const [tripType, setTripType] = useState<"round_trip" | "one_way">(initialPlan?.returnToStart === false ? "one_way" : "round_trip");
@@ -147,8 +154,11 @@ export function RideComposer({ initialPlan, profile, onProfileChange, busy, onGe
 
   const submit = () => {
     const filled = places.map((p) => p.trim()).filter(Boolean);
-    if (!filled.length) { setError("Norādi brauciena sākumu."); return; }
-    if (tripType === "one_way" && filled.length < 2) { setError("Vienvirziena braucienam norādi galamērķi."); return; }
+    if (!filled.length) { setError("Norādi, no kurienes brauksim."); return; }
+    // An empty "Līdz" is a real answer — "man vienalga", the same ride the
+    // lucky mode already handles — so only a one-way request with nothing but
+    // a start is refused: there is no direction to send it in.
+    if (tripType === "one_way" && filled.length < 2) { setError("Vienvirziena braucienam norādi vismaz vienu vietu, uz kuru doties."); return; }
     const value = hours.trim() ? Number(hours.replace(",", ".")) : preset ?? NaN;
     if (durationMode === "hours" && (!Number.isFinite(value) || value < 0.5 || value > 16)) { setError("Ilgumam jābūt no 0,5 līdz 16 stundām."); return; }
     const plan = composeRidePlan({ places, tripType, durationMode, hours: value, profile: effectiveProfile });
@@ -173,6 +183,8 @@ export function RideComposer({ initialPlan, profile, onProfileChange, busy, onGe
         <ChoiceRow label="Maršruta veids" value={tripType} onChange={setTripType} choices={[{ value: "round_trip", label: "Turp un atpakaļ" }, { value: "one_way", label: "Vienā virzienā" }]} />
 
         <RoutePlaces places={places} picked={picked} oneWay={tripType === "one_way"} busy={busy} onChange={reorder} onPick={setPick} />
+
+        {map && <div className="md:hidden">{map}</div>}
 
         <ChoiceRow label="Ilgums" value={durationMode} onChange={setDurationMode} choices={[{ value: "flexible", label: "Brīvs" }, { value: "hours", label: "Konkrēts" }]} />
         {durationMode === "hours" && (

@@ -93,5 +93,26 @@ test("a plan with neither stops nor destination is just a loop from home", () =>
   assert.equal(plan.startPlace, "Tukums");
   assert.deepEqual(plan.viaPlaces, []);
   assert.equal(plan.returnToStart, true);
-  assert.deepEqual(placesFromPlan(null), ["Rīga"], "an empty form starts at Rīga");
+});
+
+test("the form always offers From and To", () => {
+  assert.deepEqual(placesFromPlan(null), ["", ""], "an empty form asks where from and where to");
+
+  // A one-place plan (a loop from home) still shows the second row, so the
+  // rider can add a destination without hunting for the add button.
+  const loop = composeRidePlan({ ...base, places: ["Tukums"], profile: DEFAULT_PROFILE });
+  assert.deepEqual(placesFromPlan(loop), ["Tukums", ""], "a one-place plan keeps an empty second row");
+
+  // And the offered row costs nothing when it is left alone: blanks are
+  // dropped, so "Tukums" with an untouched second field is still a plain loop.
+  const fromForm = composeRidePlan({ ...base, places: ["Tukums", ""], profile: DEFAULT_PROFILE });
+  assert.deepEqual(fromForm.viaPlaces, []);
+  assert.equal(fromForm.destinationPlace, null);
+  assert.equal(fromForm.returnToStart, true);
+
+  // One way with an empty "Līdz" is "man vienalga": a direction-free ride, not
+  // a destination of "".
+  const vienalga = composeRidePlan({ ...base, places: ["Tukums", ""], tripType: "one_way", profile: DEFAULT_PROFILE });
+  assert.equal(vienalga.destinationPlace, null, "an empty Līdz is no destination, not a blank one");
+  assert.deepEqual(vienalga.viaPlaces, []);
 });

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { SharedRouteView } from "@/components/shared-route";
+import { planPart } from "@/lib/share/route-code";
 import { resolveShare } from "@/lib/share/resolve";
 
 /**
@@ -35,6 +36,6 @@ export default async function SharedRoutePage({ params }: Params) {
   const { code } = await params;
   const resolved = await resolveShare(code);
   if (!resolved) notFound();
-  const planCode = resolved.code.split("~")[4] ?? null;
+  const planCode = planPart(resolved.code);
   return <SharedRouteView share={resolved.share} planCode={planCode} code={resolved.code} />;
 }

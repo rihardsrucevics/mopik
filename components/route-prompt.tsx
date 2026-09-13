@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { ArrowLeft, ArrowUp } from "lucide-react";
 import { RouteLoader } from "@/components/route-loader";
 import { track } from "@/lib/analytics";
@@ -16,11 +17,18 @@ type Props = {
   lucky?: boolean;
   onSend: (text: string) => void;
   onBackToForm: () => void;
+  /**
+   * The route this conversation is adjusting, when the rider arrived from one
+   * (a shared or saved ride opened with "Pielāgot čatā"). Until a new route is
+   * generated there is nothing to go back to in this tab, so the way out is
+   * the ride itself rather than an empty form.
+   */
+  originCode?: string | null;
   /** a quick reply that acts on the client (show the routes) instead of being sent */
   onAction?: (action: "show-routes") => void;
 };
 
-export function RoutePrompt({ messages, plan, hasRoute, phase, quickReplies, lucky = false, onSend, onBackToForm, onAction }: Props) {
+export function RoutePrompt({ messages, plan, hasRoute, phase, quickReplies, lucky = false, onSend, onBackToForm, originCode = null, onAction }: Props) {
   const [text, setText] = useState("");
   const endRef = useRef<HTMLDivElement>(null);
   const logRef = useRef<HTMLDivElement>(null);
@@ -59,7 +67,13 @@ export function RoutePrompt({ messages, plan, hasRoute, phase, quickReplies, luc
             <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#bd4b00]">{hasRoute ? "Maršruta korekcijas" : messages.length ? "Brauciena plāns" : "Brīvā saruna"}</div>
             <h2 className="text-lg font-semibold tracking-tight">{hasRoute ? "Ko vēlies mainīt?" : messages.length ? "Precizēsim ieceri." : "Apraksti ieceri saviem vārdiem."}</h2>
           </div>
-          <button type="button" onClick={onBackToForm} disabled={busy} className="inline-flex shrink-0 items-center gap-1 text-xs text-stone-500 underline decoration-stone-300 underline-offset-4 disabled:opacity-40"><ArrowLeft className="size-3.5" />Ievades forma</button>
+          {/* Came from a route and none has been generated since? Then "back"
+              means that route, not a blank form the rider never filled in. */}
+          {originCode && !hasRoute ? (
+            <Link href={`/r/${originCode}`} className="inline-flex shrink-0 items-center gap-1 text-xs text-stone-500 underline decoration-stone-300 underline-offset-4"><ArrowLeft className="size-3.5" />Maršruts</Link>
+          ) : (
+            <button type="button" onClick={onBackToForm} disabled={busy} className="inline-flex shrink-0 items-center gap-1 text-xs text-stone-500 underline decoration-stone-300 underline-offset-4 disabled:opacity-40"><ArrowLeft className="size-3.5" />Ievades forma</button>
+          )}
         </div>
         {plan && <p className="mt-2 hidden line-clamp-2 text-[11px] leading-relaxed text-stone-500 md:block">{planSummary(plan, true)}</p>}
       </div>

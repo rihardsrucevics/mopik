@@ -4,9 +4,10 @@
 
 ## Where this stands — handover, 2026-09-13
 
-Everything below is committed and live on www.mopik.eu. Working tree clean at
-`09703ae`. Read this section first in a new session; the rest of the file is
-the accumulated rules.
+Everything below is committed and live on www.mopik.eu, **except the newest
+form/edit work, which is built, measured and tested but not yet committed or
+deployed** — see the top entry in `docs/PROGRESS.md`. Read this section first
+in a new session; the rest of the file is the accumulated rules.
 
 ### Built in the 09-12/09-13 stretch (all measured, all deployed)
 
@@ -39,7 +40,12 @@ generation. `/saglabatie` has search, sorting, GPX and delete.
 **The form.** The ride is one ordered list of places, trip type asked first,
 rows reorderable, and confirmed places pinned on the map before any route
 exists. Place search ranks rather than excludes: settlements, addresses, fuel
-and food, landmarks.
+and food, landmarks. **From and To are always offered** (two empty rows, the
+second placeheld "Man vienalga"); reordering is a drag handle plus ✕, not two
+arrows; on a phone the map sits inside the ride block under the places it
+confirms. A shared or saved ride opens in the form via "Rediģēt formā"
+(`/?p=<plan>&from=<code>`), and the chat's back control becomes "Maršruts"
+while an origin is set.
 
 **Also:** GPX files carry a description and a sortable filename; PostHog EU is
 wired with a dashboard; Google Analytics; feedback form; "Uzsauc man aliņu"
@@ -48,9 +54,10 @@ cigarette/beer pickups.
 
 ### What the rider asked for next, in his priority order
 
-1. **Prompt history with results.** Not started. The mechanism exists — a saved
-   ride already carries `prompt` and every version — so this is mostly a view
-   over the same store plus saving on generation rather than on a button.
+1. **Prompt history with results.** Not started; it is the next thing he asked
+   for. The mechanism exists — a saved ride already carries `prompt` and every
+   version, and `/saglabatie` now also edits — so this is mostly a view over
+   the same store plus saving on generation rather than on a button.
 2. **Chat: avoid a place or area.** "Man nepatīk, ka pirmā ved cauri Jūrmalai."
    BRouter supports `nogos` (lon,lat,radius); the chat would extract
    `avoidPlaces`, the API geocode them into ~4–6 km circles. Today the chat says
@@ -291,6 +298,29 @@ trails=lots). Verify with Sigulda 2 h: complex should show >10% trail.
   Start, then stops, in riding order; a round trip does not repeat the start.
   Do not reintroduce a separate "Uz" field — on a loop it silently became the
   last stop and nothing could be reordered.
+- **The form always shows at least two rows** (`MIN_ROWS`, `placesFromPlan`),
+  both empty with placeholders — "Rīga" and **"Man vienalga"**. A rider should
+  be able to say where from and where to without first finding an add button,
+  and the second row must visibly be optional rather than unfinished. Deleting
+  the last row empties it instead of removing it. Never go back to one row, and
+  never prefill a row with a real value that looks like a hint.
+- **Reordering places is a drag handle, never up/down arrows.** Three ~22 px
+  targets per row cost more width than the field and none was tappable; one
+  36 px grip plus one 36 px ✕ is the same total width. The handle appears only
+  from three rows up. Keep all three input paths working: mouse drag, touch
+  (pointer capture + row hit-testing — touch fires no `dragover`), and
+  ArrowUp/ArrowDown on the focused handle.
+- **On a phone the map belongs inside the ride block**, under the places it
+  confirms — not `order-first` above the page, where it outranked even
+  "Saglabātie". Exactly one MapLibre instance exists: `useMediaQuery` moves the
+  single node between the composer slot and the desktop column. Do not render
+  it in both places and hide one with CSS — that is a second WebGL context.
+- **A saved or shared ride is editable in the form, not only in the chat.**
+  "Rediģēt formā" → `/?p=<plan>&from=<code>`; `from` is the origin, which makes
+  the chat's back control "Maršruts" and, after a new route is generated, asks
+  "Paturēt abus / Aizstāt veco". "Ģenerēt līdzīgu sev" deliberately carries no
+  origin — it starts a ride of its own. Note the share code carries place
+  *names*, not coordinates, so an edited ride is geocoded afresh.
 - **The structured composer is the primary input.** Its From/Destination/stop
   fields and finite choices create `RidePlan` directly. Do not send them
   through prompt parsing.

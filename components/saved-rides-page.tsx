@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Bookmark, Download, Plus, Search, Trash2 } from "lucide-react";
+import { ArrowLeft, Bookmark, Download, Plus, Search, SlidersHorizontal, Trash2 } from "lucide-react";
 import { track } from "@/lib/analytics";
 import { listSaved, removeRide, decodeSaved, type SavedRide } from "@/lib/share/saved-rides";
+import { planPart } from "@/lib/share/route-code";
 import { gpxFilename } from "@/lib/gpx/filename";
 
 const VARIANT_LABELS: Record<string, string> = { direct: "Taisnākā", balanced: "Līkumotākā", complex: "Sarežģītākā" };
@@ -106,6 +107,14 @@ export function SavedRidesPage() {
                   <div className="truncate text-[10px] text-stone-400">{r.from === "shared" ? "Atsūtīts · saglabāts" : "Saglabāts"} {savedOn(r.savedAt)}</div>
                   {r.prompt && <div className="truncate text-[10px] text-stone-400">{r.prompt}</div>}
                 </Link>
+                {/* Straight into the form, prefilled. Without it editing a
+                    kept ride meant opening it and then finding the button
+                    there — two hops for the thing a rider does most. */}
+                {planPart(r.code) && (
+                  <Link href={`/?p=${planPart(r.code)}&from=${encodeURIComponent(r.code)}`} onClick={() => track("ride_edit_opened", { from: "saved", saved: true })}
+                    aria-label={`Rediģēt ${r.name} formā`}
+                    className="shrink-0 rounded-full border border-stone-200 p-2 text-stone-600 transition hover:bg-stone-50"><SlidersHorizontal className="size-4" /></Link>
+                )}
                 <button type="button" onClick={() => downloadGpx(r)} aria-label={`Lejupielādēt ${r.name} GPX`}
                   className="shrink-0 rounded-full border border-stone-200 p-2 text-stone-600 transition hover:bg-stone-50"><Download className="size-4" /></button>
                 <button type="button" onClick={() => { removeRide(r.id); track("saved_ride_removed"); }} aria-label={`Dzēst ${r.name}`}

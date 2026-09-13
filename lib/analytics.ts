@@ -35,7 +35,10 @@ export type AnalyticsEvent =
   | "saved_list_opened"
   | "shared_ride_saved"      // kept a ride someone else sent
   | "shared_ride_unsaved"
-  | "saved_alternative_opened"; // opened another version of a saved ride
+  | "saved_alternative_opened" // opened another version of a saved ride
+  | "ride_edit_opened"        // "Rediģēt formā" on a shared or saved ride; props: from, saved
+  | "edited_ride_kept"        // the edit produced a new ride and the original stays
+  | "edited_ride_replaced";   // the edit replaced the ride it started from
 
 declare global {
   interface Window { gtag?: (...args: unknown[]) => void }
