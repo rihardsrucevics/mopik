@@ -4,6 +4,8 @@ import { useId } from "react";
 import { track } from "@/lib/analytics";
 
 export const INSTAGRAM_URL = "https://www.instagram.com/mopik.eu";
+/** The author's own account, linked from the credit line. */
+export const AUTHOR_INSTAGRAM_URL = "https://www.instagram.com/rucijs";
 
 /**
  * The Instagram glyph. `lucide-react` has no brand icons, and `AtSign` does not
@@ -40,14 +42,16 @@ export function InstagramGlyph({ className = "size-4" }: { className?: string })
  * and nobody could see the reply; Instagram is where riders already talk about
  * routes, and an answer there helps the next rider too.
  */
-export function InstagramLink({ from, label = "Sazinies", className }: {
+export function InstagramLink({ from, label = "Sazinies", className, href = INSTAGRAM_URL }: {
   /** where the link was tapped, so the analytics say which placement works */
   from: string;
   label?: string;
   className?: string;
+  /** Defaults to the Mopik account; the author's own is a different one. */
+  href?: string;
 }) {
   return (
-    <a href={INSTAGRAM_URL} target="_blank" rel="noopener noreferrer"
+    <a href={href} target="_blank" rel="noopener noreferrer"
       onClick={() => track("instagram_opened", { from })}
       className={className ?? "inline-flex items-center gap-1 text-xs text-stone-500 hover:text-stone-900"}>
       <InstagramGlyph />

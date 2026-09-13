@@ -21,6 +21,12 @@ an answer there helps the next rider too.
 - Layout bug found while testing: the popup's container is `text-center`, not a
   flex column, so the Instagram pill and "Varbūt citreiz" flowed into one row.
   Each is wrapped in its own block now (measured: 457 px vs 516 px).
+- **Wording, after the rider read it back:** "Uzsaukšu nākamreiz" (a promise,
+  not a dismissal), "Pieseko @mopik.eu instagram" (says which account), and the
+  credit line is "Autors @rucijs" linking to **instagram.com/rucijs** — the
+  author's own account, a different one from Mopik's, replacing the mailto.
+  No mark on that line: the pill above already carries one, and a second on
+  11 px type reads as a badge rather than a byline.
 
 **Not done, next up:** showing more of the candidate pool. Measured on a
 Sigulda 2 h request: **36 candidates are routed and classified, all 36 pass the

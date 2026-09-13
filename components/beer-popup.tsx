@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import Image from "next/image";
-import { InstagramLink } from "@/components/instagram-link";
+import { AUTHOR_INSTAGRAM_URL, InstagramLink } from "@/components/instagram-link";
 import { X } from "lucide-react";
 import { track } from "@/lib/analytics";
 
@@ -56,15 +56,22 @@ export function BeerPopup({ open, onClose }: { open: boolean; onClose: () => voi
             Declining sits directly under the ask it answers; following is a
             separate offer and comes after it. */}
         <div className="mt-4">
-          <button type="button" onClick={onClose} className="text-xs text-stone-400 underline decoration-stone-600 underline-offset-4 hover:text-stone-200">Nākamreiz</button>
+          <button type="button" onClick={onClose} className="text-xs text-stone-400 underline decoration-stone-600 underline-offset-4 hover:text-stone-200">Uzsaukšu nākamreiz</button>
         </div>
         <div className="mt-5">
-          <InstagramLink from="beer" label="Seko Instagram"
+          <InstagramLink from="beer" label="Pieseko @mopik.eu instagram"
             className="inline-flex items-center gap-2 rounded-full border border-stone-700 px-4 py-2 text-xs font-medium text-stone-200 transition hover:border-stone-500 hover:bg-white/5" />
         </div>
-        {/* Who is behind it, quietly, at the very bottom. */}
-        <p className="mt-6 text-[11px] text-stone-600">
-          Rihards · @rucijs · <a href="mailto:rihards.rucevics@gmail.com" className="hover:text-stone-400">rihards.rucevics@gmail.com</a>
+        {/* Who is behind it, quietly, at the very bottom — the author's own
+            account, not Mopik's, so the two links mean different things. */}
+        <p className="mt-6">
+          {/* No mark here: the pill above already carries it, and a second one
+              on an 11 px credit line reads as a badge rather than a byline. */}
+          <a href={AUTHOR_INSTAGRAM_URL} target="_blank" rel="noopener noreferrer"
+            onClick={() => track("instagram_opened", { from: "beer-author" })}
+            className="text-[11px] text-stone-600 transition hover:text-stone-400">
+            Autors @rucijs
+          </a>
         </p>
       </div>
     </div>
