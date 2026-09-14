@@ -294,7 +294,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
             <button type="button" onClick={() => setMapOpen((v) => { if (!v) track("form_map_opened"); return !v; })} aria-expanded={mapOpen}
               className="inline-flex items-center gap-1.5 text-xs font-medium text-[#bd4b00]">
               <MapIcon className="size-3.5" />
-              {mapOpen ? "Paslēpt karti" : "Rādīt kartē"}
+              {mapOpen ? t(locale, "hideMap") : t(locale, "showOnMap")}
               {mapOpen ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
             </button>
             {/* Mounted only while open: MapLibre in a hidden container comes

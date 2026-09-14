@@ -313,6 +313,41 @@ parameter, as `planSummary` got, and the type checker names every caller that
 has not been thought about. That is how the last of the chat wording was
 found, and it is the method to reach for next time.
 
+**2026-09-14, later: the selectors only saw direct children, and two strings
+lived through it.** `placeholder={hasRoute ? t(locale, "chatPlaceholder") :
+messages.length ? "Papildini ieceri…" : "Apraksti savu braucienu…"}` in
+`components/route-prompt.tsx` passed the rules the day they were written. Both
+halves of the ban matched a `Literal` only as a *direct* child of the
+attribute's expression container, so the moment the text sat one level down —
+in a `ConditionalExpression`, a `LogicalExpression`, or an argument like
+`someFn("text")` — nothing matched. `react/jsx-no-literals` has the same blind
+spot on the children side: `<p>{flag ? "Sveiki" : t(locale, "x")}</p>` was
+measured and is not reported. The rules are now descendant selectors on the
+attributes and direct-child selectors on the conditional and logical branches
+of a JSX *child* container, which found two more survivors: the map toggle in
+`ride-composer.tsx` ("Paslēpt karti" / "Rādīt kartē", already in the
+dictionary as `hideMap` / `showOnMap`) and the unseen-count `aria-label` in
+`saved-rides-link.tsx`.
+
+The heuristic that makes this workable is that **user-visible text carries
+whitespace or ends in sentence punctuation, and a dictionary key never does**:
+keys are camelCase identifiers, so `t(locale, "chatSend")` nested anywhere
+inside an attribute stays legal while `someFn("Papildini ieceri…")` does not.
+That is what lets the selector be a descendant selector at all instead of
+enumerating every expression shape.
+
+Two combinators in those selectors are load-bearing and both were measured by
+running the rule over the tree. `JSXExpressionContainer` without a parent
+anchor also matches an attribute's container, and every
+`className={flag ? "px-2" : "mt-3 space-y-3"}` is a conditional full of
+whitespace. Anchoring it as `JSXElement > JSXExpressionContainer` but leaving
+the inner combinator a descendant lets the selector walk into a branch that is
+itself a JSX element — `{active ? (<span className="a b"/>) : …}` — and every
+nested `className` matched again. Together the two mistakes read as 166 false
+positives against 3 real hits. Anchored as direct children throughout, the run
+is 3 hits and 0 false positives. If this rule ever starts shouting, check the
+combinators before relaxing the regex, and never blanket-disable it.
+
 **Still Latvian, and deliberately:**
 - **The chat's model-generated replies.** They come from the prompt in
   `app/api/route-chat/route.ts`, so translating them means translating the

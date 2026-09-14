@@ -31,6 +31,9 @@ export type MessageKey =
   | "chatIntro"
   | "chatExample"
   | "chatPlaceholder"
+  | "chatPlaceholderRefine"
+  | "chatPlaceholderDescribe"
+  | "savedRidesUnseen"
   | "chatRefine"
   | "chatSend"
   | "chatMessageLabel"
@@ -117,7 +120,6 @@ export type MessageKey =
   | "resUnknown"
   | "resSparse"
   | "resAssembled"
-  | "resNoOtherRoads"
   | "resLucky"
   | "resUpTo"
   | "resGravelShort"
@@ -128,13 +130,6 @@ export type MessageKey =
   | "resFindShorter"
   | "resFindLonger"
   | "resCleanerLoop"
-  | "resWarnRepeated"
-  | "resWarnTrail"
-  | "resWarnUnverified"
-  | "resWarnRough"
-  | "resWarnSand"
-  | "resWarnStreets"
-  | "resWarnUnknownSurface"
   | "resSaved"
   | "resDetails"
   | "resVersionN"
@@ -156,7 +151,6 @@ export type MessageKey =
   | "savEditRide"
   | "savDownloadRide"
   | "savDeleteRide"
-  | "shWarnRepeated"
   | "shStartLabel"
   | "shRepeatedNote"
   | "shSavedInMine"
@@ -336,6 +330,7 @@ export type MessageKey =
   | "badgeUnverifiedDetail"
   | "badgeTrail"
   | "badgeTrailDetail"
+  // Same text as `legendTrail`; kept because route-map.tsx still reads it. Fold in later.
   | "segDottedLine"
   | "segGrade"
   | "segOnTet"
@@ -357,6 +352,9 @@ const lv: Messages = {
   chatIntro: "Apraksti ieceri saviem vārdiem.",
   chatExample: "Piemēram: no Ķekavas caur Baldoni un atpakaļ, ap 3 stundām, meži un tehniskāki ceļi.",
   chatPlaceholder: "Piemēram: īsāku un vairāk pa mežu…",
+  chatPlaceholderRefine: "Papildini ieceri…",
+  chatPlaceholderDescribe: "Apraksti savu braucienu…",
+  savedRidesUnseen: "jauni",
   chatRefine: "Maršruta korekcijas",
   chatSend: "Nosūtīt ziņu",
   chatMessageLabel: "Ziņa par braucienu",
@@ -443,7 +441,6 @@ const lv: Messages = {
   resUnknown: "Nezināms",
   resSparse: "Ārpus Baltijas Mopik vēl nezina vietu nosaukumus — maršruts un skaitļi ir īsti, bet pieturas paliek nenosauktas.",
   resAssembled: "Šis brauciens ir garāks, nekā bezmaksas maršrutētājs plāno vienā gabalā, tāpēc tas salikts no posmiem. Trase ir īsta, bet īsākiem braucieniem Mopik atrod labākus ceļus.",
-  resNoOtherRoads: " Šeit citu ceļu šādā garumā nav.",
   resLucky: "Bez galamērķa un laika limita? Laimīgais!",
   resUpTo: "līdz",
   resGravelShort: "grants un zemes ceļu",
@@ -454,13 +451,6 @@ const lv: Messages = {
   resFindShorter: "Meklēt īsāku (līdz {time})",
   resFindLonger: "Meklēt garāku (~{time})",
   resCleanerLoop: "Tīrāks aplis ~{time} ({pct} % atkārtoti)",
-  resWarnRepeated: "{km} km atkārto jau nobrauktus ceļus — vari prasīt mazāk atkārtojumu.",
-  resWarnTrail: "{km} km taku.",
-  resWarnUnverified: "{km} km pa takām ar nepārbaudītu motocikla piekļuvi — pārbaudi zīmes.",
-  resWarnRough: "{km} km grūtu meža ceļu (grade 4–5 vai slikts segums).",
-  resWarnSand: "{km} km smilšu.",
-  resWarnStreets: "{km} km pa ielām un pagalmiem.",
-  resWarnUnknownSurface: "{pct} % ceļu segums OSM nav zināms.",
   resSaved: "Saglabāts",
   resDetails: "Detaļas",
   resVersionN: "Versija {n}",
@@ -470,7 +460,7 @@ const lv: Messages = {
   resSurfaceHeading: "Segums",
   resMixRoad: "Ceļš",
   resMixTrack: "Meža ceļš / svītrots",
-  resMixTrail: "Taka / punktots",
+  resMixTrail: "Punktotā līnija",
   resDirt: "Zeme / smiltis",
   resTransitOut: "Pārbrauciens {km} km · {time}",
   resFocusLoop: "{place} aplis {km} km · {time}",
@@ -482,7 +472,6 @@ const lv: Messages = {
   savEditRide: "Rediģēt {name} formā",
   savDownloadRide: "Lejupielādēt {name} GPX",
   savDeleteRide: "Dzēst {name}",
-  shWarnRepeated: "{pct} % maršruta atkārto jau nobrauktus ceļus.",
   shStartLabel: "Sākums: {place}",
   shRepeatedNote: "{pct} % atkārtoti ceļi · laiks pēc seguma, ne pēc kartes vidējā ātruma.",
   shSavedInMine: "Saglabāts manos",
@@ -652,16 +641,17 @@ const lv: Messages = {
   legendAsphalt: "Asfalts",
   legendGravel: "Grants",
   legendTrack: "Meža ceļš",
-  legendTrail: "Taka",
+  legendTrail: "Punktotā līnija",
   mapFullscreen: "Karte pa visu ekrānu",
   mapExitFullscreen: "Aizvērt pilnekrāna karti",
   cancel: "Atcelt",
   badgeUnverified: "Nepārbaudīta piekļuve",
   badgeUnverifiedDetail:
     "Šim posmam OSM datos nav apstiprinātas motocikla piekļuves. Tas nenozīmē, ka braukt aizliegts — tikai to, ka neviens to nav atzīmējis. Pārbaudi zīmes uz vietas.",
-  badgeTrail: "Taka",
+  badgeTrail: "Punktotā līnija",
   badgeTrailDetail:
-    "Šaurs, tehnisks posms — punktētā līnija kartē. Šeit brauc lēnāk, nekā rāda plānotais laiks.",
+    "Šaurs, tehnisks posms — punktotā līnija kartē. Šeit brauc lēnāk, nekā rāda plānotais laiks.",
+  // Same text as `legendTrail`; kept because route-map.tsx still reads it. Fold in later.
   segDottedLine: "Punktotā līnija",
   segGrade: "Grūtība",
   segOnTet: "Pa TET",
@@ -682,6 +672,9 @@ const lt: Messages = {
   chatIntro: "Aprašyk sumanymą savais žodžiais.",
   chatExample: "Pavyzdžiui: nuo Kėdainių per Josvainius ir atgal, apie 3 valandas, miškai ir techniškesni keliai.",
   chatPlaceholder: "Pavyzdžiui: trumpiau ir daugiau per mišką…",
+  chatPlaceholderRefine: "Papildyk sumanymą…",
+  chatPlaceholderDescribe: "Aprašyk savo kelionę…",
+  savedRidesUnseen: "nauji",
   chatRefine: "Maršruto pataisymai",
   chatSend: "Siųsti žinutę",
   chatMessageLabel: "Žinutė apie maršrutą",
@@ -768,7 +761,6 @@ const lt: Messages = {
   resUnknown: "Nežinoma",
   resSparse: "Už Baltijos ribų Mopik dar nežino vietų pavadinimų — maršrutas ir skaičiai tikri, bet sustojimai lieka be pavadinimų.",
   resAssembled: "Šis maršrutas ilgesnis, nei nemokamas maršrutizatorius planuoja vienu kartu, todėl jis sudėtas iš atkarpų. Trasa tikra, bet trumpesniems maršrutams Mopik randa geresnius kelius.",
-  resNoOtherRoads: " Čia kitų tokio ilgio kelių nėra.",
   resLucky: "Be tikslo ir laiko limito? Laimingas!",
   resUpTo: "iki",
   resGravelShort: "žvyro ir žemės kelių",
@@ -779,13 +771,6 @@ const lt: Messages = {
   resFindShorter: "Ieškoti trumpesnio (iki {time})",
   resFindLonger: "Ieškoti ilgesnio (~{time})",
   resCleanerLoop: "Švaresnis ratas ~{time} ({pct} % kartojasi)",
-  resWarnRepeated: "{km} km kartoja jau važiuotus kelius — gali prašyti mažiau kartojimosi.",
-  resWarnTrail: "{km} km takų.",
-  resWarnUnverified: "{km} km takais su nepatikrintu motociklo privažiavimu — pasitikrink ženklus.",
-  resWarnRough: "{km} km sunkių miško kelių (grade 4–5 arba prasta danga).",
-  resWarnSand: "{km} km smėlio.",
-  resWarnStreets: "{km} km gatvėmis ir kiemais.",
-  resWarnUnknownSurface: "{pct} % kelių danga OSM nežinoma.",
   resSaved: "Išsaugota",
   resDetails: "Detalės",
   resVersionN: "Versija {n}",
@@ -795,7 +780,7 @@ const lt: Messages = {
   resSurfaceHeading: "Danga",
   resMixRoad: "Kelias",
   resMixTrack: "Miško kelias / brūkšniuotas",
-  resMixTrail: "Takas / taškuotas",
+  resMixTrail: "Punktyra linija",
   resDirt: "Žemė / smėlis",
   resTransitOut: "Pervažiavimas {km} km · {time}",
   resFocusLoop: "{place} ratas {km} km · {time}",
@@ -807,7 +792,6 @@ const lt: Messages = {
   savEditRide: "Redaguoti {name} formoje",
   savDownloadRide: "Atsisiųsti {name} GPX",
   savDeleteRide: "Ištrinti {name}",
-  shWarnRepeated: "{pct} % maršruto kartoja jau važiuotus kelius.",
   shStartLabel: "Pradžia: {place}",
   shRepeatedNote: "{pct} % kartojasi keliai · laikas pagal dangą, ne pagal žemėlapio vidutinį greitį.",
   shSavedInMine: "Išsaugota pas mane",
@@ -977,14 +961,14 @@ const lt: Messages = {
   legendAsphalt: "Asfaltas",
   legendGravel: "Žvyras",
   legendTrack: "Miško kelias",
-  legendTrail: "Takas",
+  legendTrail: "Punktyra linija",
   mapFullscreen: "Žemėlapis per visą ekraną",
   mapExitFullscreen: "Uždaryti viso ekrano žemėlapį",
   cancel: "Atšaukti",
   badgeUnverified: "Nepatikrintas privažiavimas",
   badgeUnverifiedDetail:
     "Šiai atkarpai OSM duomenyse nėra patvirtinto motociklų privažiavimo. Tai nereiškia, kad važiuoti draudžiama — tik tai, kad niekas to nepažymėjo. Pasitikrink ženklus vietoje.",
-  badgeTrail: "Takas",
+  badgeTrail: "Punktyra linija",
   badgeTrailDetail:
     "Siaura, techniška atkarpa — taškuota linija žemėlapyje. Čia važiuok lėčiau, nei rodo planuotas laikas.",
   segDottedLine: "Punktyra linija",
@@ -1007,6 +991,9 @@ const et: Messages = {
   chatIntro: "Kirjelda plaani oma sõnadega.",
   chatExample: "Näiteks: Tartust läbi Elva ja tagasi, umbes 3 tundi, metsad ja tehnilisemad teed.",
   chatPlaceholder: "Näiteks: lühemalt ja rohkem läbi metsa…",
+  chatPlaceholderRefine: "Täienda plaani…",
+  chatPlaceholderDescribe: "Kirjelda oma sõitu…",
+  savedRidesUnseen: "uut",
   chatRefine: "Marsruudi parandused",
   chatSend: "Saada sõnum",
   chatMessageLabel: "Sõnum sõidu kohta",
@@ -1093,7 +1080,6 @@ const et: Messages = {
   resUnknown: "Teadmata",
   resSparse: "Väljaspool Baltikumi ei tea Mopik veel kohanimesid — marsruut ja numbrid on õiged, aga peatused jäävad nimetuks.",
   resAssembled: "See sõit on pikem, kui tasuta marsruutija ühe korraga planeerib, seega on see kokku pandud lõikudest. Rada on päris, aga lühematele sõitudele leiab Mopik paremaid teid.",
-  resNoOtherRoads: " Siin teisi selle pikkusega teid pole.",
   resLucky: "Ilma sihtkoha ja ajapiiranguta? Vedas!",
   resUpTo: "kuni",
   resGravelShort: "kruusa- ja pinnasteid",
@@ -1104,13 +1090,6 @@ const et: Messages = {
   resFindShorter: "Otsi lühemat (kuni {time})",
   resFindLonger: "Otsi pikemat (~{time})",
   resCleanerLoop: "Puhtam ring ~{time} ({pct} % kordub)",
-  resWarnRepeated: "{km} km kordab juba läbitud teid — võid küsida vähem kordusi.",
-  resWarnTrail: "{km} km radu.",
-  resWarnUnverified: "{km} km radadel, kus mootorratta juurdepääs on kontrollimata — kontrolli märke.",
-  resWarnRough: "{km} km raskeid metsateid (grade 4–5 või halb kate).",
-  resWarnSand: "{km} km liiva.",
-  resWarnStreets: "{km} km tänavatel ja hoovides.",
-  resWarnUnknownSurface: "{pct} % teekattest on OSM-is teadmata.",
   resSaved: "Salvestatud",
   resDetails: "Üksikasjad",
   resVersionN: "Versioon {n}",
@@ -1120,7 +1099,7 @@ const et: Messages = {
   resSurfaceHeading: "Kate",
   resMixRoad: "Tee",
   resMixTrack: "Metsatee / kriipsjoon",
-  resMixTrail: "Rada / punktiir",
+  resMixTrail: "Punktiirjoon",
   resDirt: "Pinnas / liiv",
   resTransitOut: "Ülesõit {km} km · {time}",
   resFocusLoop: "{place} ring {km} km · {time}",
@@ -1132,7 +1111,6 @@ const et: Messages = {
   savEditRide: "Muuda {name} vormis",
   savDownloadRide: "Laadi alla {name} GPX",
   savDeleteRide: "Kustuta {name}",
-  shWarnRepeated: "{pct} % marsruudist kordab juba läbitud teid.",
   shStartLabel: "Algus: {place}",
   shRepeatedNote: "{pct} % korduvaid teid · aeg katte järgi, mitte kaardi keskmise kiiruse järgi.",
   shSavedInMine: "Salvestatud minu omadesse",
@@ -1302,14 +1280,14 @@ const et: Messages = {
   legendAsphalt: "Asfalt",
   legendGravel: "Kruus",
   legendTrack: "Metsatee",
-  legendTrail: "Rada",
+  legendTrail: "Punktiirjoon",
   mapFullscreen: "Kaart üle ekraani",
   mapExitFullscreen: "Sulge täisekraanikaart",
   cancel: "Tühista",
   badgeUnverified: "Kontrollimata juurdepääs",
   badgeUnverifiedDetail:
     "Sellel lõigul puudub OSM-andmetes kinnitatud mootorratta juurdepääs. See ei tähenda, et sõitmine oleks keelatud — ainult seda, et keegi pole seda märkinud. Kontrolli märke kohapeal.",
-  badgeTrail: "Rada",
+  badgeTrail: "Punktiirjoon",
   badgeTrailDetail:
     "Kitsas, tehniline lõik — punktiirjoon kaardil. Siin sõida aeglasemalt, kui planeeritud aeg näitab.",
   segDottedLine: "Punktiirjoon",
@@ -1332,6 +1310,9 @@ const en: Messages = {
   chatIntro: "Describe the ride in your own words.",
   chatExample: "For example: from Kekava via Baldone and back, about 3 hours, forests and more technical roads.",
   chatPlaceholder: "For example: shorter and more forest…",
+  chatPlaceholderRefine: "Add to the plan…",
+  chatPlaceholderDescribe: "Describe your ride…",
+  savedRidesUnseen: "new",
   chatRefine: "Adjust the route",
   chatSend: "Send message",
   chatMessageLabel: "Your message",
@@ -1418,7 +1399,6 @@ const en: Messages = {
   resUnknown: "Unknown",
   resSparse: "Outside the Baltics Mopik does not know place names yet — the route and the numbers are real, but the stops stay unnamed.",
   resAssembled: "This ride is longer than the free router plans in one go, so it was assembled from sections. The track is real, but for shorter rides Mopik finds better roads.",
-  resNoOtherRoads: " There are no other roads of this length here.",
   resLucky: "No destination, no time limit? Lucky you!",
   resUpTo: "up to",
   resGravelShort: "gravel and dirt roads",
@@ -1429,13 +1409,6 @@ const en: Messages = {
   resFindShorter: "Find a shorter one (up to {time})",
   resFindLonger: "Find a longer one (~{time})",
   resCleanerLoop: "Cleaner loop ~{time} ({pct} % retraced)",
-  resWarnRepeated: "{km} km retrace roads already ridden — you can ask for less overlap.",
-  resWarnTrail: "{km} km of trails.",
-  resWarnUnverified: "{km} km on trails with unverified motorcycle access — check the signs.",
-  resWarnRough: "{km} km of hard forest tracks (grade 4–5 or poor surface).",
-  resWarnSand: "{km} km of sand.",
-  resWarnStreets: "{km} km on streets and yards.",
-  resWarnUnknownSurface: "{pct} % of the surface is unknown in OSM.",
   resSaved: "Saved",
   resDetails: "Details",
   resVersionN: "Version {n}",
@@ -1445,7 +1418,7 @@ const en: Messages = {
   resSurfaceHeading: "Surface",
   resMixRoad: "Road",
   resMixTrack: "Track / dashed",
-  resMixTrail: "Trail / dotted",
+  resMixTrail: "Dotted line",
   resDirt: "Dirt / sand",
   resTransitOut: "Transit {km} km · {time}",
   resFocusLoop: "{place} loop {km} km · {time}",
@@ -1457,7 +1430,6 @@ const en: Messages = {
   savEditRide: "Edit {name} in the form",
   savDownloadRide: "Download {name} GPX",
   savDeleteRide: "Delete {name}",
-  shWarnRepeated: "{pct} % of the route retraces roads already ridden.",
   shStartLabel: "Start: {place}",
   shRepeatedNote: "{pct} % retraced roads · time from the surface, not from a map average speed.",
   shSavedInMine: "Saved to mine",
@@ -1627,14 +1599,14 @@ const en: Messages = {
   legendAsphalt: "Asphalt",
   legendGravel: "Gravel",
   legendTrack: "Forest track",
-  legendTrail: "Trail",
+  legendTrail: "Dotted line",
   mapFullscreen: "Full-screen map",
   mapExitFullscreen: "Close full-screen map",
   cancel: "Cancel",
   badgeUnverified: "Unverified access",
   badgeUnverifiedDetail:
     "This stretch has no confirmed motorcycle access in OSM. That does not mean riding is forbidden — only that nobody has recorded it. Check the signs on the ground.",
-  badgeTrail: "Trail",
+  badgeTrail: "Dotted line",
   badgeTrailDetail:
     "A narrow, technical stretch — the dotted line on the map. Ride this slower than the planned time suggests.",
   segDottedLine: "Dotted line",

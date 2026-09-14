@@ -15,7 +15,7 @@ import { unseenSavedCount } from "@/lib/share/saved-rides";
  * what the icon already says — and that width is what the language picker
  * needed. The name still reaches a screen reader through `aria-label`.
  */
-export function SavedRidesLink({ label, className = "" }: { label: string; className?: string }) {
+export function SavedRidesLink({ label, unseenLabel, className = "" }: { label: string; unseenLabel: string; className?: string }) {
   // Zero on the server and on the first client render: the count lives in
   // localStorage, and rendering it straight away is a hydration mismatch.
   const [unseen, setUnseen] = useState(0);
@@ -38,7 +38,7 @@ export function SavedRidesLink({ label, className = "" }: { label: string; class
     <Link
       href="/saglabatie"
       onClick={() => track("saved_list_opened")}
-      aria-label={unseen > 0 ? `${label} (${unseen} jauni)` : label}
+      aria-label={unseen > 0 ? `${label} (${unseen} ${unseenLabel})` : label}
       title={label}
       className={`relative inline-flex size-9 items-center justify-center rounded-full text-stone-600 transition hover:bg-stone-100 hover:text-stone-900 ${className}`}
     >

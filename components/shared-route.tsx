@@ -5,7 +5,7 @@ import { useLocale } from "@/lib/i18n/use-locale";
 import { messages } from "@/lib/i18n/messages";
 import { fi } from "@/lib/i18n/format";
 import Link from "next/link";
-import { Bookmark, ChevronDown, ChevronUp, Download, MessageCircle, SlidersHorizontal, Sparkles, TriangleAlert } from "lucide-react";
+import { Bookmark, ChevronDown, ChevronUp, Download, MessageCircle, SlidersHorizontal, Sparkles } from "lucide-react";
 import { RouteMap } from "@/components/route-map";
 import { MapPanel } from "@/components/map-panel";
 import { SiteHeader } from "@/components/site-header";
@@ -19,8 +19,14 @@ import { gpxFilename } from "@/lib/gpx/filename";
 const variantLabel = (m: ReturnType<typeof messages>, variant: string): string =>
   ({ direct: m.resStraight, balanced: m.resWinding, complex: m.resComplex } as Record<string, string>)[variant] ?? variant;
 
-function Row({ label, value }: { label: string; value: string }) {
-  return <div className="flex justify-between gap-3 py-0.5 text-xs"><span className="text-stone-500">{label}</span><span className="tabular-nums text-stone-900">{value}</span></div>;
+/**
+ * One line of the breakdown. `icon` is the map's own emoji for the same thing
+ * — 🔥 for the dotted line, ⚠️ for unverified access — so the mark a rider read
+ * on the map appears beside the number too. aria-hidden: the label says it in
+ * words. The explicit font-size keeps a colour emoji inside the 12 px row.
+ */
+function Row({ label, value, icon }: { label: string; value: string; icon?: string }) {
+  return <div className="flex justify-between gap-3 py-0.5 text-xs"><span className="flex min-w-0 items-center gap-1 text-stone-500">{icon && <span aria-hidden="true" className="shrink-0 text-[12px] leading-none">{icon}</span>}{label}</span><span className="tabular-nums text-stone-900">{value}</span></div>;
 }
 
 function duration(minutes: number): string {
@@ -48,17 +54,9 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
     () => false,
   );
   const d = share.details;
-  // The same honesty as the result panel, from the numbers that travelled in the link.
-  const warnings: string[] = [];
-  if (share.repeatedPercent > 15) warnings.push(fi(m.shWarnRepeated, { pct: share.repeatedPercent }));
-  if (d) {
-    if (d.trailKm > 0) warnings.push(fi(m.resWarnTrail, { km: d.trailKm }));
-    if (d.unverifiedPathKm > 0) warnings.push(fi(m.resWarnUnverified, { km: d.unverifiedPathKm }));
-    if (d.roughTrackKm >= 1) warnings.push(fi(m.resWarnRough, { km: d.roughTrackKm }));
-    if (d.sandKm >= 0.5) warnings.push(fi(m.resWarnSand, { km: d.sandKm }));
-    if (d.streetKm / Math.max(1, share.km) > 0.15) warnings.push(fi(m.resWarnStreets, { km: d.streetKm }));
-    if (d.unknownPercent >= 15) warnings.push(fi(m.resWarnUnknownSurface, { pct: d.unknownPercent }));
-  }
+  // No warning list here either: the result panel's was removed, and this page
+  // must show the same ride the rider shared. The ROADS / SURFACE numbers
+  // below and the map's own badges carry it.
   const segments = useMemo(() => sharedRouteSegments(share), [share]);
   const start = { lat: share.points[0][1], lon: share.points[0][0] };
   useEffect(() => { track("shared_route_viewed", { km: share.km, variant: share.variant }); }, [share.km, share.variant]);
@@ -125,22 +123,25 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
               )}
               {d && (
                 <button type="button" onClick={() => setDetails(!details)} aria-expanded={details} className="flex h-10 flex-1 items-center justify-center gap-1 rounded-full border border-stone-200 text-xs font-medium text-stone-700 hover:bg-stone-50">
-                  {m.resDetails}{warnings.length > 0 && !details ? <> · {warnings.length} <TriangleAlert className="size-4 text-amber-500" /></> : ""}{details ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+                  {m.resDetails}{details ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
                 </button>
               )}
             </div>
           </div>
-          {details && warnings.length > 0 && (
-            <ul className="mt-3 space-y-1 rounded-xl bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-900">
-              {warnings.map((w) => <li key={w} className="flex items-start gap-1.5"><TriangleAlert className="mt-px size-3.5 shrink-0 text-amber-500" />{w}</li>)}
-            </ul>
-          )}
           {details && d && (
             <div className="mt-3 space-y-3 rounded-xl border border-stone-200 p-3">
               <div>
                 <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-stone-400">{m.resRoadsHeading}</div>
-                <Row label={m.mixRoad} value={`${d.roadKm} km`} /><Row label={m.mixTrack} value={`${d.trackKm} km`} /><Row label={m.legendTrail} value={`${d.trailKm} km`} />
+                <Row label={m.mixRoad} value={`${d.roadKm} km`} /><Row label={m.mixTrack} value={`${d.trackKm} km`} /><Row label={m.legendTrail} value={`${d.trailKm} km`} icon="🔥" />
               </div>
+              {/* Its own block, as in the result panel: road/track/trail is a
+                  strict partition, and these kilometres are already inside one
+                  of those three — a fourth row would count them twice. */}
+              {d.unverifiedPathKm > 0 && (
+                <div>
+                  <Row label={m.badgeUnverified} value={`${d.unverifiedPathKm} km`} icon="⚠️" />
+                </div>
+              )}
               <div>
                 <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-stone-400">{m.resSurfaceHeading}</div>
                 <Row label={m.legendAsphalt} value={`${d.asphaltPercent} %`} /><Row label={m.legendGravel} value={`${d.gravelPercent} %`} /><Row label={m.resDirt} value={`${d.dirtPercent} %`} /><Row label={m.resUnknown} value={`${d.unknownPercent} %`} />

@@ -4,7 +4,7 @@ import { useState, type ReactNode } from "react";
 import { useLocale } from "@/lib/i18n/use-locale";
 import { t, messages } from "@/lib/i18n/messages";
 import { fi } from "@/lib/i18n/format";
-import { ArrowLeft, ArrowUp, ChevronDown, ChevronUp, Download, LoaderCircle, RefreshCw, Share2, Bookmark, TriangleAlert } from "lucide-react";
+import { ArrowLeft, ArrowUp, ChevronDown, ChevronUp, Download, LoaderCircle, RefreshCw, Share2, Bookmark } from "lucide-react";
 import { GeneratedRoute, GenerateRouteResponse } from "@/lib/types";
 import { RidePlan, planSummary } from "@/lib/chat/ride-plan";
 import { BeerPopup } from "@/components/beer-popup";
@@ -16,7 +16,7 @@ import { gpxFilename } from "@/lib/gpx/filename";
 
 /**
  * The left column once routes exist: what was asked, the three versions,
- * the selected one's numbers, Lejupielādēt GPX, warnings — and at the bottom an
+ * the selected one's numbers, Lejupielādēt GPX — and at the bottom an
  * input inviting a correction. Sending a correction hands the column over
  * to the chat until new routes arrive, then this view returns. No chat
  * history competes with the result.
@@ -42,16 +42,27 @@ function duration(seconds: number): string {
   return m >= 60 ? `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ""}` : `${m} min`;
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+/**
+ * One line of the breakdown. `icon` is the map's own emoji for the same thing
+ * — 🔥 for the dotted line, ⚠️ for unverified access — so a rider who has just
+ * read a badge on the map meets the same mark next to the number. It is
+ * aria-hidden: the label beside it already says what it means, and the row is
+ * read out as words. The explicit font-size keeps a colour emoji, which draws
+ * wider than its type size, from outgrowing the 12 px row.
+ */
+function Row({ label, value, icon }: { label: string; value: string; icon?: string }) {
   return (
     <div className="flex justify-between gap-3 py-0.5 text-xs">
-      <span className="text-stone-500">{label}</span>
+      <span className="flex min-w-0 items-center gap-1 text-stone-500">
+        {icon && <span aria-hidden="true" className="shrink-0 text-[12px] leading-none">{icon}</span>}
+        {label}
+      </span>
       <span className="tabular-nums text-stone-900">{value}</span>
     </div>
   );
 }
 
-export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = false, lucky = false, remoteLoop, longerSuggestion, tolerancePercent = 20, busy, onSend, onBackToForm, resolvedPlaces, alternatives, offset, onOffsetChange, map, sparsePlaceData = false, assembledFromSegments = false }: {
+export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, remoteLoop, longerSuggestion, tolerancePercent = 20, busy, onSend, onBackToForm, resolvedPlaces, alternatives, offset, onOffsetChange, map, sparsePlaceData = false, assembledFromSegments = false }: {
   routes: GeneratedRoute[];
   /** transit → loop → transit split, when the ride was built around a focus area */
   remoteLoop?: GenerateRouteResponse["remoteLoop"];
@@ -64,6 +75,9 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
   selected: number;
   onSelect: (index: number) => void;
   plan: RidePlan | null;
+  /** Accepted but no longer read: it only ever softened the "streets and
+   *  yards" warning, and that warning list is gone. `app/page.tsx` still
+   *  passes it, so the prop stays in the type. */
   avoidTowns?: boolean;
   busy: boolean;
   onSend: (text: string) => void;
@@ -249,21 +263,20 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
     setSavedTick((n) => n + 1);
   };
 
-  const warnings: string[] = [];
+  // What Mopik could not do for this ride, as opposed to what the ride is
+  // like to ride: the rider removed the riding-quality warning list (trails,
+  // unverified access, rough track, unknown surface) because the map's own
+  // badges and the ROADS / SURFACE numbers already say all of it. These two
+  // are not about the roads at all — they are limits of the tool — so they
+  // stay.
+  const notices: string[] = [];
   // Outside the Baltics the ride and its numbers are real; what is missing is
   // the named stops. Better said plainly than discovered as an empty list.
-  if (sparsePlaceData) warnings.push(m.resSparse);
+  if (sparsePlaceData) notices.push(m.resSparse);
   // Long rides need Mopik's own router. Without it the ride is stitched from
   // shorter sections, which is worth saying plainly rather than letting the
   // rider wonder why a long route looks less considered than a short one.
-  if (assembledFromSegments) warnings.push(m.resAssembled);
-  if (route.overlap.repeatedPercent > 15) warnings.push(fi(m.resWarnRepeated, { km: route.overlap.repeatedKm }));
-  if (route.roadMix.trailKm > 0) warnings.push(fi(m.resWarnTrail, { km: route.roadMix.trailKm }));
-  if (q.unverifiedPathKm > 0) warnings.push(fi(m.resWarnUnverified, { km: q.unverifiedPathKm }));
-  if (q.roughTrackKm >= 1) warnings.push(fi(m.resWarnRough, { km: q.roughTrackKm }));
-  if (q.sandKm >= 0.5) warnings.push(fi(m.resWarnSand, { km: q.sandKm }));
-  if (q.streetKm / (route.distanceMeters / 1000) > 0.15) warnings.push(`${fi(m.resWarnStreets, { km: q.streetKm })}${avoidTowns ? m.resNoOtherRoads : ""}`);
-  if (route.surfaces.unknownPercent >= 15) warnings.push(fi(m.resWarnUnknownSurface, { pct: route.surfaces.unknownPercent }));
+  if (assembledFromSegments) notices.push(m.resAssembled);
 
   const submit = () => {
     if (!text.trim() || busy) return;
@@ -375,16 +388,16 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
               <Share2 className="size-3.5" />{shared === "copied" ? m.resCopied : m.resShare}
             </button>
             <button type="button" onClick={() => setDetails(!details)} aria-expanded={details} className="flex h-10 min-w-0 items-center justify-center gap-1 rounded-full border border-stone-200 text-xs font-medium text-stone-700 hover:bg-stone-50">
-              {m.resDetails}{warnings.length > 0 && !details ? <> · {warnings.length} <TriangleAlert className="size-4 text-amber-500" /></> : ""}{details ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+              {m.resDetails}{details ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
             </button>
           </div>
         </div>
 
 
 
-        {details && warnings.length > 0 && (
+        {details && notices.length > 0 && (
           <ul className="space-y-1 rounded-xl bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-900">
-            {warnings.map((w) => <li key={w}>⚠️ {w}</li>)}
+            {notices.map((w) => <li key={w}>{w}</li>)}
           </ul>
         )}
 
@@ -394,8 +407,18 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
               <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-stone-400">{m.resRoadsHeading}</div>
               <Row label={m.resMixRoad} value={`${route.roadMix.roadKm} km · ${route.roadMix.roadPercent} %`} />
               <Row label={m.resMixTrack} value={`${route.roadMix.trackKm} km · ${route.roadMix.trackPercent} %`} />
-              <Row label={m.resMixTrail} value={`${route.roadMix.trailKm} km · ${route.roadMix.trailPercent} %`} />
+              <Row label={m.resMixTrail} value={`${route.roadMix.trailKm} km · ${route.roadMix.trailPercent} %`} icon="🔥" />
             </div>
+            {/* Its own block, not a fourth ROADS row: road/track/trail is a
+                strict partition that sums to 100 %, and unverified access is
+                an orthogonal flag — the same kilometres are already counted
+                in one of the three above, so a fourth row would double-count.
+                No percentage for the same reason. */}
+            {q.unverifiedPathKm > 0 && (
+              <div>
+                <Row label={m.badgeUnverified} value={`${q.unverifiedPathKm} km`} icon="⚠️" />
+              </div>
+            )}
             <div>
               <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-stone-400">{m.resSurfaceHeading}</div>
               <Row label={m.legendAsphalt} value={`${route.surfaces.asphaltPercent} %`} />

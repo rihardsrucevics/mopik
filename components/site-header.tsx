@@ -101,7 +101,7 @@ export function SiteHeader({
             <Bookmark className="size-5 fill-current" strokeWidth={1.75} />
           </span>
         ) : (
-          <SavedRidesLink label={t(locale, "savedRides")} />
+          <SavedRidesLink label={t(locale, "savedRides")} unseenLabel={t(locale, "savedRidesUnseen")} />
         )}
         <LanguagePicker />
       </div>

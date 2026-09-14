@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { Maximize2, Minimize2 } from "lucide-react";
 import { track } from "@/lib/analytics";
 import { useLocale } from "@/lib/i18n/use-locale";
@@ -36,7 +36,12 @@ export function MapPanel({ children, className = "", expandedClassName = "" }: {
     // `data-map-expanded` lets the map's own overlays react to full screen
     // without threading the state through — the legend is worth its space on a
     // full screen and not on a 26dvh strip, where it covers the route.
+    // `--map-btn` is the full-screen button's own footprint (size + its 12 px
+    // inset), published so the map's overlays can keep clear of a control
+    // they do not own. The button stays bottom-left — that is where a thumb
+    // reaches on a phone — so the legend is what moves around it.
     <div data-map-expanded={expanded ? "true" : undefined}
+      style={{ "--map-btn": "3.25rem" } as CSSProperties}
       className={expanded ? `fixed inset-0 z-40 flex flex-col bg-[#faf9f6] ${expandedClassName}` : `relative ${className}`}>
       {/* The map must fill the fixed layer itself. Inside the composer's flex
           column a plain child of `fixed inset-0` collapsed to zero height,

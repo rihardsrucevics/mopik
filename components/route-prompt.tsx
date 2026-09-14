@@ -112,7 +112,7 @@ export function RoutePrompt({ messages, plan, hasRoute, phase, quickReplies, luc
         <div className="flex items-end gap-2 rounded-xl border border-stone-200 p-2 focus-within:border-[#f56300]">
           <textarea id="ride-message" value={text} onChange={(event) => setText(event.target.value)} rows={2} maxLength={6000} disabled={busy}
             onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); submit(); } }}
-            placeholder={hasRoute ? t(locale, "chatPlaceholder") : messages.length ? "Papildini ieceri…" : "Apraksti savu braucienu…"}
+            placeholder={hasRoute ? t(locale, "chatPlaceholder") : messages.length ? t(locale, "chatPlaceholderRefine") : t(locale, "chatPlaceholderDescribe")}
             className="min-w-0 flex-1 resize-none bg-transparent px-2 py-1 text-base outline-none placeholder:text-stone-400 disabled:opacity-60 md:text-sm" />
           <button type="submit" disabled={busy || !text.trim()} aria-label={t(locale, "chatSend")} className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-[#f56300] text-white transition hover:bg-[#d85600] disabled:opacity-35"><ArrowUp className="size-5" /></button>
         </div>

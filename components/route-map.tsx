@@ -1,8 +1,6 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
-import { Heart, Mountain, TriangleAlert, type LucideIcon } from "lucide-react";
 import * as maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { RouteSegmentProperties } from "@/lib/types";
@@ -153,22 +151,6 @@ const UNPAVED = {
   /** Trail, dotted. The darkest of the three — see above. */
   trail: "#bd4b00",
 } as const;
-
-/**
- * The trail badge's heart, filled, in the app's destructive red.
- *
- * Deliberately NOT `UNPAVED.trail`: the heart is a solid shape, and filled in
- * the trail's own orange-red it sat too close to both the orange route line it
- * overlays and the amber triangle beside it on a two-icon pill — three warm
- * oranges and nothing to tell them apart. Red-600 is the same red the app
- * already uses for destructive UI (`--destructive` in `globals.css` is
- * `oklch(0.577 0.245 27.325)`, which is exactly this hex; the delete action and
- * the composer's error text use the neighbouring `red-700`), so the badge reads
- * as a warning rather than as a favourite, and separates cleanly from the amber.
- *
- * Tune here: this is the only place the trail badge's colour is set.
- */
-const TRAIL_BADGE_COLOR = "#dc2626"; // red-600
 
 /**
  * The glow, the casing-level fill and any layer that is not class-filtered
@@ -352,103 +334,58 @@ const BADGE_KINDS: WarningKind[] = ["unverified", "trail"];
 type Warning = { kind: WarningKind; title: string; detail: string };
 
 /**
- * The warning icons, as Lucide SVG rendered once to a string.
+ * The warning icons are emoji — the rider's own choice, back after a spell as
+ * Lucide SVG.
+ *
+ * Two glyphs exist in the whole app and no more: ⚠️ for access nobody has
+ * verified, 🔥 for a trail. Rough track (grade 4–5) gets NO icon anywhere —
+ * it has no badge (`BADGE_KINDS`) and no hover entry, and in the segment card
+ * its row is words only. A grade-4 track is the ride, not a hazard, and giving
+ * it a third glyph made it look like one.
  *
  * Every surface that shows a warning is built by direct DOM or an HTML string
  * — the badges are MapLibre `Marker` elements, the popups take `setHTML`, and
  * the hover label is written from a mousemove handler that must not trigger a
- * React render. So each icon is rendered to a string once, cached, and
- * concatenated like the emoji it replaces (see `warningIcon` for why the
- * render cannot happen at module scope).
+ * React render. Emoji are plain text, so each is just a character in that
+ * string: no rendering to markup, no cache, and none of the server-side
+ * `useContext` trouble a module-scope Lucide render used to cause.
  *
- * Sized at 18 px against the emoji's ~14: the emoji were legible on a desk and
- * not at arm's length on a phone, and 18 is the largest that still leaves the
- * two-icon pill narrower than the route is long at z12.
+ * They carry their own colour, so the colour and fill tables the SVG needed
+ * are gone with it.
+ */
+const WARNING_EMOJI: Partial<Record<WarningKind, string>> = {
+  unverified: "⚠️",
+  trail: "🔥",
+  // `rough` deliberately absent — see above. `warningIcon` renders nothing for
+  // a kind with no entry, which keeps every surface icon-free automatically.
+};
+
+/**
+ * The emoji's footprint, matching the 18 px Lucide glyphs these replaced.
+ *
+ * A colour emoji draws noticeably wider than its font-size, so 15 px of type
+ * in an 18 px box lands on the same visual weight the SVG had (checked on
+ * screen) and keeps the badge pill exactly 24 px tall. The box is fixed so the
+ * hover label's icon column stays aligned whatever glyph is in it.
  */
 const WARNING_ICON_PX = 18;
+const WARNING_EMOJI_FONT_PX = 15;
 
 /**
- * `fill` takes the colour literally, never `currentColor`.
+ * One icon as an HTML string, or "" for a kind that has no icon.
  *
- * Lucide's `color` prop sets the SVG's `stroke` attribute only — it does not
- * set the CSS `color` property — so a `fill="currentColor"` resolves against
- * whatever text colour the badge happens to inherit. In these surfaces that is
- * the pill's black body text, which drew the filled heart black with a red
- * outline. Passing the colour itself to both keeps the glyph one solid colour
- * wherever the markup is dropped.
+ * Emoji are text, so this is only a sized span — but it still goes through one
+ * helper so the badge, the hover label and the card cannot drift apart.
  */
-const iconMarkup = (Icon: LucideIcon, color: string, filled: boolean): string =>
-  renderToStaticMarkup(
-    <Icon
-      size={WARNING_ICON_PX}
-      color={color}
-      strokeWidth={2.25}
-      fill={filled ? color : "none"}
-      aria-hidden="true"
-    />
-  );
-
-/**
- * Amber for access (the app's warning colour — the same family as the
- * `amber-50 / amber-900` warning lists in the result panel); the app's
- * destructive red for the trail's filled heart.
- *
- * The trail glyph was a flame in `UNPAVED.trail` before, matching the colour of
- * the dotted line it annotates. The heart that replaced it is a solid shape
- * rather than an outline, and in that orange-red it competed with both the
- * route line under it and the amber triangle next to it — so it takes the app's
- * red instead. See `TRAIL_BADGE_COLOR`.
- */
-const WARNING_ICON_COLOR: Record<WarningKind, string> = {
-  unverified: "#f59e0b",     // amber-500
-  trail: TRAIL_BADGE_COLOR,  // red-600 — see the constant for why not the trail's orange
-  rough: "#292524",          // stone-800
-};
-
-/**
- * Which glyphs are drawn solid. The heart is: an outlined heart at 18 px reads
- * as an empty "favourite" toggle — a thin ring the eye files as a control to
- * click, not as a warning about the ground. Filled, it is a small solid mark
- * that carries at a glance and holds its weight beside the amber triangle.
- * The triangle and the mountain stay outlines, as Lucide draws them.
- */
-const WARNING_ICON_FILLED: Record<WarningKind, boolean> = {
-  unverified: false,
-  trail: true,
-  rough: false,
-};
-
-const WARNING_ICON_COMPONENT: Record<WarningKind, LucideIcon> = {
-  unverified: TriangleAlert,
-  trail: Heart, // drawn filled — see `WARNING_ICON_FILLED`
-  // Not badged on the map (see `BADGE_KINDS`), but the segment card still
-  // lists it, and there it needs a glyph of its own: reusing the trail's
-  // glyph made two different warnings look like the same one.
-  rough: Mountain,
-};
-
-/**
- * Rendered on first use, not at module scope.
- *
- * A Lucide icon reads a context for its default size and stroke, and
- * `renderToStaticMarkup` at module scope runs that `useContext` while Next is
- * evaluating the module on the SERVER, where there is no React dispatcher —
- * which took the whole page down with "Cannot read properties of null (reading
- * 'useContext')". Rendering lazily keeps the markup a one-off (every surface
- * here is direct DOM or an HTML string, so it must be a string) while moving
- * the render to the browser, on a path only ever reached from an effect.
- */
-const iconCache = new Map<WarningKind, string>();
 const warningIcon = (kind: WarningKind): string => {
-  const cached = iconCache.get(kind);
-  if (cached !== undefined) return cached;
-  const markup = iconMarkup(
-    WARNING_ICON_COMPONENT[kind],
-    WARNING_ICON_COLOR[kind],
-    WARNING_ICON_FILLED[kind]
+  const emoji = WARNING_EMOJI[kind];
+  if (!emoji) return "";
+  return (
+    `<span aria-hidden="true" style="` +
+    `display:inline-flex;align-items:center;justify-content:center;` +
+    `width:${WARNING_ICON_PX}px;height:${WARNING_ICON_PX}px;` +
+    `font-size:${WARNING_EMOJI_FONT_PX}px;line-height:1;flex:none">${emoji}</span>`
   );
-  iconCache.set(kind, markup);
-  return markup;
 };
 
 /** The icons for a list of warnings, side by side, as one HTML string. */
@@ -457,9 +394,9 @@ const iconsHtml = (warnings: Warning[]): string =>
 
 /**
  * A badge on the line: a white pill with one icon, the way a phone map marks
- * a hazard. Built as an HTML element rather than a GL symbol layer because an
- * SVG cannot go in a `text-field` at all (and the emoji this replaced rendered
- * through the style's glyph stack and came out as boxes on most basemaps).
+ * a hazard. Built as an HTML element rather than a GL symbol layer: in a
+ * `text-field` an emoji renders through the style's own glyph stack and comes
+ * out as boxes on most basemaps. In ordinary DOM the system font draws it.
  */
 function badgeElement(icon: string, title: string, count = 1): HTMLElement {
   const el = document.createElement("button");
@@ -473,8 +410,9 @@ function badgeElement(icon: string, title: string, count = 1): HTMLElement {
     "display:flex;align-items:center;justify-content:center;gap:2px;" +
     // A run can carry more than one warning, and then the badge shows every
     // icon side by side: a pill rather than a circle, widened per icon so two
-    // never overflow the dot. Counted by the caller — an icon is a whole SVG
-    // element, so no length of `icon` is a count of glyphs.
+    // never overflow the dot. Counted by the caller — an emoji is more than
+    // one code unit and sits in a wrapper span, so no length of `icon` is a
+    // count of glyphs.
     `width:${count > 1 ? 8 + (WARNING_ICON_PX + 4) * count : 24}px;height:24px;` +
     "border-radius:12px;" +
     "background:rgba(255,255,255,0.92);box-shadow:0 1px 2px rgba(0,0,0,0.2);" +
@@ -482,7 +420,7 @@ function badgeElement(icon: string, title: string, count = 1): HTMLElement {
     // Under the start/finish pins, which are the rider's own answers and must
     // never be covered by an annotation about the road.
     "z-index:1";
-  // `icon` is our own pre-rendered Lucide markup, never anything from a tag.
+  // `icon` is our own markup — a sized span per emoji, never anything from a tag.
   el.innerHTML = icon;
   return el;
 }
@@ -663,7 +601,9 @@ function badgesFor(
       point: mid,
       segmentIds: typeof id === "number" ? [id] : [],
       icon: iconsHtml(warnings),
-      iconCount: warnings.length,
+      // Icons actually drawn, not warnings held: a kind with no emoji (rough)
+      // renders nothing, and counting it would widen the pill around a gap.
+      iconCount: warnings.filter((w) => warningIcon(w.kind)).length,
       title: warnings.map((w) => w.title).join(" · "),
     };
     out.push(badge);
@@ -875,7 +815,11 @@ function segmentInfoHtml(
   // tap. `<details>` rather than a click handler because the popup's HTML is
   // set as a string and has no React or listeners of its own.
   const flags = warningsFor(m, props).map((w) => {
-    const head = `${warningIcon(w.kind)}<span>${esc(w.title)}</span>`;
+    // Rough track has no icon (see `WARNING_EMOJI`) — its row is words only.
+    // The text still starts at the icon column's edge so the rows line up:
+    // an empty 18 px cell, not a missing one.
+    const icon = warningIcon(w.kind);
+    const head = `${icon || `<span style="display:inline-block;width:${WARNING_ICON_PX}px;flex:none"></span>`}<span>${esc(w.title)}</span>`;
     if (!w.detail) return `<div style="display:flex;align-items:center;gap:6px">${head}</div>`;
     return (
       `<details class="mopik-warn" style="margin:0">` +
@@ -1028,8 +972,9 @@ export function RouteMap({ segments, start, destination, via, showTet, onToggleT
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
 
+    const mapContainer = containerRef.current;
     const map = new maplibregl.Map({
-      container: containerRef.current,
+      container: mapContainer,
       style: {
         version: 8,
         sources: {
@@ -1044,9 +989,24 @@ export function RouteMap({ segments, start, destination, via, showTet, onToggleT
       },
       center: [24.6, 56.95], // Latvia
       zoom: 7,
+      // Compact attribution, always. Left to itself MapLibre expands the
+      // credit into a ~256 px strip along the bottom edge (measured), which
+      // is exactly the row the legend and the full-screen button share. As a
+      // collapsed ⓘ it is ~24 px in the corner, the legend can run to within
+      // a gutter of it, and the credit is still one tap away.
+      attributionControl: { compact: true },
     });
 
     map.addControl(new maplibregl.NavigationControl(), "top-right");
+
+    // MapLibre renders the compact attribution as `<details open>` — it only
+    // collapses once the rider touches the map. Open it is a ~200 px strip
+    // along the bottom edge (measured at 375 px: 198 px, against 36 px shut),
+    // which is the row the legend lives in. Shut it on load; the ⓘ still
+    // opens it, and MapLibre's own toggling keeps working.
+    map.once("load", () => {
+      mapContainer.querySelector("details.maplibregl-ctrl-attrib")?.removeAttribute("open");
+    });
 
     map.on("error", (e) => console.error("MapLibre error:", e.error ?? e));
     if (process.env.NODE_ENV === "development") {
@@ -1406,9 +1366,9 @@ export function RouteMap({ segments, start, destination, via, showTet, onToggleT
       if (!warnings.length || !hover) { if (hover) hover.style.display = "none"; return; }
 
       const label = warnings.map((w) => w.title).join(" · ");
-      // Direct DOM, no re-render: see the note on this effect. `warningIcon`
-      // is cached after its first call, so building the label costs no React
-      // work in a mousemove handler.
+      // Direct DOM, no re-render: see the note on this effect. The icons are
+      // emoji in a sized span, so building the label is string concatenation
+      // and costs no React work in a mousemove handler.
       if (hover.dataset.label !== label) {
         // One warning per ROW, not a " · " run-on. A doubly-flagged stretch
         // read as one long line whose two labels ran together; the rider asked
@@ -1544,14 +1504,29 @@ export function RouteMap({ segments, start, destination, via, showTet, onToggleT
           <span className="h-3 w-3 rounded-full bg-white shadow-sm" />
         </span>
       </button>
-      {/* Bottom of the map, in one row.
+      {/* Bottom of the map, clear of the full-screen button in the corner.
           At the top-left it covered the corner the route is usually framed
           into. Down here it sits over the edge of the frame, clear of the TET
           switch and the zoom controls.
+
+          The button stays bottom-left (thumb reach on a phone), so the legend
+          gives way to it two different ways:
+          - Narrow: the legend cannot fit beside a 52 px button and still show
+            five entries at a readable size, so it sits ABOVE the button —
+            `bottom: var(--map-btn)` plus a gutter — full width, items
+            wrapping onto two rows. Wrapping beats a scrollable single row
+            here: every entry stays visible at a glance, which is the whole
+            point of a legend, and a horizontal scroller hides entries behind
+            a gesture nothing on the map suggests.
+          - Wide: it returns to the bottom row but starts to the right of the
+            button's footprint, and `max-w-max` keeps it well short of the
+            attribution ⓘ in the opposite corner.
+          Text never goes below 12 px in either case.
+
           On a phone it appears only in full screen: on the inline 26-42dvh
           strip the legend is a third of the map and covers the route it is
           meant to explain. Desktop always shows it — there is room. */}
-      <div className="absolute bottom-16 left-3 right-3 hidden flex-col gap-1.5 rounded-xl border border-[#ececf0] bg-white/95 px-2.5 py-2 text-[10px] leading-none shadow-sm backdrop-blur [[data-map-expanded]_&]:flex md:bottom-3 md:left-16 md:right-auto md:flex md:max-w-max md:px-3 md:py-2.5 md:text-[11px]">
+      <div className="absolute bottom-[calc(var(--map-btn,3.25rem)+0.5rem)] left-3 right-3 hidden flex-col gap-1.5 rounded-xl border border-[#ececf0] bg-white/95 px-2.5 py-2 text-xs leading-none shadow-sm backdrop-blur [[data-map-expanded]_&]:flex md:bottom-3 md:left-[calc(var(--map-btn,3.25rem)+0.75rem)] md:right-12 md:flex md:max-w-max md:px-3 md:py-2.5">
         {/* No heading: four labelled samples in a row need no title, and at
             the bottom of the map the line it would cost is the difference
             between one row and two. Read left to right as the ride gets
