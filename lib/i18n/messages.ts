@@ -275,9 +275,13 @@ export type MessageKey =
   | "resApprox"
   | "resDetourShape"
   | "resDetourCost"
-  | "resDetourFarNote"
   | "resDetourOutAndBack"
   | "resDetourLoop"
+  /* A long detour is shown, not withheld: the rider decides. The label sits
+     after the delta on the row; the "why" sentence is inside Vairāk. */
+  | "resDetourLong"
+  | "resDetourLongWhy"
+  | "resDetourUnreachableWhy"
   | "kindFerry"
   | "kindFord"
   | "kindTower"
@@ -694,9 +698,14 @@ const lv: Messages = {
    *  judge it: a spur ridden twice is a different ride from a loop. */
   resDetourShape: "Piebraukšana",
   resDetourCost: "Papildus",
-  resDetourFarNote: "Vieta ir tuvu, bet aizbraukt līdz tai pa ceļiem ir tālu — visticamāk, pa citu upes krastu. Mēģini “Optimizēt maršrutu”.",
   resDetourOutAndBack: "turp un atpakaļ",
   resDetourLoop: "aplis",
+  /* The rider's rule: Mopik does not decide for him. A detour that is long
+     against the crow-flight distance keeps its checkbox and its plain numbers,
+     and simply says what it is — the label on the row, the reason in Vairāk. */
+  resDetourLong: "garš apbrauciens",
+  resDetourLongWhy: "Taisnā līnijā tuvu, bet pa ceļiem tālu — starpā ir upe vai nav savienojuma.",
+  resDetourUnreachableWhy: "Moto profils līdz šai vietai ceļu neatrod — iespējams, pieeja ir tikai kājām.",
   kindFerry: "pārceltuve",
   kindFord: "brasls",
   kindTower: "skatu tornis",
@@ -1071,9 +1080,11 @@ const lt: Messages = {
   resApprox: "≈ ",
   resDetourShape: "Privažiavimas",
   resDetourCost: "Papildomai",
-  resDetourFarNote: "Vieta netoli, bet privažiuoti keliais toli — greičiausiai kitame upės krante. Pabandyk „Optimizuoti maršrutą“.",
   resDetourOutAndBack: "pirmyn ir atgal",
   resDetourLoop: "ratu",
+  resDetourLong: "ilgas aplinkkelis",
+  resDetourLongWhy: "Tiesia linija arti, bet keliais toli — tarp jų upė arba nėra jungties.",
+  resDetourUnreachableWhy: "Moto profilis kelio iki šios vietos neranda — gali būti, kad prieiti galima tik pėsčiomis.",
   kindFerry: "keltas",
   kindFord: "brasta",
   kindTower: "apžvalgos bokštas",
@@ -1448,9 +1459,11 @@ const et: Messages = {
   resApprox: "≈ ",
   resDetourShape: "Juurdepääs",
   resDetourCost: "Lisaks",
-  resDetourFarNote: "Koht on lähedal, aga teed mööda on sinna pikk sõit — tõenäoliselt teisel kaldal. Proovi „Optimeeri marsruut“.",
   resDetourOutAndBack: "edasi-tagasi",
   resDetourLoop: "ringiga",
+  resDetourLong: "pikk ringsõit",
+  resDetourLongWhy: "Linnulennult lähedal, aga mööda teid kaugel — vahel on jõgi või puudub ühendus.",
+  resDetourUnreachableWhy: "Mootorratta profiil siia teed ei leia — ligipääs võib olla ainult jalgsi.",
   kindFerry: "praam",
   kindFord: "koolmekoht",
   kindTower: "vaatetorn",
@@ -1823,9 +1836,11 @@ const en: Messages = {
   resApprox: "≈ ",
   resDetourShape: "Detour shape",
   resDetourCost: "Adds",
-  resDetourFarNote: "The place is close, but reaching it by road is a long ride — most likely the far bank. Try “Optimise the route”.",
   resDetourOutAndBack: "out and back",
   resDetourLoop: "a loop",
+  resDetourLong: "long detour",
+  resDetourLongWhy: "Close as the crow flies, far by road — there is a river in between, or no connection.",
+  resDetourUnreachableWhy: "The moto profile finds no road to this place — access may be on foot only.",
   kindFerry: "ferry",
   kindFord: "ford",
   kindTower: "lookout tower",

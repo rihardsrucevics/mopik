@@ -48,6 +48,21 @@ type Props = {
     lat: number; lon: number; label: string; kind?: string; token: number;
     /** Whether this place is currently ticked, so the card can say which. */
     picked?: boolean;
+    /**
+     * What riding to this place costs, exactly as the list's row states it.
+     *
+     * The card and the row are two views of one offer, so they must not
+     * disagree — a rider who reads "+17,0 km · garš apbrauciens" in the list,
+     * presses Kartē and finds a bare Pievienot has been told less on the map
+     * than in the list, and the number is the whole basis of the decision.
+     * `delta` is the formatted "+17,0 km · +34 min"; `note` is the muted word
+     * after it ("garš apbrauciens", or "nav sasniedzams"); `why` is the
+     * sentence Vairāk carries, shown here too because the map card has no
+     * Vairāk of its own. `canPick` is false where there is nothing to splice —
+     * the unreachable row — and the card then offers no button, for the same
+     * reason the row offers no checkbox.
+     */
+    detour?: { delta?: string; note?: string; why?: string; canPick: boolean } | null;
   } | null;
   onFocusCleared?: () => void;
   /**
@@ -1047,7 +1062,15 @@ function stopInfoHtml(m: Messages, stop: { label: string; kind?: string; detail?
  * suggestion the rider is looking at has not joined the ride, and the row's
  * own Pievienot button is what would change that.
  */
-function focusInfoHtml(m: Messages, place: { label: string; kind?: string; picked?: boolean }, canAdd: boolean): string {
+function focusInfoHtml(
+  m: Messages,
+  place: {
+    label: string; kind?: string; picked?: boolean;
+    detour?: { delta?: string; note?: string; why?: string; canPick: boolean } | null;
+  },
+  canAdd: boolean,
+): string {
+  const detour = place.detour ?? null;
   return (
     `<div style="font-size:12px;line-height:1.5;min-width:150px">` +
     `<strong style="display:block;padding-right:24px;margin-bottom:4px">` +
@@ -1057,12 +1080,30 @@ function focusInfoHtml(m: Messages, place: { label: string; kind?: string; picke
         `<span style="color:#6b7280">${esc(m.resPoiKind)}</span>` +
         `<span style="text-align:right">${esc(place.kind)}</span></div>`
       : "") +
+    // The same delta the row shows, in the same plain colour: the map card is
+    // a second view of one offer, not a shorter one.
+    (detour?.delta
+      ? `<div style="display:flex;gap:8px;justify-content:space-between">` +
+        `<span style="color:#6b7280">${esc(m.resDetourCost)}</span>` +
+        `<span style="text-align:right;font-variant-numeric:tabular-nums">` +
+        `${esc(detour.delta)}${detour.note ? ` <span style="color:#6b7280">${esc(detour.note)}</span>` : ""}` +
+        `</span></div>`
+      : detour?.note
+        ? `<div style="color:#6b7280;margin-top:2px">${esc(detour.note)}</div>`
+        : "") +
+    // The row's Vairāk sentence. The card has no expansion of its own, so the
+    // words that make "205 m" and "+17,0 km" agree have to be on it.
+    (detour?.why ? `<div style="color:#6b7280;margin-top:4px">${esc(detour.why)}</div>` : "") +
     // The rider's own question — "kā man šos ērti pievienot maršrutam?" — is
     // answered here rather than only back in the list: having flown to a place
     // and decided, the next tap should be the one that does it. `data-add` is
     // how the effect finds this button once MapLibre has parsed the markup;
     // the popup's DOM is not ours to hold a React ref inside.
-    (canAdd
+    // …unless there is nothing to splice. An unreachable place has no routed
+    // detour, so the button would answer a press with nothing — the same
+    // reason its row carries no checkbox. A *long* detour is offered here
+    // exactly as it is in the list.
+    (canAdd && detour?.canPick !== false
       ? `<button type="button" data-add="1" ` +
         `style="margin-top:8px;width:100%;display:flex;align-items:center;` +
         `justify-content:center;gap:4px;height:30px;border-radius:15px;` +

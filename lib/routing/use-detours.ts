@@ -4,8 +4,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RidePlan } from "@/lib/chat/ride-plan";
 import type { RouteSegmentProperties } from "@/lib/types";
 import { track } from "@/lib/analytics";
+import { fi } from "@/lib/i18n/format";
+import type { messages } from "@/lib/i18n/messages";
 import {
   MAX_DETOUR_POIS,
+  isSuspiciousDetour,
   spliceDetours,
   splicedSurfaces,
   type DetourResult,
@@ -180,6 +183,44 @@ export function useDetourAnalytics(spliced: { applied: unknown[]; addedMeters: n
       delta_km: Math.round((spliced.addedMeters / 1000) * 10) / 10,
     });
   }, [spliced]);
+}
+
+/**
+ * What the map's focus card says about a place's detour — the same delta, the
+ * same label and the same offer as the list's row.
+ *
+ * One function rather than the formatting written out on each page, for the
+ * reason the card and the hook are each one thing: the rider asked for the map
+ * card and the row to mean the same, and two copies of "+17,0 km · garš
+ * apbrauciens" would disagree the first time either was touched. `canPick` is
+ * the row's own rule — an unreachable place has no routed line to splice, so
+ * neither the checkbox nor the card's button is offered; a long detour is a
+ * real ride and is offered exactly like any other.
+ *
+ * `null` while the prefetch has not answered: the card then shows what it
+ * always showed, rather than a figure that is about to change.
+ */
+export function describeDetourForFocus(params: {
+  detour: DetourResult | null | undefined;
+  offRouteMeters: number;
+  m: Pick<ReturnType<typeof messages>, "resDetourDelta" | "resDetourLong" | "resDetourLongWhy" | "resDetourUnreachable" | "resDetourUnreachableWhy">;
+}): { delta?: string; note?: string; why?: string; canPick: boolean } | null {
+  const { detour, offRouteMeters, m } = params;
+  if (!detour) return null;
+  if (!detour.ok) {
+    return { note: m.resDetourUnreachable, why: m.resDetourUnreachableWhy, canPick: false };
+  }
+  const delta = fi(m.resDetourDelta, {
+    km: (Math.round(detour.deltaMeters / 100) / 10).toFixed(1),
+    min: Math.max(0, Math.round(detour.deltaSeconds / 60)),
+  });
+  const long = isSuspiciousDetour({ offRouteMeters, deltaMeters: detour.deltaMeters });
+  return {
+    delta,
+    note: long ? m.resDetourLong : undefined,
+    why: long ? m.resDetourLongWhy : undefined,
+    canPick: true,
+  };
 }
 
 /** The delta a row shows, or null while it is still being routed. */

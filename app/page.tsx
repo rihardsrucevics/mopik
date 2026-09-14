@@ -4,7 +4,7 @@ import { useCallback, useRef, useState, useEffect } from "react";
 import { RouteMap } from "@/components/route-map";
 import { RoutePrompt } from "@/components/route-prompt";
 import { ResultPanel } from "@/components/result-panel";
-import type { SelectedPoi } from "@/components/suggestions-card";
+import type { DetourFocusNote, SelectedPoi } from "@/components/suggestions-card";
 import { InstallPrompt } from "@/components/install-prompt";
 import { MapPanel } from "@/components/map-panel";
 import { track } from "@/lib/analytics";
@@ -133,6 +133,8 @@ export default function Home() {
     poi?: SelectedPoi;
     /** Whether that place is currently ticked, so the card can say so. */
     picked?: boolean;
+    /** What the list's row says this place costs, so the card says the same. */
+    detour?: DetourFocusNote | null;
   } | null>(null);
   const focusTokenRef = useRef(0);
   const clearFocusPoi = useCallback(() => setFocusPoi(null), []);
@@ -548,7 +550,13 @@ export default function Home() {
    * the render this press causes, and scrolling before that render leaves the
    * map moving under a rider who is already looking at it.
    */
-  function showPoi(poi: { id: string; name: string; lat: number; lon: number; category: string }) {
+  function showPoi(
+    poi: { id: string; name: string; lat: number; lon: number; category: string },
+    // What the row said about the detour, so the card on the map says exactly
+    // the same — the same "+17,0 km", the same "garš apbrauciens", and the
+    // same offer to tick it.
+    detour?: DetourFocusNote | null,
+  ) {
     focusTokenRef.current += 1;
     const entry = POI_KIND[poi.category as keyof typeof POI_KIND];
     track("suggestion_shown", { kind: poi.category });
@@ -560,6 +568,7 @@ export default function Home() {
       token: focusTokenRef.current,
       poi: { id: poi.id, name: poi.name, lat: poi.lat, lon: poi.lon, category: poi.category },
       picked: selectedPois.some((p) => p.id === poi.id),
+      detour: detour ?? null,
     });
     if (desktop) return;
     requestAnimationFrame(() => {

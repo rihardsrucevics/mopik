@@ -6,7 +6,14 @@ import { useLocale } from "@/lib/i18n/use-locale";
 import { messages } from "@/lib/i18n/messages";
 import { fi } from "@/lib/i18n/format";
 import { POI_KIND, osmUrl, type RoutePoi, type RoutePois } from "@/lib/poi/kinds";
-import { isSuspiciousDetour, type DetourResult } from "@/lib/routing/detour";
+import { type DetourResult } from "@/lib/routing/detour";
+import { describeDetourForFocus } from "@/lib/routing/use-detours";
+
+/**
+ * What a row says about its detour, in the shape the map's focus card takes.
+ * Re-exported from here because the row is what produces it.
+ */
+export type DetourFocusNote = NonNullable<ReturnType<typeof describeDetourForFocus>>;
 
 /** The plan's own cap (`RidePlanSchema` maxes `viaPlaces` at six). */
 export const MAX_VIAS = 6;
@@ -62,8 +69,16 @@ export function SuggestionsCard({
   failed?: boolean;
   expanded: boolean;
   onToggle: () => void;
-  /** Fly the map to a place and ring it. Absent where there is no map to fly. */
-  onShow?: (poi: RoutePoi) => void;
+  /**
+   * Fly the map to a place and ring it. Absent where there is no map to fly.
+   *
+   * The second argument is what this row says about the detour — the delta,
+   * the "garš apbrauciens" label, the sentence behind it, and whether the
+   * place can be ticked at all. The map's focus card is a second view of this
+   * row and must not say less than it does, and the row is the one place that
+   * knows; passing it here keeps the two from drifting apart.
+   */
+  onShow?: (poi: RoutePoi, detour?: DetourFocusNote | null) => void;
   /** The ticked places, by dataset id. Owned by the page, not by this card. */
   selected?: SelectedPoi[];
   /** Tick or untick one row. Absent where the ride cannot be re-planned. */
@@ -80,10 +95,11 @@ export function SuggestionsCard({
    * The routed detours, by POI id, as the prefetch answers.
    *
    * A row with an entry shows what including the place costs — "+4,2 km ·
-   * +9 min" — and ticking it splices that line into the map at once. A row with
-   * an `ok: false` entry says the place cannot be reached and loses its
-   * checkbox: offering a tick that cannot do anything is worse than not
-   * offering one (BACKLOG item 20, seen from the list's side).
+   * +9 min" — and ticking it splices that line into the map at once, however
+   * long the detour is. A row with an `ok: false` entry says the place cannot
+   * be reached and loses only its checkbox: there is no routed line to splice,
+   * so a tick could not do anything (BACKLOG item 20, seen from the list's
+   * side). Vairāk says which of the two the row is.
    */
   detours?: Record<string, DetourResult>;
   /** The prefetch is still running: rows with no answer yet show a dot. */
@@ -246,7 +262,7 @@ function PoiRow({ poi, m, onRoute = false, onShow, selected = false, onToggleSel
   poi: RoutePoi;
   m: ReturnType<typeof messages>;
   onRoute?: boolean;
-  onShow?: (poi: RoutePoi) => void;
+  onShow?: (poi: RoutePoi, detour?: DetourFocusNote | null) => void;
   selected?: boolean;
   onToggleSelect?: (poi: SelectedPoi) => void;
   /** This place is already a via of the current ride. */
@@ -269,15 +285,19 @@ function PoiRow({ poi, m, onRoute = false, onShow, selected = false, onToggleSel
   const unreachable = detour !== null && !detour.ok;
   /**
    * Reachable, but by a ride far longer than "205 m away" suggests — across a
-   * river, or on a road this profile declines. The numbers are shown as they
-   * are, muted, and the row offers no tick: a checkbox beside "205 m · +10 km"
-   * reads as a contradiction, which is exactly how the rider reported it.
-   * "Optimizēt maršrutu" remains the way in, and may find a road the spur
-   * search did not.
+   * river, or on a road this profile declines.
+   *
+   * This used to mute the numbers and take the checkbox away. The rider said
+   * no, in the same words he has used twice before: Mopik does not decide for
+   * him. A 17 km ride round to Gūtmaņa ala is a real ride and his to accept or
+   * refuse — so the row keeps its tick and its plain numbers, and the flag
+   * only adds the words that make the two figures make sense: "garš
+   * apbrauciens" after the delta, one sentence in Vairāk.
    */
-  const suspicious =
-    detour?.ok === true &&
-    isSuspiciousDetour({ offRouteMeters: poi.distanceMeters, deltaMeters: detour.deltaMeters });
+  // Derived once, through the same function the map's focus card is given, so
+  // "garš apbrauciens" can never appear in one place and not the other.
+  const focusNote = describeDetourForFocus({ detour, offRouteMeters: poi.distanceMeters, m });
+  const long = Boolean(focusNote?.note && focusNote.canPick);
 
   return (
     <div className={`border-b border-stone-100 py-1 last:border-b-0 ${selected ? "-mx-1 rounded-lg bg-[#fff3ea] px-1" : ""}`}>
@@ -296,18 +316,26 @@ function PoiRow({ poi, m, onRoute = false, onShow, selected = false, onToggleSel
           <span aria-hidden="true" className="size-1.5 shrink-0 animate-pulse rounded-full bg-stone-300" />
         )}
         {!onRoute && detour?.ok && (
-          <span
-            className={`shrink-0 tabular-nums text-[10px] ${suspicious ? "text-stone-300" : "text-stone-400"}`}
-            title={suspicious ? m.resDetourFarNote : undefined}
-          >
-            {fi(m.resDetourDelta, {
-              km: (Math.round(detour.deltaMeters / 100) / 10).toFixed(1),
-              min: Math.max(0, Math.round(detour.deltaSeconds / 60)),
-            })}
+          <span className="flex shrink-0 items-center gap-1">
+            <span className="tabular-nums text-[10px] text-stone-400">
+              {fi(m.resDetourDelta, {
+                km: (Math.round(detour.deltaMeters / 100) / 10).toFixed(1),
+                min: Math.max(0, Math.round(detour.deltaSeconds / 60)),
+              })}
+            </span>
+            {/* The delta stays plain — it is the honest number and must not be
+                dimmed into a warning. What is added is a word for why it
+                disagrees with the "205 m" beside it; Vairāk carries the
+                sentence. */}
+            {long && (
+              <span className="text-[10px] text-stone-400" title={m.resDetourLongWhy}>
+                {m.resDetourLong}
+              </span>
+            )}
           </span>
         )}
         {!onRoute && unreachable && (
-          <span className="shrink-0 text-[10px] text-stone-400">{m.resDetourUnreachable}</span>
+          <span className="shrink-0 text-[10px] text-stone-400" title={m.resDetourUnreachableWhy}>{m.resDetourUnreachable}</span>
         )}
         <span className="shrink-0 tabular-nums text-[11px] text-stone-500">{figure}</span>
         <div className="flex shrink-0 items-center gap-0.5">
@@ -317,7 +345,7 @@ function PoiRow({ poi, m, onRoute = false, onShow, selected = false, onToggleSel
           {onShow && (
             <button
               type="button"
-              onClick={() => onShow(poi)}
+              onClick={() => onShow(poi, focusNote)}
               aria-label={fi(m.resPoiShowAria, { place: poi.name })}
               title={fi(m.resPoiShowAria, { place: poi.name })}
               className="flex size-7 items-center justify-center rounded-full text-stone-500 transition hover:bg-stone-100 hover:text-stone-900"
@@ -338,9 +366,12 @@ function PoiRow({ poi, m, onRoute = false, onShow, selected = false, onToggleSel
           {/* A place the ride already visits offers no tick: ticking it again
               would ask for a via it already has. A place the router cannot
               reach offers none either — BACKLOG item 20's hillfort, which used
-              to answer a press with a 422 half a minute later. Kartē and
-              Vairāk stay in both cases: the place is still worth looking at. */}
-          {onToggleSelect && !included && !unreachable && !suspicious && (
+              to answer a press with a 422 half a minute later: there is no
+              detour to splice, so the control would do nothing. Kartē and
+              Vairāk stay in both cases, and Vairāk now says which of the two
+              it is. A *long* detour is not in this list: it has a real routed
+              line and real numbers, so the rider gets the tick. */}
+          {onToggleSelect && !included && !unreachable && (
             <button
               type="button"
               role="checkbox"
@@ -400,10 +431,13 @@ function PoiRow({ poi, m, onRoute = false, onShow, selected = false, onToggleSel
               />
             </>
           )}
-          {/* Why this row has no tick despite being close by. Said in the
-              detail rather than on the row, where it would be a paragraph in a
-              list — and the row already shows the real kilometres. */}
-          {suspicious && <p className="pt-0.5 text-[11px] leading-snug text-[#bd4b00]">{m.resDetourFarNote}</p>}
+          {/* Why the two figures on the row disagree, and why the row has no
+              tick where it has none. Said in the detail rather than on the row,
+              where either would be a paragraph in a list. Neither is a warning
+              colour: both are facts about the roads, not about a mistake, and
+              the rider decides what to do with them. */}
+          {long && <p className="pt-0.5 text-[11px] leading-snug text-stone-500">{m.resDetourLongWhy}</p>}
+          {unreachable && <p className="pt-0.5 text-[11px] leading-snug text-stone-500">{m.resDetourUnreachableWhy}</p>}
           <div className="flex items-center justify-between gap-3 pt-0.5">
             <span className="text-stone-500">{m.resPoiNoDetail}</span>
           </div>

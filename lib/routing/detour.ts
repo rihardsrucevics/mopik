@@ -72,13 +72,20 @@ export const LOOP_MUST_BEAT_OUT_AND_BACK_BY = 0.15;
  * bridge. Taurētāju kalns a car reaches in 500 m, so our own forest profile is
  * declining a road it could use.
  *
- * Neither case should be presented as an ordinary "+10 km" tick next to a
- * "205 m" figure: the two numbers read as a contradiction and the rider
- * rightly reported it as a bug. So a detour this far past the straight line is
- * shown with its real numbers, muted, and **without a checkbox** — the rider
- * is told the ride is long and can use "Optimizēt maršrutu", which plans the
- * whole ride through the place and may well find the road our spur search did
- * not.
+ * A "+10 km" next to a "205 m" reads as a contradiction, and the rider
+ * reported it as one. The first answer was to withhold the checkbox; he
+ * rejected that, for the third time in as many days and in the same words:
+ * **Mopik does not decide for the rider, it shows honest numbers and lets him
+ * choose.** Taking the tick away decided for him — a detour he might well want
+ * (the ride past Gūtmaņa ala *is* a ride, and 17 km of it is his to judge)
+ * became something he could only get by spending a whole generation.
+ *
+ * So this flag is now a **label, not a gate**. The row keeps its checkbox and
+ * its plain, unmuted numbers, and adds a quiet "garš apbrauciens" after the
+ * delta with one sentence in Vairāk saying why the two figures disagree.
+ * Ticking one works exactly like any other detour. "Optimizēt maršrutu"
+ * remains the way to have the whole ride planned through the place, and may
+ * still find a road the spur search did not.
  *
  * `4 x straight-line + 3 km`: the constant absorbs short spurs where a bend in
  * the road easily doubles the crow-flight distance, and the multiplier catches
@@ -88,8 +95,9 @@ export const SUSPICIOUS_DETOUR_FACTOR = 4;
 export const SUSPICIOUS_DETOUR_SLACK_M = 3_000;
 
 /**
- * Whether a detour is so far past the straight line that it should be shown
- * rather than offered. See `SUSPICIOUS_DETOUR_FACTOR`.
+ * Whether a detour is so far past the straight line that it deserves a word of
+ * explanation beside its numbers. A display flag only — it never removes the
+ * rider's choice. See `SUSPICIOUS_DETOUR_FACTOR`.
  */
 export function isSuspiciousDetour(params: {
   /** how far the sight is from the route, in metres */

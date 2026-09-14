@@ -9,7 +9,7 @@ import { ArrowUp, Download } from "lucide-react";
 import { RouteActionRow } from "@/components/action-row";
 import { RouteMap } from "@/components/route-map";
 import { POI_KIND, type RoutePoi, type RoutePois } from "@/lib/poi/kinds";
-import { SuggestionsCard, type SelectedPoi } from "@/components/suggestions-card";
+import { SuggestionsCard, type DetourFocusNote, type SelectedPoi } from "@/components/suggestions-card";
 import { MapPanel } from "@/components/map-panel";
 import { SiteHeader } from "@/components/site-header";
 import { track } from "@/lib/analytics";
@@ -80,6 +80,8 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
   const [focusPoi, setFocusPoi] = useState<{
     lat: number; lon: number; label: string; kind?: string; token: number;
     poi?: SelectedPoi; picked?: boolean;
+    /** What the list's row says this place costs, so the card says the same. */
+    detour?: DetourFocusNote | null;
   } | null>(null);
   const focusTokenRef = useRef(0);
   /**
@@ -95,7 +97,9 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
       current.some((p) => p.id === poi.id) ? current.filter((p) => p.id !== poi.id) : [...current, poi],
     );
   };
-  const showPoi = (poi: RoutePoi) => {
+  // The second argument is the row's own detour note, carried onto the map so
+  // the card there states the same delta and the same label the list does.
+  const showPoi = (poi: RoutePoi, detour?: DetourFocusNote | null) => {
     focusTokenRef.current += 1;
     const entry = POI_KIND[poi.category];
     track("suggestion_shown", { kind: poi.category });
@@ -105,6 +109,7 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
       token: focusTokenRef.current,
       poi: { id: poi.id, name: poi.name, lat: poi.lat, lon: poi.lon, category: poi.category },
       picked: selectedPois.some((p) => p.id === poi.id),
+      detour: detour ?? null,
     });
     // The map is the page's other column on a desktop and the block above the
     // card on a phone, where it can easily be scrolled past by the time the

@@ -15,7 +15,7 @@ import { isSaved, removeRide, rideId, saveRide } from "@/lib/share/saved-rides";
 import { gpxFilename } from "@/lib/gpx/filename";
 import { RouteActionRow } from "@/components/action-row";
 import { type RoutePoi, type RoutePois } from "@/lib/poi/kinds";
-import { SuggestionsCard, type SelectedPoi } from "@/components/suggestions-card";
+import { SuggestionsCard, type DetourFocusNote, type SelectedPoi } from "@/components/suggestions-card";
 import { useDetourAnalytics, useDetourPrefetch, useSplicedRoute } from "@/lib/routing/use-detours";
 import type { SplicedRoute } from "@/lib/routing/detour";
 
@@ -138,7 +138,9 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
    * pressed. Absent when there is no map to fly (the desktop column is always
    * there, so in practice this is always passed).
    */
-  onShowPoi?: (poi: RoutePoi) => void;
+  /** Fly the map to a suggestion. The second argument is what its row says
+   *  about the detour, so the map's card can state the same figures. */
+  onShowPoi?: (poi: RoutePoi, detour?: DetourFocusNote | null) => void;
   /**
    * The places this ride passes, once they have been looked up.
    *
