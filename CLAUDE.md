@@ -2,6 +2,28 @@
 
 # Mopik — adventure motorcycle route generator
 
+## Check the account before you deploy or push — every time
+
+This machine is signed in to **two GitHub accounts and, until 2026-09-14, two
+Vercel accounts**, and the wrong one looks exactly like the right one until a
+deploy silently lands somewhere the rider cannot see. It cost most of an
+afternoon: work was deployed to `tronpower/mopik` while the rider was watching
+his own project, and twice I concluded a change "had not shipped" when it had
+shipped to the wrong place.
+
+**Before any push or deploy:**
+
+```
+gh auth status | grep -A1 "Active account"   # must be rihardsrucevics
+vercel whoami                                 # must be the rider's own account
+cat .vercel/project.json                      # must be rihards-projects-3063811e
+```
+
+If `gh` is on `tronems`, `git push` fails with 403 — that one is loud.
+**Vercel is the quiet one:** the wrong account deploys happily, and the only
+symptom is that www.mopik.eu does not change. When a deploy "did not work",
+check the account before you check the code.
+
 ## Vercel: the project moved accounts, 2026-09-14
 
 Mopik now deploys from **`rihards-projects-3063811e/mopik`** (the rider's own
