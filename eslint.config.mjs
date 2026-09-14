@@ -41,7 +41,7 @@ const eslintConfig = defineConfig([
           // Proper nouns and marks: the wordmark's orange full stop, the
           // Trans Euro Trail layer, the map data credit, the wave and the tip.
           "Mopik", ".", "mopik.eu", "TET", "GPX", "OSM", "OpenStreetMap",
-          "✌️", "⚠️",
+          "✌️", "⚠️", "🔥",
         ],
         // No `elementOverrides` here, however tempting for `<Script>`: setting
         // it at all enables a code path in eslint-plugin-react 7.37.5 that

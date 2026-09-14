@@ -21,12 +21,14 @@ const variantLabel = (m: ReturnType<typeof messages>, variant: string): string =
 
 /**
  * One line of the breakdown. `icon` is the map's own emoji for the same thing
- * — 🔥 for the dotted line, ⚠️ for unverified access — so the mark a rider read
- * on the map appears beside the number too. aria-hidden: the label says it in
- * words. The explicit font-size keeps a colour emoji inside the 12 px row.
+ * — 🔥 for a trail, ⚠️ for unverified access — so the mark a rider read on the
+ * map appears beside the number too. It follows the label, as in the result
+ * panel: the labels end in a parenthetical and a leading mark pushed the words
+ * off the column edge. aria-hidden: the label says it in words. The explicit
+ * font-size keeps a colour emoji inside the 12 px row.
  */
 function Row({ label, value, icon }: { label: string; value: string; icon?: string }) {
-  return <div className="flex justify-between gap-3 py-0.5 text-xs"><span className="flex min-w-0 items-center gap-1 text-stone-500">{icon && <span aria-hidden="true" className="shrink-0 text-[12px] leading-none">{icon}</span>}{label}</span><span className="tabular-nums text-stone-900">{value}</span></div>;
+  return <div className="flex justify-between gap-3 py-0.5 text-xs"><span className="flex min-w-0 items-center gap-1 text-stone-500">{label}{icon && <span aria-hidden="true" className="shrink-0 text-[12px] leading-none">{icon}</span>}</span><span className="tabular-nums text-stone-900">{value}</span></div>;
 }
 
 function duration(minutes: number): string {
@@ -54,6 +56,20 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
     () => false,
   );
   const d = share.details;
+  // The share code carries kilometres, not percentages, so the shares are
+  // derived here on the denominator the result panel uses: road + track +
+  // trail is the whole ride. RISKS uses the same one, which is what makes its
+  // number comparable to the ROADS rows above it.
+  const pct = (km: number) =>
+    Math.round((km / (d ? d.roadKm + d.trackKm + d.trailKm || 1 : 1)) * 100);
+  // The mirror of the result panel's `surfaceKm`: the share code carries the
+  // four surface percentages and no per-surface kilometres, so the km are
+  // derived on the ride's own length. The denominator here is road + track +
+  // trail rather than `share.km`, because `share.km` is rounded to a whole
+  // kilometre in the code while the three class figures keep a decimal — using
+  // the finer one keeps these rows agreeing with the ROADS rows above them.
+  const surfaceKm = (percent: number) =>
+    Math.round((d ? d.roadKm + d.trackKm + d.trailKm : 0) * (percent / 100) * 10) / 10;
   // No warning list here either: the result panel's was removed, and this page
   // must show the same ride the rider shared. The ROADS / SURFACE numbers
   // below and the map's own badges carry it.
@@ -132,19 +148,22 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
             <div className="mt-3 space-y-3 rounded-xl border border-stone-200 p-3">
               <div>
                 <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-stone-400">{m.resRoadsHeading}</div>
-                <Row label={m.mixRoad} value={`${d.roadKm} km`} /><Row label={m.mixTrack} value={`${d.trackKm} km`} /><Row label={m.legendTrail} value={`${d.trailKm} km`} icon="🔥" />
+                <Row label={m.resMixRoad} value={`${d.roadKm} km · ${pct(d.roadKm)} %`} /><Row label={m.resMixTrack} value={`${d.trackKm} km · ${pct(d.trackKm)} %`} /><Row label={m.resMixTrail} value={`${d.trailKm} km · ${pct(d.trailKm)} %`} icon="🔥" />
               </div>
-              {/* Its own block, as in the result panel: road/track/trail is a
-                  strict partition, and these kilometres are already inside one
-                  of those three — a fourth row would count them twice. */}
+              {/* Its own section, as in the result panel: road/track/trail is a
+                  strict partition and these kilometres are already inside one
+                  of those three, so as a fourth ROADS row they double-counted.
+                  Under a heading of their own they are plainly a different
+                  measurement, so the share of the ride is shown too. */}
               {d.unverifiedPathKm > 0 && (
                 <div>
-                  <Row label={m.badgeUnverified} value={`${d.unverifiedPathKm} km`} icon="⚠️" />
+                  <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-stone-400">{m.resRisksHeading}</div>
+                  <Row label={m.badgeUnverified} value={`${d.unverifiedPathKm} km · ${pct(d.unverifiedPathKm)} %`} icon="⚠️" />
                 </div>
               )}
               <div>
                 <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-stone-400">{m.resSurfaceHeading}</div>
-                <Row label={m.legendAsphalt} value={`${d.asphaltPercent} %`} /><Row label={m.legendGravel} value={`${d.gravelPercent} %`} /><Row label={m.resDirt} value={`${d.dirtPercent} %`} /><Row label={m.resUnknown} value={`${d.unknownPercent} %`} />
+                <Row label={m.legendAsphalt} value={`${surfaceKm(d.asphaltPercent)} km · ${d.asphaltPercent} %`} /><Row label={m.legendGravel} value={`${surfaceKm(d.gravelPercent)} km · ${d.gravelPercent} %`} /><Row label={m.resDirt} value={`${surfaceKm(d.dirtPercent)} km · ${d.dirtPercent} %`} /><Row label={m.resUnknown} value={`${surfaceKm(d.unknownPercent)} km · ${d.unknownPercent} %`} />
               </div>
               {(d.forestKm > 0 || d.riversideKm > 0 || d.elevationGainM > 0) && (
                 <div>

@@ -136,6 +136,7 @@ export type MessageKey =
   | "resShowAnother"
   | "resTetApprox"
   | "resRoadsHeading"
+  | "resRisksHeading"
   | "resSurfaceHeading"
   | "resMixRoad"
   | "resMixTrack"
@@ -330,7 +331,9 @@ export type MessageKey =
   | "badgeUnverifiedDetail"
   | "badgeTrail"
   | "badgeTrailDetail"
-  // Same text as `legendTrail`; kept because route-map.tsx still reads it. Fold in later.
+  // The long form, used only as the segment card's heading: the rider opens
+  // that card by tapping the dotted line, so the card names the line. The
+  // legend and the warning badge use the short `legendTrail` / `badgeTrail`.
   | "segDottedLine"
   | "segGrade"
   | "segOnTet"
@@ -457,10 +460,11 @@ const lv: Messages = {
   resShowAnother: "Rādīt citu {kind} maršrutu ({at} no {total})",
   resTetApprox: "Aptuveni {km} km pa TET",
   resRoadsHeading: "Ceļi",
+  resRisksHeading: "Riski",
   resSurfaceHeading: "Segums",
-  resMixRoad: "Ceļš",
-  resMixTrack: "Meža ceļš / svītrots",
-  resMixTrail: "Punktotā līnija",
+  resMixRoad: "Parastie ceļi",
+  resMixTrack: "Meža ceļi (raustītā līnija)",
+  resMixTrail: "Taciņas (punktotā līnija)",
   resDirt: "Zeme / smiltis",
   resTransitOut: "Pārbrauciens {km} km · {time}",
   resFocusLoop: "{place} aplis {km} km · {time}",
@@ -641,18 +645,20 @@ const lv: Messages = {
   legendAsphalt: "Asfalts",
   legendGravel: "Grants",
   legendTrack: "Meža ceļš",
-  legendTrail: "Punktotā līnija",
+  legendTrail: "Taciņas",
   mapFullscreen: "Karte pa visu ekrānu",
   mapExitFullscreen: "Aizvērt pilnekrāna karti",
   cancel: "Atcelt",
   badgeUnverified: "Nepārbaudīta piekļuve",
   badgeUnverifiedDetail:
     "Šim posmam OSM datos nav apstiprinātas motocikla piekļuves. Tas nenozīmē, ka braukt aizliegts — tikai to, ka neviens to nav atzīmējis. Pārbaudi zīmes uz vietas.",
-  badgeTrail: "Punktotā līnija",
+  badgeTrail: "Taciņas",
   badgeTrailDetail:
     "Šaurs, tehnisks posms — punktotā līnija kartē. Šeit brauc lēnāk, nekā rāda plānotais laiks.",
-  // Same text as `legendTrail`; kept because route-map.tsx still reads it. Fold in later.
-  segDottedLine: "Punktotā līnija",
+  // The long form, used only as the segment card's heading: the rider opens
+  // that card by tapping the dotted line, so the card names the line. The
+  // legend and the warning badge use the short `legendTrail` / `badgeTrail`.
+  segDottedLine: "Taciņas (punktotā līnija)",
   segGrade: "Grūtība",
   segOnTet: "Pa TET",
   segRough: "Grūts meža ceļš",
@@ -777,10 +783,11 @@ const lt: Messages = {
   resShowAnother: "Rodyti kitą {kind} maršrutą ({at} iš {total})",
   resTetApprox: "Maždaug {km} km TET keliu",
   resRoadsHeading: "Keliai",
+  resRisksHeading: "Rizikos",
   resSurfaceHeading: "Danga",
-  resMixRoad: "Kelias",
-  resMixTrack: "Miško kelias / brūkšniuotas",
-  resMixTrail: "Punktyra linija",
+  resMixRoad: "Paprasti keliai",
+  resMixTrack: "Miško keliai (brūkšninė linija)",
+  resMixTrail: "Takeliai (punktyra linija)",
   resDirt: "Žemė / smėlis",
   resTransitOut: "Pervažiavimas {km} km · {time}",
   resFocusLoop: "{place} ratas {km} km · {time}",
@@ -961,17 +968,17 @@ const lt: Messages = {
   legendAsphalt: "Asfaltas",
   legendGravel: "Žvyras",
   legendTrack: "Miško kelias",
-  legendTrail: "Punktyra linija",
+  legendTrail: "Takeliai",
   mapFullscreen: "Žemėlapis per visą ekraną",
   mapExitFullscreen: "Uždaryti viso ekrano žemėlapį",
   cancel: "Atšaukti",
   badgeUnverified: "Nepatikrintas privažiavimas",
   badgeUnverifiedDetail:
     "Šiai atkarpai OSM duomenyse nėra patvirtinto motociklų privažiavimo. Tai nereiškia, kad važiuoti draudžiama — tik tai, kad niekas to nepažymėjo. Pasitikrink ženklus vietoje.",
-  badgeTrail: "Punktyra linija",
+  badgeTrail: "Takeliai",
   badgeTrailDetail:
     "Siaura, techniška atkarpa — taškuota linija žemėlapyje. Čia važiuok lėčiau, nei rodo planuotas laikas.",
-  segDottedLine: "Punktyra linija",
+  segDottedLine: "Takeliai (punktyra linija)",
   segGrade: "Sudėtingumas",
   segOnTet: "TET keliu",
   segRough: "Sunkus miško kelias",
@@ -1096,10 +1103,11 @@ const et: Messages = {
   resShowAnother: "Näita teist {kind} marsruuti ({at} / {total})",
   resTetApprox: "Umbes {km} km TET-i mööda",
   resRoadsHeading: "Teed",
+  resRisksHeading: "Riskid",
   resSurfaceHeading: "Kate",
-  resMixRoad: "Tee",
-  resMixTrack: "Metsatee / kriipsjoon",
-  resMixTrail: "Punktiirjoon",
+  resMixRoad: "Tavalised teed",
+  resMixTrack: "Metsateed (katkendjoon)",
+  resMixTrail: "Rajad (punktiirjoon)",
   resDirt: "Pinnas / liiv",
   resTransitOut: "Ülesõit {km} km · {time}",
   resFocusLoop: "{place} ring {km} km · {time}",
@@ -1280,17 +1288,17 @@ const et: Messages = {
   legendAsphalt: "Asfalt",
   legendGravel: "Kruus",
   legendTrack: "Metsatee",
-  legendTrail: "Punktiirjoon",
+  legendTrail: "Rajad",
   mapFullscreen: "Kaart üle ekraani",
   mapExitFullscreen: "Sulge täisekraanikaart",
   cancel: "Tühista",
   badgeUnverified: "Kontrollimata juurdepääs",
   badgeUnverifiedDetail:
     "Sellel lõigul puudub OSM-andmetes kinnitatud mootorratta juurdepääs. See ei tähenda, et sõitmine oleks keelatud — ainult seda, et keegi pole seda märkinud. Kontrolli märke kohapeal.",
-  badgeTrail: "Punktiirjoon",
+  badgeTrail: "Rajad",
   badgeTrailDetail:
     "Kitsas, tehniline lõik — punktiirjoon kaardil. Siin sõida aeglasemalt, kui planeeritud aeg näitab.",
-  segDottedLine: "Punktiirjoon",
+  segDottedLine: "Rajad (punktiirjoon)",
   segGrade: "Raskus",
   segOnTet: "TET-i mööda",
   segRough: "Raske metsatee",
@@ -1415,10 +1423,11 @@ const en: Messages = {
   resShowAnother: "Show another {kind} route ({at} of {total})",
   resTetApprox: "About {km} km on the TET",
   resRoadsHeading: "Roads",
+  resRisksHeading: "Risks",
   resSurfaceHeading: "Surface",
-  resMixRoad: "Road",
-  resMixTrack: "Track / dashed",
-  resMixTrail: "Dotted line",
+  resMixRoad: "Regular roads",
+  resMixTrack: "Forest tracks (dashed line)",
+  resMixTrail: "Trails (dotted line)",
   resDirt: "Dirt / sand",
   resTransitOut: "Transit {km} km · {time}",
   resFocusLoop: "{place} loop {km} km · {time}",
@@ -1599,17 +1608,17 @@ const en: Messages = {
   legendAsphalt: "Asphalt",
   legendGravel: "Gravel",
   legendTrack: "Forest track",
-  legendTrail: "Dotted line",
+  legendTrail: "Trails",
   mapFullscreen: "Full-screen map",
   mapExitFullscreen: "Close full-screen map",
   cancel: "Cancel",
   badgeUnverified: "Unverified access",
   badgeUnverifiedDetail:
     "This stretch has no confirmed motorcycle access in OSM. That does not mean riding is forbidden — only that nobody has recorded it. Check the signs on the ground.",
-  badgeTrail: "Dotted line",
+  badgeTrail: "Trails",
   badgeTrailDetail:
     "A narrow, technical stretch — the dotted line on the map. Ride this slower than the planned time suggests.",
-  segDottedLine: "Dotted line",
+  segDottedLine: "Trails (dotted line)",
   segGrade: "Difficulty",
   segOnTet: "On the TET",
   segRough: "Rough forest track",

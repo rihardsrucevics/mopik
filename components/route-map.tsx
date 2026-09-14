@@ -737,10 +737,11 @@ const roadClassLabel = (m: Messages, roadClass?: string, surface?: string): stri
 /**
  * The card's own heading: the class, named as the map draws it.
  *
- * Everywhere else a trail is "Taka" — the legend row, the warning badge, the
- * result panel's mix. The card is the one place the rider asked to have it
- * named by what he is looking at, because he opens the card by tapping the
- * dotted line itself. Asphalt still wins over the class, exactly as in
+ * Everywhere else a trail is the short "Taciņas" — the legend row, which has
+ * to stay narrow on a phone, and the warning badge. The card is the one place
+ * the rider asked for the long form, "Taciņas (punktotā līnija)", because he
+ * opens the card by tapping the dotted line itself and the heading should name
+ * what he tapped. Asphalt still wins over the class, exactly as in
  * `roadClassLabel`: a paved way tagged `path` is blue on the map, not dotted.
  */
 const segmentHeading = (m: Messages, roadClass?: string, surface?: string): string =>

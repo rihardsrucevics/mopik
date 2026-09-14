@@ -44,8 +44,11 @@ function duration(seconds: number): string {
 
 /**
  * One line of the breakdown. `icon` is the map's own emoji for the same thing
- * — 🔥 for the dotted line, ⚠️ for unverified access — so a rider who has just
- * read a badge on the map meets the same mark next to the number. It is
+ * — 🔥 for a trail, ⚠️ for unverified access — so a rider who has just read a
+ * badge on the map meets the same mark next to the number. It follows the
+ * label rather than leading it: the labels now end in a parenthetical
+ * ("Taciņas (punktotā līnija)") and a mark in front of that pushed the words
+ * away from the column edge, so the rows no longer lined up. It is
  * aria-hidden: the label beside it already says what it means, and the row is
  * read out as words. The explicit font-size keeps a colour emoji, which draws
  * wider than its type size, from outgrowing the 12 px row.
@@ -54,8 +57,8 @@ function Row({ label, value, icon }: { label: string; value: string; icon?: stri
   return (
     <div className="flex justify-between gap-3 py-0.5 text-xs">
       <span className="flex min-w-0 items-center gap-1 text-stone-500">
-        {icon && <span aria-hidden="true" className="shrink-0 text-[12px] leading-none">{icon}</span>}
         {label}
+        {icon && <span aria-hidden="true" className="shrink-0 text-[12px] leading-none">{icon}</span>}
       </span>
       <span className="tabular-nums text-stone-900">{value}</span>
     </div>
@@ -138,6 +141,24 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
   const route = shownFor(routes[Math.min(selected, routes.length - 1)]);
   if (!route) return null;
   const q = route.quality;
+  // The RISKS share, on the same denominator the ROADS rows use: road + track
+  // + trail is the whole ride, so the two blocks' percentages are comparable
+  // even though they measure different things. `|| 1` guards a zero-length
+  // ride; the row itself only renders when the kilometres are above zero.
+  const unverifiedPercent = Math.round(
+    (q.unverifiedPathKm / (route.roadMix.roadKm + route.roadMix.trackKm + route.roadMix.trailKm || 1)) * 100,
+  );
+  // SURFACE rows read like the ROADS rows, "{km} km · {pct} %". Nothing stores
+  // per-surface kilometres — `SurfaceMix` is four percentages — so the km are
+  // derived here. That is sound rather than a guess: `classify.ts` divides
+  // `distBySurface` by the same `total` (road + track + trail) it uses for the
+  // ROADS percentages, over the same edges, so one denominator serves both and
+  // the derived figure is the real length to within the rounding of a whole
+  // percent. Worth ~0.4 km on a 73 km ride, which is why the km are shown to
+  // one decimal and not two. Real per-surface metres would have to come from
+  // `SurfaceMix`, `classify.ts` and the versioned share code — three files
+  // outside this change — and can replace this without touching the rows.
+  const surfaceKm = (percent: number) => Math.round((route.distanceMeters / 1000) * (percent / 100) * 10) / 10;
   const unpaved = (r: GeneratedRoute) => r.surfaces.gravelPercent + r.surfaces.dirtPercent;
 
   const downloadGpx = async () => {
@@ -409,22 +430,25 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
               <Row label={m.resMixTrack} value={`${route.roadMix.trackKm} km · ${route.roadMix.trackPercent} %`} />
               <Row label={m.resMixTrail} value={`${route.roadMix.trailKm} km · ${route.roadMix.trailPercent} %`} icon="🔥" />
             </div>
-            {/* Its own block, not a fourth ROADS row: road/track/trail is a
+            {/* Its own section, not a fourth ROADS row: road/track/trail is a
                 strict partition that sums to 100 %, and unverified access is
-                an orthogonal flag — the same kilometres are already counted
-                in one of the three above, so a fourth row would double-count.
-                No percentage for the same reason. */}
+                an orthogonal flag — the same kilometres are already counted in
+                one of the three above. As a fourth row that double-counted,
+                which is why it used to carry no percentage; under a heading of
+                its own it is plainly a different measurement, so the share of
+                the ride is worth saying, on the same denominator as ROADS. */}
             {q.unverifiedPathKm > 0 && (
               <div>
-                <Row label={m.badgeUnverified} value={`${q.unverifiedPathKm} km`} icon="⚠️" />
+                <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-stone-400">{m.resRisksHeading}</div>
+                <Row label={m.badgeUnverified} value={`${q.unverifiedPathKm} km · ${unverifiedPercent} %`} icon="⚠️" />
               </div>
             )}
             <div>
               <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-stone-400">{m.resSurfaceHeading}</div>
-              <Row label={m.legendAsphalt} value={`${route.surfaces.asphaltPercent} %`} />
-              <Row label={m.legendGravel} value={`${route.surfaces.gravelPercent} %`} />
-              <Row label={m.resDirt} value={`${route.surfaces.dirtPercent} %`} />
-              <Row label={m.resUnknown} value={`${route.surfaces.unknownPercent} %`} />
+              <Row label={m.legendAsphalt} value={`${surfaceKm(route.surfaces.asphaltPercent)} km · ${route.surfaces.asphaltPercent} %`} />
+              <Row label={m.legendGravel} value={`${surfaceKm(route.surfaces.gravelPercent)} km · ${route.surfaces.gravelPercent} %`} />
+              <Row label={m.resDirt} value={`${surfaceKm(route.surfaces.dirtPercent)} km · ${route.surfaces.dirtPercent} %`} />
+              <Row label={m.resUnknown} value={`${surfaceKm(route.surfaces.unknownPercent)} km · ${route.surfaces.unknownPercent} %`} />
             </div>
             {(q.forestKm > 0 || q.riversideKm > 0 || q.elevationGainM > 0) && (
               <div>
