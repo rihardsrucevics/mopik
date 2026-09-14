@@ -1346,6 +1346,11 @@ export async function POST(req: NextRequest) {
           streetPercent,
           excessDriftPercent: excessDrift,
           natureScore: s.classified.quality.natureScore,
+          // Backlog item 11c: a coastal road should beat an inland one of
+          // otherwise equal quality. Zero away from a published coastline
+          // (`hasSeaData`), so every inland ride ranks exactly as before.
+          coastPercent: (s.classified.quality.coastKm / (s.path.distanceMeters / 1000)) * 100,
+          coastNearPercent: (s.classified.quality.coastNearKm / (s.path.distanceMeters / 1000)) * 100,
         });
       };
 
@@ -1660,6 +1665,11 @@ export async function POST(req: NextRequest) {
           nature: s.classified.quality.natureScore,
           forest: s.classified.quality.forestKm,
           riverside: s.classified.quality.riversideKm,
+          // Item 11c: whether any candidate in the pool ever reaches the coast.
+          // The search generates the pool and scoring only picks within it, so
+          // when a coastal road is never routed at all the sea term cannot pick
+          // it — this is the number that says which of the two is happening.
+          coast: s.classified.quality.coastKm,
           ascent: s.classified.quality.elevationGainM,
           excessDrift: Math.round(excessDriftPercent(s)),
           acceptable: acceptable(s),

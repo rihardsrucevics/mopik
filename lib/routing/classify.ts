@@ -2,6 +2,7 @@ import { angleDiff, bearingDegrees, haversineMeters } from "@/lib/geo/geometry";
 import { estimateRideSeconds } from "./speed";
 import { isUnverifiedMotorPath } from "./access";
 import { bboxOf, yardLookup, BOTH_SIDES_M, YARD_RADIUS_M, type YardLookup } from "@/lib/geo/yards";
+import { seaLookup, hasSeaData, type SeaLookup } from "@/lib/geo/sea";
 import {
   OverlapStats,
   RoadClass,
@@ -294,6 +295,108 @@ function measureYards(path: RoutePath, lookup: YardLookup | null): YardMeasureme
   };
 }
 
+/**
+ * The classes that may carry a coastal kilometre.
+ *
+ * `highway=path` is excluded, and that exclusion is the whole point of doing
+ * this in code rather than by distance alone. Item 11a spent a day removing
+ * 12.2 km of beach and dune footpath from one leg; a coastal *bonus* that
+ * counted paths would hand that straight back, because on the Baltic the thing
+ * physically nearest the water is usually the beach path. The rider's rule is
+ * explicit about it:
+ *
+ *   "braukt gar krastu pa īstu ceļu jābūt labāk … pa īstu ceļu" — on a REAL
+ *   road.
+ *
+ * So footway/cycleway/bridleway/steps go with it: everything in TRAIL_USES is
+ * refused or dear already, and none of it is what "a real road" means. Tracks
+ * stay in — item 11b measured that `highway=track` carries most of the coastal
+ * kilometres these rides already collect (37.9 of Ventspils → Kolka's 46.4),
+ * and a forest track along the dunes is exactly the riding asked for.
+ */
+const COAST_EXCLUDED_HIGHWAYS = TRAIL_USES;
+
+/**
+ * How near the sea a kilometre has to be to count, in metres.
+ *
+ * Both bands come from item 11b's measurement table, which reported every leg
+ * at 300 m / 1 km / 3 km. 1 km is the band that separates "this ride is on the
+ * coast road" from "this ride is in the same district as the sea": on
+ * Liepāja → Ventspils the coastal P111 sits inside it and the inland line the
+ * router actually picks sits at 5–10 km. 3 km is carried as a softer signal —
+ * a ride that gets within sight of the water but not onto the shore road —
+ * and is weighted far lower in `score.ts` for exactly that reason.
+ */
+const COAST_NEAR_M = 1000;
+const COAST_WIDE_M = 3000;
+
+type CoastMeasurement = {
+  coastKm: number;
+  coastNearKm: number;
+  /** per-coordinate-pair verdict, for the optional segment flag */
+  flags: boolean[] | null;
+  /** whether any dataset covered this ride at all — 0 means "not measured" */
+  measured: boolean;
+};
+
+const EMPTY_COAST: CoastMeasurement = { coastKm: 0, coastNearKm: 0, flags: null, measured: false };
+
+/**
+ * Kilometres ridden near the sea, on a real road.
+ *
+ * Item 11b established that this cannot come from the router: BRouter's
+ * `lookups.dat` has no `natural` key, so no cost script can see a coastline,
+ * and `estimated_river_class` — the nearest thing it has — tracks rivers and
+ * reads 1 or nothing on the P111, the Pāvilosta seafront and the Kolka cape
+ * road. The signal therefore has to be measured against geometry here, the way
+ * `measureOverlap` and `measureYards` already are, and spent in ranking.
+ *
+ * Distances are taken at each sub-segment's midpoint against `lib/geo/sea.ts`.
+ * BRouter shape points are 10–40 m apart and the coastline dataset is thinned
+ * to a 200 m grid, so the midpoint approximation costs metres against a band
+ * of a kilometre — the same approximation `scripts/measure-coast.ts` scores
+ * with, deliberately, so the two agree.
+ *
+ * Returns zeros where no coastline data covers the route. Absent data reads as
+ * "not measured", never as "nowhere near the sea".
+ */
+function measureCoast(path: RoutePath, lookup: SeaLookup | null): CoastMeasurement {
+  const coords = path.coordinates;
+  if (!lookup || !lookup.size || coords.length < 2) return EMPTY_COAST;
+
+  const flags = new Array<boolean>(Math.max(0, coords.length - 1)).fill(false);
+
+  // Which coordinate pairs sit on a class that may count at all. Everything
+  // else is excluded before any distance is measured — see
+  // COAST_EXCLUDED_HIGHWAYS for why a beach path must never earn this bonus.
+  const onRealRoad = new Array<boolean>(coords.length - 1).fill(false);
+  for (const edge of path.edges) {
+    const hw = (edge.tags?.highway ?? edge.use ?? "").toLowerCase();
+    if (COAST_EXCLUDED_HIGHWAYS.has(hw)) continue;
+    const end = Math.min(edge.endShapeIndex, coords.length - 1);
+    for (let i = Math.max(0, edge.beginShapeIndex); i < end; i++) onRealRoad[i] = true;
+  }
+
+  let nearMeters = 0;
+  let wideMeters = 0;
+  for (let i = 0; i < coords.length - 1; i++) {
+    if (!onRealRoad[i]) continue;
+    const a = coords[i];
+    const b = coords[i + 1];
+    const meters = haversineMeters(a, b);
+    if (meters <= 0) continue;
+    const distance = lookup.distanceM((a[0] + b[0]) / 2, (a[1] + b[1]) / 2);
+    if (distance < COAST_WIDE_M) wideMeters += meters;
+    if (distance < COAST_NEAR_M) {
+      nearMeters += meters;
+      flags[i] = true;
+    }
+  }
+
+  const km = (m: number) => Math.round(m / 100) / 10;
+  return { coastKm: km(nearMeters), coastNearKm: km(wideMeters), flags, measured: true };
+}
+
 function classNumber(value: string | undefined): number {
   const parsed = Number(value ?? 0);
   return Number.isFinite(parsed) ? parsed : 0;
@@ -336,7 +439,11 @@ function measureElevation(path: RoutePath): { gain: number; range: number } {
  * nothing the profile doesn't mention), so a route without edge detail
  * reports zeros rather than guesses.
  */
-function measureQuality(path: RoutePath, yards: YardMeasurement): RouteQuality & { turns: number } {
+function measureQuality(
+  path: RoutePath,
+  yards: YardMeasurement,
+  coast: CoastMeasurement
+): RouteQuality & { turns: number } {
   const coords = path.coordinates;
   let rough = 0;
   let sand = 0;
@@ -459,6 +566,8 @@ function measureQuality(path: RoutePath, yards: YardMeasurement): RouteQuality &
     yardKm: yards.yardKm,
     yardEdgeCount: yards.yardEdgeCount,
     yardByRule: yards.byRule,
+    coastKm: coast.coastKm,
+    coastNearKm: coast.coastNearKm,
   };
 }
 
@@ -527,8 +636,15 @@ export function classifyRoute(path: RoutePath): ClassifiedRoute {
   // Measured once and reused: the lookup carries the loaded country files and
   // the route's own metric frame, and rebuilding it per segment is what made
   // the POI loader slow when it re-derived a country set per call.
-  const lookup = coords.length >= 2 ? yardLookup(bboxOf(coords)) : null;
+  const bbox = coords.length >= 2 ? bboxOf(coords) : null;
+  const lookup = bbox ? yardLookup(bbox) : null;
   const yards = measureYards(path, lookup);
+  // Same reasoning as the yard lookup: built once per candidate, asked per
+  // segment. `hasSeaData` is checked first so an inland ride never opens a
+  // coastline file — the great majority of rides, and the reason this costs
+  // nothing away from a coast.
+  const sea = bbox && hasSeaData(bbox) ? seaLookup(bbox) : null;
+  const coast = measureCoast(path, sea);
   const features: GeoJSON.Feature<GeoJSON.LineString, RouteSegmentProperties>[] = [];
 
   const distByRoad: Record<RoadClass, number> = { road: 0, track: 0, trail: 0 };
@@ -595,7 +711,14 @@ export function classifyRoute(path: RoutePath): ClassifiedRoute {
   }
   flush(coords.length - 1);
 
-  const { turns, ...quality } = measureQuality(path, yards);
+  // No per-segment `coast` flag, deliberately, though `measureCoast` computes
+  // the verdicts. Unlike `unverified` and `yard` it would not be free: it is a
+  // fourth key in the run-splitting test below, so every coastal stretch
+  // becomes its own feature, and the share code turns each distinct run into a
+  // dictionary entry and a varint pair — bytes in every link, for a flag
+  // nothing renders. `quality.coastKm` is the number; add the flag when
+  // something on the map actually draws it.
+  const { turns, ...quality } = measureQuality(path, yards, coast);
   const total = distByRoad.road + distByRoad.track + distByRoad.trail || 1;
   const pct = (m: number) => Math.round((m / total) * 100);
   const km = (m: number) => Math.round(m / 100) / 10;

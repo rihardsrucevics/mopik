@@ -115,6 +115,14 @@ export type ShareMeta = {
    * outside the published yard countries reports.
    */
   y?: number;
+  /**
+   * coastKm — km within 1 km of a coastline on a real road (backlog item 11c).
+   * Its own optional key for the same reason `y` is: older codes must keep
+   * decoding, and a code with no `c` decodes to 0, which reads as "not
+   * measured" — the same thing a ride outside the published coastline
+   * countries reports.
+   */
+  c?: number;
 };
 export type SharedRoute = {
   name: string; variant: string; km: number; minutes: number; unpavedPercent: number; repeatedPercent: number;
@@ -130,6 +138,8 @@ export type SharedRoute = {
     unverifiedPathKm: number; roughTrackKm: number; sandKm: number; streetKm: number;
     /** 0 on codes that predate the field, and on rides with no yard data. */
     yardKm: number;
+    /** 0 on codes that predate the field, and on rides with no coastline data. */
+    coastKm: number;
   } | null;
 };
 
@@ -187,6 +197,7 @@ export function encodeRouteShare(route: GeneratedRoute, startLabel: string, plan
   // Only when there is something to say: a zero would cost bytes in every link
   // for a field most rides do not use, and absent already means zero on decode.
   if (route.quality.yardKm > 0) meta.y = r1(route.quality.yardKm);
+  if (route.quality.coastKm > 0) meta.c = r1(route.quality.coastKm);
   const parts = [SHARE_VERSION, toBase64Url(JSON.stringify(meta)), encodeVarints(deltas), encodeVarints(runs)];
   if (plan) parts.push(encodePlanShare(plan, places));
   return parts.join("~");
@@ -229,6 +240,7 @@ export function decodeRouteShare(code: string): SharedRoute | null {
       forestKm: meta.q[0], riversideKm: meta.q[1], ruralOpenKm: meta.q[2], elevationGainM: meta.q[3],
       unverifiedPathKm: meta.q[4], roughTrackKm: meta.q[5], sandKm: meta.q[6], streetKm: meta.q[7],
       yardKm: meta.y ?? 0,
+      coastKm: meta.c ?? 0,
     } : null;
     return { name: meta.n, variant: meta.va, km: meta.km, minutes: meta.min, unpavedPercent: meta.up, repeatedPercent: meta.rep, startLabel: meta.s, points, classes, plan, details };
   } catch {

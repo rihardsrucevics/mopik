@@ -216,6 +216,26 @@ export type RouteQuality = {
    * never say when something did.
    */
   yardByRule: { yard: number; bothSides: number; deadEnd: number; gate: number };
+  /**
+   * Kilometres ridden within 1 km of a coastline, on a real road — backlog
+   * item 11c, the rider's "riding along the coast should be preferred, because
+   * the view is beautiful".
+   *
+   * `highway=path` and the rest of the trail classes are excluded: on the
+   * Baltic the thing physically nearest the water is usually the beach or dune
+   * footpath, and item 11a spent a day making those dear. A coastal bonus that
+   * counted them would hand it straight back.
+   *
+   * Measured geometrically against `lib/geo/sea.ts`, because BRouter's
+   * `lookups.dat` has no `natural` key at all and `estimated_river_class` is a
+   * river signal that reads 1 or nothing on roads that are unarguably on the
+   * coast (item 11b). 0 where no coastline dataset covers the ride — "not
+   * measured", not "nowhere near the sea".
+   */
+  coastKm: number;
+  /** The same, at a 3 km band: within sight of the water rather than on the
+   * shore road. Weighted far lower in `score.ts` for that reason. */
+  coastNearKm: number;
 };
 
 export type SurfaceMix = {
@@ -263,6 +283,9 @@ export type GenerateRouteResponse = {
     nature: number;
     forest: number;
     riverside: number;
+    /** km within 1 km of a coastline on a real road — whether the pool ever
+     * reaches the sea at all, which scoring cannot fix if it does not. */
+    coast: number;
     ascent: number;
     excessDrift: number;
     /** reaches the stops and meets the rider's limits (ceiling, minimum, max repeated) */

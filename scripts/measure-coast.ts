@@ -83,10 +83,45 @@ const BEACH_INDEX = process.env.BEACH_INDEX ?? `${SEA_DIR}/beach.json`;
 type Ring = [number, number][];
 type BeachArea = { ring: Ring; bbox: [number, number, number, number]; natural: string };
 
+/**
+ * The committed coastline dataset, `public/sea/<CC>.json` — the same data the
+ * runtime scores with since item 11c.
+ *
+ * Preferred over `COAST_INDEX`, and that is the point: before 11c this script
+ * scored against a 12 MB scratchpad extract that had to be re-fetched from
+ * Overpass for every re-run, and the numbers in PROGRESS.md could not be
+ * reproduced from a fresh checkout. Now it reads what ships. The scratchpad
+ * path below still works and is still denser (≤100 m against the published
+ * 200 m grid), so it remains the check on whether the thinning cost anything.
+ */
+function loadPublishedCoast(): [number, number][] | null {
+  const dir = "public/sea";
+  const indexPath = `${dir}/index.json`;
+  if (!existsSync(indexPath)) return null;
+  const index = JSON.parse(readFileSync(indexPath, "utf8")) as { countries?: { cc: string }[] };
+  const points: [number, number][] = [];
+  for (const country of index.countries ?? []) {
+    const file = `${dir}/${country.cc}.json`;
+    if (!existsSync(file)) continue;
+    const raw = JSON.parse(readFileSync(file, "utf8")) as { deltas?: number[] };
+    let lon = 0;
+    let lat = 0;
+    const deltas = raw.deltas ?? [];
+    for (let i = 0; i + 1 < deltas.length; i += 2) {
+      lon += deltas[i];
+      lat += deltas[i + 1];
+      points.push([lon / 1e5, lat / 1e5]);
+    }
+  }
+  return points.length ? points : null;
+}
+
 /** Coastline vertices bucketed into 0.02° cells; nearest-vertex distance. */
 function loadCoastGrid(): Map<string, [number, number][]> | null {
-  if (!existsSync(COAST_INDEX)) return null;
-  const pts = JSON.parse(readFileSync(COAST_INDEX, "utf8")) as [number, number][];
+  const pts = existsSync(COAST_INDEX)
+    ? (JSON.parse(readFileSync(COAST_INDEX, "utf8")) as [number, number][])
+    : loadPublishedCoast();
+  if (!pts) return null;
   const grid = new Map<string, [number, number][]>();
   for (const [lon, lat] of pts) {
     const key = `${Math.floor(lat / CELL)},${Math.floor(lon / CELL)}`;
@@ -278,7 +313,12 @@ async function main() {
 
   const coast = loadCoastGrid();
   const beach = loadBeachGrid();
-  if (!coast) console.log(`no coastline index at ${COAST_INDEX} — routing only, no scoring`);
+  if (!coast) {
+    console.log(
+      `no coastline at ${COAST_INDEX} and none published in public/sea/ — routing only, ` +
+        `no scoring. Build one with \`npx tsx scripts/build-coastline.ts LV LT EE\`.`
+    );
+  }
   if (coast && !beach) console.log(`no beach index at ${BEACH_INDEX} — beach km will read 0`);
 
   const scores: Record<string, CoastScore> = {};

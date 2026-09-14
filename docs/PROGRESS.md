@@ -1,5 +1,183 @@
 # Mopik — progress log
 
+## 2026-09-14 — Item 11c: a sea term
+
+The third and last part of item 11. The rider: *"braukt gar krastu pa īstu ceļu
+jābūt labāk (vēlamāk) kā braukt pa ceļu, kas neiet gar krastu — tāpēc, ka taču
+būtu smuks skats!"* Item 11a made beach paths dear; item 11b proved the
+**profile** cannot express the preference and named the lever. This builds it:
+coastline geometry as data, a `coastKm` metric, and a bounded scoring term.
+
+**Shipped and measured. The honest headline is at the bottom: the term works,
+and on the case the rider complained about it has nothing to pick from.**
+
+### 1. The dataset — `public/sea/`, 215 KB for the Baltics
+
+`scripts/build-coastline.ts` fetches `natural=coastline` per country from
+Overpass, grid-deduplicates at 200 m and writes packed integer deltas plus a
+0.25°-cell index, exactly the shape `public/poi/` and `public/gates/` use.
+
+| | ways | raw vertices | points at 200 m | file |
+|---|---:|---:|---:|---:|
+| LV | 484 | 51,085 | 3,169 | 28 KB |
+| LT | 269 | 9,330 | 2,091 | 17 KB |
+| EE | 4,349 | 504,780 | 19,239 | 161 KB |
+| **total** | **5,102** | **565,195** | **24,499** | **215 KB** |
+
+Item 11b's estimate was 0.36 MB; the delta packing beat it. Estonia is six
+times Latvia because of the islands. Verified against known points rather than
+assumed: Kolka cape 226 m, Roja 231 m, Salacgrīva 259 m, Pāvilosta 523 m,
+Rīga centre 11.5 km, Sigulda 29 km, Cēsis no data within range — gulf shore and
+open coast, north to south.
+
+`hasSeaData(bbox)` gates everything on the published cells, so an inland ride
+never opens a file and its ranking is byte-for-byte what it was.
+
+**Three traps, all in the fetching, all worth keeping:**
+
+- **Node's `fetch` sends no `User-Agent`, and `overpass.private.coffee` answers
+  such a request with an instant 429.** Not a slow one, not a 403 — it reads
+  exactly like a rate limit you have earned, and it cost three failed builds.
+  Every `curl` probe of the identical query succeeded, because curl sends one.
+  Compare the two side by side before believing a rate limit.
+- **The cost of this build is the number of queries, not the area.** A 1° tile
+  takes ~175 s under load whatever it holds, so tiling Latvia into 24 of them is
+  an hour of waiting for 19 landlocked tiles. `COUNTRIES` therefore holds the
+  **coastal strip**, not the country box, and `TILE_DEGREES` is 4 so each
+  Baltic country is one request.
+- Retry each mirror with backoff before moving to the next. Rotating on every
+  attempt turns one mirror's 504 into a 429 from all three.
+
+The Geofabrik `.pbf` pass could produce the same output for Europe without
+Overpass — noted in the script header, deliberately not built, because PL/DE
+are multi-gigabyte downloads and the Baltic is 215 KB.
+
+### 2. The metric — `quality.coastKm`, and what it refuses to count
+
+`lib/geo/sea.ts` is a lazy per-country loader with a 0.1° grid and a
+ring-search nearest-point query; `classify.ts` measures each sub-segment's
+midpoint against it. `coastKm` is km within 1 km of the coastline, `coastNearKm`
+within 3 km.
+
+**`highway=path` and every trail class are excluded, and that exclusion is the
+whole reason this is code and not a distance.** On the Baltic the thing
+physically nearest the water is the beach or dune footpath — item 11a spent a
+day removing 12.2 km of it from one leg. A coastal *bonus* that counted paths
+would pay the router to put it straight back. Tracks stay in: item 11b measured
+`highway=track` carrying 37.9 of Ventspils → Kolka's 46.4 coastal km, and a dune
+track is the riding asked for.
+
+The gap between the two is real and is the exclusion working:
+
+| leg | km | `<1 km` (all classes) | **`coastKm`** (real roads) | shore path |
+|---|---:|---:|---:|---:|
+| Liepāja → Ventspils | 139.7 | 19.4 | **15.4** | 3.8 |
+| Ventspils → Kolka | 109.8 | 46.1 | **44.4** | 1.7 |
+| Jūrmala → Kolka | 203.1 | 16.7 | **11.5** | 5.2 |
+| Rīga → Ainaži | 207.1 | 14.7 | **11.2** | 3.6 |
+| Klaipėda → Palanga | 42.3 | 5.1 | **4.3** | 0.9 |
+| Pärnu → Haapsalu | 137.9 | 0.9 | **0.8** | 0.1 |
+| *Sigulda → Cēsis (inland)* | 59.3 | 0.0 | **0.0** | 0.0 |
+| *Cēsis → Madona (inland)* | 125.8 | 0.0 | **0.0** | 0.0 |
+
+Both inland controls report 0.0 at every band — `hasSeaData` is false there, so
+nothing is even loaded.
+
+**Beach km is unchanged at 0.72, and not because it was re-measured lucky:
+`lib/routing/moto-profile.ts` has no diff at all.** Item 11c adds no cost-script
+change, so the routed geometry of a single leg cannot move, and the re-run
+confirms it — 1028.8 km total against item 11b's 1028.8, every leg identical.
+That is also the reason the single-leg table above is a *control* rather than a
+before/after: a scoring term cannot change a route that had no candidates to
+choose between. The before/after that matters is in §3 and §4.
+
+No per-segment `coast` flag, though the verdicts are computed. Unlike
+`unverified` it would not be free: it is a fourth key in the run-splitting test,
+so every coastal stretch becomes its own feature and the share code turns each
+run into a dictionary entry and a varint pair — bytes in every link, for a flag
+nothing renders yet.
+
+### 3. The term — bounded at 8 points, and why that number
+
+In `score.ts`, separate from `riverValue` because item 11b proved no tag can
+tell the two apart. The share within 1 km is normalised against a 25 % target
+(the six legs run 0.7–42 %) and weighted 8; the 3 km band adds at most 2.
+
+8 is chosen to sit *between* two things, and both bounds are the point:
+
+- **It must beat a tie.** `natureScore` contributes up to 18 and moves by a few
+  between similar candidates, so a coastal candidate and an inland one of
+  otherwise equal quality differ by well under 8.
+- **It must never beat what the rider ranks first.** Measured on the real legs:
+
+| candidate | rank | gain | 
+|---|---:|---:|
+| inland (coast 0) | 47.50 | — |
+| Liepāja → Ventspils-like (15.4 / 139.7 km) | 42.17 | 5.33 |
+| Ventspils → Kolka-like (44.4 / 109.8 km) | 37.50 | 10.00 |
+
+and what the maximum gain buys, in the currency that matters most
+(*"galvenais nebraukt tos pašus ceļus"*):
+
+| fully coastal, plus … | verdict |
+|---|---|
+| +2 / +4 / +6 / +8 % repeated | still wins |
+| **+10 % repeated** | **loses to the inland line** |
+
+So the coast buys at most 10 % more retracing (5 % when `prioritizeLowOverlap`),
+and a loop that genuinely doubles back is 20–50 % and loses by tens of points.
+`offRoadShortfall` spans 40 and `trailShortfall` 20, so a seaside asphalt run
+can never outrank a forest loop — pinned by a test that asserts exactly that.
+Not scaled by `rideStyle`: the view from the coast road is the same view
+whatever was asked for.
+
+### 4. The P111 case — the term is not the blocker, the search is
+
+**Measured honestly, and this is the part to read.** Liepāja → Ventspils still
+sits 5–10 km inland through its whole middle, and the sea term cannot fix it.
+
+Scoring **picks among candidates; it does not generate them.** A via ride
+between two towns produces a handful of shapes — measured on the dev server, an
+A-to-B generation returned **2 candidates**, both taking the same inland line,
+both reporting the same coastal kilometres. A term that ranks cannot choose a
+road nothing routed. Where the pool is genuinely diverse (a Liepāja loop, 34
+candidates) the term ranks them correctly, but on the headline case there is
+nothing to rank.
+
+**What would move it, in the order worth trying:**
+
+1. **A coastal anchor bias in loop and waypoint generation** — the cheap one.
+   `lib/routing/loop.ts` places anchors geometrically; `lib/geo/sea.ts` can now
+   answer "is this anchor near the sea" in microseconds, so a coastal ride could
+   generate one or two candidates deliberately pulled seaward and let the
+   existing ranking judge them. This is the natural next step and it reuses
+   everything built here.
+2. **A via point on the coast road** for A-to-B rides in a coastal corridor —
+   the same idea, applied to the 2-candidate case that is actually failing.
+3. Not a profile change. Item 11b closed that door with `lookups.dat`.
+
+The term is still worth shipping ahead of that work: it is what makes a
+seaward candidate *win* once something generates one, and without it the anchor
+bias would produce coastal candidates that the ranking then discards.
+
+### Not settled
+
+- **Baltic only.** LV/LT/EE are built; PL, DE, IT and the rest are one CLI
+  argument away but belong in the pbf pass.
+- **The 2-candidate A-to-B pool is the real constraint** on the rider's own
+  example, and it is untouched here.
+- Measured against single legs and four generations, not against a ride the
+  rider has actually done. The 25 % target and the weight of 8 are reasoned from
+  the measured range, not rider-labelled.
+
+Tests: `npx tsx --test scripts/sea.test.ts` (12) — the loader over a fixture,
+`coastKm` on synthetic routes including the beach-path refusal, the term's
+bounds, and the share round trip with and without the field. Tooling:
+`scripts/build-coastline.ts`, `scripts/measure-sea-pick.ts` (does the pool ever
+reach the coast?), and `scripts/measure-coast.ts` now scores against the
+**committed** dataset, so its numbers reproduce from a fresh checkout instead of
+needing a 12 MB scratchpad re-fetch.
+
 ## 2026-09-14 — Item 12: gates only
 
 The rider read the "through a yard" build below and rejected the approach, not
