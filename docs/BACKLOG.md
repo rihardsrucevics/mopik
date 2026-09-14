@@ -498,6 +498,63 @@ right to ride through. Open question — the rider asked how to solve it, not
 for a specific fix. OSM access tags are already respected; a house or a
 homestead with no access tag at all is the hard case.
 
+**Status, 2026-09-14: gates ship, guessing does not.**
+
+*What was tried.* `docs/private-property-options.md` measured the problem over
+six rides and found OSM says almost nothing explicit: of 187 route edges within
+25 m of a building, the entire set of access tags was one
+`motor_vehicle=destination`, two `access=permissive`, two
+`motor_vehicle=permissive` and one `motor_vehicle=yes` — zero `private`, zero
+`no`, `noexit` on none, and 0 of 33 ridden `service` ways carried a `service=*`
+subtag. So the first build inferred a yard from circumstantial evidence: a
+dataset of building centroids, `landuse=farmyard` rings and small
+`landuse=residential` rings, with `classify.ts` flagging a stretch when
+buildings stood on **both** sides within 20 m, when it lay inside a farmyard
+polygon, or when it dead-ended at a building cluster. A plain 25 m proximity
+rule had already been rejected once before that; the four strict rules were the
+second attempt, and they cut the flagged distance from 16.7 km to 4.8 km across
+the six rides.
+
+*Why it was rejected.* The rider refused the approach, not the thresholds:
+
+> "šī pieeja nav korekta — mēs nevaram minēt; vairumā gadījumu tur nebūs
+> ierobežojuma; ja mums nav datu par privātajiem ceļiem, labāk šo ceļu no
+> maršruta neizslēgt. Sākam vismaz ar vārtiem."
+
+We cannot guess. In most cases there is no restriction there, and with no data
+about private roads it is better to leave the road in the route than to take it
+out. The data had said the same thing first: **248,488 buildings in Latvia alone
+lie within 25 m of a track or service way** — not the "few thousand" the options
+paper estimated — 90 % of them beside a `service` way, and 16 % of the whole file
+inside a box around greater Rīga, which is apartment blocks beside parking
+access roads. Any rule resting on that infers property rights from a building
+footprint.
+
+*What ships.* One explicit OSM fact and nothing derived from it: a
+`barrier=gate|lift_gate|swing_gate|chain|bollard|cattle_grid` node that is a
+**member of** a `highway=track|service|unclassified` way — membership in the
+way's node list, not proximity to it. Latvia: **13,691 gates, 318 KB**
+(`scripts/build_gates_dataset.py` → `public/gates/`, loaded by
+`lib/geo/gates.ts`). The route is never changed by it — no cost, no penalty, no
+rejection; a Latvian forest gate stands open more often than not. It is
+information: "Vārti uz ceļa · N" and a small map marker. The 9.4 MB of building
+and polygon data is deleted.
+
+*What more would take.* Actual access data, not a better inference. Three
+sources, in order of how much they would settle: the rider marking a stretch as
+private from the app and that being stored and avoided (option (d) in the
+options paper — the only one that produces ground truth, and the only one worth
+contributing back to OSM); a landowner or state register of private forest
+roads, which for Latvia does not exist in a usable form (LVM GEO was measured on
+2026-09-12 and carries no access attributes — see `docs/LVM-GEO-2026-09-12.md`);
+or OSM's own `access`/`motor_vehicle` tagging improving, which is a mapping
+effort, not a code one. Until one of those exists, the honest position is the
+rider's: leave the road in and say what is known about it.
+
+Only Latvia is built. Everywhere else `hasGateData` is false, which means "not
+measured" and must be said out loud rather than read as "no gates", the same
+way `sparsePlaceData` does for POIs.
+
 ## 13. Pick a destination precisely on the map
 
 Tap the map to say where to ride, instead of only naming a place.
@@ -580,3 +637,12 @@ pilskalns and Gūtmaņa ala route fine with the same plan. Same class as the
 `fetchRoutePath` already looks for routable ground near a *destination*;
 a via added from a suggestion needs the same treatment, and the suggestion
 list could hide places the profile cannot reach at all.
+
+## 21. While generating, the chat input makes no sense
+
+Filed by the rider on 2026-09-14. During a generation the chat still shows
+its text input at the bottom, and the "Atcelt" button sits above it in the
+loader. Nothing typed there can be acted on until the ride exists, so:
+hide the input while a generation runs and put "Atcelt" in its place at the
+bottom, where the thumb already is; the input returns when the ride is
+drawn. `components/route-prompt.tsx` / `components/route-loader.tsx`.

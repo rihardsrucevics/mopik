@@ -1,6 +1,112 @@
 # Mopik — progress log
 
-## 2026-09-14 — Item 12: "through a yard", not "near a house"
+## 2026-09-14 — Item 12: gates only
+
+The rider read the "through a yard" build below and rejected the approach, not
+the thresholds:
+
+> "šī pieeja nav korekta — mēs nevaram minēt; vairumā gadījumu tur nebūs
+> ierobežojuma; ja mums nav datu par privātajiem ceļiem, labāk šo ceļu no
+> maršruta neizslēgt. Sākam vismaz ar vārtiem."
+
+We cannot guess. In most cases there is no restriction there, and with no data
+about private roads it is better to leave the road in the route than to take it
+out. Start with gates.
+
+He is right and the build's own numbers had already said so. **248,488 buildings
+within 25 m of a track or service way in Latvia alone** — the options paper
+estimated "a few thousand" — 90 % of them beside a `service` way, 16 % of the
+file inside a box around greater Rīga: apartment blocks beside parking access
+roads. Every rule resting on that infers property rights from a building
+footprint. No amount of tightening fixes what the signal is.
+
+### What is gone
+
+Buildings, `landuse=farmyard` rings, small `landuse=residential` rings, and the
+three rules that read them — `bothSides` (buildings left and right within 20 m),
+`yard` (inside a farmyard polygon), `deadEnd` (retracing into a building
+cluster). With them, 9.4 MB of `public/yards/`.
+
+### What ships
+
+One explicit OSM fact: a `barrier=gate|lift_gate|swing_gate|chain|bollard|cattle_grid`
+node that is a **member of** a `highway=track|service|unclassified` way.
+Membership in the way's node list, which is OSM stating that this gate is across
+this road — not proximity to it, and no radius to argue about. `barrier=kerb` is
+excluded: street furniture, not access control. `unclassified` is included
+because Latvian rural gravel road is `highway=unclassified` and a gate across
+one is the same fact.
+
+**The route is never changed by it.** No cost, no penalty, no rejection — a
+Latvian forest gate stands open more often than not, which is exactly why it is
+reported and not avoided. It becomes "Vārti uz ceļa · N" and a small map marker.
+
+### Latvia, measured
+
+| | |
+|---|---:|
+| extract | 134 MB (downloaded, built, deleted) |
+| build time | **5 s** (was 750 s) |
+| barrier nodes scanned | 19,764 |
+| track/service/unclassified ways | 255,983 |
+| **gates ON one of them** | **13,691** |
+| published | **318 KB** (was 9.4 MB), index 2.0 KB |
+
+| barrier | n | | highway | n |
+|---|---:|---|---|---:|
+| `gate` | 12,089 | | `service` | 12,744 |
+| `lift_gate` | 1,191 | | `track` | 684 |
+| `swing_gate` | 202 | | `unclassified` | 263 |
+| `bollard` | 151 | | | |
+| `chain` | 57 | | | |
+| `cattle_grid` | 1 | | | |
+
+6,073 of the 19,764 barrier nodes are on no such way — gates on footpaths, field
+entrances off main roads — and are dropped. The build is **one pass**, not two:
+a `.pbf` is ordered nodes → ways, so every barrier's location is known before a
+way can reference it, and `with_areas()` (the expensive part of the old build,
+needed only to assemble building polygons) is gone with the buildings.
+
+### Plumbing
+
+- `scripts/build_gates_dataset.py` (was `build_yard_dataset.py`) — pyosmium over
+  a Geofabrik extract, one pass, `data/gates-<CC>.json`.
+- `scripts/publish-gates.ts` (was `publish-yards.ts`) — `data/` → `public/gates/`
+  + a 0.25°-cell index, incremental one country at a time, same shape as the POI
+  index. Extension is `.json` because the content is packed arrays, not GeoJSON;
+  the old `public/yards/*.geojson` files claimed to be GeoJSON and were not.
+- `lib/geo/gates.ts` (was `yards.ts`) — lazy per-country loader, 0.1° lookup
+  grid, synchronous because `classify.ts` is not async. `gatesNear(a, b)`,
+  `gateAt(lat, lon)`, `gatesOnRoute(coords)`, `hasGateData(bbox)`.
+- `lib/geo/yards.ts` — a `@deprecated` compatibility shim, because
+  `lib/routing/classify.ts` belongs to another agent right now. `gatesAlong` is
+  real; `buildingsAlong` returns `[]` and `yardAt` returns `null`, always. So
+  `classify.ts`'s three inferred rules never fire and `yardKm` counts gate
+  stretches only. **Follow-up:** classify.ts's owner replaces the
+  `@/lib/geo/yards` import (`bboxOf`, `yardLookup`, `BOTH_SIDES_M`,
+  `YARD_RADIUS_M`, `YardLookup`) with `bboxOf`, `gateLookup`/`gatesOnRoute`,
+  `GATE_RADIUS_M`, `GateLookup` from `@/lib/geo/gates`, reports a gate **count**
+  rather than kilometres, drops `yardKm`/`yardEdgeCount`/`yardByRule` from
+  `lib/types.ts`, and deletes the shim.
+- `next.config.ts` — the traced glob follows, `public/yards/` → `public/gates/`.
+- 17 tests in `scripts/gates.test.ts` (was `yards.test.ts`). The load-bearing
+  ones prove the guessing is gone: the shim answers nothing for buildings and
+  farmyards whatever the data, a track with no gate is clean however much is
+  around it, and the same geometry with and without a gate classifies
+  identically apart from the reported number.
+
+### Still open
+
+- **Only Latvia is built.** Everywhere else `hasGateData` is false, which means
+  "not measured", not "no gates", and must be said out loud — the
+  `sparsePlaceData` problem again. `scripts/build_gates_dataset.py LT EE PL DE`
+  is now cheap enough (5 s for Latvia) that Europe is a download-time job.
+- **The UI.** "Vārti uz ceļa · N" and the marker are the orchestrator's to add.
+- **Doing more than gates needs real access data**, not a better inference —
+  rider feedback stored and avoided, a private-road register (LVM GEO has none),
+  or better OSM tagging. See item 12 in `docs/BACKLOG.md`.
+
+## 2026-09-14 — Item 12: "through a yard", not "near a house" (superseded above)
 
 Backlog item 12 — routes run through private property. The measured options
 paper is `docs/private-property-options.md`; this is what was built from it,

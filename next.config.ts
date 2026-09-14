@@ -10,11 +10,16 @@ const nextConfig: NextConfig = {
       "./public/poi/index.json",
       "./public/poi/*.geojson",
       "./public/tet-lv.geojson",
-      // Yard evidence (backlog item 12), read by lib/geo/yards.ts the same way.
-      // Same glob reasoning: a country published later reaches production
+      // Gates on tracks (backlog item 12), read by lib/geo/gates.ts the same
+      // way. Same glob reasoning: a country published later reaches production
       // without editing this file.
-      "./public/yards/index.json",
-      "./public/yards/*.geojson",
+      "./public/gates/index.json",
+      "./public/gates/*.json",
+      // Coastline (backlog item 11c), read by lib/geo/sea.ts the same way, so
+      // `quality.coastKm` and the sea term in score.ts work in production.
+      // Same glob reasoning again: PL, DE, IT published later need no edit here.
+      "./public/sea/index.json",
+      "./public/sea/*.json",
     ],
     // The suggestions endpoint reads the same dataset through route-pois.ts.
     "/api/route-pois": ["./public/poi/index.json", "./public/poi/*.geojson"],
