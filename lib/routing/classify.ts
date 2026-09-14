@@ -1,7 +1,7 @@
 import { angleDiff, bearingDegrees, haversineMeters } from "@/lib/geo/geometry";
 import { estimateRideSeconds } from "./speed";
 import { isUnverifiedMotorPath } from "./access";
-import { bboxOf, yardLookup, BOTH_SIDES_M, YARD_RADIUS_M, type YardLookup } from "@/lib/geo/yards";
+import { bboxOf, gateLookup, hasGateData, type GateLookup } from "@/lib/geo/gates";
 import { seaLookup, hasSeaData, type SeaLookup } from "@/lib/geo/sea";
 import {
   OverlapStats,
@@ -123,176 +123,135 @@ const ROUGH_SMOOTHNESS = new Set(["bad", "very_bad", "horrible", "very_horrible"
 type Landscape = "forest" | "riverside" | "open" | "urban";
 
 /**
- * The classes a yard measurement applies to.
+ * The way classes a gate is collected on.
  *
- * `track` and `service` only, and this restriction is the measurement, not a
- * guess. `docs/private-property-options.md` §1 flagged 187 edges within 25 m of
- * a building across six rides — 100.4 km — but most of that is `unclassified`:
- * ordinary Latvian village gravel road, public, with houses along it. Banning
- * that would delete the country. Restricting to `track`/`service` cuts 187
- * edges to 60 and 100.4 km to 16.7 km, which is almost exactly the set of
- * genuinely suspect stretches the rider complained about — one to three per
- * ride. The investigation's own false-positive example (a Kuldīga
- * `residential` lane 13 m from detached houses, correctly tagged, a public
- * road) is excluded by exactly this rule.
+ * It must match `GATE_HIGHWAYS` in `lib/geo/gates.ts`, which is the set the
+ * dataset was *built* from: a barrier node is only kept when it is a member of
+ * a `track`, `service` or `unclassified` way. Checking it again here is a cheap
+ * pre-filter, not the test — the vertex match below is what decides. Kept
+ * because it skips the lookup entirely on the asphalt majority of a ride.
  */
-const YARD_HIGHWAYS = new Set(["track", "service"]);
+const GATE_HIGHWAY_CLASSES = new Set(["track", "service", "unclassified"]);
 
 /**
- * Kilometres of `track`/`service` that pass **through** a yard, and by which rule.
+ * How close a route vertex must be to a gate to BE that gate, in metres.
  *
- * The rider drew the line this measurement now respects:
+ * This is a rounding tolerance and nothing else. A gate that is a member of a
+ * ridden way is, by construction, one of that way's nodes — so BRouter returns
+ * it as a **vertex of the route geometry**, at the same OSM node's coordinates.
+ * The only gap between the two numbers is decimal rounding: the dataset and the
+ * route are both stored to 5–6 decimals, which is ~1 m of latitude. 1.5 m
+ * covers that and nothing else.
  *
- *   "A house near the road does not make the road private. Only a road that
- *   goes THROUGH the yard does. I do not want the route changed because a
- *   house is 25 m from the road — private houses stand beside public roads
- *   all the time."
+ * ## Why this replaced a 15 m point-to-segment radius, 2026-09-14
  *
- * So proximity to a building is the *collection* filter in the dataset, never
- * the verdict. A stretch counts only when one of four things is true, and each
- * rule's contribution is counted separately so it can be judged:
+ * The first build asked "is there a gate near this stretch of line" and got the
+ * wrong gates. The rider, reading the live map:
  *
- *  (a) `yard` — the stretch is inside a `landuse=farmyard`, or a
- *      `landuse=residential` polygon small enough to be one homestead. OSM
- *      saying outright that this is somebody's yard; the strongest signal
- *      available, and the one the investigation's examples 2 and 9 turn on.
- *  (b) `bothSides` — buildings within 20 m on **both** sides of the direction
- *      of travel. This is the drive between the house and the barn, and it is
- *      the rule that separates a yard from a village street: a row of houses
- *      along one side is all one sign, a yard is both. Investigation example 1
- *      (a track 3 m from a wall) and example 6 (a yard track between
- *      outbuildings) are this shape.
- *  (c) `deadEnd` — the route enters and leaves the cluster by the same way. A
- *      track that goes to a house and stops is a driveway however it is
- *      tagged; measured as the route retracing its own steps while inside the
- *      building cluster.
- *  (d) `gate` — a `barrier=gate|lift_gate|chain|bollard|swing_gate` node sits
- *      on the stretch. The single explicit statement OSM does make about farm
- *      access, and the investigation found 38 of them touched across six
- *      rides. Examples 5 and 7 are this.
+ *   "Ja vārti nav uz paša maršruta ceļa — jāņem ārā."
  *
- * Measured on geometry, because BRouter's message rows carry **no OSM way ids**
- * (`lib/routing/brouter.ts` says so in a comment) — there is nothing to join on.
- * That is the approach `measureOverlap` and `tet-coverage.ts` already take.
- *
- * Returns zeros where no yard data covers the route: absent data reads as
- * "not measured", not as "clean". This number changes no route — it is
- * reported, the way `unverifiedPathKm` is.
+ * If the gate is not on the route's own road, take it out. What it was marking
+ * were **driveway gates**: the barrier across a house's access road, 10–15 m off
+ * the orange line, on a `service` way the rider never touches. Proximity cannot
+ * tell those from a gate across the ridden track, because at 10 m they are the
+ * same measurement — a driveway gate is *supposed* to be near the road it
+ * leaves. Vertex identity can, exactly, and with no threshold to argue about:
+ * either the router rode through that node or it did not.
  */
-export type YardRule = "yard" | "bothSides" | "deadEnd" | "gate";
+const GATE_VERTEX_TOLERANCE_M = 1.5;
 
-type YardMeasurement = {
-  yardKm: number;
-  yardEdgeCount: number;
-  /** km attributed to each rule; a stretch caught by two counts in both */
-  byRule: Record<YardRule, number>;
-  /** per-coordinate-pair verdict, for the segment flag */
-  flags: boolean[] | null;
+/**
+ * How many gates stand on the roads this route rides, and where.
+ *
+ * This is backlog item 12 as the rider settled it — a **fact only**:
+ *
+ *   "šī pieeja nav korekta — mēs nevaram minēt; vairumā gadījumu tur nebūs
+ *   ierobežojuma; ja mums nav datu par privātajiem ceļiem, labāk šo ceļu no
+ *   maršruta neizslēgt. Sākam vismaz ar vārtiem."
+ *
+ * We cannot guess. The build that inferred a farmyard from buildings on both
+ * sides, from `landuse` polygons and from dead-ending at a cluster is gone with
+ * its 9.4 MB of data; what is left is the one thing OSM states outright — a
+ * `barrier=gate|lift_gate|swing_gate|chain|bollard|cattle_grid` node that is a
+ * **member of** the way's own node list. Membership, not proximity.
+ *
+ * And membership is what is tested here, not nearness: a gate counts only when
+ * it is a **vertex of the route geometry** (`GATE_VERTEX_TOLERANCE_M`). The
+ * rider's rule, after the first build marked the gates on driveways beside the
+ * road — "ja vārti nav uz paša maršruta ceļa — jāņem ārā".
+ *
+ * **Nothing here changes a route.** No cost, no penalty, no rejection, no
+ * ranking term. A Latvian forest gate stands open more often than not, which is
+ * precisely why it is reported rather than avoided: the rider wants to know a
+ * gate is coming, not to be routed twenty kilometres around one.
+ *
+ * A **count**, not kilometres, and that is the product decision: a gate is a
+ * point on the road. "0.74 km of gate" was the old shape's answer and it meant
+ * nothing — it was the length of the shape segment the gate happened to sit on.
+ * "Vārti uz ceļa · 3" is what a rider can act on.
+ *
+ * `count` is `undefined` — never 0 — where no published country covers the
+ * ride. Absent data means "not measured", not "no gates", exactly as
+ * `sparsePlaceData` says for POIs, and the UI stays silent rather than claiming
+ * a clean road it has never looked at. Only Latvia is built.
+ */
+type GateMeasurement = {
+  /** distinct gates ON the ridden way, or `undefined` where nothing is published */
+  count: number | undefined;
+  /** how many gates sit on each coordinate pair, for the segment flag and the markers */
+  perPair: number[] | null;
+  /** every gate's position, in the order they are met — what the map marks */
+  points: [number, number][];
 };
 
-const EMPTY_YARDS: YardMeasurement = {
-  yardKm: 0,
-  yardEdgeCount: 0,
-  byRule: { yard: 0, bothSides: 0, deadEnd: 0, gate: 0 },
-  flags: null,
-};
+const EMPTY_GATES: GateMeasurement = { count: undefined, perPair: null, points: [] };
 
-function measureYards(path: RoutePath, lookup: YardLookup | null): YardMeasurement {
+function measureGates(path: RoutePath, lookup: GateLookup | null): GateMeasurement {
   const coords = path.coordinates;
-  if (!lookup || !lookup.size || coords.length < 2) return EMPTY_YARDS;
+  // A covered bbox with nothing published in it is still a measurement: the
+  // caller has already checked `hasGateData`, so a null lookup here means the
+  // country files hold no gate near this ride — which is a real zero.
+  if (!lookup || coords.length < 2) return EMPTY_GATES;
 
-  const flags = new Array<boolean>(Math.max(0, coords.length - 1)).fill(false);
-  const byRule: Record<YardRule, number> = { yard: 0, bothSides: 0, deadEnd: 0, gate: 0 };
-
-  // Which coordinate pairs belong to a track/service edge at all. Everything
-  // else is excluded before any rule runs: a `residential` lane past detached
-  // houses is a public road, and it is the investigation's own documented
-  // false positive (example 10, Kuldīga, 13 m).
-  const onYardHighway = new Array<boolean>(coords.length - 1).fill(false);
+  // Which VERTICES sit on a gateable way. A vertex belongs to the pairs on
+  // either side of it, so a vertex counts when either of them is gateable —
+  // the node where a track meets the road it leaves from is on the track.
+  // This is only a pre-filter that skips the lookup along the asphalt majority
+  // of a ride; the vertex match below is the actual test.
+  const gateable = new Array<boolean>(coords.length).fill(false);
   for (const edge of path.edges) {
     const hw = edge.tags?.highway ?? edge.use ?? "";
-    if (!YARD_HIGHWAYS.has(hw)) continue;
+    if (!GATE_HIGHWAY_CLASSES.has(hw)) continue;
     const end = Math.min(edge.endShapeIndex, coords.length - 1);
-    for (let i = Math.max(0, edge.beginShapeIndex); i < end; i++) onYardHighway[i] = true;
+    for (let i = Math.max(0, edge.beginShapeIndex); i <= end; i++) gateable[i] = true;
   }
 
-  // Rule (c) needs to know which pieces of road the route rides twice — a
-  // track that goes to a house and comes back is a driveway however it is
-  // tagged. Keyed exactly as `measureOverlap` does it, so the two agree.
-  const passes = new Map<string, number>();
-  const pairKey = (i: number) => {
-    const a = `${coords[i][0].toFixed(5)},${coords[i][1].toFixed(5)}`;
-    const b = `${coords[i + 1][0].toFixed(5)},${coords[i + 1][1].toFixed(5)}`;
-    return a < b ? `${a}|${b}` : `${b}|${a}`;
-  };
-  for (let i = 0; i < coords.length - 1; i++) {
-    if (!onYardHighway[i]) continue;
-    const key = pairKey(i);
-    passes.set(key, (passes.get(key) ?? 0) + 1);
+  const perPair = new Array<number>(coords.length - 1).fill(0);
+  const points: [number, number][] = [];
+  // One gate is one gate: a route that rides the same track twice passes the
+  // same node twice, and the rider asked how many gates are on the road, not
+  // how many times the line meets one.
+  const seen = new Set<string>();
+
+  for (let i = 0; i < coords.length; i++) {
+    if (!gateable[i]) continue;
+    // `gateAt` takes lat, lon. A gate ON the ridden way is this very vertex, so
+    // the tolerance only has to absorb the two sides' coordinate rounding —
+    // never the tens of metres that would also catch the gate on the driveway
+    // leaving the road here, which is the whole point.
+    const gate = lookup.gateAt(coords[i][1], coords[i][0], GATE_VERTEX_TOLERANCE_M);
+    if (!gate) continue;
+    const key = `${gate.lon},${gate.lat}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    points.push([gate.lon, gate.lat]);
+    // Attribute it to the pair starting here, or — at the very last vertex,
+    // which starts no pair — to the one ending there, so the gate lands on a
+    // real segment and the map can mark it.
+    perPair[Math.min(i, perPair.length - 1)] += 1;
   }
 
-  for (let i = 0; i < coords.length - 1; i++) {
-    if (!onYardHighway[i]) continue;
-    const a = coords[i];
-    const b = coords[i + 1];
-
-    // (a) inside a farmyard polygon — tested at both ends so a step that
-    // crosses the boundary counts as entering it.
-    const inYard = Boolean(lookup.yardAt(a[0], a[1]) ?? lookup.yardAt(b[0], b[1]));
-
-    // (b) buildings on both sides. `signedOffsetM` is positive left of travel.
-    const near = lookup.buildingsAlong(a, b, YARD_RADIUS_M);
-    let left = false;
-    let right = false;
-    for (const { offsetM } of near) {
-      if (Math.abs(offsetM) > BOTH_SIDES_M) continue;
-      if (offsetM > 0) left = true;
-      else right = true;
-    }
-    const bothSides = left && right;
-
-    // (d) a gate on this stretch.
-    const gate = lookup.gatesAlong(a, b, YARD_RADIUS_M).length > 0;
-
-    // (c) a dead end into a building cluster: this piece of road is ridden more
-    // than once AND there is a building beside it. Retracing alone is an
-    // out-and-back leg, which is common and innocent; retracing *into a
-    // homestead* is a driveway.
-    const deadEnd = (passes.get(pairKey(i)) ?? 0) > 1 && near.length > 0;
-
-    if (!inYard && !bothSides && !gate && !deadEnd) continue;
-
-    const meters = haversineMeters(a, b);
-    flags[i] = true;
-    if (inYard) byRule.yard += meters;
-    if (bothSides) byRule.bothSides += meters;
-    if (deadEnd) byRule.deadEnd += meters;
-    if (gate) byRule.gate += meters;
-  }
-
-  // Total metres, and how many separate runs they form — a run being a
-  // contiguous stretch of flagged pairs, which is what "one to three suspect
-  // stretches per ride" counts.
-  let meters = 0;
-  let runs = 0;
-  for (let i = 0; i < flags.length; i++) {
-    if (!flags[i]) continue;
-    meters += haversineMeters(coords[i], coords[i + 1]);
-    if (i === 0 || !flags[i - 1]) runs++;
-  }
-
-  const km = (m: number) => Math.round(m / 100) / 10;
-  // The per-rule split is kept to two decimals where the headline is one:
-  // a ride with 0.1 km spread over four rules rounds every rule to 0.0 at one
-  // decimal and the breakdown reads as "no rule fired", which is worse than
-  // useless — it is the number that says whether to trust the signal.
-  const km2 = (m: number) => Math.round(m / 10) / 100;
-  return {
-    yardKm: km(meters),
-    yardEdgeCount: runs,
-    byRule: { yard: km2(byRule.yard), bothSides: km2(byRule.bothSides), deadEnd: km2(byRule.deadEnd), gate: km2(byRule.gate) },
-    flags,
-  };
+  return { count: seen.size, perPair, points };
 }
 
 /**
@@ -349,7 +308,7 @@ const EMPTY_COAST: CoastMeasurement = { coastKm: 0, coastNearKm: 0, flags: null,
  * and `estimated_river_class` — the nearest thing it has — tracks rivers and
  * reads 1 or nothing on the P111, the Pāvilosta seafront and the Kolka cape
  * road. The signal therefore has to be measured against geometry here, the way
- * `measureOverlap` and `measureYards` already are, and spent in ranking.
+ * `measureOverlap` and `measureGates` already are, and spent in ranking.
  *
  * Distances are taken at each sub-segment's midpoint against `lib/geo/sea.ts`.
  * BRouter shape points are 10–40 m apart and the coastline dataset is thinned
@@ -441,7 +400,7 @@ function measureElevation(path: RoutePath): { gain: number; range: number } {
  */
 function measureQuality(
   path: RoutePath,
-  yards: YardMeasurement,
+  gates: GateMeasurement,
   coast: CoastMeasurement
 ): RouteQuality & { turns: number } {
   const coords = path.coordinates;
@@ -563,9 +522,10 @@ function measureQuality(
     elevationGainM: elevation.gain,
     elevationRangeM: elevation.range,
     natureScore,
-    yardKm: yards.yardKm,
-    yardEdgeCount: yards.yardEdgeCount,
-    yardByRule: yards.byRule,
+    // A count, and `undefined` rather than 0 where nothing is published: the
+    // panel must be able to stay silent instead of claiming "no gates" about a
+    // country nobody has built the data for.
+    gateCount: gates.count,
     coastKm: coast.coastKm,
     coastNearKm: coast.coastNearKm,
   };
@@ -637,9 +597,13 @@ export function classifyRoute(path: RoutePath): ClassifiedRoute {
   // the route's own metric frame, and rebuilding it per segment is what made
   // the POI loader slow when it re-derived a country set per call.
   const bbox = coords.length >= 2 ? bboxOf(coords) : null;
-  const lookup = bbox ? yardLookup(bbox) : null;
-  const yards = measureYards(path, lookup);
-  // Same reasoning as the yard lookup: built once per candidate, asked per
+  // `hasGateData` first, exactly as the coastline lookup does below: it is the
+  // honesty gate as well as the cheap one. Outside a published country the
+  // lookup is skipped and `gateCount` stays `undefined` — "not measured", never
+  // "no gates".
+  const lookup = bbox && hasGateData(bbox) ? gateLookup(bbox) : null;
+  const gates = measureGates(path, lookup);
+  // Same reasoning as the gate lookup: built once per candidate, asked per
   // segment. `hasSeaData` is checked first so an inland ride never opens a
   // coastline file — the great majority of rides, and the reason this costs
   // nothing away from a coast.
@@ -655,12 +619,30 @@ export function classifyRoute(path: RoutePath): ClassifiedRoute {
     unknown: 0,
   };
 
+  // How many of `gates.points` have been handed to a segment already.
+  let gatesTaken = 0;
   let segStart = 0;
   // `unverified` travels with the segment so the map can mark exactly the
   // stretches the panel already counts in `unverifiedPathKm` — a path with no
   // positive motor access in OSM. Splitting on it too means a run is either
   // wholly unverified or wholly not, never half.
-  let current: { roadClass: RoadClass; surface: SurfaceClass; trackGrade?: string; unverified?: boolean; yard?: boolean } | null = null;
+  let current: { roadClass: RoadClass; surface: SurfaceClass; trackGrade?: string; unverified?: boolean } | null = null;
+  // Gates accumulate into the run being built rather than splitting it. A gate
+  // is a point, not a property of the road: splitting the line at every gate
+  // would turn one forest track into three features that are identical in class
+  // and surface, cost a dictionary entry and a varint pair each in the share
+  // code, and tell the map nothing the count does not.
+  let currentGates = 0;
+  /**
+   * Where those gates are, so the map can put a marker on each one.
+   *
+   * The positions ride on the segment rather than on the route because
+   * `segments` is the only thing that reaches the map — `RouteMap` takes one
+   * collection, the detour splicer rebuilds a ride by concatenating features,
+   * and a route-level array would be dropped by both. Carried on the feature,
+   * a spliced ride keeps exactly the gates of the stretches it kept.
+   */
+  let currentGatePoints: [number, number][] = [];
 
   const flush = (endIndex: number) => {
     if (!current || endIndex <= segStart) return;
@@ -671,7 +653,16 @@ export function classifyRoute(path: RoutePath): ClassifiedRoute {
     features.push({
       type: "Feature",
       geometry: { type: "LineString", coordinates: slice },
-      properties: { ...current, distanceMeters: Math.round(meters) },
+      // `gates` omitted at zero, the way every other optional flag is: it keeps
+      // the property out of the great majority of features, and `undefined`
+      // and absent read the same at every call site.
+      properties: {
+        ...current,
+        ...(currentGates > 0
+          ? { gates: currentGates, gatePoints: currentGatePoints }
+          : {}),
+        distanceMeters: Math.round(meters),
+      },
     });
 
     distByRoad[current.roadClass] += meters;
@@ -689,36 +680,39 @@ export function classifyRoute(path: RoutePath): ClassifiedRoute {
     const surface = toSurfaceClass(edge?.surface, edge?.unpaved, edge?.use);
     const trackGrade = roadClass === "track" ? edge?.tags?.tracktype : undefined;
     const unverified = isUnverifiedMotorPath(edge?.tags);
-    // Per-segment, exactly like `unverified`: the same stretch the panel counts
-    // in `quality.yardKm`, carried on the geometry so a badge or a map colour
-    // can mark it without re-measuring. Splitting on it keeps a run wholly in a
-    // yard or wholly out, never half. Only `track`/`service` is ever flagged —
-    // see YARD_HIGHWAYS for why a village street at 13 m is not a yard.
-    const yard = yards.flags?.[i] ?? false;
-
     if (
       !current ||
       current.roadClass !== roadClass ||
       current.surface !== surface ||
       current.trackGrade !== trackGrade ||
-      Boolean(current.unverified) !== unverified ||
-      Boolean(current.yard) !== yard
+      Boolean(current.unverified) !== unverified
     ) {
       flush(i);
       segStart = i;
-      current = { roadClass, surface, ...(trackGrade ? { trackGrade } : {}), ...(unverified ? { unverified: true } : {}), ...(yard ? { yard: true } : {}) };
+      currentGates = 0;
+      currentGatePoints = [];
+      current = { roadClass, surface, ...(trackGrade ? { trackGrade } : {}), ...(unverified ? { unverified: true } : {}) };
+    }
+    // Counted into whichever run is open, including the one just started.
+    const here = gates.perPair?.[i] ?? 0;
+    if (here > 0) {
+      currentGates += here;
+      // `perPair` counts and `points` lists, both in coordinate-pair order, so
+      // the next `here` positions are this pair's.
+      currentGatePoints.push(...gates.points.slice(gatesTaken, gatesTaken + here));
+      gatesTaken += here;
     }
   }
   flush(coords.length - 1);
 
   // No per-segment `coast` flag, deliberately, though `measureCoast` computes
-  // the verdicts. Unlike `unverified` and `yard` it would not be free: it is a
-  // fourth key in the run-splitting test below, so every coastal stretch
+  // the verdicts. Unlike `unverified` it would not be free: it is another key
+  // in the run-splitting test above, so every coastal stretch
   // becomes its own feature, and the share code turns each distinct run into a
   // dictionary entry and a varint pair — bytes in every link, for a flag
   // nothing renders. `quality.coastKm` is the number; add the flag when
   // something on the map actually draws it.
-  const { turns, ...quality } = measureQuality(path, yards, coast);
+  const { turns, ...quality } = measureQuality(path, gates, coast);
   const total = distByRoad.road + distByRoad.track + distByRoad.trail || 1;
   const pct = (m: number) => Math.round((m / total) * 100);
   const km = (m: number) => Math.round(m / 100) / 10;

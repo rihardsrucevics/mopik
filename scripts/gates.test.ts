@@ -1,7 +1,5 @@
 /**
- * Gates on tracks — the loader, the lookup, and the compatibility shim that
- * keeps `lib/routing/classify.ts` compiling until its owner moves off
- * `lib/geo/yards.ts`.
+ * Gates on tracks — the loader, the lookup, and what `classify.ts` reports.
  *
  * `npx tsx --test scripts/gates.test.ts`
  *
@@ -13,8 +11,23 @@
  *   vārtiem."
  *
  * We cannot guess. So the load-bearing tests here are the ones that prove the
- * guessing is *gone*: the shim's `buildingsAlong` and `yardAt` answer nothing
- * whatever the data, and a route past a building with no gate on it is clean.
+ * guessing is *gone*: a route past a building with no gate on it is clean
+ * however much stands around it, a gate is the only thing that ever marks a
+ * stretch, and the same geometry with and without one routes identically.
+ *
+ * The other load-bearing pair is the honesty rule: outside a published country
+ * `gateCount` is `undefined`, not 0, so the panel stays silent instead of
+ * claiming "no gates" about data nobody has built.
+ *
+ * And since 2026-09-14 a third, from the rider reading the live map — the first
+ * build's 15 m radius marked the gates on **driveways beside** the route:
+ *
+ *   "Ja vārti nav uz paša maršruta ceļa — jāņem ārā."
+ *
+ * A gate counts only when it is a VERTEX of the route geometry, which is what
+ * "a member of the ridden way" means once BRouter has returned it. So the
+ * fixtures below put a counted gate exactly on a route vertex, and the
+ * driveway test puts one 12 m off the line and requires it to be ignored.
  *
  * The loader reads `public/gates/` from `process.cwd()`, so these publish a
  * fixture into a temp directory, chdir, and reset the module caches.
@@ -196,8 +209,9 @@ test("absent data is zero gates and no crash, not a failure", async () => {
     assert.equal(hasGateData(bboxOf([at(0, 0), at(1000, 0)])), false);
     assert.deepEqual(gatesOnRoute([at(0, 0), at(1000, 0)]), []);
     assert.equal(gateLookup(bboxOf([at(0, 0), at(1000, 0)])).size, 0);
-    // And a route classifies exactly as it did before this feature existed.
-    assert.equal(classifyRoute(straightRoute("track", 20)).quality.yardKm, 0);
+    // And a route classifies exactly as it did before this feature existed —
+    // `undefined`, which is "not measured", never a claim of zero gates.
+    assert.equal(classifyRoute(straightRoute("track", 20)).quality.gateCount, undefined);
   } finally {
     process.chdir(cwd);
     resetGateCache();
@@ -280,81 +294,123 @@ test("GATE_RADIUS_M is the default and a route with no gates reports none", asyn
   });
 });
 
-// --- the shim, and the rules the rider removed ------------------------------
+// --- what classify.ts reports -----------------------------------------------
 
-test("the shim answers nothing for buildings and farmyards, whatever the data", async () => {
-  // This is the rider's decision expressed as a test. The building and polygon
-  // datasets are gone; these two must never start guessing again.
-  const { yardLookup } = await import("@/lib/geo/yards");
-  await withGates([{ at: [300, 0] }], () => {
-    const lookup = yardLookup(bboxOf([at(0, 0), at(1000, 0)]));
-    assert.ok(lookup.size > 0, "the lookup is live — it has gate data");
-    assert.deepEqual(lookup.buildingsAlong(at(250, 0), at(350, 0)), []);
-    assert.equal(lookup.yardAt(...at(300, 0)), null);
-  });
-});
-
-test("the shim's gatesAlong is real, and carries the gate through", async () => {
-  const { yardLookup } = await import("@/lib/geo/yards");
-  await withGates([{ at: [300, 2], highway: "service" }], () => {
-    const lookup = yardLookup(bboxOf([at(0, 0), at(1000, 0)]));
-    const gates = lookup.gatesAlong(at(250, 0), at(350, 0), 25);
-    assert.equal(gates.length, 1);
-    assert.equal(gates[0].kind, "gate");
-    assert.equal(gates[0].nearHighway, "service");
-  });
-});
-
-test("an unclassified gate reads as `track` through the shim's old vocabulary", async () => {
-  // The shim's type only knows track and service. Nothing reads the field —
-  // `classify.ts` counts `gatesAlong(...).length` — but it must not be a lie
-  // about `service`, which is the yard-road class.
-  const { yardLookup } = await import("@/lib/geo/yards");
-  await withGates([{ at: [300, 2], highway: "unclassified" }], () => {
-    const lookup = yardLookup(bboxOf([at(0, 0), at(1000, 0)]));
-    assert.equal(lookup.gatesAlong(at(250, 0), at(350, 0), 25)[0].nearHighway, "track");
-  });
-});
-
-test("hasYardData and resetYardCache still work and now mean gates", async () => {
-  const { hasYardData, resetYardCache } = await import("@/lib/geo/yards");
-  await withGates([{ at: [300, 0] }], () => {
-    assert.equal(hasYardData(bboxOf([at(0, 0), at(1000, 0)])), true);
-    assert.equal(hasYardData([2.3, 48.8, 2.4, 48.9]), false);
-    resetYardCache();
-    assert.equal(hasYardData(bboxOf([at(0, 0), at(1000, 0)])), true, "reload after a reset");
-  });
-});
-
-// --- what classify.ts now reports through the shim --------------------------
-
-test("a gate on a track is the only thing that flags a stretch", async () => {
-  const { quality } = await withGates([{ at: [300, 2] }], () =>
+test("a gate on a track is counted, and carried on the segment that holds it", async () => {
+  // ON a vertex: `straightRoute` steps every 50 m, so 300 m east IS vertex 6.
+  const { quality, segments } = await withGates([{ at: [300, 0] }], () =>
     classifyRoute(straightRoute("track", 20))
   );
-  assert.ok(quality.yardKm > 0, "a gate across a farm track is the one explicit fact");
-  assert.ok(quality.yardByRule.gate > 0);
-  // Every inferred rule is dead: no buildings, no polygons, no dead-end guess.
-  assert.equal(quality.yardByRule.bothSides, 0);
-  assert.equal(quality.yardByRule.yard, 0);
-  assert.equal(quality.yardByRule.deadEnd, 0);
+  assert.equal(quality.gateCount, 1, "a gate across a farm track is the one explicit fact");
+
+  // The count is a number of gates, not a length of road: the old shape
+  // reported the kilometres of the shape segment a gate happened to sit on,
+  // which was a fact about BRouter's vertex spacing and nothing else.
+  const withGate = segments.features.filter((f) => (f.properties?.gates ?? 0) > 0);
+  assert.equal(withGate.length, 1, "one run carries it");
+  assert.equal(withGate[0].properties?.gates, 1);
+  // And its position, so the map can put a marker on it rather than on the
+  // middle of the run.
+  const points = withGate[0].properties?.gatePoints ?? [];
+  assert.equal(points.length, 1);
+  assert.ok(Math.abs(points[0][0] - at(300, 0)[0]) < 1e-9);
+  assert.ok(Math.abs(points[0][1] - at(300, 0)[1]) < 1e-9);
+});
+
+test("a gate on the driveway beside the road is NOT on the road", async () => {
+  // The rider's correction, 2026-09-14, reading the live map: the markers were
+  // landing on the barrier across a house's access road, 10–15 m off the orange
+  // line. "Ja vārti nav uz paša maršruta ceļa — jāņem ārā."
+  //
+  // Proximity cannot tell this from a gate across the ridden track — at 12 m
+  // they are the same measurement, and a driveway gate is *supposed* to sit
+  // near the road it leaves. Vertex identity can, exactly.
+  const q = await withGates([{ at: [300, 12], highway: "service" }], () =>
+    classifyRoute(straightRoute("track", 20)).quality
+  );
+  assert.equal(q.gateCount, 0, "measured, and none on the road the rider rides");
+
+  // Even at 3 m — still not a node of the ridden way, so still not its gate.
+  // The tolerance absorbs coordinate rounding only.
+  const near = await withGates([{ at: [300, 3], highway: "service" }], () =>
+    classifyRoute(straightRoute("track", 20)).quality
+  );
+  assert.equal(near.gateCount, 0);
+});
+
+test("the vertex tolerance absorbs coordinate rounding, and only that", async () => {
+  // A gate stored to 5 decimals against a route vertex stored to 5 decimals is
+  // up to ~1 m apart while being the same OSM node. That must still count.
+  const q = await withGates([{ at: [300, 1] }], () =>
+    classifyRoute(straightRoute("track", 20)).quality
+  );
+  assert.equal(q.gateCount, 1, "1 m is rounding, not a different road");
+});
+
+test("a gate on a road class that is not gateable is not on the rider's road", async () => {
+  // The dataset says "this gate is on a track somewhere". A primary road
+  // running within 15 m of a farm track's gate must not report it.
+  const q = await withGates([{ at: [300, 2] }], () =>
+    classifyRoute(straightRoute("primary", 20)).quality
+  );
+  assert.equal(q.gateCount, 0, "measured, and none on this road");
+});
+
+test("one gate is one gate however many times the line meets it", async () => {
+  // A shared vertex is found by both segments that meet there, and an
+  // out-and-back rides the same gate twice. The rider asked how many gates are
+  // on the road, not how many times the line passes one.
+  const there: [number, number][] = [];
+  for (let i = 0; i <= 20; i++) there.push(at(i * 50, 0));
+  const path: RoutePath = {
+    distanceMeters: 2000,
+    durationSeconds: 200,
+    coordinates: [...there, ...there.slice(0, -1).reverse()],
+    edges: [
+      {
+        beginShapeIndex: 0,
+        endShapeIndex: there.length * 2 - 2,
+        use: "track",
+        tags: { highway: "track" },
+      },
+    ],
+  };
+  const q = await withGates([{ at: [300, 0] }], () => classifyRoute(path).quality);
+  assert.equal(q.gateCount, 1);
 });
 
 test("a track with no gate is clean, however much is around it", async () => {
   // The old build would have flagged this from building proximity. It must not:
   // "vairumā gadījumu tur nebūs ierobežojuma" — in most cases there is no
-  // restriction there.
-  const q = await withGates([{ at: [300, 300] }], () =>
-    classifyRoute(straightRoute("track", 20)).quality
+  // restriction there. 300 m off the line is not a gate on it.
+  const { quality, segments } = await withGates([{ at: [300, 300] }], () =>
+    classifyRoute(straightRoute("track", 20))
   );
-  assert.equal(q.yardKm, 0);
-  assert.equal(q.yardEdgeCount, 0);
+  // 0, not undefined: the country IS published, so this is a measurement.
+  assert.equal(quality.gateCount, 0);
+  assert.ok(segments.features.every((f) => f.properties?.gates === undefined));
+});
+
+test("outside a published country the count is undefined, never zero", async () => {
+  // The honesty rule, and the reason the panel can stay silent: "not measured"
+  // must never render as "no gates". Same shape as `sparsePlaceData` for POIs.
+  const far: [number, number][] = [];
+  for (let i = 0; i <= 20; i++) far.push([2.35 + i * 0.0005, 48.85]);
+  const q = await withGates([{ at: [300, 0] }], () =>
+    classifyRoute({
+      distanceMeters: 1000,
+      durationSeconds: 100,
+      coordinates: far,
+      edges: [{ beginShapeIndex: 0, endShapeIndex: 20, use: "track", tags: { highway: "track" } }],
+    }).quality
+  );
+  assert.equal(q.gateCount, undefined, "Paris has no published gate data");
 });
 
 test("the route is never changed by a gate — it is reported, not avoided", async () => {
   // Same geometry, with and without a gate on it: identical distance, identical
   // mix, identical segment count. The only difference is the reported number.
-  const withGate = await withGates([{ at: [300, 2] }], () =>
+  const withGate = await withGates([{ at: [300, 0] }], () =>
     classifyRoute(straightRoute("track", 20))
   );
   const without = await withGates([], () => classifyRoute(straightRoute("track", 20)));
@@ -363,5 +419,11 @@ test("the route is never changed by a gate — it is reported, not avoided", asy
   assert.deepEqual(withGate.roadMix, without.roadMix);
   assert.deepEqual(withGate.overlap, without.overlap);
   assert.deepEqual(withGate.surfaces, without.surfaces);
-  assert.ok(withGate.quality.yardKm > 0 && without.quality.yardKm === 0);
+  assert.deepEqual(
+    withGate.segments.features.map((f) => f.geometry.coordinates.length),
+    without.segments.features.map((f) => f.geometry.coordinates.length),
+    "a gate does not even split a run — it is a point on the road, not a property of it"
+  );
+  assert.equal(withGate.quality.gateCount, 1);
+  assert.equal(without.quality.gateCount, 0);
 });

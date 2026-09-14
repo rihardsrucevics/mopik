@@ -288,7 +288,6 @@ function routeWith(coastKm: number): GeneratedRoute {
       roughTrackKm: 0.4, sandKm: 0, streetKm: 0.3, unverifiedPathKm: 0.2, surfaceSwitches: 4,
       turnsPer10Km: 8, forestKm: 2.1, riversideKm: 0.4, ruralOpenKm: 1.2, landscapeTransitions: 2,
       landscapeTypes: 2, elevationGainM: 60, elevationRangeM: 25, natureScore: 51,
-      yardKm: 0, yardEdgeCount: 0, yardByRule: { yard: 0, bothSides: 0, deadEnd: 0, gate: 0 },
       coastKm, coastNearKm: coastKm * 1.5,
     },
     overlap: { repeatedKm: 0.4, distinctKm: 4.6, repeatedPercent: 8 },
@@ -309,7 +308,9 @@ test("the share code round-trips coastKm", () => {
   assert.equal(decoded.details?.coastKm, 18.4);
   // The rest of the payload is untouched by the addition.
   assert.equal(decoded.details?.unverifiedPathKm, 0.2);
-  assert.equal(decoded.details?.yardKm, 0);
+  // No gates measured on this fixture, so the field is absent — "not
+  // measured", which the page must not render as "no gates".
+  assert.equal(decoded.details?.gateCount, undefined);
   assert.equal(decoded.name, "Piekrastes brauciens");
 });
 

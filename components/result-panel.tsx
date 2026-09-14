@@ -42,6 +42,28 @@ const variantLabels = (m: ReturnType<typeof messages>): Record<string, { label: 
 });
 
 
+/**
+ * The gate glyph, and why it is a door.
+ *
+ * Three were weighed. 🚧 is the roadworks barrier — it means "works ahead,
+ * closed", which is the one thing a Latvian forest gate usually is *not*: it
+ * stands open more often than not, and the rider is being told a gate exists,
+ * not that the road is shut. ⛩️ is a Shinto torii; at 14 px it reads as a
+ * gateway, but it means a shrine entrance and looks like one anywhere the
+ * rider might show the app.
+ *
+ * 🚪 is a door: a rectangle with a handle, which is legible at 14 px (the
+ * RISKI row's size) precisely because it has almost no internal detail — the
+ * torii's crossbeams and the barrier's diagonal stripes both turn to mush at
+ * that size. And "a thing across your way that you can open" is exactly what
+ * the row says: "var būt jāatver vai jāgriežas".
+ *
+ * Kept next to `Row` and duplicated in `route-map.tsx` and `shared-route.tsx`,
+ * the way ⚠️ and 🔥 already are: the emoji are plain text and each surface
+ * writes them into a different medium (JSX here, a DOM string on the map).
+ */
+export const GATE_ICON = "🚪";
+
 function duration(seconds: number): string {
   const m = Math.round(seconds / 60);
   return m >= 60 ? `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ""}` : `${m} min`;
@@ -680,10 +702,23 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
                 which is why it used to carry no percentage; under a heading of
                 its own it is plainly a different measurement, so the share of
                 the ride is worth saying, on the same denominator as ROADS. */}
-            {q.unverifiedPathKm > 0 && (
+            {(q.unverifiedPathKm > 0 || (q.gateCount ?? 0) > 0) && (
               <div>
                 <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-stone-400">{m.resRisksHeading}</div>
-                <Row label={m.badgeUnverified} value={`${q.unverifiedPathKm} km · ${unverifiedPercent} %`} icon="⚠️" />
+                {q.unverifiedPathKm > 0 && (
+                  <Row label={m.badgeUnverified} value={`${q.unverifiedPathKm} km · ${unverifiedPercent} %`} icon="⚠️" />
+                )}
+                {/* A COUNT, not kilometres, and not a percentage: a gate is a
+                    point on the road. The old shape reported "0.7 km", which
+                    was the length of the shape segment a gate happened to sit
+                    on — a fact about BRouter's vertex spacing, not about the
+                    ride. `gateCount` is `undefined` outside the published
+                    countries, and `> 0` keeps that silent rather than
+                    rendering "0": "not measured" must never read as "no
+                    gates", which is the `sparsePlaceData` rule again. */}
+                {(q.gateCount ?? 0) > 0 && (
+                  <Row label={m.resGatesRow} value={`${q.gateCount}`} icon={GATE_ICON} />
+                )}
               </div>
             )}
             <div>

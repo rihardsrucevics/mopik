@@ -140,12 +140,27 @@ export type RouteSegmentProperties = {
    */
   unverified?: boolean;
   /**
-   * A `track` or `service` stretch running within 25 m of a building — a
-   * farmyard, in the rider's words. Already counted in `quality.yardKm`;
-   * carried per segment so the map and the risk badges can mark exactly the
-   * stretches that earned the number, the way `unverified` already does.
+   * How many gates stand on this stretch — `barrier=gate|lift_gate|swing_gate|
+   * chain|bollard|cattle_grid` nodes that are members of the way's own node
+   * list, matched as **vertices of the route geometry**, never by proximity: a
+   * driveway's gate 10 m off the line is not a gate on this road. Absent rather
+   * than 0 on the great majority of stretches.
+   *
+   * Already counted in `quality.gateCount`; carried per segment so the map can
+   * mark them and the segment card can say so, the way `unverified` already
+   * does. Unlike `unverified` it does not split a run: a gate is a point on the
+   * road, not a property of it.
    */
-  yard?: boolean;
+  gates?: number;
+  /**
+   * Where those gates are, `[lon, lat]` each, in the order they are met.
+   *
+   * On the feature rather than on the route because `segments` is the only
+   * thing that reaches the map, and because a spliced ride (a detour to a
+   * sight) is built by concatenating features — so it keeps exactly the gates
+   * of the stretches it kept. Present whenever `gates` is.
+   */
+  gatePoints?: [number, number][];
   distanceMeters: number;
 };
 
@@ -191,31 +206,30 @@ export type RouteQuality = {
   /** Internal 0–100 candidate-ranking signal; provisional until rider-labelled. */
   natureScore: number;
   /**
-   * Kilometres of `track`/`service` running within 25 m of a building — riding
-   * through somebody's farmyard, backlog item 12.
+   * How many gates stand on the roads this ride uses — backlog item 12, as the
+   * rider settled it.
    *
-   * OSM cannot answer this from tags: across the six rides
-   * `docs/private-property-options.md` measured, the flagged edges carried zero
-   * `access=private` and zero `motor_vehicle=no`, every ridden `service` way
-   * lacked a `service=*` subtag, and `building`/`landuse` are not in BRouter's
-   * vocabulary at all. So it is measured geometrically against a prebuilt
-   * dataset (`lib/geo/yards.ts`), and is 0 where no dataset covers the ride —
-   * "not measured", not "clean".
+   * One explicit OSM fact and nothing derived from it: a
+   * `barrier=gate|lift_gate|swing_gate|chain|bollard|cattle_grid` node that is a
+   * **member of** a `highway=track|service|unclassified` way, and *on the road
+   * actually ridden* — matched as a vertex of the route geometry, which is what
+   * membership looks like once BRouter has returned the way. Never by
+   * proximity: the rider's second correction, after a 15 m radius marked the
+   * gates on driveways beside the route ("ja vārti nav uz paša maršruta ceļa —
+   * jāņem ārā"). The earlier build that inferred a farmyard from nearby
+   * buildings and `landuse` polygons was rejected the same way — "mēs nevaram
+   * minēt", we cannot guess — and is gone.
+   *
+   * **No route is ever changed by it.** No cost, no penalty, no rejection: a
+   * Latvian forest gate stands open more often than not, so it is reported the
+   * way `unverifiedPathKm` is.
+   *
+   * A count, because a gate is a point. And `undefined`, never 0, where no
+   * published country covers the ride — absent data means "not measured", not
+   * "no gates", so the panel can stay silent instead of claiming a clean road
+   * it has never looked at. Only Latvia is built (`lib/geo/gates.ts`).
    */
-  yardKm: number;
-  /** How many separate stretches make up `yardKm` — one to three per ride, measured. */
-  yardEdgeCount: number;
-  /**
-   * Which rule caught each kilometre, so the signal can be judged rather than
-   * trusted: `yard` a farmyard polygon, `bothSides` buildings left and right,
-   * `deadEnd` a driveway the route backs out of, `gate` a barrier on the line.
-   * A stretch caught by two rules is counted in both, so these sum to at least
-   * `yardKm`. Kept to two decimals where `yardKm` has one: a ride with 0.1 km
-   * spread over four rules rounds every rule to 0.0 at one decimal, and the
-   * breakdown then reads as "no rule fired" — which is the one thing it must
-   * never say when something did.
-   */
-  yardByRule: { yard: number; bothSides: number; deadEnd: number; gate: number };
+  gateCount?: number;
   /**
    * Kilometres ridden within 1 km of a coastline, on a real road — backlog
    * item 11c, the rider's "riding along the coast should be preferred, because

@@ -388,6 +388,103 @@ const HIGHLIGHT_WIDTH: maplibregl.ExpressionSpecification = [
 type WarningKind = "unverified" | "trail" | "rough";
 const BADGE_KINDS: WarningKind[] = ["unverified", "trail"];
 
+/**
+ * Gate markers on the line — backlog item 12, and a switch to turn them off.
+ *
+ * Only gates **on the ridden way** reach here — `classify.ts` matches them as
+ * vertices of the route geometry, so the barrier across a driveway beside the
+ * route is not marked ("ja vārti nav uz paša maršruta ceļa — jāņem ārā").
+ *
+ * Not a `WarningKind`, deliberately, and this is the rider's own distinction: a
+ * warning is a property of a *stretch* of road, a gate is a *point* on it. The
+ * warning machinery groups runs, picks a midpoint, merges icons into one pill
+ * and highlights whole features — every one of which would put the gate marker
+ * somewhere the gate is not. Gates get their own small pass with their own cap.
+ *
+ * `SHOW_GATE_MARKERS` is the off switch, the way `BADGE_KINDS` is for warnings:
+ * set it to `false` and the line carries none. The RISKI row and the segment
+ * card are unaffected — those are lists and can always afford a line.
+ */
+const SHOW_GATE_MARKERS = true;
+
+/**
+ * 🚪, and why it is a door rather than 🚧 or ⛩️.
+ *
+ * 🚧 is the roadworks barrier: it says "closed, works ahead", which is the one
+ * thing a Latvian forest gate usually is not — it stands open more often than
+ * not, and that is exactly why item 12 reports gates instead of avoiding them.
+ * ⛩️ is a Shinto torii; it reads as a gateway but means a shrine, and its
+ * crossbeams turn to mush at this size. 🚪 is a rectangle with a handle: almost
+ * no internal detail, so it survives being drawn at 13 px in a 20 px pill, and
+ * it means the thing the card says — something across your way that you can
+ * open. Same glyph in the RISKI row (`GATE_ICON` in `result-panel.tsx`).
+ */
+const GATE_EMOJI = "🚪";
+
+/**
+ * Most gate markers one route may carry.
+ *
+ * A gate is a point, so unlike a warning badge there is no run to merge into
+ * and no natural spacing — a forest ride through Latvian farm country can meet
+ * dozens. Thirty is where a phone map still reads as a route with marks on it
+ * rather than as a line of doors. Past the cap the markers are thinned to every
+ * k-th gate, so they stay spread along the whole ride instead of stopping at
+ * the thirtieth: the marks then mean "gates along here", and the RISKI row
+ * carries the exact number, which is the figure the rider acts on.
+ */
+const GATE_MARKER_MAX = 30;
+
+/**
+ * A gate's pill: the same construction as `badgeElement`, one size smaller.
+ *
+ * 20 px against the badge's 24 px, and z-index 0 against its 1, because a gate
+ * is the least urgent of the three marks on the line — a warning can mean
+ * turning back and a stop is the rider's own answer, while a gate is a thing to
+ * expect. Below both, and it never grows: a gate pill holds one glyph.
+ */
+function gateElement(title: string): HTMLElement {
+  const el = document.createElement("button");
+  el.type = "button";
+  el.title = title;
+  el.setAttribute("aria-label", title);
+  el.style.cssText =
+    "display:flex;align-items:center;justify-content:center;" +
+    "width:20px;height:20px;border-radius:10px;" +
+    "background:rgba(255,255,255,0.92);box-shadow:0 1px 2px rgba(0,0,0,0.2);" +
+    "line-height:0;cursor:pointer;user-select:none;border:0;padding:0;opacity:0.9;" +
+    // Under the warning badges (1) and the stops (2).
+    "z-index:0";
+  el.innerHTML =
+    `<span aria-hidden="true" style="display:inline-flex;align-items:center;` +
+    `justify-content:center;width:14px;height:14px;font-size:13px;line-height:1">` +
+    `${GATE_EMOJI}</span>`;
+  return el;
+}
+
+/** One gate to mark, and the run it belongs to so a click can open that card. */
+type GateMark = { point: [number, number]; segmentId: number | undefined };
+
+/**
+ * Every gate on the route, thinned to `GATE_MARKER_MAX`.
+ *
+ * Thinned by taking every k-th rather than the first thirty: a ride whose gates
+ * are all in its last forest would otherwise show none of them. The count the
+ * rider reads is the panel's, which is never thinned.
+ */
+function gateMarksFor(segments: GeoJSON.FeatureCollection): GateMark[] {
+  const all: GateMark[] = [];
+  for (const f of segments.features) {
+    const props = (f.properties ?? {}) as SegmentProps;
+    const points = props.gatePoints;
+    if (!points?.length) continue;
+    const id = props[SEGMENT_ID];
+    for (const point of points) all.push({ point, segmentId: typeof id === "number" ? id : undefined });
+  }
+  if (all.length <= GATE_MARKER_MAX) return all;
+  const step = Math.ceil(all.length / GATE_MARKER_MAX);
+  return all.filter((_, i) => i % step === 0).slice(0, GATE_MARKER_MAX);
+}
+
 type Warning = { kind: WarningKind; title: string; detail: string };
 
 /**
@@ -906,6 +1003,22 @@ function segmentInfoHtml(
       `</details>`
     );
   });
+  // Gates: a row of its own rather than a `warningsFor` entry, because it is
+  // not a warning about the stretch — it is a count of points on it, and the
+  // line says what that means for the riding, which the panel's bare number
+  // cannot. Above the TET row and below the warnings: access first, then what
+  // is on the road, then what the road is.
+  const gateCount = props.gates ?? 0;
+  if (gateCount > 0) {
+    flags.push(
+      `<div style="display:flex;align-items:flex-start;gap:6px">` +
+      `<span aria-hidden="true" style="display:inline-flex;align-items:center;` +
+      `justify-content:center;width:${WARNING_ICON_PX}px;flex:none;` +
+      `font-size:${WARNING_EMOJI_FONT_PX}px;line-height:1">${GATE_EMOJI}</span>` +
+      `<span>${esc(fi(m.segGates, { n: gateCount }))}</span></div>`
+    );
+  }
+
   if (props[ON_TET]) {
     flags.push(
       `<div style="display:flex;align-items:center;gap:6px">` +
@@ -1188,6 +1301,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
   const loadedRef = useRef(false);
   const viaMarkersRef = useRef<maplibregl.Marker[]>([]);
   const badgeMarkersRef = useRef<maplibregl.Marker[]>([]);
+  const gateMarkersRef = useRef<maplibregl.Marker[]>([]);
   const syncRef = useRef<() => void>(() => {});
   /** Which route has already played its reveal, so a pan never replays it. */
   const revealedRef = useRef<string | null>(null);
@@ -1518,6 +1632,25 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
               .addTo(map);
           })
         : [];
+
+      for (const marker of gateMarkersRef.current) marker.remove();
+      // Gates get their own pass, after the badges so they sit under them in
+      // DOM order too, and only where the route actually carries positions —
+      // outside the published countries `classify.ts` reports nothing at all,
+      // which is "not measured", so the map stays as bare as the panel does.
+      gateMarkersRef.current =
+        enriched && SHOW_GATE_MARKERS
+          ? gateMarksFor(enriched).map((g) => {
+              const el = gateElement(m.resGatesRow);
+              el.addEventListener("click", (event) => {
+                // Same reason the badges stop it: otherwise the click also
+                // reaches the map and opens a second card underneath this one.
+                event.stopPropagation();
+                if (typeof g.segmentId === "number") openCardRef.current(g.point, g.segmentId);
+              });
+              return new maplibregl.Marker({ element: el }).setLngLat(g.point).addTo(map);
+            })
+          : [];
 
       for (const marker of viaMarkersRef.current) marker.remove();
       // Every stop gets the 🅿️ pill and the same card mechanism the line and

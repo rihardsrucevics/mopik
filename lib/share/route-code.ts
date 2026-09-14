@@ -106,14 +106,24 @@ export type ShareMeta = {
   /** forestKm, riversideKm, ruralOpenKm, elevationGainM, unverifiedPathKm, roughTrackKm, sandKm, streetKm */
   q?: [number, number, number, number, number, number, number, number];
   /**
-   * yardKm — `track`/`service` km within 25 m of a building (backlog item 12).
+   * gateCount — gates standing on the roads this ride uses (backlog item 12).
    *
    * Its own key rather than a ninth slot in `q`, and optional, because **older
    * codes must keep decoding**: links live in riders' chats forever and the
    * version prefix is only bumped for a change that breaks them. A code with no
-   * `y` decodes to 0, which reads as "not measured" — the same thing a ride
-   * outside the published yard countries reports.
+   * `g` decodes to `undefined`, which reads as "not measured" — the same thing
+   * a ride outside the published gate countries reports, and the reason the
+   * shared page's RISKI row stays silent rather than claiming "no gates".
+   *
+   * `y` was the same field as kilometres, before the rider settled item 12 as a
+   * count of gates rather than a length of suspect road. It is still read here
+   * so old links keep working, and deliberately not shown: "0.7 km" was the
+   * length of the shape segment a gate happened to sit on, which is not a fact
+   * about anything. A code carrying only `y` therefore decodes to `undefined`
+   * — not measured — which is honest, where showing its kilometres would not be.
    */
+  g?: number;
+  /** @deprecated Pre-2026-09-14 codes only; see `g`. Never written any more. */
   y?: number;
   /**
    * coastKm — km within 1 km of a coastline on a real road (backlog item 11c).
@@ -136,8 +146,12 @@ export type SharedRoute = {
     asphaltPercent: number; gravelPercent: number; dirtPercent: number; unknownPercent: number;
     forestKm: number; riversideKm: number; ruralOpenKm: number; elevationGainM: number;
     unverifiedPathKm: number; roughTrackKm: number; sandKm: number; streetKm: number;
-    /** 0 on codes that predate the field, and on rides with no yard data. */
-    yardKm: number;
+    /**
+     * Gates on the road. `undefined` on codes that predate the field and on
+     * rides outside the published gate countries — "not measured", which the
+     * page must not render as "no gates".
+     */
+    gateCount?: number;
     /** 0 on codes that predate the field, and on rides with no coastline data. */
     coastKm: number;
   } | null;
@@ -196,7 +210,7 @@ export function encodeRouteShare(route: GeneratedRoute, startLabel: string, plan
   };
   // Only when there is something to say: a zero would cost bytes in every link
   // for a field most rides do not use, and absent already means zero on decode.
-  if (route.quality.yardKm > 0) meta.y = r1(route.quality.yardKm);
+  if ((route.quality.gateCount ?? 0) > 0) meta.g = route.quality.gateCount;
   if (route.quality.coastKm > 0) meta.c = r1(route.quality.coastKm);
   const parts = [SHARE_VERSION, toBase64Url(JSON.stringify(meta)), encodeVarints(deltas), encodeVarints(runs)];
   if (plan) parts.push(encodePlanShare(plan, places));
@@ -239,7 +253,9 @@ export function decodeRouteShare(code: string): SharedRoute | null {
       asphaltPercent: meta.sf[0], gravelPercent: meta.sf[1], dirtPercent: meta.sf[2], unknownPercent: meta.sf[3],
       forestKm: meta.q[0], riversideKm: meta.q[1], ruralOpenKm: meta.q[2], elevationGainM: meta.q[3],
       unverifiedPathKm: meta.q[4], roughTrackKm: meta.q[5], sandKm: meta.q[6], streetKm: meta.q[7],
-      yardKm: meta.y ?? 0,
+      // `meta.g` only: a pre-count code's `y` was kilometres of suspect road,
+      // which is not this number and must not be shown as it.
+      gateCount: meta.g,
       coastKm: meta.c ?? 0,
     } : null;
     return { name: meta.n, variant: meta.va, km: meta.km, minutes: meta.min, unpavedPercent: meta.up, repeatedPercent: meta.rep, startLabel: meta.s, points, classes, plan, details };

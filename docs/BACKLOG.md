@@ -491,14 +491,19 @@ Recurring. The sandy beach tracks are already refused (`beach_like_path`), so
 this is about riding *beside* the sea, not on it — measure what the routes
 actually use before changing costs.
 
-## 12. Routes run through private property
+## 12. ~~Routes run through private property~~ — DONE 2026-09-14 (gates only)
 
 Sometimes harmless, sometimes it is somebody's farmyard, which is not all
 right to ride through. Open question — the rider asked how to solve it, not
 for a specific fix. OSM access tags are already respected; a house or a
 homestead with no access tag at all is the hard case.
 
-**Status, 2026-09-14: gates ship, guessing does not.**
+**Done 2026-09-14: gates ship as a fact, guessing does not.** The dataset, the
+measurement and the UI are all in. What the rider sees: a "Vārti uz ceļa 🚪 · N"
+row under RISKI, a 🚪 marker on each gate on the map, and a line in the segment
+card saying what it means for the riding. **No route is changed by any of it** —
+the open question of *actual* private-road data stays open, and is written up
+under "What more would take" below.
 
 *What was tried.* `docs/private-property-options.md` measured the problem over
 six rides and found OSM says almost nothing explicit: of 187 route edges within
@@ -551,9 +556,36 @@ or OSM's own `access`/`motor_vehicle` tagging improving, which is a mapping
 effort, not a code one. Until one of those exists, the honest position is the
 rider's: leave the road in and say what is known about it.
 
-Only Latvia is built. Everywhere else `hasGateData` is false, which means "not
-measured" and must be said out loud rather than read as "no gates", the same
-way `sparsePlaceData` does for POIs.
+*A gate only counts if it is ON the road being ridden.* The rider, reading the
+live map after the first build:
+
+> "Ja vārti nav uz paša maršruta ceļa — jāņem ārā."
+
+The first rule asked "is a gate within 15 m of this stretch of line" and marked
+**driveway gates** — the barrier across a house's access road, 5–15 m off the
+route, on a `service` way nobody rides. Proximity cannot separate those from a
+gate across the ridden track; at 10 m they are the same measurement. So the test
+is now identity: a gate that is a member of a ridden way is one of its nodes, so
+BRouter returns it as a **vertex of the route geometry**, and a gate counts iff
+a route vertex is within 1.5 m of it — coordinate rounding only.
+
+*What the rider sees, measured 2026-09-14.* `quality.gateCount` is a **count**,
+never kilometres — a gate is a point on the road, and the old shape's "0.74 km"
+was the length of the shape segment a gate happened to sit on. Before/after on
+identical geometry, the rule the only change: Rīga → Baldone 54 km **7 → 2**;
+Bauska round trip **4 → 4** at 80 km (nothing lost — those were real, 0.25–0.41 m
+from a vertex) and **0 → 0** at 113 km; Sigulda **1 → 0** at 112 km and
+**12 → 0** at 292 km. Every dropped gate measured 5–11 m from the nearest
+vertex. The row and the markers appear only above zero, so a loop with no gates
+shows RISKI with the unverified row alone. Markers are capped at 30 per route
+and thinned to every k-th past that — no ride measured came near it.
+
+Only Latvia is built. Everywhere else `hasGateData` is false, so `gateCount` is
+**`undefined`, not 0** — "not measured" must be said out loud rather than read
+as "no gates", the same way `sparsePlaceData` does for POIs, and `undefined` is
+what lets the panel stay silent instead of claiming a clean road. Building more
+countries is a download-time job: `scripts/build_gates_dataset.py LT EE PL DE`,
+5 s per country.
 
 ## 13. Pick a destination precisely on the map
 

@@ -146,3 +146,63 @@ test("a sight's kind survives the trip, and a typed stop stays typed", () => {
   const legacy = encodePlanShare(plan, places.map(({ name, label, lat, lon }) => ({ name, label, lat, lon })));
   assert.deepEqual(decodePlanPlaces(legacy).map((p) => p.kind), [undefined, undefined]);
 });
+
+/**
+ * Gates on the road through a share code — backlog item 12.
+ *
+ * The field is `g`, a COUNT, and it replaced `y`, which was kilometres of
+ * "suspect" road from the yard-inference build the rider rejected. Both halves
+ * of that change are load-bearing here: a new code carries the count, and an
+ * old code carrying `y` must still decode — links live in riders' chats forever
+ * — while showing nothing, because its kilometres are not this number.
+ */
+function routeWithGates(gateCount: number | undefined): GeneratedRoute {
+  const route = fakeRoute();
+  return { ...route, quality: { ...route.quality, gateCount } };
+}
+
+const shareMeta = (code: string) =>
+  JSON.parse(
+    Buffer.from(code.split("~")[1].replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf-8")
+  );
+
+test("a gate count survives the trip through the URL", () => {
+  const back = decodeRouteShare(encodeRouteShare(routeWithGates(7), "Baldone"))!;
+  assert.equal(back.details?.gateCount, 7);
+  // A count, so it stays an integer rather than being rounded to one decimal
+  // the way every kilometre field in the code is.
+  assert.equal(shareMeta(encodeRouteShare(routeWithGates(7), "Baldone")).g, 7);
+});
+
+test("no gates and not measured both stay out of the code, and read as undefined", () => {
+  // Zero costs bytes in every link for a field most rides do not use, and the
+  // shared page must not render either case as "no gates": one is a measured
+  // zero, the other is a country nobody has built the data for, and neither is
+  // worth a row. `undefined` is what keeps the RISKI row silent for both.
+  for (const count of [0, undefined]) {
+    const code = encodeRouteShare(routeWithGates(count), "Baldone");
+    assert.equal(shareMeta(code).g, undefined, `count ${count} writes no key`);
+    assert.equal(decodeRouteShare(code)!.details?.gateCount, undefined);
+  }
+});
+
+test("a pre-count code's `y` decodes without claiming to be a gate count", () => {
+  // `y` was yardKm — the length of road the rejected inference called suspect.
+  // Showing it as "Vārti uz ceļa · 0.7" would be a lie about a different thing,
+  // so the decoder reads it and says nothing.
+  const code = encodeRouteShare(fakeRoute(), "Baldone");
+  const [version, meta, ...rest] = code.split("~");
+  const legacyMeta = { ...JSON.parse(Buffer.from(meta.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf-8")), y: 0.74 };
+  const legacy = [
+    version,
+    Buffer.from(JSON.stringify(legacyMeta)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""),
+    ...rest,
+  ].join("~");
+
+  const back = decodeRouteShare(legacy);
+  assert.ok(back, "an old link still decodes — that is the whole point of the version prefix");
+  assert.equal(back.details?.gateCount, undefined);
+  // And everything else in that old code is untouched by the rename.
+  assert.equal(back.name, "Baldone tests");
+  assert.equal(back.km, 3);
+});

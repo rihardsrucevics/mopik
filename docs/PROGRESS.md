@@ -1,5 +1,158 @@
 # Mopik — progress log
 
+## 2026-09-14 — Item 12: gates reach the rider (UI, and the shim is gone)
+
+The data half of item 12 shipped earlier today (entry below). This is the other
+half: `classify.ts` off the deprecated `lib/geo/yards.ts` shim, a **count** in
+the panel, a marker on the map, and a line in the segment card. **Item 12 is
+done** as the rider settled it — *a fact only, on the road, and the route never
+changes.*
+
+### The measurement changed shape: a count, not kilometres
+
+`quality.yardKm` / `yardEdgeCount` / `yardByRule` are gone, replaced by one
+field, `quality.gateCount`. The reason is the product decision, not tidiness: a
+gate is a **point** on the road. "0.74 km" was the length of the BRouter shape
+segment a gate happened to sit on — a fact about vertex spacing and nothing
+else. "Vārti uz ceļa · 3" is what a rider can act on.
+
+### The rider's correction, same day: a gate must be ON the ridden way
+
+The first build asked "is there a gate within 15 m of this stretch of line" and
+got the wrong gates. The rider, reading the live map:
+
+> "Ja vārti nav uz paša maršruta ceļa — jāņem ārā."
+
+What it was marking were **driveway gates**: the barrier across a house's access
+road, 5–15 m off the orange line, on a `service` way the rider never touches.
+Proximity cannot tell those from a gate across the ridden track — at 10 m they
+are the *same measurement*, and a driveway gate is supposed to sit near the road
+it leaves.
+
+**The fix is identity, not a tighter radius.** A gate that is a member of a
+ridden way is by construction one of that way's nodes, so BRouter returns it as
+a **vertex of the route geometry**. So a gate counts iff some route vertex is
+within `GATE_VERTEX_TOLERANCE_M` = **1.5 m** of it — a coordinate-rounding
+tolerance and nothing more (both sides are stored to 5–6 decimals, ~1 m of
+latitude). Point-to-segment distance is not used for this at all. There is no
+threshold left to argue about: either the router rode through that node or it
+did not.
+
+Measured before/after on **identical geometry** (same routes, same segment
+counts — only the rule changed):
+
+| ride | km | gates BEFORE (15 m radius) | AFTER (vertex) | dropped |
+|---|---:|---:|---:|---:|
+| Rīga → Baldone | 54 | 7 | **2** | 5 |
+| Bauska round trip, *Ātrāks* | 80 | 4 | **4** | 0 |
+| Bauska round trip, *Sarežģītāks* | 113 | 0 | **0** | 0 |
+| Sigulda round trip, *Ātrāks* | 112 | 1 | **0** | 1 |
+| Sigulda round trip, *Sarežģītāks* | 292 | 12 | **0** | 12 |
+
+The Bauska 80 km row is the control that matters: **nothing was lost**. Its four
+gates sit 0.25–0.41 m from a route vertex — they were real on-the-road gates all
+along, and the new rule keeps every one. The two Rīga → Baldone survivors sit
+0.25 m and 0.5 m out. Every dropped gate measured 5–11 m from the nearest vertex
+— exactly the driveway offset the rider described, and far too close for any
+radius to have separated them.
+
+An independent A/B over the same BRouter geometry (both rules, one routing pass)
+agreed: Rīga → Baldone 3 → 1 with the two dropped at 5.2 m and 7.1 m;
+Baldone → Ķegums 4 → 3 with the one dropped at 10.9 m.
+
+Three more things follow from the rider's original line, each pinned by a test:
+
+- **`undefined`, never 0, outside a published country.** `hasGateData(bbox)`
+  gates the whole measurement. Absent data means "not measured", not "no gates"
+  — the `sparsePlaceData` rule — and `undefined` is precisely what lets the
+  panel stay silent instead of claiming a clean road nobody has looked at. A
+  measured zero (Latvia, no gate on the line) is `0` and also stays silent; the
+  two are different facts and the code keeps them different.
+- **A gate on the next road is not a gate on this one.** `GATE_HIGHWAY_CLASSES`
+  survives as a cheap pre-filter that skips the lookup along the asphalt
+  majority of a ride, but it is no longer the test — the vertex match is.
+- **One gate is one gate.** Deduplicated by position, so a shared vertex found
+  by both its segments, and an out-and-back riding the same gate twice, each
+  count once.
+
+And the route is still never touched: a test asserts the same geometry with and
+without a gate produces identical distance, mix, overlap, duration **and the
+same feature boundaries** — a gate does not even split a run.
+
+### What the rider sees
+
+| surface | what |
+|---|---|
+| RISKI row | "Vārti uz ceļa 🚪 · N", only above zero. The header now shows when *either* risk row applies. |
+| map | a 🚪 pill at each gate — 20 px against the warning badge's 24, `z-index` 0 below badges (1) and stops (2), because a gate is the least urgent mark on the line. Only gates **on the ridden way**; a driveway's gate beside the route is not marked. |
+| segment card | "{n} vārti šajā posmā — var būt jāatver vai jāgriezās." — what it means for the riding, which a bare number cannot say |
+
+**The glyph is 🚪, and the choice was argued.** 🚧 is the roadworks barrier: it
+says "closed, works ahead", which is the one thing a Latvian forest gate usually
+is *not* — it stands open more often than not, which is the entire reason item
+12 reports gates instead of avoiding them. ⛩️ is a Shinto torii: it reads as a
+gateway but means a shrine, and its crossbeams turn to mush at 14 px. 🚪 is a
+rectangle with a handle — almost no internal detail, so it survives 13 px in a
+20 px pill — and it means the thing the card says: something across your way
+that you can open.
+
+`SHOW_GATE_MARKERS` in `route-map.tsx` is the off switch, the way `BADGE_KINDS`
+is for warnings. Gates are deliberately **not** a `WarningKind`: the warning
+machinery groups runs, picks a midpoint and merges icons into one pill, every
+one of which would put the marker somewhere the gate is not.
+
+**Markers are capped at 30 per route**, thinned to every k-th past that rather
+than truncated — a ride whose gates are all in its last forest would otherwise
+show none of them. The panel's count is never thinned. Nothing measured came
+near the cap.
+
+### Measured, four rides through the dev server
+
+| ride | km | gates | markers |
+|---|---:|---:|---:|
+| Rīga → Baldone (adventure/forest) | 54 | **7** (over 6 stretches, one carrying 2) | 7 |
+| Bauska round trip, *Ātrāks* | 80 | **4** | 4 |
+| Bauska round trip, *Sarežģītāks* | 113 | **0** | 0 — RISKI shows the unverified row alone |
+| Sigulda round trip, *Ātrāks* | 112 | **1** | 1 |
+| Sigulda round trip, *Sarežģītāks* | 292 | **12** | 12 |
+
+Most gates sit on `highway=unclassified` — Latvian rural gravel road — which is
+why `unclassified` is in the collected set and why these are mostly classified
+"Parastie ceļi" rather than "Meža ceļi".
+
+### Plumbing
+
+- **`lib/geo/yards.ts` is deleted**, with its `yardLookup`, `buildingsAlong`,
+  `yardAt`, `signedOffsetM`, `pointInRing` and the four shim tests that existed
+  only to prove they answered nothing. `lib/geo/gates.ts` is the module.
+- **Gate positions ride on the segment feature** (`gatePoints`), not on the
+  route. `RouteMap` takes one `segments` collection and the detour splicer
+  rebuilds a ride by concatenating features — a route-level array would be
+  dropped by both, while a spliced ride keeps exactly the gates of the stretches
+  it kept. `gates` (the count) rides there too, and neither splits a run.
+- **The share code's `y` is now `g`**, an integer count. Old codes carrying `y`
+  still decode — links live in riders' chats forever — and deliberately show
+  nothing: those kilometres are a different measurement and rendering them as a
+  gate count would be a lie. A test pins that.
+- Four locales: `resGatesRow`, `segGates`.
+- Tests: `scripts/gates.test.ts` **18** passing. The load-bearing new one is
+  *"a gate on the driveway beside the road is NOT on the road"* — a gate 12 m
+  off the line, and a second at 3 m, both required to count zero, against a
+  gate 1 m off (rounding) required to count one. Three added to
+  `scripts/share.test.ts`. Full suite **138 passing**;
+  `tsc --noEmit`, `eslint` (0 errors) and `next build` clean.
+
+### Still open — and it is the interesting half
+
+Gates are the *floor* of item 12, not the answer to it. The rider's original
+complaint — a route through somebody's farmyard — is only addressed where a
+farmyard happens to have a mapped gate. Doing better needs **real access data,
+not a better inference**: rider feedback stored and avoided (the only source
+that produces ground truth, and the only one worth contributing back to OSM), a
+private-road register (LVM GEO was measured on 2026-09-12 and carries none), or
+better OSM tagging. Until one exists, the honest position is the rider's: leave
+the road in and say what is known about it.
+
 ## 2026-09-14 — Item 11c: a sea term
 
 The third and last part of item 11. The rider: *"braukt gar krastu pa īstu ceļu

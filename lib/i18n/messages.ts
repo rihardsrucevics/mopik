@@ -136,6 +136,15 @@ export type MessageKey =
   | "resTetApprox"
   | "resRoadsHeading"
   | "resRisksHeading"
+  /**
+   * "Vārti uz ceļa" — gates standing on the roads the ride uses, backlog item
+   * 12. A COUNT, never kilometres: a gate is a point on the road, and the row
+   * reads "Vārti uz ceļa 🚪 · 3". Shown only when the count is above zero, and
+   * only where gate data is published at all — outside those countries the
+   * number is `undefined`, which means "not measured" and must stay silent
+   * rather than claim a clean road.
+   */
+  | "resGatesRow"
   | "resSurfaceHeading"
   | "resMixRoad"
   | "resMixTrack"
@@ -409,7 +418,11 @@ export type MessageKey =
   | "segClassTrail"
   | "segGrade"
   | "segOnTet"
-  | "segRough";
+  | "segRough"
+  /** The gate row inside the map's segment card. `{n}` is the count on that
+   *  stretch — what it means for the riding, which the panel's number cannot
+   *  say: the gate may have to be opened, or it may turn the ride back. */
+  | "segGates";
 
 type Messages = Record<MessageKey, string>;
 
@@ -532,6 +545,7 @@ const lv: Messages = {
   resTetApprox: "Aptuveni {km} km pa TET",
   resRoadsHeading: "Ceļi",
   resRisksHeading: "Riski",
+  resGatesRow: "Vārti uz ceļa",
   resSurfaceHeading: "Segums",
   resMixRoad: "Parastie ceļi",
   resMixTrack: "Meža ceļi (raustītā līnija)",
@@ -817,6 +831,7 @@ const lv: Messages = {
   segGrade: "Grūtība",
   segOnTet: "Pa TET",
   segRough: "Grūts meža ceļš",
+  segGates: "{n} vārti šajā posmā — var būt jāatver vai jāgriežas.",
 };
 
 const lt: Messages = {
@@ -938,6 +953,7 @@ const lt: Messages = {
   resTetApprox: "Maždaug {km} km TET keliu",
   resRoadsHeading: "Keliai",
   resRisksHeading: "Rizikos",
+  resGatesRow: "Vartai kelyje",
   resSurfaceHeading: "Danga",
   resMixRoad: "Paprasti keliai",
   resMixTrack: "Miško keliai (brūkšninė linija)",
@@ -1196,6 +1212,7 @@ const lt: Messages = {
   segGrade: "Sudėtingumas",
   segOnTet: "TET keliu",
   segRough: "Sunkus miško kelias",
+  segGates: "{n} vartai šioje atkarpoje — gali tekti atidaryti arba suktis atgal.",
 };
 
 const et: Messages = {
@@ -1317,6 +1334,7 @@ const et: Messages = {
   resTetApprox: "Umbes {km} km TET-i mööda",
   resRoadsHeading: "Teed",
   resRisksHeading: "Riskid",
+  resGatesRow: "Väravad teel",
   resSurfaceHeading: "Kate",
   resMixRoad: "Tavalised teed",
   resMixTrack: "Metsateed (katkendjoon)",
@@ -1575,6 +1593,7 @@ const et: Messages = {
   segGrade: "Raskus",
   segOnTet: "TET-i mööda",
   segRough: "Raske metsatee",
+  segGates: "{n} väravat sellel lõigul — võib olla vaja avada või tagasi pöörata.",
 };
 
 const en: Messages = {
@@ -1696,6 +1715,7 @@ const en: Messages = {
   resTetApprox: "About {km} km on the TET",
   resRoadsHeading: "Roads",
   resRisksHeading: "Risks",
+  resGatesRow: "Gates on the road",
   resSurfaceHeading: "Surface",
   resMixRoad: "Regular roads",
   resMixTrack: "Forest tracks (dashed line)",
@@ -1952,6 +1972,7 @@ const en: Messages = {
   segGrade: "Difficulty",
   segOnTet: "On the TET",
   segRough: "Rough forest track",
+  segGates: "{n} gates on this stretch — you may have to open one or turn back.",
 };
 
 const MESSAGES: Record<UiLocale, Messages> = { lv, lt, et, en };

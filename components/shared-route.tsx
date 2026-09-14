@@ -8,6 +8,9 @@ import { fi } from "@/lib/i18n/format";
 import { ArrowUp, Download } from "lucide-react";
 import { RouteActionRow } from "@/components/action-row";
 import { RouteMap } from "@/components/route-map";
+// The gate glyph is defined once, next to the panel row that first used it —
+// see the note there for why a door and not a roadworks barrier.
+import { GATE_ICON } from "@/components/result-panel";
 import { POI_KIND, type RoutePoi, type RoutePois } from "@/lib/poi/kinds";
 import { SuggestionsCard, type DetourFocusNote, type SelectedPoi } from "@/components/suggestions-card";
 import { MapPanel } from "@/components/map-panel";
@@ -389,10 +392,20 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
                   of those three, so as a fourth ROADS row they double-counted.
                   Under a heading of their own they are plainly a different
                   measurement, so the share of the ride is shown too. */}
-              {d.unverifiedPathKm > 0 && (
+              {(d.unverifiedPathKm > 0 || (d.gateCount ?? 0) > 0) && (
                 <div>
                   <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-stone-400">{m.resRisksHeading}</div>
-                  <Row label={m.badgeUnverified} value={`${d.unverifiedPathKm} km · ${pct(d.unverifiedPathKm)} %`} icon="⚠️" />
+                  {d.unverifiedPathKm > 0 && (
+                    <Row label={m.badgeUnverified} value={`${d.unverifiedPathKm} km · ${pct(d.unverifiedPathKm)} %`} icon="⚠️" />
+                  )}
+                  {/* A count, not kilometres — see the result panel. `gateCount`
+                      is `undefined` both outside the published countries AND on
+                      every share code written before the field existed, and `> 0`
+                      keeps both silent: an old link must not start claiming
+                      "no gates" about a ride nobody measured. */}
+                  {(d.gateCount ?? 0) > 0 && (
+                    <Row label={m.resGatesRow} value={`${d.gateCount}`} icon={GATE_ICON} />
+                  )}
                 </div>
               )}
               <div>
