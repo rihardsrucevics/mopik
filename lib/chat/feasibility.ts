@@ -1,4 +1,5 @@
 import type { ChatQuickReply, RidePlan } from "./ride-plan";
+import type { UnplannableVerdict } from "@/lib/types";
 
 /**
  * Can the ride the rider described be ridden in the time they gave, on the
@@ -158,4 +159,56 @@ export function describeInfeasible(plan: RidePlan, estimate: FeasibilityEstimate
     }
   }
   return { message: [problem, minimum, ask].filter(Boolean).join(" "), quickReplies };
+}
+
+/**
+ * The ride Mopik cannot plan in one go, said before the search.
+ *
+ * Three things, in the order a rider needs them: what was asked, that this
+ * one cannot be planned in a single go *yet*, and what does work today. The
+ * last part is the one that matters — "nevar" on its own sends the rider
+ * away, "līdz ~600 km lēnākā apvidū strādā" tells them how to get a ride.
+ *
+ * Deliberately not phrased as a failure. Nothing broke: the ride is simply
+ * beyond what one 50 s search can cover, and the honest interim (backlog
+ * item 7) is to say so up front rather than after a 50 s wait ending in 422.
+ *
+ * The numbers in the wording come from the measurements in `docs/BACKLOG.md`
+ * item 7 and are deliberately vague ("~600 km", "lēnākā apvidū"): the real
+ * limit is search difficulty, not distance, so a precise kilometre figure
+ * would be a promise Mopik cannot keep — Rīga → Berlin is 1133 km and routes
+ * in 23 s, Como → Budapest is 1126 km and takes 74 s.
+ */
+export function describeUnplannable(
+  verdict: UnplannableVerdict,
+  lv: boolean
+): { message: string; quickReplies: ChatQuickReply[] } {
+  const t = (a: string, b: string) => (lv ? a : b);
+  const route = [verdict.from, verdict.to].filter(Boolean).join(" → ");
+  const km = Math.round(verdict.legKm);
+
+  const asked = t(
+    `${route} ir ~${km} km taisnā līnijā.`,
+    `${route} is ~${km} km as the crow flies.`
+  );
+  // "Vēl" is load-bearing: this is an interim, and the rider was explicit
+  // that refusing is not the end state.
+  const cannot = t(
+    "Tik garu braucienu es vienā piegājienā vēl nevaru izplānot — ceļa meklēšana šajā apvidū aizņem vairāk laika, nekā man ir.",
+    "I cannot plan a ride this long in one go yet — searching for roads in this terrain takes more time than I have."
+  );
+  const works = t(
+    "Kas strādā jau tagad: līdz ~600 km lēnākā apvidū un vairāk līdzenumā. Sadali braucienu pa dienām vai izvēlies tuvāku galamērķi.",
+    "What works today: up to ~600 km in slower terrain, further on flat ground. Split the ride into days, or choose a closer destination."
+  );
+  const ask = t("Kā darām?", "What shall we do?");
+
+  return {
+    message: [asked, cannot, works, ask].join(" "),
+    // No quick reply can fix this for the rider — a shorter destination is a
+    // place only they can name — so the only tap offered is the honest one.
+    quickReplies: [
+      { label: t("Mainīt galamērķi", "Change the destination"), message: t("Izvēlēsimies tuvāku galamērķi.", "Let's choose a closer destination.") },
+    ],
+  };
 }

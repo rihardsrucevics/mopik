@@ -166,6 +166,7 @@ export type MessageKey =
   | "chatErrAnswer"
   | "chatErrNoMatch"
   | "chatErrTimeout"
+  | "chatFewerVersions"
   | "chatTooLong"
   | "chatRetry"
   | "chatShowAnyway"
@@ -235,6 +236,19 @@ export type MessageKey =
   | "resAnother"
   | "chatSayAll"
   | "resNature"
+  | "mapStop"
+  | "resSuggestions"
+  | "resSuggestOnRoute"
+  | "resSuggestNearby"
+  | "resSuggestLoading"
+  | "resAddStop"
+  | "resAddStopAria"
+  | "kindFerry"
+  | "kindFord"
+  | "kindTower"
+  | "kindMill"
+  | "kindLighthouse"
+  | "kindReserve"
   | "savNewRide"
   // The saved-ride card's four buttons sit in one row, so their labels are
   // one word each — their own keys, because the longer wordings they were
@@ -509,6 +523,7 @@ const lv: Messages = {
   chatErrAnswer: "Neizdevās saņemt atbildi.",
   chatErrNoMatch: "Neizdevās atrast prasībām atbilstošu maršrutu.",
   chatErrTimeout: "Serveris pārtrauca ģenerēšanu, jo tā aizņēma pārāk ilgi (limits ~60 s). Garš brauciens pa meža ceļiem var neietilpt. Mēģini vēlreiz vai īsāku ilgumu.",
+  chatFewerVersions: "Šis apvidus meklējas lēni, tāpēc paspēju izmēģināt {tried} versijas {planned} vietā.",
   chatTooLong: "Saruna sasniegusi šīs versijas garuma robežu. Sāc jaunu braucienu.",
   chatRetry: "Mēģināt vēlreiz",
   chatShowAnyway: "Rādīt trasi tāpat",
@@ -581,6 +596,19 @@ const lv: Messages = {
   resAnother: "Cits",
   chatSayAll: "Vari uzreiz pateikt visu, ko zini.",
   resNature: "Daba un ainava",
+  mapStop: "Pieturvieta",
+  resSuggestions: "Ieteikumi",
+  resSuggestOnRoute: "Trasē",
+  resSuggestNearby: "Tuvumā",
+  resSuggestLoading: "Meklēju vietas…",
+  resAddStop: "Pievienot",
+  resAddStopAria: "Pievienot {place} kā pieturvietu un pārrēķināt maršrutu",
+  kindFerry: "pārceltuve",
+  kindFord: "brasls",
+  kindTower: "skatu tornis",
+  kindMill: "dzirnavas",
+  kindLighthouse: "bāka",
+  kindReserve: "dabas liegums",
   savNewRide: "Jauns brauciens",
   savOtherVersions: "Citas versijas",
   beerRideWell: "Lai labi braucas!",
@@ -837,6 +865,7 @@ const lt: Messages = {
   chatErrAnswer: "Nepavyko gauti atsakymo.",
   chatErrNoMatch: "Nepavyko rasti reikalavimus atitinkančio maršruto.",
   chatErrTimeout: "Serveris nutraukė generavimą, nes jis užtruko per ilgai (limitas ~60 s). Ilgas maršrutas miško keliais gali netilpti. Bandyk dar kartą arba trumpesnę trukmę.",
+  chatFewerVersions: "Ši vietovė ieškoma lėtai, todėl spėjau išbandyti {tried} versijas vietoj {planned}.",
   chatTooLong: "Pokalbis pasiekė šios versijos ilgio ribą. Pradėk naują maršrutą.",
   chatRetry: "Bandyti dar kartą",
   chatShowAnyway: "Rodyti trasą vis tiek",
@@ -909,6 +938,19 @@ const lt: Messages = {
   resAnother: "Kitas",
   chatSayAll: "Gali iš karto pasakyti viską, ką žinai.",
   resNature: "Gamta ir kraštovaizdis",
+  mapStop: "Sustojimas",
+  resSuggestions: "Pasiūlymai",
+  resSuggestOnRoute: "Trasoje",
+  resSuggestNearby: "Netoliese",
+  resSuggestLoading: "Ieškau vietų…",
+  resAddStop: "Pridėti",
+  resAddStopAria: "Pridėti {place} kaip sustojimą ir perskaičiuoti maršrutą",
+  kindFerry: "keltas",
+  kindFord: "brasta",
+  kindTower: "apžvalgos bokštas",
+  kindMill: "malūnas",
+  kindLighthouse: "švyturys",
+  kindReserve: "draustinis",
   savNewRide: "Naujas maršrutas",
   savOtherVersions: "Kitos versijos",
   beerRideWell: "Geros kelionės!",
@@ -1165,6 +1207,7 @@ const et: Messages = {
   chatErrAnswer: "Vastuse saamine ebaõnnestus.",
   chatErrNoMatch: "Nõuetele vastavat marsruuti ei leitud.",
   chatErrTimeout: "Server katkestas koostamise, sest see võttis liiga kaua (piir ~60 s). Pikk metsateede sõit ei pruugi mahtuda. Proovi uuesti või lühemat kestust.",
+  chatFewerVersions: "Selles piirkonnas on otsing aeglane, seega jõudsin proovida {tried} versiooni {planned} asemel.",
   chatTooLong: "Vestlus jõudis selle versiooni pikkuse piirini. Alusta uut sõitu.",
   chatRetry: "Proovi uuesti",
   chatShowAnyway: "Näita rada niikuinii",
@@ -1237,6 +1280,19 @@ const et: Messages = {
   resAnother: "Teine",
   chatSayAll: "Võid kohe öelda kõik, mida tead.",
   resNature: "Loodus ja maastik",
+  mapStop: "Peatus",
+  resSuggestions: "Soovitused",
+  resSuggestOnRoute: "Teel",
+  resSuggestNearby: "Lähedal",
+  resSuggestLoading: "Otsin kohti…",
+  resAddStop: "Lisa",
+  resAddStopAria: "Lisa {place} peatusena ja arvuta marsruut uuesti",
+  kindFerry: "praam",
+  kindFord: "koolmekoht",
+  kindTower: "vaatetorn",
+  kindMill: "veski",
+  kindLighthouse: "tuletorn",
+  kindReserve: "looduskaitseala",
   savNewRide: "Uus sõit",
   savOtherVersions: "Teised versioonid",
   beerRideWell: "Head sõitu!",
@@ -1493,6 +1549,7 @@ const en: Messages = {
   chatErrAnswer: "Could not get an answer.",
   chatErrNoMatch: "Could not find a route matching the requirements.",
   chatErrTimeout: "The server stopped generating because it took too long (the limit is ~60 s). A long ride on forest roads may not fit. Try again or a shorter duration.",
+  chatFewerVersions: "Searching is slow in this terrain, so I managed to try {tried} versions instead of {planned}.",
   chatTooLong: "This conversation has reached the length limit of this version. Start a new ride.",
   chatRetry: "Try again",
   chatShowAnyway: "Show the track anyway",
@@ -1565,6 +1622,19 @@ const en: Messages = {
   resAnother: "Another",
   chatSayAll: "You can say everything you know right away.",
   resNature: "Nature and landscape",
+  mapStop: "Stop",
+  resSuggestions: "Suggestions",
+  resSuggestOnRoute: "On the route",
+  resSuggestNearby: "Nearby",
+  resSuggestLoading: "Looking for places…",
+  resAddStop: "Add",
+  resAddStopAria: "Add {place} as a stop and plan the ride again",
+  kindFerry: "ferry",
+  kindFord: "ford",
+  kindTower: "lookout tower",
+  kindMill: "mill",
+  kindLighthouse: "lighthouse",
+  kindReserve: "nature reserve",
   savNewRide: "New ride",
   savOtherVersions: "Other versions",
   beerRideWell: "Ride safe!",

@@ -1,8 +1,18 @@
 #!/usr/bin/env python3
-"""Build public/poi-baltics.geojson — places worth riding to, for loop planning.
+"""Build a POI dataset — places worth riding to, for loop planning.
 
-Run manually (NOT part of install):
+Two sources, same schema and same scoring:
+
+    # Overpass (the original path, LV/LT/EE)
     python3 scripts/build_poi_dataset.py
+
+    # A local Geofabrik .pbf extract — no rate limits, no mirrors
+    python3 scripts/build_poi_dataset.py --pbf estonia-latest.osm.pbf --country EE \
+        --out public/poi-ee.geojson
+
+The .pbf mode needs pyosmium (`pip install osmium`) and is the only path that
+scales to Europe: Overpass rate-limits a 33-query Baltic build into a 21-minute
+run, and Europe is ~50x that. See docs/poi-europe-plan.md for the costing.
 
 Why pre-baked rather than querying Overpass per request: the public instances
 queue requests up to 15s then discard them, and return 429 under even light
@@ -65,6 +75,7 @@ CATEGORIES = [
 
 # Drop a POI within this range of a kept, higher-scoring one of the same kind.
 THIN_RADIUS_M = 3000
+
 
 # Overpass throttles hard: a full 33-query run trips its rate limiter and then
 # every mirror refuses connections for a while. So pause generously between
@@ -153,7 +164,149 @@ def element_point(el):
     return None
 
 
-def main():
+# --- .pbf mode -------------------------------------------------------------
+#
+# The CATEGORIES table above is written as Overpass snippets, which pyosmium
+# cannot execute. Rather than keep two lists that can drift apart, each
+# category gets a predicate over an OSM tag dict here, and a check below
+# asserts the two tables describe the same categories with the same scores.
+
+def _is_archaeological(t):
+    return t.get("historic") == "archaeological_site"
+
+
+PBF_MATCHERS = {
+    "ferry": lambda t: t.get("route") == "ferry" or t.get("amenity") == "ferry_terminal",
+    "ford": lambda t: t.get("ford") in ("yes", "stepping_stones"),
+    "tower": lambda t: t.get("man_made") == "tower"
+    and t.get("tower:type") in ("observation", "watchtower"),
+    "hillfort": _is_archaeological,
+    "lighthouse": lambda t: t.get("man_made") == "lighthouse",
+    "waterfall": lambda t: t.get("natural") in ("waterfall", "cliff", "cave_entrance")
+    and bool(t.get("name")),
+    "manor": lambda t: t.get("historic") in ("castle", "manor", "ruins", "fort"),
+    "viewpoint": lambda t: t.get("tourism") == "viewpoint",
+    "mill": lambda t: t.get("man_made") in ("watermill", "windmill")
+    or t.get("historic") == "watermill",
+    "reserve": lambda t: t.get("leisure") == "nature_reserve" and bool(t.get("name")),
+    "village": lambda t: t.get("place") in ("village", "hamlet") and bool(t.get("name")),
+}
+
+# The two tables must stay in step: a category added to CATEGORIES without a
+# matcher would silently vanish from every .pbf build.
+assert {k for k, _, _ in CATEGORIES} == set(PBF_MATCHERS), (
+    "CATEGORIES and PBF_MATCHERS disagree: "
+    f"{ {k for k, _, _ in CATEGORIES} ^ set(PBF_MATCHERS) }"
+)
+
+# "village" is node-only in the Overpass query, so keep it node-only here too —
+# otherwise a .pbf build picks up place polygons the Baltic dataset never had.
+PBF_NODE_ONLY = {"village"}
+
+
+def collect_from_pbf(path, code):
+    """Every POI in one extract, in the same shape the Overpass path produces.
+
+    Overpass's `out center` returns one representative point per object
+    whatever its type, so this must do the same for nodes, ways and
+    relations. Relations matter more than their rarity suggests: 24 of
+    Estonia's 27 nature reserves are multipolygons, and skipping them dropped
+    the category to 9. pyosmium assembles them with `with_areas()`, which
+    costs one extra pass over the file (~6 s on a 117 MB extract).
+    """
+    import osmium  # imported here so the Overpass path needs no pyosmium
+
+    scores = {key: score for key, score, _ in CATEGORIES}
+    collected = []
+    seen = set()
+
+    def consider(obj, kind, ident, tags, point):
+        for key, match in PBF_MATCHERS.items():
+            if kind != "n" and key in PBF_NODE_ONLY:
+                continue
+            if not match(tags):
+                continue
+            name = tags.get("name:lv") or tags.get("name") or tags.get("name:en")
+            # Same rule as the Overpass path: an unnamed tower is still a
+            # tower, an unnamed village is useless as a waypoint.
+            if not name and key == "village":
+                continue
+            if (key, ident) in seen:
+                continue
+            seen.add((key, ident))
+            name_lv = tags.get("name:lv") or tags.get("name")
+            collected.append(
+                {
+                    "id": ident,
+                    "lon": round(point[0], 5),
+                    "lat": round(point[1], 5),
+                    "category": key,
+                    "score": scores[key],
+                    "country": code,
+                    "nameLv": name_lv,
+                    "nameEn": tags.get("name:en") or tags.get("name"),
+                    "nameLvAcc": latvian_accusative(name_lv),
+                }
+            )
+
+    # `with_areas()` turns closed ways and multipolygon relations into Area
+    # objects with real geometry; nodes and open ways still arrive as
+    # themselves. An area reports whether it came from a way or a relation,
+    # which is what keeps the ids in the same `n`/`w`/`r` namespace the
+    # Overpass build used.
+    fp = osmium.FileProcessor(path).with_areas()
+    fp = fp.with_filter(osmium.filter.EmptyTagFilter())
+
+    for obj in fp:
+        tags = dict(obj.tags)
+        if obj.is_node():
+            consider(obj, "n", f"n{obj.id}", tags, (obj.location.lon, obj.location.lat))
+        elif obj.is_area():
+            point = _area_centre(obj)
+            if point:
+                kind = "w" if obj.from_way() else "r"
+                consider(obj, kind, f"{kind}{obj.orig_id()}", tags, point)
+        elif obj.is_way():
+            # An open way — a ferry route, a cliff line. Areas above already
+            # covered the closed ones.
+            point = _way_centre(obj)
+            if point:
+                consider(obj, "w", f"w{obj.id}", tags, point)
+
+    return collected
+
+
+def _way_centre(way):
+    """Centroid of an open way's nodes, or None when locations are missing.
+
+    An extract clipped at a border carries ways whose nodes lie outside the
+    file; those have no location and are skipped rather than read as (0, 0),
+    which would drop a POI into the Atlantic.
+    """
+    lons, lats = [], []
+    for node in way.nodes:
+        if node.location.valid():
+            lons.append(node.location.lon)
+            lats.append(node.location.lat)
+    if not lons:
+        return None
+    return (sum(lons) / len(lons), sum(lats) / len(lats))
+
+
+def _area_centre(area):
+    """Centroid of an area's outer ring(s)."""
+    lons, lats = [], []
+    for ring in area.outer_rings():
+        for node in ring:
+            if node.location.valid():
+                lons.append(node.location.lon)
+                lats.append(node.location.lat)
+    if not lons:
+        return None
+    return (sum(lons) / len(lons), sum(lats) / len(lats))
+
+
+def collect_from_overpass():
     collected = []
 
     for code, bbox in COUNTRIES:
@@ -212,12 +365,17 @@ def main():
             if not from_cache:
                 time.sleep(QUERY_PAUSE_S)
 
+    return collected
+
+
+def thin_and_write(collected, out_path):
+    """Spatial thinning and GeoJSON output — shared by both sources."""
     # Never overwrite a good dataset with an empty one: a run where every
     # query failed must fail loudly, not leave a valid-looking empty file.
     if len(collected) < 100:
         print(
             f"\nOnly {len(collected)} POIs collected — refusing to write "
-            "public/poi-baltics.geojson. Check the failures above and re-run.",
+            f"{out_path}. Check the failures above and re-run.",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -256,7 +414,7 @@ def main():
             }
         )
 
-    out = os.path.join(os.getcwd(), "public", "poi-baltics.geojson")
+    out = os.path.join(os.getcwd(), out_path)
     with open(out, "w", encoding="utf-8") as fh:
         json.dump({"type": "FeatureCollection", "features": features}, fh, ensure_ascii=False)
 
@@ -268,6 +426,32 @@ def main():
     print(f"{size_mb:.2f} MB")
     for key, n in sorted(counts.items(), key=lambda kv: -kv[1]):
         print(f"  {key:<11} {n:>6}")
+
+
+def main():
+    args = sys.argv[1:]
+
+    def option(flag, default=None):
+        return args[args.index(flag) + 1] if flag in args else default
+
+    pbf = option("--pbf")
+    if not pbf:
+        # The original path: Overpass, LV/LT/EE, writing the dataset the app
+        # ships today. Unchanged.
+        thin_and_write(collect_from_overpass(), os.path.join("public", "poi-baltics.geojson"))
+        return
+
+    code = option("--country")
+    out_path = option("--out")
+    if not code or not out_path:
+        print("--pbf needs --country CC and --out path", file=sys.stderr)
+        sys.exit(2)
+
+    started = time.time()
+    print(f"reading {pbf} ({os.path.getsize(pbf) / 1024 / 1024:.0f} MB) …", flush=True)
+    collected = collect_from_pbf(pbf, code)
+    print(f"{len(collected)} raw POIs in {time.time() - started:.0f}s", flush=True)
+    thin_and_write(collected, out_path)
 
 
 if __name__ == "__main__":

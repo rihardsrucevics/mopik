@@ -20,6 +20,14 @@ import { findResolvedPlace, type ResolvedPlace } from "@/lib/chat/places";
 // legs that yields 57-92% unpaved against Valhalla's 1-50%.
 import { fetchIsochrone } from "@/lib/routing/valhalla";
 import { fetchRoutePath } from "@/lib/routing/brouter";
+// The feasibility probe: one timed leg before the search, so a ride Mopik
+// cannot plan in one go is named up front instead of after a 50 s wait.
+import {
+  affordableCandidates,
+  headlineLeg,
+  probeLeg,
+  PROBE_BUDGET_MS,
+} from "@/lib/routing/fetch-route-probe";
 import { buildMotoProfileOptions } from "@/lib/routing/moto-profile";
 import { buildCostingOptions, profileName } from "@/lib/routing/profiles";
 import { pruneSpurs } from "@/lib/routing/prune-spurs";
@@ -38,6 +46,7 @@ import {
   RoutePath,
   RouteIntent,
   RouteIntentSchema,
+  UnplannableVerdict,
 } from "@/lib/types";
 
 /**
@@ -873,6 +882,13 @@ function withDeadline<T>(promise: Promise<T>, ms: number): Promise<T> {
 export async function POST(req: NextRequest) {
   const startedAt = Date.now();
   const remainingMs = () => TIME_BUDGET_MS - (Date.now() - startedAt);
+  /**
+   * How many candidates this generation may route. Unlimited until the
+   * feasibility probe measures a slow leg, after which it is whatever the
+   * remaining budget can pay for at that cost — reducing the search rather
+   * than letting it run out of time and return nothing.
+   */
+  let candidateCap = Number.MAX_SAFE_INTEGER;
   // A rider who cancelled is not waiting for this any more, and on our own
   // BRouter the ~36 candidates left in flight are time we are still paying
   // for. Treated exactly like the budget running out: the batch loop stops.
@@ -1041,6 +1057,68 @@ export async function POST(req: NextRequest) {
       ? (remote ? 60 : body.lucky ? 120 : (requiredVia.length || destination) ? Math.max(80, Math.round(fixedDirectKm * 1.25)) : 80)
       : resolveTargetDistanceKm(intent);
 
+    // The feasibility probe. Route the headline leg once, under a short
+    // deadline, before committing to ~36 of them — because whether this
+    // request fits in 50 s is decided by how hard the *search* is, not by how
+    // long the ride is (Rīga → Berlin is 1133 km and routes in 23 s; Como →
+    // Budapest is 1126 km and takes 74 s). A kilometre threshold cannot tell
+    // those apart, so this measures instead of guessing.
+    //
+    // Only rides with named places are probed. A plain loop has no headline
+    // leg — its candidates are short shapes around one town, and the
+    // calibration route below already measures the region at the app's own
+    // expense. Probing it would pay for a leg twice and refuse nothing.
+    let reducedSearch: GenerateRouteResponse["reducedSearch"];
+    /** what the probe measured one leg to cost, seconds; 0 when it did not run */
+    let probeSeconds = 0;
+    const probePlaces = [start, ...requiredVia, ...(destination ? [destination] : [])];
+    if (probePlaces.length > 1) {
+      const leg = headlineLeg(probePlaces.map((p) => [p.lon, p.lat] as [number, number]));
+      // Short legs are never the problem and the probe would only add a round
+      // trip to every ordinary ride. Measured: Rīga → Baldone (46 km) probes
+      // in 2-3 s, which is pure cost on a request that was always going to
+      // work. The floor is well above every ride that generates today.
+      const PROBE_ABOVE_KM = 250;
+      if (leg && leg.km >= PROBE_ABOVE_KM) {
+        const outcome = await probeLeg({
+          points: [leg.from, leg.to],
+          profileOptions: buildMotoProfileOptions(intent),
+          signal: req.signal,
+        });
+        console.log(
+          `feasibility probe: ${placeName(start.label)} → ${placeName((destination ?? requiredVia[requiredVia.length - 1] ?? start).label)} ` +
+            `${Math.round(leg.km)} km straight line, ${outcome.seconds.toFixed(1)} s, ${outcome.ok ? "ok" : outcome.reason}`
+        );
+        if (!outcome.ok) {
+          // Said before the search, not after. The rider gets this in ~10 s
+          // with something they can act on, instead of ~50 s ending in 422.
+          const unplannable: UnplannableVerdict = {
+            from: placeName(origin.label),
+            to: placeName((destination ?? requiredVia[requiredVia.length - 1] ?? start).label),
+            legKm: Math.round(leg.km),
+            budgetSeconds: Math.round(PROBE_BUDGET_MS / 1000),
+            reason: outcome.reason,
+          };
+          return NextResponse.json({ unplannable }, { status: 200 });
+        }
+        // The routed leg itself is already handed to the candidate search by
+        // the probe (`rememberLeg`), so `via-0` reuses it rather than paying
+        // for the same search twice. Only its cost is needed here.
+        probeSeconds = outcome.seconds;
+        // The probe's own timing scales the search: at T seconds a leg, the
+        // generation can afford roughly (budget − spent − overhead) / T
+        // candidates. Fewer versions beats a 422.
+        const legMs = outcome.seconds * 1000;
+        const affordable = affordableCandidates({
+          budgetMs: TIME_BUDGET_MS,
+          spentMs: Date.now() - startedAt,
+          legMs,
+          cap: Number.MAX_SAFE_INTEGER,
+        });
+        candidateCap = affordable;
+      }
+    }
+
     // Plain loops get a calibration route first (TET and one-way rides have
     // fixed shapes). It corrects the anchor radius — and, for a duration
     // request, the target distance — to what this region actually delivers.
@@ -1054,7 +1132,21 @@ export async function POST(req: NextRequest) {
     }
 
     const built = await buildCandidates(intent, start, destination, targetKm, calibration, direction, requiredVia);
-    const candidates = built.candidates;
+    // A slow leg means fewer versions, not a failure. The candidates are in
+    // build order, which puts the plain corridors (the ones a rider actually
+    // recognises as the ride they asked for) before the ornamental shapes, so
+    // taking a prefix keeps the most useful ones.
+    const candidates = built.candidates.slice(0, candidateCap);
+    if (candidates.length < built.candidates.length) {
+      reducedSearch = {
+        tried: candidates.length,
+        planned: built.candidates.length,
+        legSeconds: Math.round(probeSeconds * 10) / 10,
+      };
+      console.warn(
+        `feasibility: slow leg, routing ${candidates.length} of ${built.candidates.length} candidates`
+      );
+    }
     if (candidates.length === 0) {
       return NextResponse.json(
         { error: "Could not build a route request for this input" },
@@ -1706,6 +1798,7 @@ export async function POST(req: NextRequest) {
       ...(bestOverlap > 30 && !destination
         ? { overlapWarning: { bestPercent: bestOverlap } }
         : {}),
+      ...(reducedSearch ? { reducedSearch } : {}),
       ...(probeWorthOffering && probe && !destination
         ? {
             longerSuggestion: {

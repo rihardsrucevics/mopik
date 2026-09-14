@@ -306,6 +306,11 @@ assign motor_path_allowed =
   or vehicle=yes vehicle=designated
 assign unverified_forest_path =
   and highway=path and not foot=designated and not bicycle=designated not estimated_town_class=4
+# smoothness=impassable/very_horrible deliberately does NOT belong here.
+# Tried on 2026-09-14 and measured out again: banning it cost Riga->Ainazi a
+# 20.6 km detour (208.7 -> 229.3 km) to avoid 1.8 km of it, and the existing
+# impassable/horrible multipliers already price it — a rider's own 126 km
+# plan crossed 200 m of "impassable", so it is dear, not forbidden.
 assign beach_like_path = and highway=path surface=sand
 assign motor_forbidden =
   or beach_like_path
@@ -372,6 +377,40 @@ assign river_factor =
   switch or estimated_river_class=3 estimated_river_class=4 0.97
   1.0
 
+# The shoreline is a place to ride ALONG, not ON. Measured 2026-09-14 on six
+# Baltic coastal legs (PROGRESS.md): what put routes on the beach was not sand
+# — most sand these rides use is deep-forest track 5 km inland, which the
+# rider wants — but highway=path right at the water: dune and beach
+# footpaths tagged surface=ground/dirt or nothing, which allow_unverified then
+# permits. 17.9 km of it across the legs, 12.2 km on Jurmala->Kolka alone.
+#
+# BRouter gives a cost script no distance-to-coast, but estimated_river_class
+# does see the sea: on those legs class 5-6 paths were 9.9 km within 300 m of
+# the shoreline against 2.6 km anywhere else. So a path beside big water is
+# dear — and ONLY a path. Every road class keeps river_factor's discount, so a
+# coastal road, gravel road or forest track beside the sea stays as attractive
+# as it ever was. This must never become a penalty for being near the sea.
+#
+# Dear rather than forbidden, and the value is a measured compromise rather
+# than "as high as possible": on a spit or a dune belt the shoreline path is
+# sometimes the only thing near the water, so pricing it too hard drives the
+# ride inland — which is the opposite of what the rider asked for. Swept on
+# Jurmala->Kolka (beach-path km / km within 1 km of the sea):
+#   1.0 (before) 12.2 / 24.7    2.5 -> 12.8 / 25.2 (too cheap, no effect)
+#   4.0 ->  4.1 / 18.0          12.0 ->  0.0 / 10.3 (buys the last 4 km of
+#                                       beach with 8 km of the coast itself)
+# 4.0 is where the beach goes away and the coast largely stays.
+#
+# TRAP: this multiplier CANNOT live among the multiply lines below.
+# switch highway=path <cost> in costfactor returns immediately, so every
+# multiply after it is dead code for a path — measured: at 12.0, at 500 and
+# even at 100000 the Jurmala->Kolka route did not move one metre, while the
+# same value inside motor_forbidden removed all 9.0 km. It is therefore
+# folded into the path cost itself, which is the only place it is read.
+assign shore_path_factor =
+  switch or estimated_river_class=5 estimated_river_class=6 ${o.difficulty === "hard" ? "4.0" : "8.0"}
+  1.0
+
 # Noise is the opposite of the nature experience even when traffic tags are
 # incomplete. Keep this mild because busy links can be necessary crossings.
 assign noise_factor =
@@ -400,7 +439,7 @@ assign report_only =
 
 assign costfactor
   switch motor_forbidden 100000
-  switch highway=path ${o.trails === "lots" ? (o.difficulty === "hard" ? "0.75" : o.difficulty === "easy" ? "2.6" : "1.1") : o.trails === "some" ? "2.2" : "8.0"}
+  switch highway=path multiply shore_path_factor ${o.trails === "lots" ? (o.difficulty === "hard" ? "0.75" : o.difficulty === "easy" ? "2.6" : "1.1") : o.trails === "some" ? "2.2" : "8.0"}
   multiply surface_factor
   multiply grade_factor
   multiply smooth_factor

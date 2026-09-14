@@ -18,7 +18,12 @@ type Props = {
   segments: GeoJSON.FeatureCollection<GeoJSON.LineString, RouteSegmentProperties> | null;
   start: { lat: number; lon: number } | null;
   destination?: { lat: number; lon: number } | null;
-  via?: { lat: number; lon: number; label: string }[];
+  /**
+   * The ride's stops. `kind` and `detail` are optional and filled in from the
+   * POI dataset where the stop is a place it knows — a hillfort's marker then
+   * says so, and one the rider typed by hand simply says "Pieturvieta".
+   */
+  via?: { lat: number; lon: number; label: string; kind?: string; detail?: string }[];
   showTet: boolean;
   onToggleTet: (visible: boolean) => void;
 };
@@ -869,6 +874,82 @@ function segmentInfoHtml(
   );
 }
 
+/**
+ * The mark a stop gets on the map.
+ *
+ * A stop is the rider's own answer — a place they chose, or one the loop was
+ * planned through — so it is drawn the way the warning badges are (a white
+ * pill, the system font's own emoji) rather than as another coloured dot. The
+ * plain orange dots it replaces said nothing: two identical circles on a line,
+ * with a `label` in a bare popup and no indication they were even the same
+ * kind of thing as the start pin.
+ *
+ * 🅿️ rather than a flag or a pin: it reads as "stop here" at 18 px on a phone
+ * and is not already spoken for by the start and finish markers.
+ */
+/**
+ * Measured, and the reason the legend has no 🅿️ entry: at 390 px the pattern
+ * row (solid / raustītā / punktotā / TET) is exactly one line, 12 px high, and
+ * a "🅿️ Pieturvieta" entry is 77 px wide against the 314 px the legend has
+ * there — it wraps the row to two lines, 30 px. The legend is already a third
+ * of a phone map's height and covers the route it explains, so the entry is
+ * deliberately skipped. The marker explains itself by being tappable: the
+ * card it opens names the place and says "Pieturvieta" in the rider's own
+ * language, which the legend could only repeat. Re-measure before adding it —
+ * the probe is four lines of DOM in the console.
+ */
+const STOP_ICON = "🅿️";
+
+/**
+ * A stop's pill on the map. Wider and a touch taller than a warning badge
+ * because its emoji is the point rather than an annotation, and z-indexed
+ * above them: a hazard on the road under a stop should not hide the stop.
+ */
+function stopElement(title: string): HTMLElement {
+  const el = document.createElement("button");
+  el.type = "button";
+  el.title = title;
+  el.setAttribute("aria-label", title);
+  el.style.cssText =
+    "display:flex;align-items:center;justify-content:center;" +
+    "width:28px;height:28px;border-radius:14px;" +
+    "background:rgba(255,255,255,0.95);box-shadow:0 1px 3px rgba(0,0,0,0.28);" +
+    "line-height:0;cursor:pointer;user-select:none;border:0;padding:0;" +
+    // Above the warning badges, below nothing: a stop is a place the rider
+    // asked for and must never be covered by a note about the road.
+    "z-index:2";
+  el.innerHTML =
+    `<span style="font-size:18px;line-height:1;display:inline-block">${STOP_ICON}</span>`;
+  return el;
+}
+
+/**
+ * The card a stop's marker opens: its name, what kind of place it is, and
+ * whatever the POI dataset knows about it.
+ *
+ * Deliberately the same mechanism as the segment card — a MapLibre popup with
+ * `setHTML` — so the two never stack and a rider meets one card style on the
+ * map. Every value that came from a tag or a translation is escaped; the
+ * markup around it is ours.
+ */
+function stopInfoHtml(m: Messages, stop: { label: string; kind?: string; detail?: string }): string {
+  return (
+    `<div style="font-size:12px;line-height:1.5;min-width:150px">` +
+    `<strong style="display:block;padding-right:24px;margin-bottom:4px">` +
+    `${esc(stop.label)}</strong>` +
+    (stop.kind
+      ? `<div style="display:flex;gap:8px;justify-content:space-between">` +
+        `<span style="color:#6b7280">${esc(m.mapStop)}</span>` +
+        `<span style="text-align:right">${esc(stop.kind)}</span></div>`
+      : `<div style="color:#6b7280">${esc(m.mapStop)}</div>`) +
+    (stop.detail
+      ? `<div style="margin-top:6px;padding-top:6px;border-top:1px solid #ececf0;color:#6b7280">` +
+        `${esc(stop.detail)}</div>`
+      : "") +
+    `</div>`
+  );
+}
+
 /** How long the route takes to draw itself in. */
 const REVEAL_MS = 900;
 
@@ -1258,10 +1339,26 @@ export function RouteMap({ segments, start, destination, via, showTet, onToggleT
         : [];
 
       for (const marker of viaMarkersRef.current) marker.remove();
-      viaMarkersRef.current = (via ?? []).map(place => new maplibregl.Marker({ color: "#f56300" })
-        .setLngLat([place.lon, place.lat])
-        .setPopup(new maplibregl.Popup().setText(place.label))
-        .addTo(map));
+      // Every stop gets the 🅿️ pill and the same card mechanism the line and
+      // the badges use. It replaces a plain orange dot with a bare popup: two
+      // identical circles that said only a label, and read as decoration
+      // rather than as the places the rider asked to ride through.
+      viaMarkersRef.current = (via ?? []).map(place => {
+        const el = stopElement(place.label);
+        el.addEventListener("click", (event) => {
+          // Same reason the badges stop it: otherwise the click reaches the
+          // map and opens the segment card underneath this one.
+          event.stopPropagation();
+          infoPopupRef.current?.remove();
+          infoPopupRef.current = new maplibregl.Popup({ offset: 16, maxWidth: "260px", closeButton: true })
+            .setLngLat([place.lon, place.lat])
+            .setHTML(stopInfoHtml(m, place))
+            .addTo(map);
+        });
+        return new maplibregl.Marker({ element: el })
+          .setLngLat([place.lon, place.lat])
+          .addTo(map);
+      });
 
       if (segments && segments.features.length > 0) {
         const bounds = new maplibregl.LngLatBounds();

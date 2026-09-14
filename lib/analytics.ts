@@ -14,6 +14,7 @@ export type AnalyticsEvent =
   | "quick_reply_used"       // a tap on a chip; props: label
   | "route_generated"        // routes arrived; props: versions, km, minutes, repeated, budget…
   | "route_infeasible"       // nothing fits the time; props: requested/minimum minutes
+  | "route_unplannable"      // probe says the ride is too hard to search; props: leg_km, reason
   | "generation_cancelled"   // "Atcelt" on the loader; props: case (first_from_form → back to the form | later → stays in the chat)
   | "overlap_chat_shown"     // best version retraces > 20 %
   | "route_version_selected" // Taisnākā / Līkumotākā / Sarežģītākā
@@ -43,6 +44,7 @@ export type AnalyticsEvent =
   | "form_location_used"      // "Mana vieta" filled the start from the device
   | "places_reordered"        // a stop moved; props: how (drag|tap|keyboard) — is the iOS path used?
   | "place_picked"            // a suggestion chosen; props: kind, group — are POIs actually picked?
+  | "suggestion_added"        // "+ Pievienot" in Ieteikumi: a suggested place became a via point; props: via_count
   | "trip_type_changed"       // props: to (one_way|round_trip) — is the new default right?
   | "ride_edit_opened"        // "Rediģēt formā" on a shared or saved ride; props: from, saved
   | "shared_correction_sent" // "Ko mainīt?" typed on a shared ride's page; props: length, saved

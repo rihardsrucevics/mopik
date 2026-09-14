@@ -237,6 +237,102 @@ costs time is the difficulty of the search, not the length of the line.
    headline version, planning a long ride as consecutive days, or splitting at
    places the rider chooses rather than at arbitrary points.
 
+### Step 1 done, 2026-09-14 — the probe says it before the search
+
+`lib/routing/fetch-route-probe.ts` routes the headline leg once, under a 10 s
+deadline, before the candidate search commits to ~36 of them. Slow leg → an
+honest reply in the chat in ~11-13 s; fast leg → its timing scales the search.
+
+**BRouter has no server-side time limit we can use.** Measured against
+`brouter.mopik.eu` (1.7.10): `maxRunningTime=10` and `maxRunningTime=300` both
+returned 200 after ~77 s on Como → Budapest, and `timeout=3` returned 200
+after 29.6 s on Berlin → Warszawa. The 400 "killed by thread-priority-watchdog
+after N seconds" replies that looked like the parameter working are the
+server's own watchdog reacting to *overlapping* requests — they reproduce with
+no parameter at all. So the deadline is enforced on our side with an
+AbortController.
+
+**The server is one vCPU, so concurrency is not free.** With one long search
+running, Berlin → Warszawa went 14.7 s → 35-40 s and Como → Budapest 77 s →
+137 s. Four candidates at a time is not four times the capacity, which is why
+`affordableCandidates` does not divide the leg cost by the concurrency.
+
+**The profile matters more than the map.** Berlin → Warszawa is 14.4 s on
+`trekking` but **31-37 s on the rider's own profiles**, and on hard-forest it
+fails outright (`error re-tracking track` after 56 s). The backlog's earlier
+"Berlin → Warszawa works" was measured on the wrong profile.
+
+| ride | before | after | outcome | candidates |
+|---|---|---|---|---|
+| Rīga → Tallinn | 52.8 s (prod) | **24 s** | 2 routes | 7 of 17 (reduced) |
+| Berlin → Warszawa | ~50 s → 422 | **13 s** | honest refusal | — |
+| Como → Budapest | ~50 s → 422 | **13 s** | honest refusal | — |
+| Rīga → Roma | never answered | **11 s** | honest refusal | — |
+| Sigulda round trip | 23 s | **23 s** | 2 routes | 36 (unchanged) |
+| Rīga → Baldone | 20 s | **20 s** | 2 routes | 17 (unchanged) |
+
+Rides under a 250 km headline leg are never probed, so the weekend ride pays
+nothing for this.
+
+### Step 2 — the four ideas weighed (design only, nothing built)
+
+The probe buys honesty, not capability: Berlin → Warszawa is a ride a rider
+would plausibly want and Mopik now refuses it politely. These are the ways out.
+
+**a. Fewer candidates when the request is large.** *Already built* as the
+probe's scaling, and it is why Rīga → Tallinn dropped to 24 s. Needs nothing
+further. **Its ceiling is low**: at 31 s a leg the budget affords one
+candidate, and one candidate is not a choice between versions — it is a single
+road. This stretches the working range by perhaps 150 km, not by 500.
+
+**b. Headline-only routing.** Route the direct leg and show it alone, skipping
+the corridor shapes. Cheap to build (the probe already holds that leg — it is
+one response shape away) and it turns today's refusal into *a* ride for
+anything that routes at all. **But it quietly abandons the product**: the one
+thing that matters here is not riding the same road twice, and the headline
+leg is precisely the shortest, most-travelled line between two points. A rider
+asking for a 600 km adventure day would get the road they were trying to
+avoid. Worth having only as an explicit offer ("gribi taisnāko ceļu?"), never
+as a silent fallback.
+
+**c. Consecutive days.** Split the ride into day-sized pieces, each planned
+properly with its own full candidate search, and present them as a multi-day
+plan. **This is the only idea that actually solves the problem** rather than
+narrowing it: each day is a 300-400 km search that Mopik already does well, so
+quality per day is today's quality, and the Alps stop being one hard search.
+Costs the most: an overnight point has to be chosen (a town with beds, not a
+forest junction), the plan model grows a day dimension, the map and GPX export
+have to show days, and the chat has to ask "cik dienas?". It also changes what
+Mopik *is*, from a day-ride planner to a tour planner — which is a decision
+for the rider, not for the code.
+
+**d. Rider-chosen split points.** The rider names the places they want to pass
+through, and each segment is planned separately. Cheaper than (c) — the
+`viaPlaces` machinery exists, and splitting at named places needs no overnight
+logic — and better than arbitrary splitting, because the router optimises
+each piece and a rider-chosen waypoint is somewhere they wanted to be anyway,
+so the seam is not a compromise. **It does not fix the hardest case**: Rīga →
+Roma stays unplannable unless the rider names enough intermediate places, and
+a rider who does not know the route cannot name them.
+
+**Recommendation.** Do (d) next, then (c) if the rider wants tours.
+
+(d) is a small step from here — the probe already measures per leg, so
+probing each rider-named segment and reporting which one is the problem is
+mostly wiring, and it converts the current flat refusal into "šis posms ir par
+grūtu, pievieno pieturu starp X un Y". It makes the refusal *actionable*,
+which is the complaint behind item 7, without committing to a tour planner.
+
+(c) is the real answer and should follow, but it is a product decision with a
+data model behind it — not something to start while POI for Europe (item 8) is
+still the oldest outstanding request.
+
+(b) should be built only as a named offer inside (d)'s refusal, never as a
+silent substitution: "nevaru izplānot interesantu maršrutu, bet taisnāko ceļu
+varu" is honest; quietly returning the motorway is not.
+
+(a) is done and needs no further work.
+
 ## 8. POI for Europe
 
 Outside LV/LT/EE loop anchors are geometric, so rides are unnamed and cannot be

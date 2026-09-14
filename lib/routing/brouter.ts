@@ -1,6 +1,7 @@
 import { buildMotoProfile, type MotoProfileOptions } from "./moto-profile";
 import { haversineMeters, type Point } from "@/lib/geo/geometry";
 import { joinPaths } from "./join-paths";
+import { recallLeg } from "./fetch-route-probe";
 import type { RoutePath, RouteEdge } from "@/lib/types";
 
 /**
@@ -168,7 +169,7 @@ const PAVED = new Set([
  * BRouter reports one message row per way segment with the raw OSM tags, so
  * segment attributes are derived rather than mapped from an enum.
  */
-function edgesFromMessages(
+export function edgesFromMessages(
   messages: string[][] | undefined,
   coordinates: Point[]
 ): RouteEdge[] {
@@ -250,6 +251,13 @@ export async function fetchRoutePath(params: {
   }
 
   const profileId = await uploadProfile(params.profileOptions);
+
+  // The feasibility probe may already have routed exactly this leg on exactly
+  // this profile, and on a long ride that leg is the most expensive search of
+  // the whole generation. Paying for it twice would eat the budget the probe
+  // exists to protect.
+  const probed = recallLeg(profileId, params.points);
+  if (probed) return probed;
 
   // A leg already known to be beyond the public instance is split up front,
   // rather than every candidate paying for the same refusal (see

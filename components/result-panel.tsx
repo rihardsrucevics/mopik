@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useLocale } from "@/lib/i18n/use-locale";
 import { t, messages } from "@/lib/i18n/messages";
 import { fi } from "@/lib/i18n/format";
@@ -14,6 +14,7 @@ import type { ResolvedPlace } from "@/lib/chat/places";
 import { isSaved, removeRide, rideId, saveRide } from "@/lib/share/saved-rides";
 import { gpxFilename } from "@/lib/gpx/filename";
 import { RouteActionRow } from "@/components/action-row";
+import { POI_KIND, type RoutePoi, type RoutePois } from "@/lib/poi/kinds";
 
 /**
  * The left column once routes exist: what was asked, the three versions,
@@ -66,7 +67,52 @@ function Row({ label, value, icon }: { label: string; value: string; icon?: stri
   );
 }
 
-export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, remoteLoop, longerSuggestion, tolerancePercent = 20, busy, onSend, onBackToForm, resolvedPlaces, alternatives, offset, onOffsetChange, map, sparsePlaceData = false, assembledFromSegments = false }: {
+/**
+ * One suggested place: its kind's emoji and word, its name, and how far.
+ *
+ * The same row shape serves both groups — what changes is the figure on the
+ * right (km into the ride for something the route passes, metres off the line
+ * for something it does not) and the add control, which only a nearby place
+ * gets. A place already on the route needs no button: the ride is going there.
+ */
+function PoiRow({ poi, m, figure, onAdd, busy }: {
+  poi: RoutePoi;
+  m: ReturnType<typeof messages>;
+  figure: string;
+  onAdd?: () => void;
+  busy?: boolean;
+}) {
+  const kind = POI_KIND[poi.category];
+  const kindLabel = m[kind.key as keyof typeof m] ?? poi.category;
+  // Built here rather than in the JSX: a template literal used as a child is
+  // exactly what `react/jsx-no-literals` bans, and rightly — the "+" is
+  // decoration on a translated word, not a string of its own.
+  const addLabel = `+ ${m.resAddStop}`;
+  return (
+    <div className="flex items-center gap-2 py-0.5 text-xs">
+      <span aria-hidden="true" className="shrink-0 text-[12px] leading-none">{kind.icon}</span>
+      <span className="min-w-0 flex-1 truncate">
+        <span className="text-stone-900">{poi.name}</span>
+        <span className="text-stone-400">{" · "}</span>
+        <span className="text-stone-500">{kindLabel}</span>
+      </span>
+      <span className="shrink-0 tabular-nums text-stone-500">{figure}</span>
+      {onAdd && (
+        <button
+          type="button"
+          onClick={onAdd}
+          disabled={busy}
+          aria-label={fi(m.resAddStopAria, { place: poi.name })}
+          className="shrink-0 rounded-full border border-[#f5630040] px-2 py-0.5 text-[11px] font-semibold text-[#f56300] transition hover:bg-[#f5630010] disabled:opacity-40"
+        >
+          {addLabel}
+        </button>
+      )}
+    </div>
+  );
+}
+
+export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, remoteLoop, longerSuggestion, tolerancePercent = 20, busy, onSend, onBackToForm, resolvedPlaces, alternatives, offset, onOffsetChange, map, sparsePlaceData = false, assembledFromSegments = false, onAddStop, onPoisLoaded }: {
   routes: GeneratedRoute[];
   /** transit → loop → transit split, when the ride was built around a focus area */
   remoteLoop?: GenerateRouteResponse["remoteLoop"];
@@ -114,6 +160,23 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
   /** The ride is outside the pre-baked POI data, so stops have no names. */
   sparsePlaceData?: boolean;
   assembledFromSegments?: boolean;
+  /**
+   * Make a suggested place a via point and plan the ride again through it.
+   *
+   * This is how a stop comes into a ride from the map rather than from the
+   * form: the page adds the name to the plan's `viaPlaces`, adds its
+   * coordinates to the picked places so it is never geocoded into a different
+   * place of the same name, and re-runs the same generation the form does.
+   */
+  onAddStop?: (place: { name: string; lat: number; lon: number }) => void;
+  /**
+   * The places this ride passes, once they have been looked up.
+   *
+   * Reported upwards so the map can label a stop's marker with what kind of
+   * place it is without a second request: the panel is the only thing that
+   * asks, and it asks once per ride.
+   */
+  onPoisLoaded?: (pois: RoutePois) => void;
 }) {
   const [locale] = useLocale();
   const m = messages(locale);
@@ -131,6 +194,28 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
     const family = familyOf(r.variant);
     return family[(offset[r.variant] ?? 0) % Math.max(1, family.length)] ?? r;
   };
+  /**
+   * The suggestions in Detaļas, fetched when the details are opened and not
+   * before.
+   *
+   * Lazy on purpose: most generations are never expanded, and the lookup is
+   * a server round trip carrying the whole polyline. Keyed by the ride's id
+   * so cycling a card re-asks for that ride's places rather than showing the
+   * previous one's. A failure is silence — the section simply does not appear,
+   * which is the same thing that happens outside the Baltics.
+   */
+  const [suggestions, setSuggestions] = useState<RoutePois | null>(null);
+  const [suggestLoading, setSuggestLoading] = useState(false);
+  const suggestedFor = useRef<string | null>(null);
+  // Held in a ref so a parent that re-creates the callback every render — the
+  // ordinary case for an inline arrow — cannot become a reason to ask the
+  // server again.
+  const onPoisLoadedRef = useRef(onPoisLoaded);
+  // Kept current in an effect rather than during render: a ref written while
+  // rendering is exactly what `react-hooks/refs` bans, and the value is only
+  // ever read from the fetch's callback, which runs well after commit.
+  useEffect(() => { onPoisLoadedRef.current = onPoisLoaded; }, [onPoisLoaded]);
+
   const [beer, setBeer] = useState(false);
   const [shared, setShared] = useState<"idle" | "copied">("idle");
   // Which ride is currently saved, by its code: derived during render rather
@@ -140,6 +225,45 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
   // Everything below — the numbers, the GPX, the share code — reads the ride
   // the selected card is actually showing, not the API's original pick.
   const route = shownFor(routes[Math.min(selected, routes.length - 1)]);
+
+  /**
+   * Ask for the suggestions the first time this ride's details are opened.
+   *
+   * Above the `if (!route)` below, because a hook cannot run conditionally —
+   * the effect's own guard is `details && route`, which is the same condition
+   * expressed where React can see it every render.
+   */
+  const routeId = route?.id ?? null;
+  useEffect(() => {
+    if (!details || !routeId || !route) return;
+    if (suggestedFor.current === routeId) return;
+    suggestedFor.current = routeId;
+    setSuggestions(null);
+    setSuggestLoading(true);
+    const controller = new AbortController();
+    fetch("/api/route-pois", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ geometry: route.geometry, locale }),
+      signal: controller.signal,
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: RoutePois | null) => {
+        if (!data) return;
+        const lists = { onRoute: data.onRoute ?? [], nearby: data.nearby ?? [] };
+        setSuggestions(lists);
+        onPoisLoadedRef.current?.(lists);
+      })
+      // A suggestion list that does not arrive is not worth an error: the
+      // section is absent, exactly as it is outside the Baltics.
+      .catch(() => {})
+      .finally(() => setSuggestLoading(false));
+    return () => controller.abort();
+    // `route` is read inside but keyed by its id: a re-render that produces an
+    // equal-but-new object must not re-ask the server.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [details, routeId, locale]);
+
   if (!route) return null;
   const q = route.quality;
   // The RISKS share, on the same denominator the ROADS rows use: road + track
@@ -431,6 +555,49 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
               <div>
                 <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-stone-400">{m.resRisksHeading}</div>
                 <Row label={m.badgeUnverified} value={`${q.unverifiedPathKm} km · ${unverifiedPercent} %`} icon="⚠️" />
+              </div>
+            )}
+            {/* Places, between the two blocks that describe the road and the
+                one that describes its surface: what the ride goes past is a
+                different kind of fact from how rough it is, and it is the one
+                a rider can act on. Absent entirely when there is nothing to
+                say — outside the Baltics the dataset knows no names, and an
+                empty heading would be a promise the app cannot keep. */}
+            {suggestLoading && !suggestions && (
+              <div className="flex items-center gap-2 text-[11px] text-stone-400">
+                <LoaderCircle className="size-3 animate-spin" />
+                {m.resSuggestLoading}
+              </div>
+            )}
+            {suggestions && (suggestions.onRoute.length > 0 || suggestions.nearby.length > 0) && (
+              <div>
+                <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-stone-400">{m.resSuggestions}</div>
+                {suggestions.onRoute.length > 0 && (
+                  <div className="mb-1.5">
+                    <div className="mb-0.5 text-[10px] font-medium text-stone-400">{m.resSuggestOnRoute}</div>
+                    {suggestions.onRoute.map((p) => (
+                      <PoiRow key={p.id} poi={p} m={m} figure={`${p.alongKm} km`} />
+                    ))}
+                  </div>
+                )}
+                {suggestions.nearby.length > 0 && (
+                  <div>
+                    <div className="mb-0.5 text-[10px] font-medium text-stone-400">{m.resSuggestNearby}</div>
+                    {suggestions.nearby.map((p) => (
+                      <PoiRow
+                        key={p.id}
+                        poi={p}
+                        m={m}
+                        // Metres for a short detour, one decimal of a
+                        // kilometre past that: "1.2 km off" is easier to judge
+                        // than "1240 m off".
+                        figure={p.distanceMeters < 1000 ? `${p.distanceMeters} m` : `${Math.round(p.distanceMeters / 100) / 10} km`}
+                        busy={busy}
+                        onAdd={onAddStop ? () => onAddStop({ name: p.name, lat: p.lat, lon: p.lon }) : undefined}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
             )}
             <div>

@@ -1,5 +1,260 @@
 # Mopik — progress log
 
+## 2026-09-14 — Item 7, step 1: say it before the search, not after
+
+A ride Mopik cannot plan in one go is now named as such **up front**, in the
+chat, instead of a ~50 s wait ending in 422. `lib/routing/fetch-route-probe.ts`
+routes the headline leg once under a 10 s deadline before the candidate search
+commits to ~36 of them; a slow leg answers honestly, a fast one has its timing
+used to scale the search.
+
+**A kilometre threshold could not have done this** (the backlog's own finding):
+Rīga → Berlin is 1133 km and routes in 23 s, Como → Budapest is 1126 km and
+takes 74 s. Search difficulty, not length, is what costs time — so the probe
+measures instead of guessing.
+
+### BRouter has no server-side time limit we can use
+
+The request parameter exists and is **not honoured**. Measured serially against
+`brouter.mopik.eu` (BRouter 1.7.10):
+
+| request | result |
+|---|---|
+| Como → Budapest, `maxRunningTime=10` | 200 after **77.2 s** |
+| Como → Budapest, `maxRunningTime=300` | 200 after **76.5 s** |
+| Berlin → Warszawa, `timeout=3` | 200 after **29.6 s** |
+| Berlin → Warszawa, `timeout=5` | 400 watchdog after 5 s |
+
+The last row is the trap: the 400 "operation killed by thread-priority-watchdog
+after N seconds" replies look like the parameter working, and they are not.
+They reproduce with **no parameter at all** whenever a second request overlaps
+a running search, and the N in the message tracks the overlap rather than the
+value passed. Confirmed by running the same leg with no parameters three times:
+69.8 s, then 31.2 s, then 14.7 s (cache warming), and by a clean serial
+`maxRunningTime=10` that ran the full 77 s.
+
+So the deadline is enforced on **our** side with an `AbortController`. The
+server keeps burning CPU on the abandoned search for a while; that is the price
+of a router with no cancel, and far cheaper than the rider waiting 50 s.
+
+### The server is one vCPU, so concurrency is not free
+
+With one long search already running:
+
+| leg | alone | under load |
+|---|---|---|
+| Berlin → Warszawa | 14.7 s | **35-40 s** |
+| Como → Budapest | 77 s | **137 s** |
+
+Four candidates at a time is therefore not four times the capacity, which is
+why `affordableCandidates` does **not** divide the measured leg cost by the
+concurrency. Treating it as capacity would promise a budget that does not
+exist.
+
+### The profile matters more than the map
+
+Berlin → Warszawa is the case that corrected the record. Measured per profile,
+single leg:
+
+| profile | Rīga → Baldone | Rīga → Tallinn | Berlin → Warszawa |
+|---|---|---|---|
+| easy / asphalt | 3.1 s | 5.4 s | **36.9 s** |
+| medium | 1.9 s | 3.4 s | **30.9 s** |
+| hard / forest | 2.7 s | 3.7 s | **fails** (`re-tracking track`, 56 s) |
+
+The backlog's "Berlin → Warszawa routes in 14.4 s" was measured on `trekking`,
+not on any profile a rider actually gets. On the rider's own settings that leg
+costs 31-37 s — one candidate's worth of the entire 50 s budget — so refusing
+it is correct, not conservative.
+
+### The probe
+
+- **Budget 10 s.** Above every leg that generates today (Rīga → Tallinn probes
+  at 3.7-5.4 s) and well below the ones that cannot.
+- **Only legs ≥ 250 km are probed.** A weekend ride pays nothing: Rīga →
+  Baldone would probe in 2-3 s of pure cost on a request that always worked.
+- **Plain loops are never probed.** They have no headline leg, and the
+  calibration route already measures the region at the app's expense.
+- **Deliberately not `fetchRoutePath`.** Its endpoint-nudging, island-dropping
+  and segment-splitting rescues each cost another round trip — a probe that
+  quietly took four attempts would report four times the true leg cost and
+  refuse a ride that generates fine.
+- **The routed leg is handed to the search** (`rememberLeg`/`recallLeg`), so
+  the `via-0` candidate does not pay for the same search twice.
+- **Candidate scaling** is `(budget − spent − overhead) / T`, clamped to at
+  least one: fewer versions beats a 422. `scripts/feasibility-probe.test.ts`
+  pins the arithmetic.
+
+### Measured end to end, dev server, rider's hard-forest settings
+
+| ride | before | after | outcome | candidates |
+|---|---|---|---|---|
+| Rīga → Tallinn | 52.8 s (prod) | **24 s** | 2 routes | 7 of 17, reduced |
+| Berlin → Warszawa | ~50 s → 422 | **13 s** | honest refusal | — |
+| Como → Budapest | ~50 s → 422 | **13 s** | honest refusal | — |
+| Rīga → Roma | never answered | **11 s** | honest refusal | — |
+| Sigulda round trip | 23 s | **23 s** | 2 routes | **36, unchanged** |
+| Rīga → Baldone | 20 s | **20 s** | 2 routes | **17, unchanged** |
+
+Both regressions confirmed to carry no `reducedSearch` and the full candidate
+pool, i.e. the probe never ran on them.
+
+### What the rider sees
+
+An unplannable ride is a **200 with `unplannable`**, not an error — nothing
+broke, and item 3's rule (failures speak in the chat) already routes it into
+the conversation. `describeUnplannable` says three things in order: what was
+asked, that this cannot be planned in one go *yet*, and what works now —
+
+> Berlin → Warszawa ir ~517 km taisnā līnijā. Tik garu braucienu es vienā
+> piegājienā vēl nevaru izplānot — ceļa meklēšana šajā apvidū aizņem vairāk
+> laika, nekā man ir. Kas strādā jau tagad: līdz ~600 km lēnākā apvidū un
+> vairāk līdzenumā. Sadali braucienu pa dienām vai izvēlies tuvāku galamērķi.
+> Kā darām?
+
+No retry chip: trying again gives the same answer. The one tap offered is
+"Mainīt galamērķi". The "~600 km" is deliberately vague because the real limit
+is difficulty, not distance — a precise figure would be a promise Mopik cannot
+keep. When the search was merely *reduced*, the result says so
+(`chatFewerVersions`, four locales).
+
+`maxDuration` stays at 60. Step 2 (how to plan long rides properly) is weighed
+in `docs/BACKLOG.md` item 7 — design only, nothing built.
+
+## 2026-09-14 — Item 11: routes along the sea
+
+**The brief inverted itself halfway through, and that was the important part.**
+The backlog said "routes still run along the sea" as a complaint. The rider
+corrected it mid-measurement: riding along the sea is *desired* — "gar jūru
+braukt būtu izcili — jāmēģina vest cik vien tuvu jūrai, cik var". The bug is
+the stretches with no real road under the bike: the beach itself.
+
+So the target became: hug the coast on ways that exist, never on sand.
+
+### Method
+
+Six coastal legs and two inland controls, routed as single legs through
+`brouter.mopik.eu` with the default Adventure preset exactly as the composer
+builds it (hard / riding / forest → gravel 100, trails "lots",
+`allow_unverified`) — `scripts/measure-coast.ts`. Single legs rather than full
+generations on purpose: the question is what the *cost profile* does beside
+the sea, and 36 loop candidates answer it with shape noise on top.
+
+Two OSM sources over the Baltic bbox, from Overpass (`overpass.private.coffee`
+— the main mirror 504s on this bbox), scored by `scratchpad/sea/coast.py`:
+- `natural=coastline` — 6,038 ways / 575,551 vertices, already denser than
+  100 m spacing. Indexed in 0.02° cells → **distance to the sea**, which is
+  the thing to *maximise*.
+- `natural=beach|sand|dune|shingle` — 2,691 areas, ray-cast point-in-polygon
+  → **is the bike on the sand**, the thing to eliminate.
+Each routed sub-segment's midpoint is classified by both. BRouter shape points
+are 10–40 m apart, so the midpoint approximation costs metres.
+
+### What the numbers said, against two wrong guesses
+
+The first hypothesis — the profile rewards water proximity, so strip the
+bonus — was wrong twice over, and both corrections came from the data:
+
+1. **`surface=sand` is not the signal.** The six legs rode 12.0 km of sand and
+   only 2.8 km of it was anywhere near the sea. The rest was deep-forest sand
+   track (`estimated_forest_class` 5–6, over 5 km inland) — exactly the Baltic
+   riding the rider asks for. A blanket sand ban would have destroyed 9.2 km of
+   the right stuff to fix 2.8 km of the wrong stuff. A `tracktype` refinement
+   scored no better: 6.3 km banned inland against 1.7 km near the sea.
+2. **What actually carried it was `highway=path` at the shoreline** — dune and
+   beach footpaths tagged `surface=ground`, `dirt` or nothing at all, which
+   `accessPolicy=allow_unverified` then permits. 17.9 km across the coastal
+   legs, 12.2 km on Jūrmala → Kolka alone.
+
+The usable lever is that **BRouter's `estimated_river_class` sees the sea**:
+on these legs, class 5–6 paths were 9.9 km within 300 m of the shoreline
+against 2.6 km anywhere else.
+
+### The fix
+
+`shore_path_factor` in `moto-profile.ts`: a `highway=path` beside big water
+costs 4× (8× below hard difficulty). **Only a path.** Every road class keeps
+`river_factor`'s discount, so a coastal road, gravel road or forest track
+beside the sea is exactly as attractive as it was — nothing anywhere prices
+being near the sea, and nothing may start to.
+
+Dear rather than forbidden, and 4.0 is a measured compromise, not a maximum.
+Swept on Jūrmala → Kolka (beach-path km / km within 1 km of the sea):
+
+| shore factor | beach path | km within 1 km of sea |
+|---|---|---|
+| 1.0 (before) | 12.2 | 24.7 |
+| 2.5 | 12.8 | 25.2 |
+| **4.0** | **4.1** | **18.0** |
+| 12.0 | 0.0 | 10.3 |
+
+At 12 the last 4 km of beach costs 8 km of the coast itself — the opposite of
+what was asked for.
+
+### Before / after
+
+| ride | km | beach-like km | shoreline-path km | km <300 m of sea | km <1 km of sea |
+|---|---|---|---|---|---|
+| Rīga → Ainaži | 208.4 → 207.9 | 0.00 → 0.00 | 3.86 → 2.29 | 4.2 → 2.4 | 15.7 → 14.9 |
+| Jūrmala → Kolka | 200.8 → 203.8 | 2.87 → 0.72 | 12.22 → 4.12 | 15.1 → 6.2 | 24.7 → 16.7 |
+| Liepāja → Ventspils | 140.4 → 140.4 | 0.00 → 0.00 | 0.44 → 0.44 | 7.2 → 7.2 | 19.4 → 19.4 |
+| Pärnu → Haapsalu | 138.5 → 138.5 | 0.00 → 0.00 | 0.00 → 0.00 | 0.0 → 0.0 | 0.9 → 0.9 |
+| Klaipėda → Palanga | 42.5 → 42.5 | 0.00 → 0.00 | 0.00 → 0.00 | 0.1 → 0.1 | 5.2 → 5.2 |
+| Ventspils → Kolka | 110.1 → 110.1 | 0.00 → 0.00 | 1.37 → 1.37 | 4.4 → 4.4 | 46.4 → 46.4 |
+| *Sigulda → Cēsis (inland)* | 59.5 → 59.5 | — | — | — | — |
+| *Cēsis → Madona (inland)* | 126.1 → 126.1 | — | — | — | — |
+| **total** | **1026.2 → 1028.7** | **2.87 → 0.72** | **17.89 → 8.22** | **31.0 → 20.3** | **112.3 → 103.5** |
+
+Beach ground down 75%, shoreline footpath more than halved, +2.5 km over a
+thousand kilometres, **both inland controls unchanged to the metre.**
+
+### Two traps this sprang, both worth keeping
+
+**A `multiply` after `switch highway=path` in `costfactor` is dead code.**
+BRouter's `switch` returns immediately, so the first version of
+`shore_path_factor` sat in the multiply chain and did nothing — at 12.0, at
+500 and even at 100000 the Jūrmala → Kolka route did not move one metre, while
+the identical condition inside `motor_forbidden` removed all 9.0 km. It is now
+folded into the path cost itself: `switch highway=path multiply
+shore_path_factor <cost>`. Pinned by a regression test, because the failure
+mode is silent — the profile parses, routes return, nothing changes.
+
+**Backticks in a profile comment break the template literal.** Already in
+CLAUDE.md for commit messages; it applies to `moto-profile.ts` too, and cost a
+run. The test now asserts the generated profile contains no backtick.
+
+### Measured out again, deliberately
+
+`smoothness=impassable|very_horrible` was added to `beach_like_path` and then
+removed: refusing it cost Rīga → Ainaži a **20.6 km detour** (208.7 → 229.3 km)
+to avoid 1.8 km, and the existing `impassable`/`horrible` multipliers already
+price it. It is dear, never forbidden — a rider's own 126 km plan crossed 200 m
+of "impassable". The isolation run that caught this is worth repeating before
+touching either: the 20 km came entirely from that ban, not from the shore
+factor (which alone moved Rīga → Ainaži by −0.6 km).
+
+### Not settled
+
+- **The coastal-proximity dip is real and not yet recovered.** Total km within
+  1 km of the sea fell 112.3 → 103.5, almost all of it Jūrmala → Kolka, where
+  the beach path *was* the thing nearest the water. Getting the ride back onto
+  the coast there means finding it a road, not making the beach cheaper —
+  nothing in this change pushes routes inland, but nothing pulls them seaward
+  either. The rider asked for "as close as possible"; this delivers "not on the
+  sand", which is the smaller half.
+- **Scoring was checked and left alone.** `riverValue` in `classify.ts` counts
+  `estimated_river_class >= 4`, which includes the sea, so coastal riding
+  already scores as nature rather than being penalised. No change made.
+- Measured on Baltic coast only. The profile is calibrated on Latvian roads and
+  `estimated_river_class` has not been checked against a Mediterranean or
+  Atlantic shoreline.
+- Single legs, not full generations: loop anchor placement near the shore was
+  not examined and could still put rides on the coast for geometric reasons.
+
+Tooling left behind: `scripts/measure-coast.ts` (routes the eight legs) and
+the Overpass + scoring script in the scratchpad, which needs re-fetching to
+re-run — the coastline extract is 37 MB and deliberately not committed.
+
 ## 2026-09-14 — the day in one place
 
 Fourteen commits, all live at `41e1b9f`. Three halves, which is one too many:

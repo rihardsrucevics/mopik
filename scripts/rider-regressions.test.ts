@@ -81,3 +81,35 @@ test("TET is reported for sustained following, in either direction, not a crossi
   assert.equal(match([[24,57],[24.002,57]]), undefined);
   assert.equal(createTetMatcher([])([[24,57],[24.03,57]]), undefined);
 });
+
+import { isBeachLikePath } from "../lib/routing/access";
+import { buildMotoProfile } from "../lib/routing/moto-profile";
+test("the sea is to ride along, not on (backlog item 11, measured 2026-09-14)", () => {
+  // The beach itself stays refused.
+  assert.equal(isBeachLikePath({ highway: "path", surface: "sand" }), true);
+  // But sand is NOT the test on its own: most sand these rides use is
+  // deep-forest track kilometres inland, which is what the rider asks for.
+  // Banning it would have cost 9.2 km of the right riding to fix 2.8 km of
+  // the wrong riding.
+  assert.equal(isBeachLikePath({ highway: "track", surface: "sand", tracktype: "grade3" }), false);
+  assert.equal(isBeachLikePath({ highway: "track", surface: "sand" }), false);
+  // "impassable" is dear, never forbidden — refusing it cost Rīga → Ainaži a
+  // 20.6 km detour to avoid 1.8 km.
+  assert.equal(isBeachLikePath({ highway: "track", smoothness: "impassable" }), false);
+
+  const hard = buildMotoProfile({
+    offRoad: 1, difficulty: "hard", trails: "lots", accessPolicy: "allow_unverified",
+    avoidMainRoads: true, avoidMotorways: true, noSand: false, avoidTowns: false,
+  });
+  // The shoreline-path cost must be folded into the path cost itself: a
+  // `multiply` after `switch highway=path` in `costfactor` is dead code, and
+  // measuring that cost a whole round (12.0, 500 and 100000 all moved nothing).
+  assert.match(hard, /switch highway=path multiply shore_path_factor/);
+  assert.doesNotMatch(hard, /^\s*multiply shore_path_factor\s*$/m);
+  // Only a path pays it. Every road class keeps river_factor's discount, so
+  // riding *beside* the sea must never get more expensive.
+  assert.match(hard, /assign shore_path_factor =\n\s+switch or estimated_river_class=5 estimated_river_class=6 4\.0\n\s+1\.0/);
+  assert.match(hard, /assign river_factor =\n\s+switch or estimated_river_class=5 estimated_river_class=6 0\.92/);
+  // A generated profile must never carry a stray backtick out of the template.
+  assert.doesNotMatch(hard, /`/);
+});

@@ -320,4 +320,41 @@ export type GenerateRouteResponse = {
     /** repeated share of the best in-tolerance option, for comparison */
     insteadOfPercent: number;
   };
+  /**
+   * Set when the feasibility probe measured the headline leg as slow and the
+   * search was cut to what the remaining budget could pay for. The rider is
+   * told how many versions were actually tried rather than being left to
+   * wonder why one card came back instead of two.
+   */
+  reducedSearch?: {
+    /** candidates the generation could afford at the measured leg cost */
+    tried: number;
+    /** candidates it would have tried on a fast leg */
+    planned: number;
+    /** what one routed leg cost, seconds — the probe's measurement */
+    legSeconds: number;
+  };
+  /**
+   * Set instead of `routes` when the feasibility probe showed the ride cannot
+   * be planned in one go. A 200, not an error: nothing broke, and the chat
+   * has something honest to say. `routes` is absent.
+   */
+  unplannable?: UnplannableVerdict;
+};
+
+/**
+ * The ride is too hard to search for Mopik to plan in one go — said *before*
+ * the candidate search rather than after 50 s of waiting. Carries what the
+ * probe measured so the chat can be specific instead of generic.
+ */
+export type UnplannableVerdict = {
+  /** the leg that decided it, as the rider named it */
+  from: string;
+  to: string;
+  /** straight-line km of that leg */
+  legKm: number;
+  /** how long the probe was allowed, seconds */
+  budgetSeconds: number;
+  /** "timeout" when it ran out of time, "error" when the router refused */
+  reason: "timeout" | "error";
 };

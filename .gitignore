@@ -52,3 +52,11 @@ next-env.d.ts
 # TET source GPX: 117 MB, re-downloadable from transeurotrail.org, and the
 # built output in public/tet* is what the app actually reads.
 /data/tet-gpx/
+
+# POI build outputs from scripts/build_poi_dataset.py (Geofabrik path): per
+# country files and the build log. What the app reads is the file the loader
+# points at; these are intermediates until the loader switch decides storage.
+/data/poi-*.geojson
+/data/poi-index.json
+/data/poi-build.log
+/.venv/

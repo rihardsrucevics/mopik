@@ -1,13 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { useLocale } from "@/lib/i18n/use-locale";
 import { messages } from "@/lib/i18n/messages";
 import { fi } from "@/lib/i18n/format";
-import { ArrowUp, Download } from "lucide-react";
+import { ArrowUp, Download, LoaderCircle } from "lucide-react";
 import { RouteActionRow } from "@/components/action-row";
 import { RouteMap } from "@/components/route-map";
+import { POI_KIND, type RoutePois } from "@/lib/poi/kinds";
 import { MapPanel } from "@/components/map-panel";
 import { SiteHeader } from "@/components/site-header";
 import { track } from "@/lib/analytics";
@@ -46,6 +47,19 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
   const router = useRouter();
   const [showTet, setShowTet] = useState(false);
   const [details, setDetails] = useState(false);
+  /**
+   * The places this ride passes, loaded when the details are opened.
+   *
+   * The read-only half of the result panel's Ieteikumi: someone else's ride
+   * has no plan here to regenerate, so there is no "+ Pievienot" — a shared
+   * link is a ride to look at, and the way to make it one's own is the button
+   * that already carries that meaning. Both groups are listed with their
+   * figures; nothing shows when the lookup finds nothing, which is also what
+   * happens outside the Baltics.
+   */
+  const [pois, setPois] = useState<RoutePois | null>(null);
+  const [poisLoading, setPoisLoading] = useState(false);
+  const askedRef = useRef(false);
   const [copied, setCopied] = useState(false);
   // The correction box below the card, exactly as the result panel has it.
   const [text, setText] = useState("");
@@ -79,6 +93,28 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
   // must show the same ride the rider shared. The ROADS / SURFACE numbers
   // below and the map's own badges carry it.
   const segments = useMemo(() => sharedRouteSegments(share), [share]);
+
+  // Asked once, when the rider opens the details — the same lazy rule the
+  // result panel follows, for the same reason: most visitors never expand it.
+  useEffect(() => {
+    if (!details || askedRef.current || !share.points?.length) return;
+    askedRef.current = true;
+    setPoisLoading(true);
+    const controller = new AbortController();
+    fetch("/api/route-pois", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ geometry: { coordinates: share.points }, locale }),
+      signal: controller.signal,
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: RoutePois | null) => {
+        if (data) setPois({ onRoute: data.onRoute ?? [], nearby: data.nearby ?? [] });
+      })
+      .catch(() => {})
+      .finally(() => setPoisLoading(false));
+    return () => controller.abort();
+  }, [details, share.points, locale]);
   const start = { lat: share.points[0][1], lon: share.points[0][0] };
   useEffect(() => { track("shared_route_viewed", { km: share.km, variant: share.variant }); }, [share.km, share.variant]);
 
@@ -172,6 +208,33 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
                 <div>
                   <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-stone-400">{m.resRisksHeading}</div>
                   <Row label={m.badgeUnverified} value={`${d.unverifiedPathKm} km · ${pct(d.unverifiedPathKm)} %`} icon="⚠️" />
+                </div>
+              )}
+              {poisLoading && !pois && (
+                <div className="flex items-center gap-2 text-[11px] text-stone-400">
+                  <LoaderCircle className="size-3 animate-spin" />
+                  {m.resSuggestLoading}
+                </div>
+              )}
+              {pois && (pois.onRoute.length > 0 || pois.nearby.length > 0) && (
+                <div>
+                  <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-stone-400">{m.resSuggestions}</div>
+                  {pois.onRoute.length > 0 && (
+                    <div className="mb-1.5">
+                      <div className="mb-0.5 text-[10px] font-medium text-stone-400">{m.resSuggestOnRoute}</div>
+                      {pois.onRoute.map((p) => (
+                        <Row key={p.id} label={`${p.name} \u00b7 ${m[POI_KIND[p.category].key as keyof typeof m] ?? p.category}`} value={`${p.alongKm} km`} icon={POI_KIND[p.category].icon} />
+                      ))}
+                    </div>
+                  )}
+                  {pois.nearby.length > 0 && (
+                    <div>
+                      <div className="mb-0.5 text-[10px] font-medium text-stone-400">{m.resSuggestNearby}</div>
+                      {pois.nearby.map((p) => (
+                        <Row key={p.id} label={`${p.name} \u00b7 ${m[POI_KIND[p.category].key as keyof typeof m] ?? p.category}`} value={p.distanceMeters < 1000 ? `${p.distanceMeters} m` : `${Math.round(p.distanceMeters / 100) / 10} km`} icon={POI_KIND[p.category].icon} />
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
               <div>

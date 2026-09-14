@@ -16,12 +16,13 @@ import { messages as uiMessages } from "@/lib/i18n/messages";
 import { fi } from "@/lib/i18n/format";
 import { RideComposer } from "@/components/ride-composer";
 import { ChatMessage, ChatQuickReply, ChatResponse, RidePlan, planSummary } from "@/lib/chat/ride-plan";
-import { describeInfeasible, minutesLabel } from "@/lib/chat/feasibility";
+import { describeInfeasible, describeUnplannable, minutesLabel } from "@/lib/chat/feasibility";
 import { seedPlanFromProfile } from "@/lib/chat/ride-profile";
 import type { ResolvedPlace } from "@/lib/chat/places";
 import { useRideProfile } from "@/lib/chat/use-ride-profile";
 import { DESKTOP_QUERY, useMediaQuery } from "@/lib/use-media-query";
 import { GenerateRouteResponse } from "@/lib/types";
+import { POI_KIND } from "@/lib/poi/kinds";
 
 type Retry = { stage: "chat"; messages: ChatMessage[]; plan: RidePlan | null } | { stage: "route"; messages: ChatMessage[]; plan: RidePlan };
 
@@ -56,6 +57,21 @@ function describeError(e: unknown, fallback: string): string {
   console.error("Mopik: request failed", e);
   return `${fallback} (${e.name}: ${e.message}${frame ? ` — ${frame}` : ""})`;
 }
+/**
+ * The POI kind for a stop, matched on the place's own name.
+ *
+ * A via's `label` is the disambiguating one the picker showed — "Turaida ·
+ * Krimuldas pagasts" — while the dataset names the place "Turaida". Comparing
+ * the whole string therefore never matched, and every stop's card said only
+ * "Pieturvieta". The leading segment is the name in both.
+ */
+function stopKind(
+  kinds: Record<string, { kind: string }>,
+  label: string
+): { kind: string } | undefined {
+  return kinds[label] ?? kinds[label.split("·")[0].trim()] ?? kinds[label.split(",")[0].trim()];
+}
+
 export default function Home() {
   const [entryMode, setEntryMode] = useState<"form" | "chat">("form");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -193,6 +209,21 @@ export default function Home() {
       const response = await fetch("/api/generate-route", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ plan: current, prompt: sourcePrompt, places: pickedPlaces, lucky: isLucky }), signal: controller.signal });
       const data = await readJson(response, ui);
       if (!response.ok) throw new Error(data.error || ui.chatErrGenerate);
+      // The ride is beyond what one search can cover, and the API said so
+      // after ~10 s instead of letting the rider wait ~50 s for a 422. It is
+      // a reply, not a failure: no retry chip, because trying again would
+      // give exactly the same answer.
+      const unplannable = (data as GenerateRouteResponse).unplannable;
+      if (unplannable) {
+        track("route_unplannable", { leg_km: unplannable.legKm, reason: unplannable.reason });
+        setLucky(false);
+        const { message, quickReplies: replies } = describeUnplannable(unplannable, true);
+        setMessages([...conversation, { role: "assistant", content: message }]);
+        setQuickReplies(replies);
+        setChatting(true);
+        setRetry(null);
+        return;
+      }
       const route = (data as GenerateRouteResponse).routes[0];
       if (!route) throw new Error(ui.chatErrNoMatch);
       const verdict = (data as GenerateRouteResponse).infeasible;
@@ -263,6 +294,12 @@ export default function Home() {
           back: (data as GenerateRouteResponse).remoteLoop!.transitBackMinutes,
         }) : "",
         data.distanceWarning ? ui.chatLongerThanAsked : "",
+        // The probe measured a slow leg and the search was cut to fit the
+        // budget. Say how many versions were actually tried rather than
+        // letting the rider wonder why fewer cards came back.
+        data.reducedSearch
+          ? fi(ui.chatFewerVersions, { tried: data.reducedSearch.tried, planned: data.reducedSearch.planned })
+          : "",
         ui.chatSayWhatToChange,
       ];
       setMessages([...conversation, { role: "assistant", content: notes.filter(Boolean).join(" ") }]);
@@ -347,6 +384,37 @@ export default function Home() {
     try { await generate(current, conversation, picked); }
     finally { setPhase("idle"); busyRef.current = false; }
   }
+  /**
+   * A suggested place becomes a stop, and the ride is planned again through it.
+   *
+   * This is the "+ Pievienot" in Detaļas. Deliberately no new path: it builds
+   * the plan the form would have built with that stop typed into it and hands
+   * it to `startFromForm`, so the summary, the form the rider can go back to,
+   * the analytics and the cancel behaviour are all the ones that already
+   * exist. The coordinates travel as a picked place for the same reason the
+   * form's do — "Pilskalns" is the name of dozens of hillforts, and the one
+   * meant is the one on the map, not whatever a geocoder decides.
+   *
+   * Appended rather than inserted: this stop is somewhere the ride already
+   * passes near, so it belongs in the order the router finds, and on a one-way
+   * ride the destination stays the destination because `startFromForm` reads
+   * it from `destinationPlace`, not from the end of the via list.
+   */
+  function addStop(place: { name: string; lat: number; lon: number }) {
+    if (busyRef.current || !plan) return;
+    if (plan.viaPlaces.some((v) => v === place.name)) return;
+    // The plan carries at most six stops (`RidePlanSchema`); past that the
+    // press does nothing rather than producing a plan the schema refuses.
+    if (plan.viaPlaces.length >= 6) return;
+    track("suggestion_added", { via_count: plan.viaPlaces.length + 1 });
+    const next: RidePlan = { ...plan, viaPlaces: [...plan.viaPlaces, place.name] };
+    const picked: ResolvedPlace[] = [
+      ...places.filter((p) => p.name !== place.name),
+      { name: place.name, label: place.name, lat: place.lat, lon: place.lon },
+    ];
+    void startFromForm(next, picked);
+  }
+
   async function retryLast() {
     if (!retry || busyRef.current) return;
     busyRef.current = true; setError(null);
@@ -382,6 +450,37 @@ export default function Home() {
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `send` is re-created every render; the ref guard is what makes this run once
   }, [plan]);
+  /**
+   * What the POI dataset knows about the ride's stops, by name.
+   *
+   * Filled by the result panel when it loads its suggestions — the same
+   * request, so a stop's marker costs nothing extra — and read by the map to
+   * put a kind ("pilskalns") in a stop's card instead of only its name. A stop
+   * the dataset does not know keeps the plain "Pieturvieta" card, which is
+   * also what every ride outside the Baltics gets.
+   */
+  const [stopInfo, setStopInfo] = useState<{
+    /** the ride these kinds describe, so a stale set is never applied to a new one */
+    forResult: GenerateRouteResponse | null;
+    kinds: Record<string, { kind: string }>;
+  }>({ forResult: null, kinds: {} });
+
+  /**
+   * Keep what the lookup learned about places this ride passes, keyed by name.
+   *
+   * Only the stops are of interest here — the map labels those — but the whole
+   * list is cheap to index and a stop added from Ieteikumi arrives in the
+   * nearby list under exactly the name it will carry into the plan.
+   */
+  function notePois(pois: { onRoute: { name: string; category: string }[]; nearby: { name: string; category: string }[] }) {
+    const kinds: Record<string, { kind: string }> = {};
+    for (const p of [...pois.onRoute, ...pois.nearby]) {
+      const entry = POI_KIND[p.category as keyof typeof POI_KIND];
+      if (entry) kinds[p.name] = { kind: ui[entry.key as keyof typeof ui] ?? p.category };
+    }
+    setStopInfo({ forResult: result, kinds });
+  }
+
   // What the API actually routed through, in riding order. These are the
   // coordinates worth keeping in a share code — they made this route, rather
   // than being a fresh guess at what the names mean.
@@ -408,7 +507,7 @@ export default function Home() {
         segments={route?.segments ?? null}
         start={result?.start ?? previewPlaces[0] ?? null}
         destination={result?.destination ?? null}
-        via={result ? result.via : previewPlaces.slice(1)}
+        via={result ? (result.via ?? []).map((v) => ({ ...v, ...((stopInfo.forResult === result ? stopKind(stopInfo.kinds, v.label) : undefined) ?? {}) })) : previewPlaces.slice(1)}
         showTet={showTet} onToggleTet={setShowTet} />
     </MapPanel>
   );
@@ -435,7 +534,7 @@ export default function Home() {
           {entryMode === "form"
             ? <RideComposer key={plan ? planSummary(plan, locale) : "new"} initialPlan={plan} initialPlaces={places} profile={profile} onProfileChange={changeProfile} busy={phase !== "idle"} onGenerate={startFromForm} onUseChat={() => setEntryMode("chat")} onPlacesChange={setPreviewPlaces} map={mapInComposer && mapVisible ? mapPanel : undefined} />
             : result && result.routes.length > 0 && !chatting
-              ? <ResultPanel routes={result.routes} selected={selected} onSelect={setSelected} plan={plan} avoidTowns={result.intent.avoidTowns ?? false} lucky={lucky} remoteLoop={result.remoteLoop} longerSuggestion={result.longerSuggestion} tolerancePercent={result.intent.distanceTolerancePercent} busy={phase !== "idle"} onSend={send} onBackToForm={() => setEntryMode("form")} map={mapInResult && mapVisible ? mapPanel : undefined} resolvedPlaces={routedPlaces} alternatives={result.alternatives} sparsePlaceData={result.sparsePlaceData} assembledFromSegments={result.assembledFromSegments} offset={variantOffset} onOffsetChange={setVariantOffset} />
+              ? <ResultPanel routes={result.routes} selected={selected} onSelect={setSelected} plan={plan} avoidTowns={result.intent.avoidTowns ?? false} lucky={lucky} remoteLoop={result.remoteLoop} longerSuggestion={result.longerSuggestion} tolerancePercent={result.intent.distanceTolerancePercent} busy={phase !== "idle"} onSend={send} onBackToForm={() => setEntryMode("form")} map={mapInResult && mapVisible ? mapPanel : undefined} resolvedPlaces={routedPlaces} alternatives={result.alternatives} sparsePlaceData={result.sparsePlaceData} assembledFromSegments={result.assembledFromSegments} offset={variantOffset} onOffsetChange={setVariantOffset} onAddStop={addStop} onPoisLoaded={notePois} />
               : <RoutePrompt messages={messages} plan={plan} hasRoute={Boolean(route)} phase={phase} quickReplies={quickReplies} lucky={lucky && !route} onSend={send} onBackToForm={() => setEntryMode("form")} originCode={origin?.code ?? null} onAction={(action) => { if (action === "retry") { retryLast(); return; } setChatting(false); setQuickReplies([]); }} onCancel={cancel} />}
           {/* A ride that came from editing another one. Asked once, here,
               because only the rider knows whether the original is still
