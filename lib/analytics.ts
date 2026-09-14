@@ -14,6 +14,7 @@ export type AnalyticsEvent =
   | "quick_reply_used"       // a tap on a chip; props: label
   | "route_generated"        // routes arrived; props: versions, km, minutes, repeated, budget…
   | "route_infeasible"       // nothing fits the time; props: requested/minimum minutes
+  | "generation_cancelled"   // "Atcelt" on the loader; props: case (first_from_form → back to the form | later → stays in the chat)
   | "overlap_chat_shown"     // best version retraces > 20 %
   | "route_version_selected" // Taisnākā / Līkumotākā / Sarežģītākā
   | "alternative_cycled"      // a card swapped to another ride of its kind; props: variant, to

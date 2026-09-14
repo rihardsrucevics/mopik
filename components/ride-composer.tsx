@@ -8,6 +8,7 @@ import { RoutePlaces } from "@/components/route-places";
 import { useLocale } from "@/lib/i18n/use-locale";
 import { t, messages, type MessageKey } from "@/lib/i18n/messages";
 import { track } from "@/lib/analytics";
+import { rememberPlace } from "@/lib/chat/recent-places";
 import type { ResolvedPlace } from "@/lib/chat/places";
 import {
   PROFILE_PRESETS,
@@ -166,6 +167,17 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
         }
         setPlaces((prev) => prev.map((p, i) => (i === 0 ? place.name : p)));
         setPick(0, place);
+        // The same shelf a dropdown pick goes on. A place found by GPS was the
+        // one kind of place the app forgot: `PlaceInput.pick` calls
+        // `rememberPlace`, and this path never goes through it, so "Sigulda"
+        // resolved by the crosshair was gone by the next visit.
+        //
+        // Stored as the *named* place, never as "my location": a recent entry
+        // has to work later, from the sofa, with no GPS. When the reverse
+        // lookup found nothing the fallback name is the coordinate pair, and
+        // `rememberPlace` refuses that on its own — so this call is safe in
+        // both branches above, and runs only after the lookup has settled.
+        rememberPlace(place);
         setLocating(false);
         track("form_location_used");
       },

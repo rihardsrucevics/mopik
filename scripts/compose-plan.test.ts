@@ -14,9 +14,12 @@ import { nextPlanQuestion } from "../lib/chat/ride-plan";
 
 const base = { places: ["Rīga"], tripType: "round_trip" as const, durationMode: "hours" as const, hours: 2 };
 
-test("the default profile is the adventure rider: technical, riding, forest", () => {
+// The Adventure preset is the default, and since 2026-09-14 it means the hard
+// difficulty, not the medium one: a rider who picks Adventure wants the rough
+// stuff, and medium is what the other two presets are for.
+test("the default profile is the adventure rider: hard, riding, forest", () => {
   const plan = composeRidePlan({ ...base, profile: DEFAULT_PROFILE });
-  assert.equal(plan.difficulty, "adventure");
+  assert.equal(plan.difficulty, "hard");
   assert.equal(plan.rideStyle, "explore");
   assert.equal(plan.includeSightseeing, false);
   assert.equal(plan.gravelPreference, 100);

@@ -4,7 +4,7 @@ import { useState, type ReactNode } from "react";
 import { useLocale } from "@/lib/i18n/use-locale";
 import { t, messages } from "@/lib/i18n/messages";
 import { fi } from "@/lib/i18n/format";
-import { ArrowLeft, ArrowUp, ChevronDown, ChevronUp, Download, LoaderCircle, RefreshCw, Share2, Bookmark } from "lucide-react";
+import { ArrowLeft, ArrowUp, ChevronDown, ChevronUp, Download, LoaderCircle, RefreshCw, Share2, Bookmark, TriangleAlert } from "lucide-react";
 import { GeneratedRoute, GenerateRouteResponse } from "@/lib/types";
 import { RidePlan, planSummary } from "@/lib/chat/ride-plan";
 import { BeerPopup } from "@/components/beer-popup";
@@ -375,7 +375,7 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
               <Share2 className="size-3.5" />{shared === "copied" ? m.resCopied : m.resShare}
             </button>
             <button type="button" onClick={() => setDetails(!details)} aria-expanded={details} className="flex h-10 min-w-0 items-center justify-center gap-1 rounded-full border border-stone-200 text-xs font-medium text-stone-700 hover:bg-stone-50">
-              {m.resDetails}{warnings.length > 0 && !details ? ` · ${warnings.length} ⚠️` : ""}{details ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+              {m.resDetails}{warnings.length > 0 && !details ? <> · {warnings.length} <TriangleAlert className="size-4 text-amber-500" /></> : ""}{details ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
             </button>
           </div>
         </div>

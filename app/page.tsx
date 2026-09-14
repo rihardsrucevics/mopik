@@ -1,7 +1,5 @@
 "use client";
 
-import { Map as MapIcon, Plus } from "lucide-react";
-
 import { useRef, useState, useEffect } from "react";
 import { RouteMap } from "@/components/route-map";
 import { RoutePrompt } from "@/components/route-prompt";
@@ -12,10 +10,9 @@ import { track } from "@/lib/analytics";
 import { decodePlanPlaces, decodePlanShare } from "@/lib/share/route-code";
 import { isCodeSaved, removeRide, rideId } from "@/lib/share/saved-rides";
 import { IntroSplash } from "@/components/intro-splash";
-import { SavedRidesLink } from "@/components/saved-rides-link";
-import { LanguagePicker } from "@/components/language-picker";
+import { SiteHeader } from "@/components/site-header";
 import { useLocale } from "@/lib/i18n/use-locale";
-import { t, messages as uiMessages } from "@/lib/i18n/messages";
+import { messages as uiMessages } from "@/lib/i18n/messages";
 import { fi } from "@/lib/i18n/format";
 import { RideComposer } from "@/components/ride-composer";
 import { ChatMessage, ChatQuickReply, ChatResponse, RidePlan, planSummary } from "@/lib/chat/ride-plan";
@@ -142,9 +139,35 @@ export default function Home() {
    * typed — and without this the only way out was to wait for the answer.
    */
   const abortRef = useRef<AbortController | null>(null);
+  /**
+   * True while the generation in flight is the FIRST one, started by the form
+   * rather than by a typed correction — i.e. there is no route to go back to
+   * and the whole conversation consists of the one bubble the form wrote.
+   * Cancelling that means the rider changed their mind about the ride they
+   * just described, so the way out is the form they filled in, not a chat
+   * holding a single message of their own and nothing else.
+   *
+   * A ref rather than state: `generate` reads it after an await, where a
+   * closure's copy would be a render behind, and nothing renders from it.
+   */
+  const firstFromFormRef = useRef(false);
   const cancel = () => {
+    const fromForm = firstFromFormRef.current;
+    track("generation_cancelled", { case: fromForm ? "first_from_form" : "later" });
     abortRef.current?.abort();
     abortRef.current = null;
+    // Back to the form, with everything the rider typed still in it:
+    // `startFromForm` put the plan and the picked places in state, and the
+    // composer seeds itself from `initialPlan` / `initialPlaces` exactly as it
+    // does for ui.saveEditForm. The attempt's transcript goes with it — an
+    // abandoned generation should leave no half conversation behind.
+    if (fromForm) {
+      firstFromFormRef.current = false;
+      setMessages([]);
+      setEntryMode("form");
+    }
+    setChatting(false);
+    setQuickReplies([]);
   };
 
   async function generate(current: RidePlan, conversation: ChatMessage[], pickedPlaces: ResolvedPlace[] = places) {
@@ -234,8 +257,11 @@ export default function Home() {
       setRetry(null);
     } catch (e) {
       // The rider called it off. That is an answer, not an error: no message,
-      // no retry, straight back to the form they were looking at.
+      // no retry. `cancel` has already decided where they land — the form when
+      // this was the first generation, the chat and its previous route
+      // otherwise — so nothing here may write to the conversation.
       if (e instanceof DOMException && e.name === "AbortError") {
+        firstFromFormRef.current = false;
         setChatting(false);
         setQuickReplies([]);
         return;
@@ -248,6 +274,10 @@ export default function Home() {
       setChatting(true);
       setRetry({ stage: "route", plan: current, messages: conversation });
     } finally {
+      // Whatever the outcome — routes, a failure the chat now owns, or the
+      // abort handled above — this attempt is over and the next cancel must
+      // not inherit its answer.
+      firstFromFormRef.current = false;
       abortRef.current = null;
     }
   }
@@ -278,6 +308,9 @@ export default function Home() {
     if (busyRef.current) return;
     if (messages.length >= 37) { setError(ui.chatTooLong); return; }
     busyRef.current = true; setError(null); setRetry(null);
+    // The rider is talking now: whatever this turn generates, cancelling it
+    // belongs in the chat, with this message still in it.
+    firstFromFormRef.current = false;
     setQuickReplies([]); setChatting(true);
     track("chat_message_sent", { length: text.length, has_route: Boolean(route), turn: messages.filter((m) => m.role === "user").length + 1 });
     const next: ChatMessage[] = [...messages, { role: "user", content: text }];
@@ -286,7 +319,12 @@ export default function Home() {
   }
   async function startFromForm(current: RidePlan, picked: ResolvedPlace[]) {
     if (busyRef.current) return;
-    busyRef.current = true; setError(null); setRetry(null); setQuickReplies([]); setResult(null); setPlan(current); setPlaces(picked); setEntryMode("chat");
+    busyRef.current = true; setError(null); setRetry(null); setQuickReplies([]); setPlan(current); setPlaces(picked); setEntryMode("chat");
+    // Only the first attempt, with no route yet, sends a cancel back to the
+    // form. A re-generation from the result panel leaves a route on screen to
+    // return to, so it cancels the way a chat correction does.
+    firstFromFormRef.current = !result;
+    setResult(null);
     track("form_generate", { budget_mode: current.budget.mode, budget_value: current.budget.value ?? undefined, round_trip: current.returnToStart ?? undefined, via_count: current.viaPlaces.length, difficulty: current.difficulty, style: current.rideStyle, gravel: current.gravelPreference ?? undefined, picked_places: picked.length });
     // Short: the profile is in the panel header and the plan object travels
     // with every chat turn, so the message only needs the places and budget.
@@ -359,24 +397,12 @@ export default function Home() {
   return (
     <main className="mx-auto min-h-screen w-full max-w-[1600px] px-4 py-5 md:px-7">
       <IntroSplash />
-      <header className="mb-5 flex items-center justify-between border-b border-stone-200 pb-4">
-        <div className="flex items-baseline gap-3">{/* eslint-disable-next-line @next/next/no-html-link-for-pages -- full reload on purpose: a fresh plan */}
-            <h1 className="text-2xl font-bold tracking-tight"><a href="/" aria-label={t(locale, "backToHome")}>Mopik<span className="text-[#f56300]">.</span></a></h1><p className="hidden text-xs text-stone-500 sm:block">{t(locale, "tagline")}</p></div>
-        <div className="flex items-center gap-4">
-        {/* Icons only. Three words in a row (Saglabātie · Sazinies · Jauns
-            brauciens) took most of a phone header for things a rider needs
-            rarely; a plus is the same meaning in a fraction of the width, and
-            the name still reaches a screen reader. */}
-        {(messages.length > 0 || plan) && <button disabled={phase !== "idle"} onClick={() => { setEntryMode("form"); setMessages([]); setPlan(null); setPlaces([]); setResult(null); setChatting(false); setError(null); setRetry(null); setQuickReplies([]); }} aria-label={t(locale, "newRide")} title={t(locale, "newRide")} className="inline-flex size-9 items-center justify-center rounded-full text-stone-600 transition hover:bg-stone-100 hover:text-stone-900 disabled:opacity-40"><Plus className="size-5" strokeWidth={1.75} /></button>}
-        {/* Saved rides stay in the header: a rider reaches for them mid-plan,
-            unlike "Sazinies", which moved to the footer with everything else
-            that is read once. The word went with it — the bookmark says the
-            same thing in a fraction of the width, which is what the language
-            picker needed. */}
-        <SavedRidesLink label={t(locale, "savedRides")} />
-        <LanguagePicker />
-        </div>
-      </header>
+      {/* The plus only appears once there is something to clear — on a fresh
+          page it would do nothing. */}
+      <SiteHeader
+        showNewRide={messages.length > 0 || Boolean(plan)}
+        newRideDisabled={phase !== "idle"}
+        onNewRide={() => { firstFromFormRef.current = false; setEntryMode("form"); setMessages([]); setPlan(null); setPlaces([]); setResult(null); setChatting(false); setError(null); setRetry(null); setQuickReplies([]); }} />
       <div className="grid items-start gap-5 md:grid-cols-[minmax(340px,460px)_1fr]">
         <div className="min-w-0 space-y-4">
           <InstallPrompt show={Boolean(result) && !chatting} />

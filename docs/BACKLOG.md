@@ -384,3 +384,28 @@ it would make Sports rides better too. Depends on item 8 outside the Baltics.
 
 Find events along the way that might be interesting to visit during the ride.
 Explicitly filed as further future.
+
+## 17. Saved rides: list on the left, map on the right
+
+Decided with the rider on 2026-09-14, then parked as "good enough for now".
+The saved-rides page got the shared header, the app's card language and a
+centred column that day, but it still reads as a list with an empty right
+half, and its four-button row is not consistent with the result panel.
+
+The layout to build: on wide screens the list of saved rides on the left and
+the selected ride's map on the right, exactly the main page's form/map split.
+The card itself is the button, so "Apskatīt" disappears and the row shrinks
+to Rediģēt; download and delete happen in the opened route view, which
+already has both (`shared-route.tsx`: GPX, and `toggleSave` removes a saved
+ride). On a phone: list only, tapping a card opens the full route view, back
+returns to the list — the Komoot / Apple Maps pattern, no small map in a
+corner.
+
+A saved ride stores only its share code, not the route, so the right-hand
+map decodes the code the way `/r/[code]` does. No server call.
+
+Also parked from the same conversation: the shared-route view stacks three
+full-width secondary buttons ("Ģenerēt līdzīgu sev", "Saglabāt sev",
+"Rediģēt formā") where the result panel puts them in one row; and warning
+badges use Lucide icons now, with the rough-track (grade 4–5) badge switched
+off via `BADGE_KINDS` in `route-map.tsx` until a better icon is chosen.

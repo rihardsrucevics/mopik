@@ -5,9 +5,10 @@ import { useLocale } from "@/lib/i18n/use-locale";
 import { messages } from "@/lib/i18n/messages";
 import { fi } from "@/lib/i18n/format";
 import Link from "next/link";
-import { Bookmark, ChevronDown, ChevronUp, Download, MessageCircle, SlidersHorizontal, Sparkles } from "lucide-react";
+import { Bookmark, ChevronDown, ChevronUp, Download, MessageCircle, SlidersHorizontal, Sparkles, TriangleAlert } from "lucide-react";
 import { RouteMap } from "@/components/route-map";
 import { MapPanel } from "@/components/map-panel";
+import { SiteHeader } from "@/components/site-header";
 import { track } from "@/lib/analytics";
 import { sharedRouteSegments, type SharedRoute } from "@/lib/share/route-code";
 import { isCodeSaved, removeRide, rideId, saveSharedRide } from "@/lib/share/saved-rides";
@@ -85,13 +86,10 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
 
   return (
     <main className="mx-auto min-h-screen w-full max-w-[1600px] px-4 py-5 md:px-7">
-      <header className="mb-5 flex items-center justify-between border-b border-stone-200 pb-4">
-        <div className="flex items-baseline gap-3">
-          <h1 className="text-2xl font-bold tracking-tight"><Link href="/" aria-label={m.backToHome}>Mopik<span className="text-[#f56300]">.</span></Link></h1>
-          <p className="hidden text-xs text-stone-500 sm:block">{m.tagline}</p>
-        </div>
-        <Link href="/" className="text-xs text-stone-500 underline decoration-stone-300 underline-offset-4 hover:text-stone-900">{m.shMakeYourOwn}</Link>
-      </header>
+      {/* This page's call to action was a text link, "Uztaisīt savu". It is
+          the same destination as the plus everywhere else, so it rides in the
+          plus's slot and keeps its own wording for a screen reader. */}
+      <SiteHeader newRideLabel={m.shMakeYourOwn} />
       <div className="grid items-start gap-5 md:grid-cols-[minmax(340px,460px)_1fr]">
         <section className="rounded-2xl border border-stone-200 bg-white p-4 md:p-5" aria-label={m.shSharedRoute}>
           <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#bd4b00]">{m.shSharedRoute} · {variantLabel(m, share.variant)}</div>
@@ -127,14 +125,14 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
               )}
               {d && (
                 <button type="button" onClick={() => setDetails(!details)} aria-expanded={details} className="flex h-10 flex-1 items-center justify-center gap-1 rounded-full border border-stone-200 text-xs font-medium text-stone-700 hover:bg-stone-50">
-                  {m.resDetails}{warnings.length > 0 && !details ? ` · ${warnings.length} ⚠️` : ""}{details ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+                  {m.resDetails}{warnings.length > 0 && !details ? <> · {warnings.length} <TriangleAlert className="size-4 text-amber-500" /></> : ""}{details ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
                 </button>
               )}
             </div>
           </div>
           {details && warnings.length > 0 && (
             <ul className="mt-3 space-y-1 rounded-xl bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-900">
-              {warnings.map((w) => <li key={w}>⚠️ {w}</li>)}
+              {warnings.map((w) => <li key={w} className="flex items-start gap-1.5"><TriangleAlert className="mt-px size-3.5 shrink-0 text-amber-500" />{w}</li>)}
             </ul>
           )}
           {details && d && (

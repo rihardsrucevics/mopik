@@ -114,18 +114,59 @@ export function refreshRecentPlaces(): void {
 export const recentPlacesStore = { subscribe, snapshot, serverSnapshot };
 
 /**
+ * A name that is really just the coordinates the browser handed us.
+ *
+ * "Mana atrašanās vieta" resolves through `reverseGeocode`, which returns null
+ * when the point has no name at any administrative level — mid-forest, at sea,
+ * or when Photon is simply down. The form still fills the field, with
+ * "56.9496, 24.1052", so the rider can generate from where they are standing.
+ *
+ * That is a fine thing to *ride* from and a useless thing to *remember*: a
+ * recent place has to work later, from the sofa, with no GPS, and a row of
+ * digits tells the rider nothing about where it was. So it is refused here
+ * rather than at the call site — `rememberPlace` is the only writer, and the
+ * rule should hold no matter who calls it.
+ */
+function isCoordinateName(name: string): boolean {
+  return /^\s*-?\d{1,3}(\.\d+)?\s*,\s*-?\d{1,3}(\.\d+)?\s*$/.test(name);
+}
+
+/**
+ * Is this place worth keeping? A real name, real coordinates — the two things
+ * that make an entry usable months later without the GPS that produced it.
+ */
+export function isRememberable(place: ResolvedPlace | null | undefined): place is ResolvedPlace {
+  if (!place) return false;
+  if (typeof place.name !== "string" || !place.name.trim()) return false;
+  if (!Number.isFinite(place.lat) || !Number.isFinite(place.lon)) return false;
+  return !isCoordinateName(place.name);
+}
+
+/**
  * Remember a place the rider picked.
  *
  * Keyed on coordinates rounded to ~10 m rather than on the name: "Rīga" the
  * city and "Rīga" a street are different places with the same word, and two
  * entries that read identically in a list are worse than none.
+ *
+ * Called from every path that resolves a place to a point — the suggestion
+ * dropdown and the "Mana atrašanās vieta" crosshair alike. The crosshair used
+ * to be the exception, and the rider noticed: a place found by GPS was the one
+ * kind of place the app forgot.
  */
 export function rememberPlace(place: ResolvedPlace): void {
+  if (!isRememberable(place)) return;
   try {
     const key = (p: { lat: number; lon: number }) => `${p.lat.toFixed(4)},${p.lon.toFixed(4)}`;
+    const existing = read();
+    // Already the newest entry, with the same name: re-storing it would only
+    // move `usedAt`, publish to every field and re-render them for nothing.
+    // Tapping the crosshair twice from the same spot is exactly this case.
+    const newest = existing.sort((a, b) => (b.usedAt ?? 0) - (a.usedAt ?? 0))[0];
+    if (newest && key(newest) === key(place) && newest.name === place.name) return;
     const next = [
       { ...place, usedAt: Date.now() },
-      ...read().filter((p) => key(p) !== key(place)),
+      ...existing.filter((p) => key(p) !== key(place)),
     ].slice(0, MAX);
     window.localStorage.setItem(KEY, JSON.stringify(next));
     refreshRecentPlaces();

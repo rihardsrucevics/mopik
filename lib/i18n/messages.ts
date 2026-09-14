@@ -242,6 +242,14 @@ export type MessageKey =
   | "chatSayAll"
   | "resNature"
   | "savNewRide"
+  // The saved-ride card's four buttons sit in one row, so their labels are
+  // one word each — their own keys, because the longer wordings they were
+  // taken from ("Lejupielādēt GPX", "Rediģēt formā") are still right where
+  // they are used elsewhere.
+  | "savView"
+  | "savEdit"
+  | "savDownload"
+  | "savDelete"
   | "savOtherVersions"
   | "beerRideWell"
   | "beerBuy"
@@ -543,6 +551,10 @@ const lv: Messages = {
   savDeviceNote: "Maršruti glabājas tikai šajā ierīcē un pārlūkā. Dzēšot pārlūka datus, tie pazūd — dalies ar saiti, lai saglabātu drošāk.",
   savReceived: "Atsūtīts · saglabāts",
   savSaved: "Saglabāts",
+  savView: "Apskatīt",
+  savEdit: "Rediģēt",
+  savDownload: "Lejupielādēt",
+  savDelete: "Izdzēst",
   mixRoad: "Ceļš",
   mixTrack: "Meža ceļš",
   chatServerTimeout: "Serveris pārtrauca ģenerēšanu, jo tā aizņēma pārāk ilgi (limits ~60 s). Garš brauciens pa meža ceļiem var neietilpt. Mēģini vēlreiz vai īsāku ilgumu.",
@@ -864,6 +876,10 @@ const lt: Messages = {
   savDeviceNote: "Maršrutai saugomi tik šiame įrenginyje ir naršyklėje. Išvalius naršyklės duomenis jie dings — dalinkis nuoroda, kad išsaugotum saugiau.",
   savReceived: "Atsiųsta · išsaugota",
   savSaved: "Išsaugota",
+  savView: "Peržiūrėti",
+  savEdit: "Redaguoti",
+  savDownload: "Atsisiųsti",
+  savDelete: "Ištrinti",
   mixRoad: "Kelias",
   mixTrack: "Miško kelias",
   chatServerTimeout: "Serveris nutraukė generavimą, nes jis užtruko per ilgai (limitas ~60 s). Ilgas maršrutas miško keliais gali netilpti. Bandyk dar kartą arba trumpesnę trukmę.",
@@ -1185,6 +1201,10 @@ const et: Messages = {
   savDeviceNote: "Marsruudid on salvestatud ainult sellesse seadmesse ja brauserisse. Brauseri andmete kustutamisel kaovad need — jaga linki, et hoida kindlamalt.",
   savReceived: "Saadetud · salvestatud",
   savSaved: "Salvestatud",
+  savView: "Vaata",
+  savEdit: "Muuda",
+  savDownload: "Laadi alla",
+  savDelete: "Kustuta",
   mixRoad: "Tee",
   mixTrack: "Metsatee",
   chatServerTimeout: "Server katkestas koostamise, sest see võttis liiga kaua (piir ~60 s). Pikk metsateede sõit ei pruugi mahtuda. Proovi uuesti või lühemat kestust.",
@@ -1506,6 +1526,10 @@ const en: Messages = {
   savDeviceNote: "Rides are stored on this device and browser only. Clearing browser data loses them — share a link to keep one safely.",
   savReceived: "Received · saved",
   savSaved: "Saved",
+  savView: "View",
+  savEdit: "Edit",
+  savDownload: "Download",
+  savDelete: "Delete",
   mixRoad: "Road",
   mixTrack: "Forest track",
   chatServerTimeout: "The server stopped generating because it took too long (the limit is ~60 s). A long ride on forest roads may not fit. Try again or a shorter duration.",

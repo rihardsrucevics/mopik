@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { Flame, Mountain, TriangleAlert, type LucideIcon } from "lucide-react";
 import * as maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { RouteSegmentProperties } from "@/lib/types";
@@ -318,10 +320,97 @@ const HIGHLIGHT_WIDTH: maplibregl.ExpressionSpecification = [
 ];
 
 /**
- * A badge on the line: a white pill with one emoji, the way a phone map marks
+ * The warning kinds, and which of them earn a mark on the line itself.
+ *
+ * Rough track (tracktype grade 4–5) is deliberately NOT here: the rider asked
+ * for it off the map, because a grade-4 track is the ride rather than a hazard
+ * and the badges were annotating half the route. It is still counted in the
+ * result panel's warnings and still listed in the segment card — those are
+ * lists, which can afford a row; the map cannot afford a marker. Put `"rough"`
+ * back in this array to re-enable the badge and its hover label; nothing else
+ * has to change.
+ */
+type WarningKind = "unverified" | "trail" | "rough";
+const BADGE_KINDS: WarningKind[] = ["unverified", "trail"];
+
+type Warning = { kind: WarningKind; title: string; detail: string };
+
+/**
+ * The warning icons, as Lucide SVG rendered once to a string.
+ *
+ * Every surface that shows a warning is built by direct DOM or an HTML string
+ * — the badges are MapLibre `Marker` elements, the popups take `setHTML`, and
+ * the hover label is written from a mousemove handler that must not trigger a
+ * React render. So each icon is rendered to a string once, cached, and
+ * concatenated like the emoji it replaces (see `warningIcon` for why the
+ * render cannot happen at module scope).
+ *
+ * Sized at 18 px against the emoji's ~14: the emoji were legible on a desk and
+ * not at arm's length on a phone, and 18 is the largest that still leaves the
+ * two-icon pill narrower than the route is long at z12.
+ */
+const WARNING_ICON_PX = 18;
+
+const iconMarkup = (Icon: LucideIcon, color: string): string =>
+  renderToStaticMarkup(
+    <Icon size={WARNING_ICON_PX} color={color} strokeWidth={2.25} aria-hidden="true" />
+  );
+
+/**
+ * Amber for access (the app's warning colour — the same family as the
+ * `amber-50 / amber-900` warning lists in the result panel); the trail's own
+ * deep orange-red for the flame.
+ *
+ * The flame was tried in stone-800 first and read as a generic dark glyph —
+ * the shape said "flame" but the colour said nothing. `UNPAVED.trail` is the
+ * colour the dotted trail line is already drawn in, so the badge now matches
+ * the stretch it annotates, and it stays distinct from the amber triangle
+ * beside it on a two-icon pill (a brighter orange competed with it).
+ */
+const WARNING_ICON_COLOR: Record<WarningKind, string> = {
+  unverified: "#f59e0b",     // amber-500
+  trail: UNPAVED.trail,      // #bd4b00 — the same orange-red as the trail line
+  rough: "#292524",          // stone-800
+};
+
+const WARNING_ICON_COMPONENT: Record<WarningKind, LucideIcon> = {
+  unverified: TriangleAlert,
+  trail: Flame,
+  // Not badged on the map (see `BADGE_KINDS`), but the segment card still
+  // lists it, and there it needs a glyph of its own: reusing the trail's
+  // footprints made two different warnings look like the same one.
+  rough: Mountain,
+};
+
+/**
+ * Rendered on first use, not at module scope.
+ *
+ * A Lucide icon reads a context for its default size and stroke, and
+ * `renderToStaticMarkup` at module scope runs that `useContext` while Next is
+ * evaluating the module on the SERVER, where there is no React dispatcher —
+ * which took the whole page down with "Cannot read properties of null (reading
+ * 'useContext')". Rendering lazily keeps the markup a one-off (every surface
+ * here is direct DOM or an HTML string, so it must be a string) while moving
+ * the render to the browser, on a path only ever reached from an effect.
+ */
+const iconCache = new Map<WarningKind, string>();
+const warningIcon = (kind: WarningKind): string => {
+  const cached = iconCache.get(kind);
+  if (cached !== undefined) return cached;
+  const markup = iconMarkup(WARNING_ICON_COMPONENT[kind], WARNING_ICON_COLOR[kind]);
+  iconCache.set(kind, markup);
+  return markup;
+};
+
+/** The icons for a list of warnings, side by side, as one HTML string. */
+const iconsHtml = (warnings: Warning[]): string =>
+  warnings.map((w) => warningIcon(w.kind)).join("");
+
+/**
+ * A badge on the line: a white pill with one icon, the way a phone map marks
  * a hazard. Built as an HTML element rather than a GL symbol layer because an
- * emoji in a `text-field` renders through the style's glyph stack and comes
- * out as boxes on most basemaps.
+ * SVG cannot go in a `text-field` at all (and the emoji this replaced rendered
+ * through the style's glyph stack and came out as boxes on most basemaps).
  */
 function badgeElement(icon: string, title: string, count = 1): HTMLElement {
   const el = document.createElement("button");
@@ -332,18 +421,20 @@ function badgeElement(icon: string, title: string, count = 1): HTMLElement {
   el.title = title;
   el.setAttribute("aria-label", title);
   el.style.cssText =
-    "display:flex;align-items:center;justify-content:center;gap:1px;" +
+    "display:flex;align-items:center;justify-content:center;gap:2px;" +
     // A run can carry more than one warning, and then the badge shows every
     // icon side by side: a pill rather than a circle, widened per icon so two
-    // never overflow a 19 px dot. Counted by the caller — emoji are several
-    // code points each, so `icon.length` is not a count of glyphs.
-    `width:${count > 1 ? 15 + 10 * count : 19}px;height:19px;border-radius:10px;` +
+    // never overflow the dot. Counted by the caller — an icon is a whole SVG
+    // element, so no length of `icon` is a count of glyphs.
+    `width:${count > 1 ? 8 + (WARNING_ICON_PX + 4) * count : 24}px;height:24px;` +
+    "border-radius:12px;" +
     "background:rgba(255,255,255,0.92);box-shadow:0 1px 2px rgba(0,0,0,0.2);" +
-    "font-size:10px;line-height:1;cursor:pointer;user-select:none;border:0;padding:0;opacity:0.9;" +
+    "line-height:0;cursor:pointer;user-select:none;border:0;padding:0;opacity:0.9;" +
     // Under the start/finish pins, which are the rider's own answers and must
     // never be covered by an annotation about the road.
     "z-index:1";
-  el.textContent = icon;
+  // `icon` is our own pre-rendered Lucide markup, never anything from a tag.
+  el.innerHTML = icon;
   return el;
 }
 
@@ -406,29 +497,37 @@ type SegmentProps = RouteSegmentProperties & {
 function warningsFor(
   m: Messages,
   props: SegmentProps
-): { icon: string; title: string; detail: string }[] {
-  const out: { icon: string; title: string; detail: string }[] = [];
+): Warning[] {
+  const out: Warning[] = [];
   if (props.unverified) {
-    out.push({ icon: "⚠️", title: m.badgeUnverified, detail: m.badgeUnverifiedDetail });
+    out.push({ kind: "unverified", title: m.badgeUnverified, detail: m.badgeUnverifiedDetail });
   }
   if (props.roadClass === "trail") {
-    out.push({ icon: "🔥", title: m.badgeTrail, detail: m.badgeTrailDetail });
+    out.push({ kind: "trail", title: m.badgeTrail, detail: m.badgeTrailDetail });
   }
   // grade4/grade5 is the panel's own definition of a rough track
   // (`roughTrackKm` in classify.ts); the map must agree with the numbers.
   if (props.trackGrade === "grade4" || props.trackGrade === "grade5") {
-    out.push({ icon: "🪨", title: m.segRough, detail: "" });
+    out.push({ kind: "rough", title: m.segRough, detail: "" });
   }
   return out;
 }
 
+/** Only the warnings in `BADGE_KINDS` get a marker on the line and a hover
+ * label; the rest stay in the lists (result panel, segment card) that can
+ * afford a row each. */
+const badgeWarnings = (warnings: Warning[]): Warning[] =>
+  warnings.filter((w) => BADGE_KINDS.includes(w.kind));
+
 type Badge = {
   point: [number, number];
   icon: string;
-  /** How many glyphs `icon` holds, for sizing the pill. */
+  /** How many icons `icon` holds, for sizing the pill. */
   iconCount: number;
+  /** The badge's tooltip and aria-label. The warnings' explanations are not
+   *  held here any more: the segment card shows them (see `segmentInfoHtml`),
+   *  and the badge no longer has a popup of its own. */
   title: string;
-  detail: string;
   /**
    * Every run this badge speaks for. A badge survives the spacing cap on
    * behalf of the runs it crowded out, so highlighting only its own feature
@@ -482,7 +581,9 @@ function badgesFor(
   for (const f of ordered) {
     if (f.geometry.type !== "LineString") continue;
     const props = (f.properties ?? {}) as SegmentProps;
-    const warnings = warningsFor(m, props);
+    // Only the kinds that earn a marker — a rough track is reported in the
+    // panel and in the segment card, but it does not put a badge on the line.
+    const warnings = badgeWarnings(warningsFor(m, props));
     if (!warnings.length) continue;
 
     const coords = f.geometry.coordinates as [number, number][];
@@ -492,7 +593,7 @@ function badgesFor(
     // matched. A stretch that is both unverified AND a rough track is its own
     // kind: it shows both icons, and it is never folded into the plain
     // "unverified" badge, which would have hidden the second warning.
-    const kind = warnings.map((w) => w.icon).join("");
+    const kind = warnings.map((w) => w.kind).join("+");
     const mid = coords[Math.floor(coords.length / 2)];
 
     const owner = byKind.get(kind);
@@ -512,10 +613,9 @@ function badgesFor(
     const badge: Badge = {
       point: mid,
       segmentIds: typeof id === "number" ? [id] : [],
-      icon: warnings.map((w) => w.icon).join(""),
+      icon: iconsHtml(warnings),
       iconCount: warnings.length,
       title: warnings.map((w) => w.title).join(" · "),
-      detail: warnings.map((w) => w.detail).filter(Boolean).join("<br><br>"),
     };
     out.push(badge);
     byKind.set(kind, badge);
@@ -701,19 +801,50 @@ function segmentInfoHtml(
   // The raw OSM value only when it says something the label above does not.
   if (props.trackGrade) row(m.segGrade, props.trackGrade);
 
-  // The same list the badges are built from, so a doubly-flagged stretch reads
-  // the same whether the rider taps the badge or the line.
-  const flags = warningsFor(m, props).map((w) => `${w.icon} ${w.title}`);
-  if (props[ON_TET]) flags.push(`${TET_LEGEND_ICON} ${m.segOnTet}`);
+  // The same list the badges are built from — including the kinds the map
+  // does not badge (`BADGE_KINDS`), because a card is a list and can say
+  // everything the run carries. The icon markup is ours; only the words that
+  // come from a tag or a translation are escaped.
+  //
+  // This card is now the ONLY thing a badge opens, so it also carries the
+  // explanation the badge's own popup used to show. A warning with a detail
+  // paragraph becomes a `<details>`: one line by default, the full text on
+  // tap. `<details>` rather than a click handler because the popup's HTML is
+  // set as a string and has no React or listeners of its own.
+  const flags = warningsFor(m, props).map((w) => {
+    const head = `${warningIcon(w.kind)}<span>${esc(w.title)}</span>`;
+    if (!w.detail) return `<div style="display:flex;align-items:center;gap:6px">${head}</div>`;
+    return (
+      `<details class="mopik-warn" style="margin:0">` +
+      `<summary style="display:flex;align-items:center;gap:6px;cursor:pointer;list-style:none">` +
+      `${head}</summary>` +
+      `<div style="margin:2px 0 0 24px;color:#6b7280">${esc(w.detail)}</div>` +
+      `</details>`
+    );
+  });
+  if (props[ON_TET]) {
+    flags.push(
+      `<div style="display:flex;align-items:center;gap:6px">` +
+      `<span>${TET_LEGEND_ICON}</span><span>${esc(m.segOnTet)}</span></div>`
+    );
+  }
 
   return (
     `<div style="font-size:12px;line-height:1.5;min-width:170px">` +
+    // Safari keeps its own disclosure triangle on a `<summary>` unless the
+    // `-webkit-details-marker` pseudo-element is hidden, and a pseudo-element
+    // cannot be set from an inline style. The rider is on an iPhone, so the
+    // rule ships with the card rather than in the global sheet, where a popup
+    // this file builds as a string would be the only thing using it.
+    `<style>.mopik-warn>summary::-webkit-details-marker{display:none}</style>` +
     `<strong style="display:block;padding-right:24px;margin-bottom:4px">` +
     `${esc(m.segHeading)} · ${esc(roadClassLabel(m, props.roadClass, props.surface))}</strong>` +
     rows.join("") +
     (flags.length
       ? `<div style="margin-top:6px;padding-top:6px;border-top:1px solid #ececf0">` +
-        flags.map((f) => `<div>${esc(f)}</div>`).join("") +
+        // Each row already carries its own wrapper (a plain div, or a
+        // `<details>` when the warning has an explanation to expand).
+        flags.join("") +
         `</div>`
       : "") +
     `</div>`
@@ -819,6 +950,15 @@ export function RouteMap({ segments, start, destination, via, showTet, onToggleT
   const highlightKeyRef = useRef<string | null>(null);
   const setHighlightRef = useRef<(ids: number[], key: string) => void>(() => {});
   const clearHighlightRef = useRef<() => void>(() => {});
+  /**
+   * Opens the segment card at a point — the one card a badge click produces.
+   *
+   * A badge used to carry a MapLibre popup of its own, which opened on top of
+   * the segment card the same click produced through the map: two stacked
+   * cards, each with its own close button. The badge now opens this instead,
+   * and the explanation it used to show lives in the card's warning row.
+   */
+  const openCardRef = useRef<(lngLat: maplibregl.LngLatLike, id: number) => void>(() => {});
   /** The segment popover — one at a time, replaced rather than stacked. */
   const infoPopupRef = useRef<maplibregl.Popup | null>(null);
 
@@ -1076,19 +1216,24 @@ export function RouteMap({ segments, start, destination, via, showTet, onToggleT
             ...(via ?? []).map(v => [v.lon, v.lat] as [number, number]),
           ]).map(b => {
             const el = badgeElement(b.icon, b.title, b.iconCount);
-            // Clicking the badge lights up every stretch it speaks for; the
-            // popup with the full explanation still opens as it always did.
-            // Clicking the same badge again puts the highlight away, so the
-            // badge is a toggle rather than a one-way trip.
-            el.addEventListener("click", () => {
+            // One card, not two. The badge used to carry a MapLibre popup of
+            // its own AND let the click reach the map, which opened the
+            // segment card underneath it — two overlapping cards, each with a
+            // close button. Now the badge opens the same card the line does,
+            // with the explanation inside it, and stops the event so the map's
+            // own handler does not open a second one.
+            el.addEventListener("click", (event) => {
+              event.stopPropagation();
+              const id = b.segmentIds[0];
+              if (typeof id === "number") openCardRef.current(b.point, id);
+              // A badge speaks for every stretch it crowded out, so the
+              // highlight still lights up all of them rather than just the
+              // one the card describes.
+              highlightKeyRef.current = null;
               setHighlightRef.current(b.segmentIds, `badge:${b.segmentIds.join(",")}`);
             });
             return new maplibregl.Marker({ element: el })
               .setLngLat(b.point)
-              .setPopup(new maplibregl.Popup({ offset: 14, maxWidth: "260px" })
-                // The title reserves room on its right so the close button
-                // never lands on top of the words.
-                .setHTML(`<strong style="padding-right:24px">${b.icon} ${b.title}</strong>${b.detail}`))
               .addTo(map);
           })
         : [];
@@ -1187,21 +1332,68 @@ export function RouteMap({ segments, start, destination, via, showTet, onToggleT
 
       // Every segment is tappable (that is task D), but only a segment with
       // something to warn about earns a label that follows the cursor.
-      const label = props.unverified ? m.badgeUnverified
-        : props.roadClass === "trail" ? m.badgeTrail
-        : undefined;
+      //
+      // It reads the whole list, not the first flag that matched: a stretch
+      // that is both unverified AND a trail used to show only the warning
+      // triangle, because the chain `unverified ? … : trail ? …` stopped at
+      // the first. Same list and same filter the badges use, so the label and
+      // the pill under the cursor never disagree.
+      const warnings = badgeWarnings(warningsFor(m, props));
       map.getCanvas().style.cursor = "pointer";
-      if (!label || !hover) { if (hover) hover.style.display = "none"; return; }
+      if (!warnings.length || !hover) { if (hover) hover.style.display = "none"; return; }
 
-      const icon = props.unverified ? "⚠️" : "🔥";
-      // Direct DOM, no re-render: see the note on this effect.
+      const label = warnings.map((w) => w.title).join(" · ");
+      // Direct DOM, no re-render: see the note on this effect. `warningIcon`
+      // is cached after its first call, so building the label costs no React
+      // work in a mousemove handler.
       if (hover.dataset.label !== label) {
-        hover.textContent = `${icon} ${label}`;
+        hover.innerHTML = warnings
+          .map((w) => `${warningIcon(w.kind)}<span>${esc(w.title)}</span>`)
+          .join(`<span style="opacity:0.4">·</span>`);
         hover.dataset.label = label;
       }
-      hover.style.display = "block";
+      // `flex`, not `block`: the label is an icon beside its words, and the
+      // inline style wins over the element's own flex class.
+      hover.style.display = "flex";
       hover.style.transform = `translate(${e.point.x + 14}px, ${e.point.y + 14}px)`;
     };
+
+    /**
+     * The one card: the segment's facts, its warnings and their explanations.
+     *
+     * Opened both by a click on the line and by a click on a badge, so the two
+     * gestures can never stack two cards on top of each other. `props` is what
+     * the click already queried; a badge has none and reads the source feature.
+     */
+    const openCard = (
+      lngLat: maplibregl.LngLatLike,
+      id: number,
+      queried?: SegmentProps
+    ) => {
+      // The length is recomputed from the geometry rather than trusted from
+      // the tile: `queryRenderedFeatures` returns clipped geometry, so the
+      // property is the honest number and the fallback is for older shapes
+      // that never carried one.
+      const source = featuresRef.current[id];
+      const props = { ...(queried ?? {}), ...(source?.properties ?? {}) } as SegmentProps;
+      const meters = typeof props.distanceMeters === "number"
+        ? props.distanceMeters
+        : lineMeters(source?.geometry.coordinates ?? []);
+
+      infoPopupRef.current?.remove();
+      infoPopupRef.current = new maplibregl.Popup({ offset: 12, maxWidth: "260px", closeButton: true })
+        .setLngLat(lngLat)
+        .setHTML(segmentInfoHtml(m, props, meters))
+        .addTo(map);
+      // The card and the highlight are one gesture: the rider should see which
+      // line the numbers belong to. Keyed on the segment so tapping the same
+      // one again closes both.
+      const key = `segment:${id}`;
+      if (highlightKeyRef.current === key) { clearHighlight(); return; }
+      highlightKeyRef.current = null; // force it on rather than toggling off
+      setHighlight([id], key);
+    };
+    openCardRef.current = (lngLat, id) => openCard(lngLat, id);
 
     const onClick = (e: maplibregl.MapMouseEvent) => {
       const feature = featureAt(e.point);
@@ -1213,27 +1405,7 @@ export function RouteMap({ segments, start, destination, via, showTet, onToggleT
         return;
       }
 
-      // The length is recomputed from the geometry rather than trusted from
-      // the tile: `queryRenderedFeatures` returns clipped geometry, so the
-      // property is the honest number and the fallback is for older shapes
-      // that never carried one.
-      const source = featuresRef.current[id];
-      const meters = typeof props.distanceMeters === "number"
-        ? props.distanceMeters
-        : lineMeters(source?.geometry.coordinates ?? []);
-
-      infoPopupRef.current?.remove();
-      infoPopupRef.current = new maplibregl.Popup({ offset: 12, maxWidth: "260px", closeButton: true })
-        .setLngLat(e.lngLat)
-        .setHTML(segmentInfoHtml(m, { ...props, ...(source?.properties ?? {}) }, meters))
-        .addTo(map);
-      // The card and the highlight are one gesture: the rider should see which
-      // line the numbers belong to. Keyed on the segment so tapping the same
-      // one again closes both.
-      const key = `segment:${id}`;
-      if (highlightKeyRef.current === key) { clearHighlight(); return; }
-      highlightKeyRef.current = null; // force it on rather than toggling off
-      setHighlight([id], key);
+      openCard(e.lngLat, id, props);
     };
 
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") clearHighlight(); };
@@ -1281,7 +1453,7 @@ export function RouteMap({ segments, start, destination, via, showTet, onToggleT
         ref={hoverRef}
         aria-hidden="true"
         style={{ display: "none" }}
-        className="pointer-events-none absolute left-0 top-0 z-10 whitespace-nowrap rounded-md bg-white/95 px-2 py-1 text-[11px] font-medium leading-none text-foreground shadow-sm backdrop-blur"
+        className="pointer-events-none absolute left-0 top-0 z-10 flex items-center gap-1.5 whitespace-nowrap rounded-md bg-white/95 px-2 py-1 text-[11px] font-medium leading-none text-foreground shadow-sm backdrop-blur"
       />
 
       <button
