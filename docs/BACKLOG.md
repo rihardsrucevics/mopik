@@ -409,3 +409,11 @@ full-width secondary buttons ("Ģenerēt līdzīgu sev", "Saglabāt sev",
 "Rediģēt formā") where the result panel puts them in one row; and warning
 badges use Lucide icons now, with the rough-track (grade 4–5) badge switched
 off via `BADGE_KINDS` in `route-map.tsx` until a better icon is chosen.
+
+## 18. Next: drop the sparkle icon from "Izveidot maršrutu"
+
+Filed by the rider on 2026-09-14 as the next ticket. The main form's
+primary button carries a Sparkles icon before the label; remove the icon and
+leave the text. Check the same button in the other places it appears (the
+shared-route page's "Ģenerēt līdzīgu sev", the chat's send control) and keep
+them consistent. `components/ride-composer.tsx`.

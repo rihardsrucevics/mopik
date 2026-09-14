@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { Flame, Mountain, TriangleAlert, type LucideIcon } from "lucide-react";
+import { Heart, Mountain, TriangleAlert, type LucideIcon } from "lucide-react";
 import * as maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { RouteSegmentProperties } from "@/lib/types";
@@ -153,6 +153,22 @@ const UNPAVED = {
   /** Trail, dotted. The darkest of the three — see above. */
   trail: "#bd4b00",
 } as const;
+
+/**
+ * The trail badge's heart, filled, in the app's destructive red.
+ *
+ * Deliberately NOT `UNPAVED.trail`: the heart is a solid shape, and filled in
+ * the trail's own orange-red it sat too close to both the orange route line it
+ * overlays and the amber triangle beside it on a two-icon pill — three warm
+ * oranges and nothing to tell them apart. Red-600 is the same red the app
+ * already uses for destructive UI (`--destructive` in `globals.css` is
+ * `oklch(0.577 0.245 27.325)`, which is exactly this hex; the delete action and
+ * the composer's error text use the neighbouring `red-700`), so the badge reads
+ * as a warning rather than as a favourite, and separates cleanly from the amber.
+ *
+ * Tune here: this is the only place the trail badge's colour is set.
+ */
+const TRAIL_BADGE_COLOR = "#dc2626"; // red-600
 
 /**
  * The glow, the casing-level fill and any layer that is not class-filtered
@@ -351,34 +367,63 @@ type Warning = { kind: WarningKind; title: string; detail: string };
  */
 const WARNING_ICON_PX = 18;
 
-const iconMarkup = (Icon: LucideIcon, color: string): string =>
+/**
+ * `fill` takes the colour literally, never `currentColor`.
+ *
+ * Lucide's `color` prop sets the SVG's `stroke` attribute only — it does not
+ * set the CSS `color` property — so a `fill="currentColor"` resolves against
+ * whatever text colour the badge happens to inherit. In these surfaces that is
+ * the pill's black body text, which drew the filled heart black with a red
+ * outline. Passing the colour itself to both keeps the glyph one solid colour
+ * wherever the markup is dropped.
+ */
+const iconMarkup = (Icon: LucideIcon, color: string, filled: boolean): string =>
   renderToStaticMarkup(
-    <Icon size={WARNING_ICON_PX} color={color} strokeWidth={2.25} aria-hidden="true" />
+    <Icon
+      size={WARNING_ICON_PX}
+      color={color}
+      strokeWidth={2.25}
+      fill={filled ? color : "none"}
+      aria-hidden="true"
+    />
   );
 
 /**
  * Amber for access (the app's warning colour — the same family as the
- * `amber-50 / amber-900` warning lists in the result panel); the trail's own
- * deep orange-red for the flame.
+ * `amber-50 / amber-900` warning lists in the result panel); the app's
+ * destructive red for the trail's filled heart.
  *
- * The flame was tried in stone-800 first and read as a generic dark glyph —
- * the shape said "flame" but the colour said nothing. `UNPAVED.trail` is the
- * colour the dotted trail line is already drawn in, so the badge now matches
- * the stretch it annotates, and it stays distinct from the amber triangle
- * beside it on a two-icon pill (a brighter orange competed with it).
+ * The trail glyph was a flame in `UNPAVED.trail` before, matching the colour of
+ * the dotted line it annotates. The heart that replaced it is a solid shape
+ * rather than an outline, and in that orange-red it competed with both the
+ * route line under it and the amber triangle next to it — so it takes the app's
+ * red instead. See `TRAIL_BADGE_COLOR`.
  */
 const WARNING_ICON_COLOR: Record<WarningKind, string> = {
   unverified: "#f59e0b",     // amber-500
-  trail: UNPAVED.trail,      // #bd4b00 — the same orange-red as the trail line
+  trail: TRAIL_BADGE_COLOR,  // red-600 — see the constant for why not the trail's orange
   rough: "#292524",          // stone-800
+};
+
+/**
+ * Which glyphs are drawn solid. The heart is: an outlined heart at 18 px reads
+ * as an empty "favourite" toggle — a thin ring the eye files as a control to
+ * click, not as a warning about the ground. Filled, it is a small solid mark
+ * that carries at a glance and holds its weight beside the amber triangle.
+ * The triangle and the mountain stay outlines, as Lucide draws them.
+ */
+const WARNING_ICON_FILLED: Record<WarningKind, boolean> = {
+  unverified: false,
+  trail: true,
+  rough: false,
 };
 
 const WARNING_ICON_COMPONENT: Record<WarningKind, LucideIcon> = {
   unverified: TriangleAlert,
-  trail: Flame,
+  trail: Heart, // drawn filled — see `WARNING_ICON_FILLED`
   // Not badged on the map (see `BADGE_KINDS`), but the segment card still
   // lists it, and there it needs a glyph of its own: reusing the trail's
-  // footprints made two different warnings look like the same one.
+  // glyph made two different warnings look like the same one.
   rough: Mountain,
 };
 
@@ -397,7 +442,11 @@ const iconCache = new Map<WarningKind, string>();
 const warningIcon = (kind: WarningKind): string => {
   const cached = iconCache.get(kind);
   if (cached !== undefined) return cached;
-  const markup = iconMarkup(WARNING_ICON_COMPONENT[kind], WARNING_ICON_COLOR[kind]);
+  const markup = iconMarkup(
+    WARNING_ICON_COMPONENT[kind],
+    WARNING_ICON_COLOR[kind],
+    WARNING_ICON_FILLED[kind]
+  );
   iconCache.set(kind, markup);
   return markup;
 };
