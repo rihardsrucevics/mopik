@@ -363,6 +363,11 @@ export default function Home() {
         <div className="flex items-baseline gap-3">{/* eslint-disable-next-line @next/next/no-html-link-for-pages -- full reload on purpose: a fresh plan */}
             <h1 className="text-2xl font-bold tracking-tight"><a href="/" aria-label={t(locale, "backToHome")}>Mopik<span className="text-[#f56300]">.</span></a></h1><p className="hidden text-xs text-stone-500 sm:block">{t(locale, "tagline")}</p></div>
         <div className="flex items-center gap-4">
+        {/* Icons only. Three words in a row (Saglabātie · Sazinies · Jauns
+            brauciens) took most of a phone header for things a rider needs
+            rarely; a plus is the same meaning in a fraction of the width, and
+            the name still reaches a screen reader. */}
+        {(messages.length > 0 || plan) && <button disabled={phase !== "idle"} onClick={() => { setEntryMode("form"); setMessages([]); setPlan(null); setPlaces([]); setResult(null); setChatting(false); setError(null); setRetry(null); setQuickReplies([]); }} aria-label={t(locale, "newRide")} title={t(locale, "newRide")} className="inline-flex size-9 items-center justify-center rounded-full text-stone-600 transition hover:bg-stone-100 hover:text-stone-900 disabled:opacity-40"><Plus className="size-5" strokeWidth={1.75} /></button>}
         {/* Saved rides stay in the header: a rider reaches for them mid-plan,
             unlike "Sazinies", which moved to the footer with everything else
             that is read once. The word went with it — the bookmark says the
@@ -370,11 +375,6 @@ export default function Home() {
             picker needed. */}
         <SavedRidesLink label={t(locale, "savedRides")} />
         <LanguagePicker />
-        {/* Icons only. Three words in a row (Saglabātie · Sazinies · Jauns
-            brauciens) took most of a phone header for things a rider needs
-            rarely; a plus is the same meaning in a fraction of the width, and
-            the name still reaches a screen reader. */}
-        {(messages.length > 0 || plan) && <button disabled={phase !== "idle"} onClick={() => { setEntryMode("form"); setMessages([]); setPlan(null); setPlaces([]); setResult(null); setChatting(false); setError(null); setRetry(null); setQuickReplies([]); }} aria-label={t(locale, "newRide")} title={t(locale, "newRide")} className="inline-flex size-9 items-center justify-center rounded-full text-stone-600 transition hover:bg-stone-100 hover:text-stone-900 disabled:opacity-40"><Plus className="size-5" strokeWidth={1.75} /></button>}
         </div>
       </header>
       <div className="grid items-start gap-5 md:grid-cols-[minmax(340px,460px)_1fr]">

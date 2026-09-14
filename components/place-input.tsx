@@ -1,21 +1,59 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useLocale } from "@/lib/i18n/use-locale";
-import { listRecentPlaces, rememberPlace } from "@/lib/chat/recent-places";
+import { recentPlacesStore, refreshRecentPlaces, rememberPlace } from "@/lib/chat/recent-places";
 import { messages, type MessageKey } from "@/lib/i18n/messages";
+import type { PlaceKind } from "@/lib/chat/photon";
 import type { ResolvedPlace } from "@/lib/chat/places";
 
-type Suggestion = ResolvedPlace & { kind: string; kindLabel?: string };
+type Suggestion = ResolvedPlace & { kind: PlaceKind | "recent" };
 
-/** OSM place kinds, as the dictionary keys that name them in each language. */
+/**
+ * A place kind, as the dictionary key that names it in each language.
+ *
+ * The API answers with a machine kind and nothing else — it has no locale to
+ * write in, and the Latvian word it used to send arrived verbatim in the
+ * English and Lithuanian lists. Translation belongs here, where the rider's
+ * language is known.
+ *
+ * `settlement` and `recent` are deliberately absent: a city needs no word
+ * beside its name, and neither does a place the rider has picked before.
+ */
 const KIND_KEY = {
-  city: "kindCity",
-  town: "kindCity",
-  village: "kindVillage",
-  hamlet: "kindHamlet",
-  isolated_dwelling: "kindHamlet",
-} as const satisfies Record<string, MessageKey>;
+  address: "kindAddress",
+  place: "kindPlace",
+  fuel: "kindFuel",
+  charging: "kindCharging",
+  restaurant: "kindRestaurant",
+  cafe: "kindCafe",
+  parking: "kindParking",
+  hotel: "kindHotel",
+  campsite: "kindCampsite",
+  attraction: "kindAttraction",
+  viewpoint: "kindViewpoint",
+  museum: "kindMuseum",
+  castle: "kindCastle",
+  ruins: "kindRuins",
+  manor: "kindManor",
+  monument: "kindMonument",
+  peak: "kindPeak",
+  beach: "kindBeach",
+  water: "kindWater",
+  waterfall: "kindWaterfall",
+  natureReserve: "kindNatureReserve",
+  nationalPark: "kindNationalPark",
+  protectedArea: "kindProtectedArea",
+  hillfort: "kindHillfort",
+  fort: "kindFort",
+  church: "kindChurch",
+  memorial: "kindMemorial",
+  artwork: "kindArtwork",
+  cave: "kindCave",
+  cliff: "kindCliff",
+  spring: "kindSpring",
+  park: "kindPark",
+} as const satisfies Partial<Record<PlaceKind, MessageKey>>;
 
 /**
  * A place field with suggestions. Typing shows matching places — worldwide,
@@ -54,15 +92,21 @@ export function PlaceInput({ value, onChange, onPick, placeholder, icon, label, 
   const [active, setActive] = useState(-1);
   const listId = useId();
   const skipNextSearch = useRef(false);
-  // Read on mount rather than during render: localStorage is nothing on the
-  // server, and reading it while rendering is a hydration mismatch.
+  // The recent places as an external store, the same shape as `useLocale`.
+  // `localStorage` is nothing on the server, so the server snapshot is empty
+  // and React swaps in the device's own list on the client — no read during
+  // render (a hydration mismatch) and no setState from a mount effect.
   //
-  // Re-read whenever the field is focused as well. A mount-only read went
-  // stale the moment a place was picked in *another* field — the rider saved
-  // Sigulda in "From", opened "To", and was offered nothing.
-  const [recent, setRecent] = useState<Suggestion[]>([]);
-  const refreshRecent = () => setRecent(listRecentPlaces().map((p) => ({ ...p, kind: "recent" })));
-  useEffect(() => { refreshRecent(); }, []);
+  // Every write publishes to every field, which is what a mount-only read
+  // used to get wrong: the rider saved Sigulda in "From", opened "To", and
+  // was offered nothing. Focus still re-reads, for a change made in another
+  // tab.
+  const stored = useSyncExternalStore(
+    recentPlacesStore.subscribe,
+    recentPlacesStore.snapshot,
+    recentPlacesStore.serverSnapshot,
+  );
+  const recent = useMemo<Suggestion[]>(() => stored.map((p) => ({ ...p, kind: "recent" as const })), [stored]);
 
   useEffect(() => {
     if (skipNextSearch.current) { skipNextSearch.current = false; return; }
@@ -98,6 +142,14 @@ export function PlaceInput({ value, onChange, onPick, placeholder, icon, label, 
   // search results. Two letters is where the API starts answering, so below
   // that the recent list is the only thing worth showing.
   const listed = value.trim().length >= 2 ? suggestions : recent;
+
+  // Settlements, recent places and anything the API sends that this build does
+  // not know about show no word at all — an untranslated kind is worse than a
+  // blank, and the name already carries the meaning.
+  const kindLabel = (kind: Suggestion["kind"]) => {
+    const key = KIND_KEY[kind as keyof typeof KIND_KEY];
+    return key ? m[key] : "";
+  };
   const show = open && listed.length > 0;
 
   return (
@@ -112,7 +164,7 @@ export function PlaceInput({ value, onChange, onPick, placeholder, icon, label, 
           aria-controls={listId}
           aria-autocomplete="list"
           onChange={(e) => { onChange(e.target.value); onPick(null); setOpen(true); }}
-          onFocus={() => { refreshRecent(); setOpen(true); }}
+          onFocus={() => { refreshRecentPlaces(); setOpen(true); }}
           onBlur={() => setTimeout(() => setOpen(false), 120)}
           onKeyDown={(e) => {
             if (!show) return;
@@ -134,7 +186,7 @@ export function PlaceInput({ value, onChange, onPick, placeholder, icon, label, 
               onMouseDown={(e) => { e.preventDefault(); pick(s); }}
               className={`flex cursor-pointer items-baseline justify-between gap-3 px-3 py-2 text-sm ${i === active ? "bg-[#fff3ea]" : "hover:bg-stone-50"}`}>
               <span className="truncate"><span className="font-medium text-stone-900">{s.name}</span>{s.label !== s.name && <span className="text-stone-500">{s.label.slice(s.name.length)}</span>}</span>
-              <span className="shrink-0 text-[10px] uppercase tracking-wider text-stone-400">{s.kindLabel ? "" : (KIND_KEY[s.kind as keyof typeof KIND_KEY] ? m[KIND_KEY[s.kind as keyof typeof KIND_KEY]] : "")}</span>
+              <span className="shrink-0 text-[10px] uppercase tracking-wider text-stone-400">{kindLabel(s.kind)}</span>
             </li>
           ))}
         </ul>

@@ -41,6 +41,38 @@ export type MessageKey =
   | "kindCity"
   | "kindVillage"
   | "kindHamlet"
+  | "kindAddress"
+  | "kindPlace"
+  | "kindFuel"
+  | "kindCharging"
+  | "kindRestaurant"
+  | "kindCafe"
+  | "kindParking"
+  | "kindHotel"
+  | "kindCampsite"
+  | "kindAttraction"
+  | "kindViewpoint"
+  | "kindMuseum"
+  | "kindCastle"
+  | "kindRuins"
+  | "kindManor"
+  | "kindMonument"
+  | "kindPeak"
+  | "kindBeach"
+  | "kindWater"
+  | "kindWaterfall"
+  | "kindNatureReserve"
+  | "kindNationalPark"
+  | "kindProtectedArea"
+  | "kindHillfort"
+  | "kindFort"
+  | "kindChurch"
+  | "kindMemorial"
+  | "kindArtwork"
+  | "kindCave"
+  | "kindCliff"
+  | "kindSpring"
+  | "kindPark"
   | "loadThinking1"
   | "loadThinking2"
   | "loadLucky1"
@@ -295,7 +327,11 @@ export type MessageKey =
   | "badgeUnverified"
   | "badgeUnverifiedDetail"
   | "badgeTrail"
-  | "badgeTrailDetail";
+  | "badgeTrailDetail"
+  | "segHeading"
+  | "segGrade"
+  | "segOnTet"
+  | "segRough";
 
 type Messages = Record<MessageKey, string>;
 
@@ -323,6 +359,38 @@ const lv: Messages = {
   kindCity: "pilsēta",
   kindVillage: "ciems",
   kindHamlet: "viensēta",
+  kindAddress: "adrese",
+  kindPlace: "vieta",
+  kindFuel: "degviela",
+  kindCharging: "uzlāde",
+  kindRestaurant: "ēstuve",
+  kindCafe: "kafejnīca",
+  kindParking: "stāvvieta",
+  kindHotel: "naktsmītne",
+  kindCampsite: "kempings",
+  kindAttraction: "apskates vieta",
+  kindViewpoint: "skatu punkts",
+  kindMuseum: "muzejs",
+  kindCastle: "pils",
+  kindRuins: "drupas",
+  kindManor: "muiža",
+  kindMonument: "piemineklis",
+  kindPeak: "kalns",
+  kindBeach: "pludmale",
+  kindWater: "ūdens",
+  kindWaterfall: "ūdenskritums",
+  kindNatureReserve: "dabas liegums",
+  kindNationalPark: "nacionālais parks",
+  kindProtectedArea: "aizsargājama teritorija",
+  kindHillfort: "pilskalns",
+  kindFort: "cietoksnis",
+  kindChurch: "baznīca",
+  kindMemorial: "piemiņas vieta",
+  kindArtwork: "objekts",
+  kindCave: "ala",
+  kindCliff: "klints",
+  kindSpring: "avots",
+  kindPark: "parks",
   loadThinking1: "Lasu, ko vēlies mainīt…",
   loadThinking2: "Precizēju plānu…",
   loadLucky1: "Bez galamērķa un laika limita? Laimīgais!",
@@ -582,6 +650,10 @@ const lv: Messages = {
   badgeTrail: "Taka",
   badgeTrailDetail:
     "Šaurs, tehnisks posms — punktētā līnija kartē. Šeit brauc lēnāk, nekā rāda plānotais laiks.",
+  segHeading: "Posms",
+  segGrade: "Grūtība",
+  segOnTet: "Pa TET",
+  segRough: "Grūts meža ceļš",
 };
 
 const lt: Messages = {
@@ -608,6 +680,38 @@ const lt: Messages = {
   kindCity: "miestas",
   kindVillage: "kaimas",
   kindHamlet: "vienkiemis",
+  kindAddress: "adresas",
+  kindPlace: "vieta",
+  kindFuel: "degalinė",
+  kindCharging: "įkrovimas",
+  kindRestaurant: "valgykla",
+  kindCafe: "kavinė",
+  kindParking: "stovėjimo aikštelė",
+  kindHotel: "nakvynė",
+  kindCampsite: "kempingas",
+  kindAttraction: "lankytina vieta",
+  kindViewpoint: "apžvalgos vieta",
+  kindMuseum: "muziejus",
+  kindCastle: "pilis",
+  kindRuins: "griuvėsiai",
+  kindManor: "dvaras",
+  kindMonument: "paminklas",
+  kindPeak: "kalnas",
+  kindBeach: "paplūdimys",
+  kindWater: "vanduo",
+  kindWaterfall: "krioklys",
+  kindNatureReserve: "draustinis",
+  kindNationalPark: "nacionalinis parkas",
+  kindProtectedArea: "saugoma teritorija",
+  kindHillfort: "piliakalnis",
+  kindFort: "tvirtovė",
+  kindChurch: "bažnyčia",
+  kindMemorial: "atminimo vieta",
+  kindArtwork: "objektas",
+  kindCave: "urvas",
+  kindCliff: "skardis",
+  kindSpring: "šaltinis",
+  kindPark: "parkas",
   loadThinking1: "Skaitau, ką nori pakeisti…",
   loadThinking2: "Tikslinu planą…",
   loadLucky1: "Be tikslo ir laiko limito? Laimingas!",
@@ -867,6 +971,10 @@ const lt: Messages = {
   badgeTrail: "Takas",
   badgeTrailDetail:
     "Siaura, techniška atkarpa — taškuota linija žemėlapyje. Čia važiuok lėčiau, nei rodo planuotas laikas.",
+  segHeading: "Atkarpa",
+  segGrade: "Sudėtingumas",
+  segOnTet: "TET keliu",
+  segRough: "Sunkus miško kelias",
 };
 
 const et: Messages = {
@@ -893,6 +1001,38 @@ const et: Messages = {
   kindCity: "linn",
   kindVillage: "küla",
   kindHamlet: "talu",
+  kindAddress: "aadress",
+  kindPlace: "koht",
+  kindFuel: "tankla",
+  kindCharging: "laadimine",
+  kindRestaurant: "söögikoht",
+  kindCafe: "kohvik",
+  kindParking: "parkla",
+  kindHotel: "majutus",
+  kindCampsite: "kämping",
+  kindAttraction: "vaatamisväärsus",
+  kindViewpoint: "vaatepunkt",
+  kindMuseum: "muuseum",
+  kindCastle: "loss",
+  kindRuins: "varemed",
+  kindManor: "mõis",
+  kindMonument: "monument",
+  kindPeak: "mägi",
+  kindBeach: "rand",
+  kindWater: "vesi",
+  kindWaterfall: "juga",
+  kindNatureReserve: "looduskaitseala",
+  kindNationalPark: "rahvuspark",
+  kindProtectedArea: "kaitseala",
+  kindHillfort: "linnamägi",
+  kindFort: "kindlus",
+  kindChurch: "kirik",
+  kindMemorial: "mälestuspaik",
+  kindArtwork: "objekt",
+  kindCave: "koobas",
+  kindCliff: "pank",
+  kindSpring: "allikas",
+  kindPark: "park",
   loadThinking1: "Loen, mida soovid muuta…",
   loadThinking2: "Täpsustan plaani…",
   loadLucky1: "Ilma sihtkoha ja ajapiiranguta? Vedas!",
@@ -1152,6 +1292,10 @@ const et: Messages = {
   badgeTrail: "Rada",
   badgeTrailDetail:
     "Kitsas, tehniline lõik — punktiirjoon kaardil. Siin sõida aeglasemalt, kui planeeritud aeg näitab.",
+  segHeading: "Lõik",
+  segGrade: "Raskus",
+  segOnTet: "TET-i mööda",
+  segRough: "Raske metsatee",
 };
 
 const en: Messages = {
@@ -1178,6 +1322,38 @@ const en: Messages = {
   kindCity: "town",
   kindVillage: "village",
   kindHamlet: "hamlet",
+  kindAddress: "address",
+  kindPlace: "place",
+  kindFuel: "fuel",
+  kindCharging: "charging",
+  kindRestaurant: "food",
+  kindCafe: "cafe",
+  kindParking: "parking",
+  kindHotel: "lodging",
+  kindCampsite: "campsite",
+  kindAttraction: "attraction",
+  kindViewpoint: "viewpoint",
+  kindMuseum: "museum",
+  kindCastle: "castle",
+  kindRuins: "ruins",
+  kindManor: "manor",
+  kindMonument: "monument",
+  kindPeak: "hill",
+  kindBeach: "beach",
+  kindWater: "water",
+  kindWaterfall: "waterfall",
+  kindNatureReserve: "nature reserve",
+  kindNationalPark: "national park",
+  kindProtectedArea: "protected area",
+  kindHillfort: "hillfort",
+  kindFort: "fort",
+  kindChurch: "church",
+  kindMemorial: "memorial",
+  kindArtwork: "artwork",
+  kindCave: "cave",
+  kindCliff: "cliff",
+  kindSpring: "spring",
+  kindPark: "park",
   loadThinking1: "Reading your changes…",
   loadThinking2: "Refining the plan…",
   loadLucky1: "No destination, no time limit? Lucky you!",
@@ -1437,6 +1613,10 @@ const en: Messages = {
   badgeTrail: "Trail",
   badgeTrailDetail:
     "A narrow, technical stretch — the dotted line on the map. Ride this slower than the planned time suggests.",
+  segHeading: "Segment",
+  segGrade: "Difficulty",
+  segOnTet: "On the TET",
+  segRough: "Rough forest track",
 };
 
 const MESSAGES: Record<UiLocale, Messages> = { lv, lt, et, en };

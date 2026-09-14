@@ -67,36 +67,66 @@ const KIND_GROUP: Record<string, number> = {
   "natural:cave_entrance": 3, "natural:cliff": 3, "natural:spring": 3, "leisure:park": 3,
 };
 
-const KIND_LABELS: Record<string, string> = {
-  "amenity:fuel": "degviela", "amenity:charging_station": "uzlāde", "amenity:restaurant": "ēstuve",
-  "amenity:cafe": "kafejnīca", "amenity:parking": "stāvvieta", "tourism:hotel": "naktsmītne",
-  "tourism:guest_house": "naktsmītne", "tourism:camp_site": "kempings", "tourism:attraction": "apskates vieta",
-  "tourism:viewpoint": "skatu punkts", "tourism:museum": "muzejs", "historic:castle": "pils",
-  "historic:ruins": "drupas", "historic:manor": "muiža", "historic:monument": "piemineklis",
-  "natural:peak": "kalns", "natural:beach": "pludmale", "natural:water": "ūdens",
-  "waterway:waterfall": "ūdenskritums", "leisure:nature_reserve": "dabas liegums",
-  "boundary:national_park": "nacionālais parks", "boundary:protected_area": "aizsargājama teritorija",
-  "historic:archaeological_site": "pilskalns", "historic:fort": "cietoksnis", "historic:church": "baznīca",
-  "historic:memorial": "piemiņas vieta", "tourism:artwork": "objekts", "amenity:place_of_worship": "baznīca",
-  "natural:cave_entrance": "ala", "natural:cliff": "klints", "natural:spring": "avots", "leisure:park": "parks",
+/**
+ * The machine name of each kind, for the client to translate.
+ *
+ * These are *enum values*, never display text: the label a rider reads is
+ * looked up per language in `lib/i18n/messages.ts` (`kind*` keys). This used
+ * to hold Latvian words, which the API then baked into `label` too — so an
+ * English or Lithuanian UI still read "adrese", and a Latvian word stored
+ * with a recent place came back in whatever language the rider switched to.
+ * A server that has no locale must not produce prose.
+ */
+const KIND_OF_TAG: Record<string, PlaceKind> = {
+  "amenity:fuel": "fuel", "amenity:charging_station": "charging", "amenity:restaurant": "restaurant",
+  "amenity:cafe": "cafe", "amenity:parking": "parking", "tourism:hotel": "hotel",
+  "tourism:guest_house": "hotel", "tourism:camp_site": "campsite", "tourism:attraction": "attraction",
+  "tourism:viewpoint": "viewpoint", "tourism:museum": "museum", "historic:castle": "castle",
+  "historic:ruins": "ruins", "historic:manor": "manor", "historic:monument": "monument",
+  "natural:peak": "peak", "natural:beach": "beach", "natural:water": "water",
+  "waterway:waterfall": "waterfall", "leisure:nature_reserve": "natureReserve",
+  "boundary:national_park": "nationalPark", "boundary:protected_area": "protectedArea",
+  "historic:archaeological_site": "hillfort", "historic:fort": "fort", "historic:church": "church",
+  "historic:memorial": "memorial", "tourism:artwork": "artwork", "amenity:place_of_worship": "church",
+  "natural:cave_entrance": "cave", "natural:cliff": "cliff", "natural:spring": "spring",
+  "leisure:park": "park",
 };
+
+/**
+ * Every kind a suggestion can carry. `settlement` is the blank one — a city
+ * or a village needs no word beside its name, because the name is the thing.
+ */
+export type PlaceKind =
+  | "settlement" | "address" | "place"
+  | "fuel" | "charging" | "restaurant" | "cafe" | "parking" | "hotel" | "campsite"
+  | "attraction" | "viewpoint" | "museum" | "castle" | "ruins" | "manor" | "monument"
+  | "peak" | "beach" | "water" | "waterfall" | "natureReserve" | "nationalPark"
+  | "protectedArea" | "hillfort" | "fort" | "church" | "memorial" | "artwork"
+  | "cave" | "cliff" | "spring" | "park";
 
 /** Never offered: you cannot ride to a bench, a board or a bus platform. */
 const EXCLUDED_KEYS = new Set(["information", "railway", "public_transport", "barrier", "entrance", "man_made", "power", "advertising", "office", "shop", "healthcare"]);
 
-function kindOf(p: PhotonFeature["properties"]): { group: number; label: string } | null {
+function kindOf(p: PhotonFeature["properties"]): { group: number; kind: PlaceKind } | null {
   const key = p.osm_key ?? "", value = p.osm_value ?? "";
   if (EXCLUDED_KEYS.has(key)) return null;
   const group = KIND_GROUP[`${key}:${value}`];
   // A house number is an address whatever the building happens to be tagged as.
-  if (group === undefined) return p.housenumber ? { group: 1, label: "adrese" } : null;
-  return { group, label: group === 0 ? "" : group === 1 ? "adrese" : KIND_LABELS[`${key}:${value}`] ?? "vieta" };
+  if (group === undefined) return p.housenumber ? { group: 1, kind: "address" } : null;
+  return {
+    group,
+    kind: group === 0 ? "settlement" : group === 1 ? "address" : KIND_OF_TAG[`${key}:${value}`] ?? "place",
+  };
 }
 
 export type PlaceSuggestion = ResolvedPlace & {
-  kind: string;
-  /** "degviela", "pils", "adrese"… empty for a settlement. */
-  kindLabel: string;
+  /**
+   * What sort of place this is, as a machine value the client translates
+   * (`kind*` in `lib/i18n/messages.ts`). Never a word a rider reads: this
+   * server has no locale, and the Latvian it used to return showed up
+   * verbatim in the English and Lithuanian lists.
+   */
+  kind: PlaceKind;
 };
 
 /** Great-circle km; only used to rank and to cut off other continents. */
@@ -149,16 +179,22 @@ export async function searchPlaces(q: string, home = DEFAULT_HOME): Promise<Plac
       const name = kind.group === 1 && street ? street : q.name ?? street;
       if (!name) return [];
       // A named POI needs its street: Rīga has a dozen Circle K, and
-      // "Circle K · degviela · Rīga" is the same line for every one of them.
-      // The address is what tells them apart, so it goes between the kind and
-      // the town. Addresses already carry theirs in `name`.
+      // "Circle K · Rīga" is the same line for every one of them. The address
+      // is what tells them apart, so it goes between the name and the town.
+      // Addresses already carry theirs in `name`.
+      //
+      // The kind itself is deliberately *not* in this label any more. It used
+      // to be, as a Latvian word, which is how "adrese" reached the English
+      // and Lithuanian lists — and how it got stored, in Latvian, with every
+      // recent place. The client renders the kind beside the label instead,
+      // translated.
       const at = kind.group > 1 && street && street !== name ? street : "";
       const where = q.city ?? q.district ?? q.county ?? q.state ?? "";
-      const suffix = [kind.label, at, where && where !== name ? where : ""].filter(Boolean).join(" · ");
+      const suffix = [at, where && where !== name ? where : ""].filter(Boolean).join(" · ");
       return [{
         name, label: suffix ? `${name} · ${suffix}` : name,
         lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0],
-        kind: q.osm_value ?? "place", kindLabel: kind.label,
+        kind: kind.kind,
         group: kind.group, rank: RANK[q.osm_value ?? ""] ?? 0, distanceKm: distanceKm(home, f.geometry.coordinates),
       }];
     })
@@ -177,7 +213,7 @@ export async function searchPlaces(q: string, home = DEFAULT_HOME): Promise<Plac
       return true;
     })
     .slice(0, 8)
-    .map(({ name, label, lat, lon, kind, kindLabel }) => ({ name, label, lat, lon, kind, kindLabel }));
+    .map(({ name, label, lat, lon, kind }) => ({ name, label, lat, lon, kind }));
 
   cache.set(key, { at: Date.now(), places });
   return places;
@@ -199,7 +235,7 @@ export { estimateTransit } from "./feasibility";
  * The browser gives a point; a rider needs a name they recognise before
  * spending a generation on it. Photon's reverse endpoint answers with the same
  * feature shape as the search, so the label is built the same way — a rider
- * sees "Ķekava" or "Brīvības iela 105 · adrese · Rīga", not a pair of numbers.
+ * sees "Ķekava" or "Brīvības iela 105 · Rīga", not a pair of numbers.
  * Returns null rather than throwing: the caller falls back to typing.
  */
 export async function reverseGeocode(lat: number, lon: number): Promise<PlaceSuggestion | null> {
@@ -226,8 +262,9 @@ export async function reverseGeocode(lat: number, lon: number): Promise<PlaceSug
       // The browser's point, not Photon's — the rider is standing here, and
       // the match is only there to give the place a name.
       lat, lon,
-      kind: q.osm_value ?? "place",
-      kindLabel: "",
+      // The rider is standing here; naming the spot is the whole job, and a
+      // kind word beside their own location would say nothing.
+      kind: "settlement" as const,
     };
   } catch (err) {
     console.warn("reverse geocode failed:", err);
