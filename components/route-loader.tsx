@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { X } from "lucide-react";
 
 /**
  * The "route drawing itself" motif, in two sizes.
@@ -60,8 +61,8 @@ export function RouteLoader({ phase, className, onCancel }: {
   }, []);
   const line = lines[index];
 
-  return (
-    <div role="status" aria-live="polite" className={`overflow-hidden rounded-2xl border border-stone-200 bg-[#faf9f6] ${className ?? ""}`}>
+  const card = (
+    <div role="status" aria-live="polite" className={`overflow-hidden rounded-2xl border border-stone-200 bg-[#faf9f6] ${onCancel ? "" : (className ?? "")}`}>
       <div className="relative">
         <RouteScene className="h-28 w-full" />
         {advert && (
@@ -74,16 +75,24 @@ export function RouteLoader({ phase, className, onCancel }: {
       <div className="flex items-center gap-2 px-4 pb-3">
         <span className="size-1.5 animate-pulse rounded-full bg-[#f56300]" />
         <span key={line} className="mopik-fade-in min-w-0 flex-1 truncate text-xs font-medium text-stone-700">{line}</span>
-        {/* A long ride takes the better part of a minute on real roads, which
-            is long enough to notice the wrong place was typed. Quiet, so it
-            reads as a way out rather than as something gone wrong. */}
-        {onCancel && (
-          <button type="button" onClick={onCancel}
-            className="shrink-0 rounded-lg px-2 py-1 text-xs font-medium text-stone-500 underline underline-offset-4 transition hover:text-stone-800">
-            Atcelt
-          </button>
-        )}
       </div>
+    </div>
+  );
+
+  if (!onCancel) return card;
+
+  // Cancelling sits outside the animation, on its own full-width row. Inside
+  // the card it was a small link competing with a moving picture for
+  // attention — the rider asked for something he could actually hit. 44 px
+  // is the thumb target a phone needs.
+  return (
+    <div className={`grid gap-2 ${className ?? ""}`}>
+      {card}
+      <button type="button" onClick={onCancel}
+        className="flex h-11 w-full items-center justify-center gap-1.5 rounded-xl border border-stone-200 bg-white text-sm font-medium text-stone-600 transition hover:border-stone-300 hover:text-stone-900 active:bg-stone-50">
+        <X className="size-4" />
+        Atcelt
+      </button>
     </div>
   );
 }

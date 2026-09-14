@@ -74,6 +74,11 @@ nobody is waiting for. Verified on Rīga → Tallinn: the loader offered Atcelt,
 the request stopped, and the server logged "stopping after 4 of 5 candidates".
 A cancel deliberately leaves no message and no retry: the rider chose it.
 
+The control started as a small link inside the animation card; the rider said
+it was too easy to miss and too small to hit. It is now its own full-width
+row *under* the card — measured 571 x 44 px against roughly 50 x 24 before —
+so it is not competing with a moving picture for attention.
+
 Also fixed here, reported while testing: a stop the rider had just added but
 not yet typed into had no ✕, so it could only be left empty. Removing now
 shows for any row beyond the two the form always offers.
