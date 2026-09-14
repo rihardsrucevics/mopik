@@ -3,8 +3,16 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   // The route API reads the POI and TET datasets from /public with fs, which
   // the serverless bundler cannot see through path.join(process.cwd(), …).
+  // POI is per country since 2026-09-14: the glob is what makes a country
+  // published later (PL, DE, …) reach production without editing this file.
   outputFileTracingIncludes: {
-    "/api/generate-route": ["./public/poi-baltics.geojson", "./public/tet-lv.geojson"],
+    "/api/generate-route": [
+      "./public/poi/index.json",
+      "./public/poi/*.geojson",
+      "./public/tet-lv.geojson",
+    ],
+    // The suggestions endpoint reads the same dataset through route-pois.ts.
+    "/api/route-pois": ["./public/poi/index.json", "./public/poi/*.geojson"],
   },
 };
 

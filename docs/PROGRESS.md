@@ -1,5 +1,148 @@
 # Mopik — progress log
 
+## 2026-09-14 — POI: three rectangles become three countries, and the loader goes per country
+
+Two problems fixed together, because the fix for one is the fix for the other.
+
+### 1. The shipped dataset was three rectangles, not three countries
+
+`public/poi-baltics.geojson` was built from Overpass **bounding boxes**, and
+Overpass honours the rectangle rather than the border. Measured in the shipped
+file: **326 "LV" points lay south of Latvia** — Klaipėda ferry terminals,
+villages named in Cyrillic near Pskov, and one "LV" ferry on the
+Karlshamn–Klaipėda line, which is in Sweden. The LV rectangle began at lat 55.6
+and was queried first, so the shared thinning pass let it claim every
+Lithuanian point above that line: **about a third of Lithuania was filed as
+LV**.
+
+This was live and not cosmetic. `loop.ts` picks anchors by proximity and has no
+country rule at all — the intended rule is geometric — and `hasPlaceData()`
+gated the honesty notice on the same wrong label. Measured near two Latvian
+border towns, against the shipped file:
+
+| start | old: points within 25 km | of those, labelled LV but inside Lithuania |
+|---|---:|---:|
+| Bauska | 135, all "LV" | **29** (`Geručių senovės gynybinis įtvirtinimas`, `Vileišių dvaras`, …) |
+| Daugavpils | 184, all "LV" | **15** (`Jurkakalnio piliakalnis`, `Stelmužės dvaro sodyba`, …) |
+
+The Geofabrik `.pbf` extracts are clipped to the actual country polygon, so the
+fix is the data. `scripts/poi-country-labels.test.ts` pins it: no non-ferry LV
+point below lat 55.67, Lithuania's data reaching above lat 56, and every anchor
+a border loop picks agreeing with its own geometry. Totals move 16,410 → 13,450
+and that is a **correction, not a regression** (plan §6).
+
+### 2. Europe will not fit one file — the loader is per country, from an index
+
+`scripts/publish-poi.ts` (new) copies `data/poi-<CC>.geojson` →
+`public/poi/<CC>.geojson` minified and writes `public/poi/index.json`.
+Idempotent and incremental: it publishes whichever countries exist at the time,
+which is what the hours-long Europe build needs.
+
+`lib/geo/poi.ts` reads that index and parses a country file **only when a
+ride's own search area touches one of its cells**, caching per instance. Every
+exported function keeps its name, signature and return shape; `country` is now
+trustworthy and `source: "geofabrik"` says so. New: `poiCountries()`,
+`countriesForBBox()`, `poisInBBox()`.
+
+**`hasPlaceData()` is now an index question**, not a scan of all 16,410 points:
+is this point's cell (± the same 1°/1.5° border slack as before) occupied. PL,
+DE and the rest start answering `true` the moment their files are published,
+with no code change.
+
+#### The index carries cells, not a bounding box — measured
+
+A bbox per country does not work here. A `route=ferry` way's centroid sits in
+open water (plan §5), so **Estonia's extent is 19–28.4°E / 54.6–60.2°N — the
+whole Baltics**. Selecting by bbox made every ride parse every file. Trimming
+the box to a percentile instead throws away ~2 % of the points, and those turn
+out to be real border villages, not only sea ferries.
+
+So the index stores the occupied cells. Cell size was measured against a 25 km
+search circle, the size `loop.ts` uses:
+
+| cell | index (Europe, est.) | Sigulda parses | Bauska parses |
+|---|---:|---|---|
+| 1° | 11 KB | LV, LT, EE | LV, LT, EE |
+| 0.5° | 29 KB | LV, EE | LV, LT, EE |
+| **0.25°** | **89 KB** | **LV** | **LV, LT** |
+| 0.1° | 466 KB | LV | LV, LT |
+
+At 1° a Sigulda ride parsed all three files, because Estonian ferry centroids in
+the Gulf of Riga share its coarse cells — the exact over-loading the split
+exists to prevent. 0.25° is the first size that gets Sigulda to Latvia alone,
+while Bauska correctly keeps both (it is 12 km from the border).
+
+Two cell sets, because loading and coverage are different questions: `cells`
+(every occupied cell — load by this and no point is missed) and `placeCells`
+(cells holding something other than a sea centroid — answer coverage by this).
+Without the split, the ferry trail from Klaipėda across the Baltic made
+northern Germany read as covered, and a German ride would have been denied the
+`sparsePlaceData` notice it has earned.
+
+#### Numbers, old single file vs new per country
+
+Node 26, this machine, heap measured with `--expose-gc`.
+
+| | old, one file | new, per country |
+|---|---:|---:|
+| cold load, Latvian ride (Sigulda) | 30 ms / 5.8 MB / 16,410 pts | **12 ms / 1.7 MB / LV only** |
+| cold load, border ride (Bauska) | 30 ms / 5.8 MB | 19 ms / 3.4 MB / LV+LT |
+| cold load, every country | 30 ms / 5.8 MB | 22 ms / 4.5 MB |
+| `hasPlaceData` (cold) | 30 ms — parsed the dataset | **0 ms — index only** |
+| `hasPlaceData` (warm) | full array scan | 0.00015 ms |
+| `poisNear` (warm) | 0.057 ms | **0.045 ms** |
+| published bytes | 3.62 MB | 2.70 MB + 11 KB index |
+
+POI lookup is unchanged in the sense that mattered: still sub-millisecond. Two
+regressions were found by measurement during this work and fixed rather than
+shipped — `loadPois()` rebuilding a 13,450-entry array per call (66 ms, over
+`route-pois.test.ts`'s 60 ms budget) and `dataForBBox` re-deriving the country
+set on every one of `loop.ts`'s ~17 candidates (21 ms/call). Both are memoised
+and invalidated when a new country is parsed.
+
+#### The runtime mechanism is unchanged on purpose
+
+Still `fs.readFileSync` from `process.cwd()/public/poi/`, not `fetch` of the
+public asset, because **every export here is synchronous** and `loop.ts`,
+`route-pois.ts` and the generate-route API are written against that; making it
+async is a change to three files this work does not own. `next.config.ts` names
+the directory with a glob, so a country published later reaches production
+without editing it. Verified in `next build` output: both
+`/api/generate-route` and `/api/route-pois` trace `public/poi/index.json` and
+all three country files, and the traced set alone reconstructs a working
+`public/poi/`.
+
+#### What happens when PL/DE arrive
+
+One command, no code change:
+
+```bash
+npx tsx scripts/publish-poi.ts
+```
+
+It picks up every `data/poi-<CC>.geojson` present, republishes the index, and
+prints the table. The loader reads the larger index on its next cold start;
+`hasPlaceData()` begins answering `true` for those countries; `loop.ts` starts
+anchoring on real Polish and German places. The build was mid-Poland when this
+was written.
+
+#### `public/poi-baltics.geojson` can be deleted after one production deploy
+
+Kept in place and still traced into the bundle, so a rollback has its data.
+Nothing reads it any more. **Delete it, and its `outputFileTracingIncludes`
+entry, once one production deploy has served rides from `public/poi/`.**
+
+### loop.ts
+
+Audited and **left unchanged**. It has no `country` reference anywhere —
+`planLoop` ranks candidates by bearing, radius, score and cluster distance
+only, so there is no "only LV is wanted" rule to enforce and none was invented.
+A stop 20 km south of Bauska is a good stop that happens to be Lithuanian; what
+was broken is that the app could not *tell*. With clipped files it can, and the
+test asserts the label agrees with the geometry rather than forbidding foreign
+anchors.
+
+
 ## 2026-09-14 — Item 7, step 1: say it before the search, not after
 
 A ride Mopik cannot plan in one go is now named as such **up front**, in the
