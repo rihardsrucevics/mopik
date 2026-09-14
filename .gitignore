@@ -60,3 +60,6 @@ next-env.d.ts
 /data/poi-index.json
 /data/poi-build.log
 /.venv/
+
+# python bytecode from the build scripts
+__pycache__/
