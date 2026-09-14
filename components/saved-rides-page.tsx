@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Bookmark, Download, Plus, Search, SlidersHorizontal, Trash2 } from "lucide-react";
 import { track } from "@/lib/analytics";
-import { listSaved, removeRide, decodeSaved, type SavedRide } from "@/lib/share/saved-rides";
+import { listSaved, markSavedSeen, removeRide, decodeSaved, type SavedRide } from "@/lib/share/saved-rides";
 import { planPart } from "@/lib/share/route-code";
 import { gpxFilename } from "@/lib/gpx/filename";
 
@@ -27,6 +27,9 @@ export function SavedRidesPage() {
   useEffect(() => {
     const sync = () => setRides(listSaved());
     sync();
+    // Opening the list is what "seen" means, so the header's count clears
+    // here and nowhere else.
+    markSavedSeen();
     window.addEventListener("mopik:saved-changed", sync);
     return () => window.removeEventListener("mopik:saved-changed", sync);
   }, []);

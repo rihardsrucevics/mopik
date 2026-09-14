@@ -34,6 +34,7 @@ export type AnalyticsEvent =
   | "saved_ride_removed"
   | "saved_gpx_downloaded"
   | "saved_list_opened"
+  | "locale_changed"         // interface language switched from the header
   | "shared_ride_saved"      // kept a ride someone else sent
   | "shared_ride_unsaved"
   | "saved_alternative_opened" // opened another version of a saved ride

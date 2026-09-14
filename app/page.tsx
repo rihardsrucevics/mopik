@@ -1,6 +1,6 @@
 "use client";
 
-import { Bookmark, Map as MapIcon, Plus } from "lucide-react";
+import { Map as MapIcon, Plus } from "lucide-react";
 
 import { useRef, useState, useEffect } from "react";
 import { RouteMap } from "@/components/route-map";
@@ -8,12 +8,14 @@ import { RoutePrompt } from "@/components/route-prompt";
 import { ResultPanel } from "@/components/result-panel";
 import { InstallPrompt } from "@/components/install-prompt";
 import { MapPanel } from "@/components/map-panel";
-import { InstagramLink } from "@/components/instagram-link";
-import Link from "next/link";
 import { track } from "@/lib/analytics";
 import { decodePlanPlaces, decodePlanShare } from "@/lib/share/route-code";
 import { isCodeSaved, removeRide, rideId } from "@/lib/share/saved-rides";
 import { IntroSplash } from "@/components/intro-splash";
+import { SavedRidesLink } from "@/components/saved-rides-link";
+import { LanguagePicker } from "@/components/language-picker";
+import { useLocale } from "@/lib/i18n/use-locale";
+import { t } from "@/lib/i18n/messages";
 import { RideComposer } from "@/components/ride-composer";
 import { ChatMessage, ChatQuickReply, ChatResponse, RidePlan, planSummary } from "@/lib/chat/ride-plan";
 import { describeInfeasible, minutesLabel } from "@/lib/chat/feasibility";
@@ -129,6 +131,7 @@ export default function Home() {
   // device, applied to the form and used to seed a fresh chat so it only has
   // to ask where and how long.
   const [profile, changeProfile] = useRideProfile();
+  const [locale] = useLocale();
   const busyRef = useRef(false);
   /**
    * The generation in flight, so the rider can call it off. A long ride
@@ -346,14 +349,16 @@ export default function Home() {
       <IntroSplash />
       <header className="mb-5 flex items-center justify-between border-b border-stone-200 pb-4">
         <div className="flex items-baseline gap-3">{/* eslint-disable-next-line @next/next/no-html-link-for-pages -- full reload on purpose: a fresh plan */}
-            <h1 className="text-2xl font-bold tracking-tight"><a href="/" aria-label="Mopik — uz sākumu">Mopik<span className="text-[#f56300]">.</span></a></h1><p className="hidden text-xs text-stone-500 sm:block">Mazāk plānošanas. Vairāk braukšanas.</p></div>
+            <h1 className="text-2xl font-bold tracking-tight"><a href="/" aria-label={t(locale, "backToHome")}>Mopik<span className="text-[#f56300]">.</span></a></h1><p className="hidden text-xs text-stone-500 sm:block">{t(locale, "tagline")}</p></div>
         <div className="flex items-center gap-4">
-        {/* The only entrance to the saved rides. The block that used to sit
-            above the form pushed the ride down on every visit, for something
-            a rider wants occasionally; the icon carries the meaning here. */}
-        <Link href="/saglabatie" onClick={() => track("saved_list_opened")} className="inline-flex items-center gap-1 text-xs text-stone-500 hover:text-stone-900"><Bookmark className="size-3.5" />Saglabātie</Link>
-        <InstagramLink from="header" />
-        {(messages.length > 0 || plan) && <button disabled={phase !== "idle"} onClick={() => { setEntryMode("form"); setMessages([]); setPlan(null); setPlaces([]); setResult(null); setChatting(false); setError(null); setRetry(null); setQuickReplies([]); }} className="inline-flex items-center gap-1 text-xs text-stone-500 underline underline-offset-4 disabled:opacity-40"><Plus className="size-3.5" />Jauns brauciens</button>}
+        {/* Saved rides stay in the header: a rider reaches for them mid-plan,
+            unlike "Sazinies", which moved to the footer with everything else
+            that is read once. The word went with it — the bookmark says the
+            same thing in a fraction of the width, which is what the language
+            picker needed. */}
+        <SavedRidesLink label={t(locale, "savedRides")} />
+        <LanguagePicker />
+        {(messages.length > 0 || plan) && <button disabled={phase !== "idle"} onClick={() => { setEntryMode("form"); setMessages([]); setPlan(null); setPlaces([]); setResult(null); setChatting(false); setError(null); setRetry(null); setQuickReplies([]); }} className="inline-flex items-center gap-1 text-xs text-stone-500 underline underline-offset-4 disabled:opacity-40"><Plus className="size-3.5" />{t(locale, "newRide")}</button>}
         </div>
       </header>
       <div className="grid items-start gap-5 md:grid-cols-[minmax(340px,460px)_1fr]">

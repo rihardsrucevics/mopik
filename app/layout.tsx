@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import Script from "next/script";
 import { AnalyticsProvider } from "@/components/analytics-provider";
+import { SiteFooter } from "@/components/site-footer";
 import "./globals.css";
 
 const SITE_URL = "https://www.mopik.eu";
@@ -42,7 +43,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="lv" className="h-full antialiased">
       <body className="min-h-full flex flex-col">
-        {children}
+        {/* `flex-1` on the page keeps the footer at the bottom of a short
+            page without pinning it over the content of a long one. */}
+        <div className="flex-1">{children}</div>
+        <SiteFooter />
         <AnalyticsProvider />
         {/* Google Analytics (gtag.js), loaded after hydration so it never delays the page. */}
         <Script src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`} strategy="afterInteractive" />

@@ -247,7 +247,7 @@ rate-limits a full build and the script already rotates mirrors.
 The rider also asked whether **Google** could supply this instead. Not costed
 yet; do that before committing to another Overpass run.
 
-## 9. Multilingual UI
+## 9. ~~Multilingual UI~~ — PARTLY DONE 2026-09-14
 
 Latvian for Latvians, Lithuanian for Lithuanians, Estonian for Estonians,
 English for everyone else.
@@ -257,7 +257,28 @@ Latvian prompt, because `locale` is detected from the prompt text and an API
 call without one falls through to English. That is the same problem seen from
 the other end and should be fixed with this, not separately.
 
-## 10. A footer, and a header freed up for language
+**Done: the shell, the form, the profile and the map.** `lib/i18n/` holds a
+flat dictionary per language, a store shaped like `use-ride-profile`, and a
+picker in the header. First visit follows `navigator.languages`; a rider's own
+choice is remembered on the device and wins from then on. Anything Mopik does
+not speak falls through to English, not Latvian — someone browsing in German
+is better served by English than by a language they cannot read.
+
+**Still Latvian, deliberately not half-translated:**
+- **The chat.** Its replies come from `lib/chat/ride-plan.ts` and the model
+  prompt, so translating them means translating the prompt and re-running
+  `scripts/chat-golden.ts` against each language. A separate job.
+- **The result panel.** ~29 strings, several of them assembled from numbers
+  ("83 km atkārto jau nobrauktus ceļus"), which need per-language grammar
+  rather than concatenation.
+- **Route names**, the problem named above: `detectLocale` still reads the
+  prompt rather than the chosen UI language, and only knows lv/en because
+  that is what the POI dataset carries.
+
+The keys for these exist in neither the dictionary nor the type, so nothing
+silently falls back — they are simply still Latvian until done properly.
+
+## 10. ~~A footer, and a header freed up for language~~ — DONE 2026-09-14
 
 Move the Instagram icon and "Sazinies" into a new footer, which also carries
 extra info and other pages. The header then has room for the language picker
@@ -265,6 +286,16 @@ and whatever else belongs there.
 
 Depends on nothing; unblocks the language picker in item 9 having somewhere to
 live.
+
+**Done.** `components/site-footer.tsx`, in the layout so every page gets it:
+tagline, saved rides, "Sazinies", the OpenStreetMap attribution and a line
+telling the rider to check access on the ground. The header kept only the
+saved-rides bookmark and gained the language picker.
+
+Also on the rider's request: the header bookmark lost its "Saglabātie" label —
+the icon says it in a fraction of the width — and gained a count of rides
+saved but not yet looked at (`unseenSavedCount`, marked seen when the list is
+opened). The word itself moved to the footer.
 
 ## 11. Routes still run along the sea
 

@@ -5,15 +5,15 @@ import { ChevronDown, ChevronUp, Map as MapIcon, Sparkles } from "lucide-react";
 import { RidePlan } from "@/lib/chat/ride-plan";
 import { composeRidePlan, placesFromPlan } from "@/lib/chat/compose-plan";
 import { RoutePlaces } from "@/components/route-places";
+import { useLocale } from "@/lib/i18n/use-locale";
+import { t, messages } from "@/lib/i18n/messages";
 import { track } from "@/lib/analytics";
 import type { ResolvedPlace } from "@/lib/chat/places";
 import {
-  PROFILE_LABELS,
   PROFILE_PRESETS,
   normalizeProfile,
   presetIdFor,
   profileFromPlan,
-  profileSummary,
   type RideProfile,
 } from "@/lib/chat/ride-profile";
 
@@ -41,6 +41,8 @@ function ChoiceRow<T extends string>({ label, value, choices, onChange }: { labe
  * row: the summary, the presets, and "Mainīt" to open the three choices.
  */
 function ProfileLine({ profile, onChange }: { profile: RideProfile; onChange: (profile: RideProfile) => void }) {
+  const [locale] = useLocale();
+  const m = messages(locale);
   const [open, setOpen] = useState(false);
   const p = normalizeProfile(profile);
   const activePreset = presetIdFor(p);
@@ -49,12 +51,12 @@ function ProfileLine({ profile, onChange }: { profile: RideProfile; onChange: (p
     <div className="rounded-xl border border-stone-200 bg-[#faf9f6]">
       <div className="flex items-center justify-between gap-3 px-3 py-2">
         <div className="min-w-0">
-          <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-400">Tavs profils</div>
-          <div className="truncate text-sm font-semibold text-stone-900">{profileSummary(p)}</div>
+          <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-400">{m.profileTitle}</div>
+          <div className="truncate text-sm font-semibold text-stone-900">{[p.surface === "asphalt" ? null : m[({rest:"diffRest",adventure:"diffAdventure",hard:"diffHard"} as const)[p.difficulty]], m[p.style === "tourism" ? "styleTourism" : "styleRiding"], m[({asphalt:"surfAsphalt",gravel:"surfGravel",forest:"surfForest"} as const)[p.surface]]].filter(Boolean).join(" · ")}</div>
         </div>
         <button type="button" onClick={() => setOpen(!open)} aria-expanded={open}
           className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-[#bd4b00]">
-          {open ? "Aizvērt" : "Mainīt"}{open ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+          {open ? m.close : m.change}{open ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
         </button>
       </div>
 
@@ -69,24 +71,24 @@ function ProfileLine({ profile, onChange }: { profile: RideProfile; onChange: (p
             ))}
           </div>
 
-          <ChoiceRow label={PROFILE_LABELS.style.title} value={p.style} onChange={(style) => onChange({ ...p, style })}
-            choices={(["tourism", "riding"] as const).map((v) => ({ value: v, ...PROFILE_LABELS.style[v] }))} />
-          <ChoiceRow label={PROFILE_LABELS.surface.title} value={p.surface} onChange={(surface) => onChange(normalizeProfile({ ...p, surface }))}
-            choices={(["asphalt", "gravel", "forest"] as const).map((v) => ({ value: v, ...PROFILE_LABELS.surface[v] }))} />
+          <ChoiceRow label={m.profileStyle} value={p.style} onChange={(style) => onChange({ ...p, style })}
+            choices={[{ value: "tourism" as const, label: m.styleTourism, detail: m.styleTourismHint }, { value: "riding" as const, label: m.styleRiding, detail: m.styleRidingHint }]} />
+          <ChoiceRow label={m.profileSurface} value={p.surface} onChange={(surface) => onChange(normalizeProfile({ ...p, surface }))}
+            choices={[{ value: "asphalt" as const, label: m.surfAsphalt }, { value: "gravel" as const, label: m.surfGravel }, { value: "forest" as const, label: m.surfForest }]} />
           {p.surface === "asphalt" ? (
             <p className="text-[11px] leading-relaxed text-stone-500">
-              Uz asfalta tehniskiem posmiem nav nozīmes, tāpēc grūtība šeit netiek prasīta.
+              {m.asphaltNote}
             </p>
           ) : (
-            <ChoiceRow label={PROFILE_LABELS.difficulty.title} value={p.difficulty} onChange={(difficulty) => onChange({ ...p, difficulty })}
-              choices={(["rest", "adventure", "hard"] as const).map((v) => ({ value: v, ...PROFILE_LABELS.difficulty[v] }))} />
+            <ChoiceRow label={m.profileDifficulty} value={p.difficulty} onChange={(difficulty) => onChange({ ...p, difficulty })}
+              choices={[{ value: "rest" as const, label: m.diffRest, detail: m.diffRestHint }, { value: "adventure" as const, label: m.diffAdventure, detail: m.diffAdventureHint }, { value: "hard" as const, label: m.diffHard, detail: m.diffHardHint }]} />
           )}
           {p.surface === "forest" && (
             <p className="rounded-lg bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-900">
-              “Meži” var iekļaut takas ar nepārbaudītu piekļuves statusu. Smilšu pludmales takas un skaidri aizliegti ceļi netiek izmantoti.
+              {m.forestWarning}
             </p>
           )}
-          <p className="text-[11px] leading-relaxed text-stone-500">Profils paliek atcerēts šajā ierīcē arī nākamajiem braucieniem.</p>
+          <p className="text-[11px] leading-relaxed text-stone-500">{m.profileRemembered}</p>
         </div>
       )}
     </div>
@@ -117,6 +119,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
    */
   map?: ReactNode;
 }) {
+  const [locale] = useLocale();
   const [places, setPlaces] = useState<string[]>(placesFromPlan(initialPlan));
   // One way is the default: it is the ride that needs both rows, so the form
   // reads "No … Līdz …" on open. A plan being edited keeps the shape it had —
@@ -166,7 +169,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
         setLocating(false);
         track("form_location_used");
       },
-      () => { setLocating(false); setError("Neizdevās noteikt atrašanās vietu. Ieraksti sākumu pats."); },
+      () => { setLocating(false); setError(t(locale, "errLocation")); },
       { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 },
     );
   };
@@ -240,13 +243,13 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     // Name the field that is missing. "Norādi vismaz vienu vietu" was shown to
     // a rider who had filled in "Līdz" and left "No" empty — technically about
     // the count, but read as a lie about the field he had just typed into.
-    if (!places[0]?.trim()) { setError("Aizpildi “No” — no kurienes sāksim braucienu?"); return; }
+    if (!places[0]?.trim()) { setError(t(locale, "errNoStart")); return; }
     // An empty "Līdz" is a real answer — "man vienalga", the same ride the
     // lucky mode already handles — so only a one-way request with nothing but
     // a start is refused: there is no direction to send it in.
-    if (tripType === "one_way" && filled.length < 2) { setError("Aizpildi “Līdz” vai pievieno pieturvietu — vienvirziena braucienam vajag, uz kurieni doties."); return; }
+    if (tripType === "one_way" && filled.length < 2) { setError(t(locale, "errNoDestination")); return; }
     const value = hours.trim() ? Number(hours.replace(",", ".")) : preset ?? NaN;
-    if (durationMode === "hours" && (!Number.isFinite(value) || value < 0.5 || value > 16)) { setError("Ilgumam jābūt no 0,5 līdz 16 stundām."); return; }
+    if (durationMode === "hours" && (!Number.isFinite(value) || value < 0.5 || value > 16)) { setError(t(locale, "errHours")); return; }
     const plan = composeRidePlan({ places, tripType, durationMode, hours: value, profile: effectiveProfile });
     setError(null);
     onGenerate(plan, Object.values(picked).filter((p): p is ResolvedPlace => p !== null));
@@ -255,9 +258,9 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   return (
     <section className="flex flex-col overflow-hidden rounded-2xl border border-stone-200 bg-white md:h-[calc(100vh-7rem)]" aria-label="Brauciena ievade">
       <div className="border-b border-stone-200 bg-[#faf9f6] px-4 py-3">
-        <div className="mb-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#bd4b00]">Tavs nākamais brauciens</div>
-        <h2 className="text-lg font-semibold tracking-tight">Kur un cik ilgi brauksim?</h2>
-        <p className="mt-1 hidden text-xs text-stone-500 md:block">Pārējo nosaka tavs profils. Maršrutu varēsi precizēt pēc ģenerēšanas.</p>
+        <div className="mb-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#bd4b00]">{t(locale, "composerEyebrow")}</div>
+        <h2 className="text-lg font-semibold tracking-tight">{t(locale, "composerTitle")}</h2>
+        <p className="mt-1 hidden text-xs text-stone-500 md:block">{t(locale, "composerHint")}</p>
       </div>
 
       {/* Scrolls inside the fixed-height column when the profile panel is
@@ -266,7 +269,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
         {/* Trip type first: it decides what the last row means — a waypoint on
             the way home, or the finish. Asking for places before knowing the
             shape of the ride is asking the rider to guess. */}
-        <ChoiceRow label="Maršruta veids" value={tripType} onChange={(v) => { track("trip_type_changed", { to: v }); setTripType(v); }} choices={[{ value: "one_way", label: "Vienā virzienā" }, { value: "round_trip", label: "Turp un atpakaļ" }]} />
+        <ChoiceRow label={t(locale, "tripType")} value={tripType} onChange={(v) => { track("trip_type_changed", { to: v }); setTripType(v); }} choices={[{ value: "one_way", label: t(locale, "oneWay") }, { value: "round_trip", label: t(locale, "roundTrip") }]} />
 
         <RoutePlaces places={places} oneWay={tripType === "one_way"} busy={busy} onChange={reorder} onPick={setPick} onUseLocation={useMyLocation} locating={locating} near={anchor} />
 
@@ -288,7 +291,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
           </div>
         )}
 
-        <ChoiceRow label="Ilgums" value={durationMode} onChange={setDurationMode} choices={[{ value: "flexible", label: "Brīvs" }, { value: "hours", label: "Konkrēts" }]} />
+        <ChoiceRow label={t(locale, "duration")} value={durationMode} onChange={setDurationMode} choices={[{ value: "flexible", label: t(locale, "flexible") }, { value: "hours", label: t(locale, "exact") }]} />
         {durationMode === "hours" && (
           <div className="flex items-stretch gap-1.5" role="group" aria-label="Stundas">
             {/* The usual days as one tap each; the field is for everything else. */}
@@ -316,8 +319,8 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
         {/* Pushed to the bottom on the desktop so the column is used and the
             action is where a form's action belongs. */}
         <div className="md:mt-auto" />
-        <button type="button" onClick={submit} disabled={busy} className="flex h-12 w-full shrink-0 items-center justify-center gap-2 rounded-full bg-[#f56300] text-sm font-semibold text-white transition hover:bg-[#d85600] disabled:opacity-50"><Sparkles className="size-4" />Izveidot maršrutu</button>
-        <button type="button" onClick={onUseChat} disabled={busy} className="w-full text-center text-xs text-stone-500 underline decoration-stone-300 underline-offset-4 hover:text-stone-800">Vai arī aprakstīt braucienu čatā</button>
+        <button type="button" onClick={submit} disabled={busy} className="flex h-12 w-full shrink-0 items-center justify-center gap-2 rounded-full bg-[#f56300] text-sm font-semibold text-white transition hover:bg-[#d85600] disabled:opacity-50"><Sparkles className="size-4" />{t(locale, "generate")}</button>
+        <button type="button" onClick={onUseChat} disabled={busy} className="w-full text-center text-xs text-stone-500 underline decoration-stone-300 underline-offset-4 hover:text-stone-800">{t(locale, "orUseChat")}</button>
       </div>
     </section>
   );

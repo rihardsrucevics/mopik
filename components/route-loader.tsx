@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
+import { useLocale } from "@/lib/i18n/use-locale";
+import { t } from "@/lib/i18n/messages";
 
 /**
  * The "route drawing itself" motif, in two sizes.
@@ -43,6 +45,7 @@ export function RouteLoader({ phase, className, onCancel }: {
   /** Call the generation off. Absent = no control, for callers with nothing to cancel. */
   onCancel?: () => void;
 }) {
+  const [locale] = useLocale();
   const lines = STATUS[phase];
   const [index, setIndex] = useState(0);
   useEffect(() => {
@@ -91,7 +94,7 @@ export function RouteLoader({ phase, className, onCancel }: {
       <button type="button" onClick={onCancel}
         className="flex h-11 w-full items-center justify-center gap-1.5 rounded-xl border border-stone-200 bg-white text-sm font-medium text-stone-600 transition hover:border-stone-300 hover:text-stone-900 active:bg-stone-50">
         <X className="size-4" />
-        Atcelt
+        {t(locale, "cancel")}
       </button>
     </div>
   );

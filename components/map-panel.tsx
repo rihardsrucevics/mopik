@@ -3,6 +3,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Maximize2, Minimize2 } from "lucide-react";
 import { track } from "@/lib/analytics";
+import { useLocale } from "@/lib/i18n/use-locale";
+import { t } from "@/lib/i18n/messages";
 
 /**
  * The map with its full-screen control. Wherever a map is shown — the planner,
@@ -18,6 +20,7 @@ export function MapPanel({ children, className = "", expandedClassName = "" }: {
   /** Optional desktop-only overrides applied while expanded. */
   expandedClassName?: string;
 }) {
+  const [locale] = useLocale();
   const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
@@ -42,7 +45,7 @@ export function MapPanel({ children, className = "", expandedClassName = "" }: {
           map the whole layer and the button something to sit on. */}
       <div className={expanded ? "relative min-h-0 flex-1" : "contents"}>{children}</div>
       <button type="button" onClick={() => setExpanded((v) => { if (!v) track("map_fullscreen"); return !v; })}
-        aria-label={expanded ? "Aizvērt pilnekrāna karti" : "Karte pa visu ekrānu"}
+        aria-label={t(locale, expanded ? "mapExitFullscreen" : "mapFullscreen")}
         className="absolute bottom-3 left-3 flex size-10 items-center justify-center rounded-full border border-stone-200 bg-white/95 text-stone-700 shadow-sm backdrop-blur md:hidden">
         {expanded ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
       </button>

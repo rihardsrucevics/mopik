@@ -5,6 +5,8 @@ import { ChevronDown, ChevronUp, LocateFixed, MapPin, Plus, X } from "lucide-rea
 import { PlaceInput } from "@/components/place-input";
 import { track } from "@/lib/analytics";
 import { MIN_ROWS } from "@/lib/chat/compose-plan";
+import { useLocale } from "@/lib/i18n/use-locale";
+import { t } from "@/lib/i18n/messages";
 import type { ResolvedPlace } from "@/lib/chat/places";
 
 /**
@@ -40,6 +42,8 @@ export function RoutePlaces({ places, oneWay, busy, onChange, onPick, onUseLocat
 }) {
 
 
+  const [locale] = useLocale();
+
   // A new stop goes *before* the places already named, on both trip types.
   //
   // One way: appending made the new empty row the last one — which is the
@@ -74,9 +78,9 @@ export function RoutePlaces({ places, oneWay, busy, onChange, onPick, onUseLocat
   // "No" and "Līdz" name the two rows the form always offers; anything added
   // between them is a waypoint and is numbered.
   const label = (i: number) => {
-    if (i === 0) return "No";
-    if (oneWay && i === places.length - 1) return "Līdz";
-    return `Caur (${i})`;
+    if (i === 0) return t(locale, "from");
+    if (oneWay && i === places.length - 1) return t(locale, "to");
+    return `${t(locale, "via")} (${i})`;
   };
 
   // No placeholder may look like a value. "Rīga" in the empty start field read
@@ -84,7 +88,7 @@ export function RoutePlaces({ places, oneWay, busy, onChange, onPick, onUseLocat
   // missing, and could not see which one, because a grey "Rīga" and a black
   // "Baldone" are the same shape on a phone in daylight. The start says what
   // to type; the optional rows say that they are optional.
-  const placeholder = (i: number) => (i === 0 ? "Pilsēta, adrese vai vieta" : "Nav obligāts — man vienalga");
+  const placeholder = (i: number) => (i === 0 ? t(locale, "startPlaceholder") : t(locale, "optionalPlaceholder"));
 
   // Two rows is the floor: clearing one of them empties the field instead of
   // deleting the row, so the form never falls back to a single field the rider
@@ -123,8 +127,8 @@ export function RoutePlaces({ places, oneWay, busy, onChange, onPick, onUseLocat
                 // spending a third of the field's width saying what the icon
                 // already says. The name still reaches a screen reader.
                 <button type="button" disabled={busy || locating} onClick={onUseLocation}
-                  aria-label="Aizpildīt ar manu atrašanās vietu"
-                  title="Mana atrašanās vieta"
+                  aria-label={t(locale, "useMyLocation")}
+                  title={t(locale, "myLocation")}
                   className="flex size-8 shrink-0 items-center justify-center rounded-lg text-[#bd4b00] transition hover:bg-stone-100 disabled:opacity-40">
                   <LocateFixed className={`size-4 ${locating ? "animate-pulse" : ""}`} />
                 </button>
@@ -148,7 +152,7 @@ export function RoutePlaces({ places, oneWay, busy, onChange, onPick, onUseLocat
                       type="button"
                       disabled={busy || i <= 1}
                       onClick={() => move(i, i - 1, "tap")}
-                      aria-label={`Pārvietot ${place || "vietu"} augstāk`}
+                      aria-label={`${t(locale, "moveUp")}: ${place || "—"}`}
                       className="flex size-8 items-center justify-center rounded-lg text-stone-400 transition hover:bg-stone-100 hover:text-stone-700 disabled:opacity-20"
                     >
                       <ChevronUp className="size-4" />
@@ -157,7 +161,7 @@ export function RoutePlaces({ places, oneWay, busy, onChange, onPick, onUseLocat
                       type="button"
                       disabled={busy || i >= places.length - 1}
                       onClick={() => move(i, i + 1, "tap")}
-                      aria-label={`Pārvietot ${place || "vietu"} zemāk`}
+                      aria-label={`${t(locale, "moveDown")}: ${place || "—"}`}
                       className="flex size-8 items-center justify-center rounded-lg text-stone-400 transition hover:bg-stone-100 hover:text-stone-700 disabled:opacity-20"
                     >
                       <ChevronDown className="size-4" />
@@ -174,7 +178,7 @@ export function RoutePlaces({ places, oneWay, busy, onChange, onPick, onUseLocat
                     type="button"
                     disabled={busy}
                     onClick={() => remove(i)}
-                    aria-label={place.trim() ? `Noņemt ${place}` : "Noņemt tukšo vietu"}
+                    aria-label={place.trim() ? `${t(locale, "remove")}: ${place}` : t(locale, "removeEmpty")}
                     className="flex size-8 items-center justify-center rounded-lg text-stone-400 transition hover:bg-stone-100 hover:text-stone-700"
                   >
                     <X className="size-4" />
@@ -196,7 +200,7 @@ export function RoutePlaces({ places, oneWay, busy, onChange, onPick, onUseLocat
         <div className="flex items-center gap-2 rounded-xl border border-dashed border-stone-200 bg-stone-50/60 px-3 py-2">
           <span className="text-xs text-stone-400">↩</span>
           <span className="min-w-0 flex-1 truncate text-sm text-stone-500">
-            Atpakaļ uz {places[0]?.trim() || "sākumu"}
+            {t(locale, "backTo")} {places[0]?.trim() || "—"}
           </span>
           {/* No control of its own: the last row already *is* the leg before
               home, so a stop reaches it with the same down-arrow as every
@@ -210,7 +214,7 @@ export function RoutePlaces({ places, oneWay, busy, onChange, onPick, onUseLocat
           round trip the last row is already a waypoint, so the end is right. */}
       <button type="button" onClick={() => onChange(addStop(places, oneWay))} disabled={busy || places.length >= 6}
         className="inline-flex items-center gap-1 self-start text-xs font-medium text-[#bd4b00] disabled:opacity-40">
-        <Plus className="size-3.5" />{oneWay ? "Pievienot pieturvietu" : "Pievienot vietu"}
+        <Plus className="size-3.5" />{oneWay ? t(locale, "addStop") : t(locale, "addPlace")}
       </button>
     </div>
   );

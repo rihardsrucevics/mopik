@@ -73,6 +73,36 @@ function write(list: SavedRide[]): void {
   }
 }
 
+/**
+ * When the rider last opened the saved list.
+ *
+ * Anything saved after this is "new" and worth a count next to the bookmark —
+ * a ride kept from a shared link, or one saved and then forgotten about. Kept
+ * beside the rides themselves rather than in the component, because the header
+ * and the list page both need it and neither owns the other.
+ */
+const SEEN_KEY = "mopik.saved.seen.v1";
+
+export function markSavedSeen(): void {
+  try {
+    window.localStorage.setItem(SEEN_KEY, String(Date.now()));
+    window.dispatchEvent(new Event("mopik:saved-changed"));
+  } catch {
+    // Same as saving: a convenience, never a failure.
+  }
+}
+
+/** How many saved rides the rider has not looked at since saving them. */
+export function unseenSavedCount(): number {
+  if (typeof window === "undefined") return 0;
+  try {
+    const seen = Number(window.localStorage.getItem(SEEN_KEY) ?? 0);
+    return read().filter((r) => (r.savedAt ?? 0) > seen).length;
+  } catch {
+    return 0;
+  }
+}
+
 export function listSaved(): SavedRide[] {
   return read().sort((a, b) => b.savedAt - a.savedAt);
 }

@@ -5,6 +5,9 @@ import * as maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { RouteSegmentProperties } from "@/lib/types";
 import { haversineMeters } from "@/lib/geo/geometry";
+import { useLocale } from "@/lib/i18n/use-locale";
+import { messages } from "@/lib/i18n/messages";
+import type { UiLocale } from "@/lib/i18n/locale";
 
 // Serve the MapLibre worker from /public — bundler-emitted module workers
 // 404 under the Next.js dev server, leaving the map blank.
@@ -168,8 +171,10 @@ type Badge = { point: [number, number]; icon: string; title: string; detail: str
  */
 function badgesFor(
   segments: GeoJSON.FeatureCollection,
+  locale: UiLocale,
   avoid: [number, number][] = []
 ): Badge[] {
+  const m = messages(locale);
   const out: Badge[] = [];
 
   // Spacing scales with the ride: 12 % of a 60 km loop is 7 km, of a 300 km
@@ -208,20 +213,8 @@ function badgesFor(
     if (tooClose(mid)) continue;
     out.push(
       unverified
-        ? {
-            point: mid,
-            icon: "⚠️",
-            title: "Nepārbaudīta piekļuve",
-            detail:
-              "Šim posmam OSM datos nav apstiprinātas motocikla piekļuves. Tas nenozīmē, ka braukt aizliegts — tikai to, ka neviens to nav atzīmējis. Pārbaudi zīmes uz vietas.",
-          }
-        : {
-            point: mid,
-            icon: "🔥",
-            title: "Taka",
-            detail:
-              "Šaurs, tehnisks posms — punktētā līnija kartē. Šeit brauc lēnāk, nekā rāda plānotais laiks.",
-          }
+        ? { point: mid, icon: "⚠️", title: m.badgeUnverified, detail: m.badgeUnverifiedDetail }
+        : { point: mid, icon: "🔥", title: m.badgeTrail, detail: m.badgeTrailDetail }
     );
   }
   return out;
@@ -276,6 +269,8 @@ const SURFACE_COLOR_EXPR: maplibregl.ExpressionSpecification = [
 ];
 
 export function RouteMap({ segments, start, destination, via, showTet, onToggleTet }: Props) {
+  const [locale] = useLocale();
+  const m = messages(locale);
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const markerRef = useRef<maplibregl.Marker | null>(null);
@@ -477,7 +472,7 @@ export function RouteMap({ segments, start, destination, via, showTet, onToggleT
 
       for (const marker of badgeMarkersRef.current) marker.remove();
       badgeMarkersRef.current = segments
-        ? badgesFor(segments, [
+        ? badgesFor(segments, locale, [
             ...(start ? [[start.lon, start.lat] as [number, number]] : []),
             ...(destination ? [[destination.lon, destination.lat] as [number, number]] : []),
             ...(via ?? []).map(v => [v.lon, v.lat] as [number, number]),
@@ -518,7 +513,9 @@ export function RouteMap({ segments, start, destination, via, showTet, onToggleT
 
     syncRef.current = syncData;
     syncData();
-  }, [segments, start, destination, via, showTet]);
+    // `locale` is in the list so switching language re-labels the badges that
+    // are already on the map, rather than waiting for the next generation.
+  }, [segments, start, destination, via, showTet, locale]);
 
   // The container changes size on the phone (smaller while the chat has
   // something to say, full screen on request); MapLibre only notices when told.
@@ -570,11 +567,11 @@ export function RouteMap({ segments, start, destination, via, showTet, onToggleT
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
             <span className="flex items-center gap-1.5">
               <span className="inline-block h-[3px] w-5 rounded-full" style={{ background: PAVED_COLOR }} />
-              Asfalts
+              {m.legendAsphalt}
             </span>
             <span className="flex items-center gap-1.5">
               <span className="inline-block h-[3px] w-5 rounded-full" style={{ background: UNPAVED_COLOR }} />
-              Grants
+              {m.legendGravel}
             </span>
             <span className="flex items-center gap-1.5">
               <span
@@ -583,7 +580,7 @@ export function RouteMap({ segments, start, destination, via, showTet, onToggleT
                   background: `repeating-linear-gradient(90deg, ${UNPAVED_COLOR} 0 5px, transparent 5px 8px)`,
                 }}
               />
-              Meža ceļš
+              {m.legendTrack}
             </span>
             <span className="flex items-center gap-1.5">
               <span
@@ -592,7 +589,7 @@ export function RouteMap({ segments, start, destination, via, showTet, onToggleT
                   background: `repeating-linear-gradient(90deg, ${UNPAVED_COLOR} 0 2px, transparent 2px 5px)`,
                 }}
               />
-              Taka
+              {m.legendTrail}
             </span>
             {showTet && (
               <span className="flex items-center gap-1.5">
