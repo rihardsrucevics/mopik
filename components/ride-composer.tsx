@@ -306,7 +306,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
             })}
             <label className="flex h-10 w-[5.5rem] shrink-0 items-center gap-1 rounded-xl border border-stone-200 px-2.5 focus-within:border-[#f56300]">
               {/* type=text + inputMode=decimal: iOS opens the number pad, and "2,5" stays typeable. */}
-              <input type="text" inputMode="decimal" pattern="[0-9]*[.,]?[0-9]*" placeholder="cits" aria-label={t(locale, "a11yHoursOther")} value={hours} onChange={(e) => { setHours(e.target.value); if (e.target.value.trim()) setPreset(null); }} className="min-w-0 flex-1 bg-transparent text-right text-base font-semibold outline-none md:text-sm" />
+              <input type="text" inputMode="decimal" pattern="[0-9]*[.,]?[0-9]*" placeholder={t(locale, "hoursOther")} aria-label={t(locale, "a11yHoursOther")} value={hours} onChange={(e) => { setHours(e.target.value); if (e.target.value.trim()) setPreset(null); }} className="min-w-0 flex-1 bg-transparent text-right text-base font-semibold outline-none md:text-sm" />
               <span className="text-xs text-stone-400">h</span>
             </label>
           </div>

@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from "react";
 import { useLocale } from "@/lib/i18n/use-locale";
 import { t, messages } from "@/lib/i18n/messages";
+import { fi } from "@/lib/i18n/format";
 import { ArrowLeft, ArrowUp, ChevronDown, ChevronUp, Download, LoaderCircle, RefreshCw, Share2, Bookmark } from "lucide-react";
 import { GeneratedRoute, GenerateRouteResponse } from "@/lib/types";
 import { RidePlan, planSummary } from "@/lib/chat/ride-plan";
@@ -165,19 +166,23 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
   const under = requestedMinutes !== null && !isMaximum && deliveredMinutes < requestedMinutes - freeMinutes;
   const requestedLabel = requestedMinutes !== null ? duration(requestedMinutes * 60) : "";
   const timeVerdict = over
-    ? `Prasīts ${isMaximum ? m.resUpTo : "~"}${requestedLabel}, šī versija ir ${duration(deliveredMinutes * 60)}.`
+    ? fi(m.resTimeOver, { asked: `${isMaximum ? `${m.resUpTo} ` : "~"}${requestedLabel}`, got: duration(deliveredMinutes * 60) })
     : under
       // Say why. A bare "this one is only 1 h 22" reads as the app failing at
       // its one job; the real reason is that a longer ride here would have to
       // retrace roads, and not riding the same road twice is the thing this
       // product optimises. The rider can still ask for the longer one.
-      ? `Prasīts ~${requestedLabel}, šī versija ir tikai ${duration(deliveredMinutes * 60)} — garākas trases šajā apvidū sāk atkārtot tos pašus ceļus.`
+      ? fi(m.resTimeUnder, { asked: requestedLabel, got: duration(deliveredMinutes * 60) })
       : null;
+  // The label is what the rider reads, so it is translated; `message` is sent
+  // to the chat backend, whose plan normalisation parses Latvian and English
+  // only (`normalizePlan` in app/api/route-chat/route.ts). Translating it
+  // would silently stop the correction from being understood.
   const timeActions: { label: string; message: string }[] = [];
-  if (over && requestedMinutes) timeActions.push({ label: `Meklēt īsāku (līdz ${requestedLabel})`, message: `Īsāku — ne vairāk kā ${plan!.budget.value} stundas.` });
-  if (under && requestedMinutes) timeActions.push({ label: `Meklēt garāku (~${requestedLabel})`, message: `Garāku — apmēram ${plan!.budget.value} stundas, var vairāk pieturu.` });
+  if (over && requestedMinutes) timeActions.push({ label: fi(m.resFindShorter, { time: requestedLabel }), message: `Īsāku — ne vairāk kā ${plan!.budget.value} stundas.` });
+  if (under && requestedMinutes) timeActions.push({ label: fi(m.resFindLonger, { time: requestedLabel }), message: `Garāku — apmēram ${plan!.budget.value} stundas, var vairāk pieturu.` });
   if (longerSuggestion) timeActions.push({
-    label: `Tīrāks aplis ~${duration(longerSuggestion.durationMinutes * 60)} (${longerSuggestion.repeatedPercent} % atkārtoti)`,
+    label: fi(m.resCleanerLoop, { time: duration(longerSuggestion.durationMinutes * 60), pct: longerSuggestion.repeatedPercent }),
     message: `Apmēram ${Math.round(longerSuggestion.durationMinutes / 15) * 0.25} stundas, tas tīrākais aplis.`,
   });
 
@@ -252,13 +257,13 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
   // shorter sections, which is worth saying plainly rather than letting the
   // rider wonder why a long route looks less considered than a short one.
   if (assembledFromSegments) warnings.push(m.resAssembled);
-  if (route.overlap.repeatedPercent > 15) warnings.push(`${route.overlap.repeatedKm} km atkārto jau nobrauktus ceļus — vari prasīt mazāk atkārtojumu.`);
-  if (route.roadMix.trailKm > 0) warnings.push(`${route.roadMix.trailKm} km taku.`);
-  if (q.unverifiedPathKm > 0) warnings.push(`${q.unverifiedPathKm} km pa takām ar nepārbaudītu motocikla piekļuvi — pārbaudi zīmes.`);
-  if (q.roughTrackKm >= 1) warnings.push(`${q.roughTrackKm} km grūtu meža ceļu (grade 4–5 vai slikts segums).`);
-  if (q.sandKm >= 0.5) warnings.push(`${q.sandKm} km smilšu.`);
-  if (q.streetKm / (route.distanceMeters / 1000) > 0.15) warnings.push(`${q.streetKm} km pa ielām un pagalmiem.${avoidTowns ? m.resNoOtherRoads : ""}`);
-  if (route.surfaces.unknownPercent >= 15) warnings.push(`${route.surfaces.unknownPercent} % ceļu segums OSM nav zināms.`);
+  if (route.overlap.repeatedPercent > 15) warnings.push(fi(m.resWarnRepeated, { km: route.overlap.repeatedKm }));
+  if (route.roadMix.trailKm > 0) warnings.push(fi(m.resWarnTrail, { km: route.roadMix.trailKm }));
+  if (q.unverifiedPathKm > 0) warnings.push(fi(m.resWarnUnverified, { km: q.unverifiedPathKm }));
+  if (q.roughTrackKm >= 1) warnings.push(fi(m.resWarnRough, { km: q.roughTrackKm }));
+  if (q.sandKm >= 0.5) warnings.push(fi(m.resWarnSand, { km: q.sandKm }));
+  if (q.streetKm / (route.distanceMeters / 1000) > 0.15) warnings.push(`${fi(m.resWarnStreets, { km: q.streetKm })}${avoidTowns ? m.resNoOtherRoads : ""}`);
+  if (route.surfaces.unknownPercent >= 15) warnings.push(fi(m.resWarnUnknownSurface, { pct: route.surfaces.unknownPercent }));
 
   const submit = () => {
     if (!text.trim() || busy) return;
@@ -300,7 +305,7 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
           <div role="tablist" aria-label={m.resVersions} className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${routes.length}, minmax(0, 1fr))` }}>
             {routes.map((card, index) => {
               const active = index === selected;
-              const meta = variantLabels(m)[card.variant] ?? { label: `Versija ${index + 1}`, detail: "" };
+              const meta = variantLabels(m)[card.variant] ?? { label: fi(m.resVersionN, { n: index + 1 }), detail: "" };
               // The card keeps its name and shows whichever ride of that kind
               // is currently chosen — the names are the three the product
               // promises, never invented ones like "Gluda 2".
@@ -328,7 +333,7 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
                         track("alternative_cycled", { variant: card.variant, to: next });
                       }}
                       className={`mt-1.5 flex w-full items-center justify-center gap-1 rounded-b-xl border-t px-2 py-2 text-[10px] font-semibold transition ${active ? "border-stone-700 bg-white/10 text-white hover:bg-white/20" : "border-stone-200 bg-white text-[#bd4b00] hover:bg-[#fff4ec]"}`}
-                      aria-label={`Rādīt citu ${meta.label.toLowerCase()} maršrutu (${at + 1} no ${family.length})`}>
+                      aria-label={fi(m.resShowAnother, { kind: meta.label.toLowerCase(), at: at + 1, total: family.length })}>
                       <RefreshCw className="size-3" />{m.resAnother} · {at + 1}/{family.length}
                     </button>
                   ) : <div className="pb-2" />}
@@ -343,11 +348,11 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
               <div className="truncate text-sm font-semibold text-stone-900">{route.name}</div>
               {route.stops && route.stops.length > 0 && <div className="truncate text-[11px] text-stone-500">{route.stops.map((s) => s.name).join(" · ")}</div>}
             </div>
-            {route.tet && <span className="shrink-0 rounded-full border border-[#f5630040] px-2 py-0.5 text-[10px] font-semibold text-[#f56300]" title={`Aptuveni ${route.tet.sliceKm} km pa TET`}>TET</span>}
+            {route.tet && <span className="shrink-0 rounded-full border border-[#f5630040] px-2 py-0.5 text-[10px] font-semibold text-[#f56300]" title={fi(m.resTetApprox, { km: route.tet.sliceKm })}>TET</span>}
           </div>
           <div className="mt-2 grid grid-cols-3 gap-2">
-            <div><div className="text-[10px] uppercase tracking-wider text-stone-400">Distance</div><div className="text-lg font-semibold tabular-nums">{Math.round(route.distanceMeters / 1000)} km</div></div>
-            <div><div className="text-[10px] uppercase tracking-wider text-stone-400">Laiks</div><div className="text-lg font-semibold tabular-nums">{duration(route.durationSeconds)}</div></div>
+            <div><div className="text-[10px] uppercase tracking-wider text-stone-400">{m.resDistance}</div><div className="text-lg font-semibold tabular-nums">{Math.round(route.distanceMeters / 1000)} km</div></div>
+            <div><div className="text-[10px] uppercase tracking-wider text-stone-400">{m.resTime}</div><div className="text-lg font-semibold tabular-nums">{duration(route.durationSeconds)}</div></div>
             <div><div className="text-[10px] uppercase tracking-wider text-stone-400">{m.resRepeated}</div><div className="text-lg font-semibold tabular-nums" style={{ color: route.overlap.repeatedPercent > 15 ? "#ff3b30" : undefined }}>{route.overlap.repeatedPercent} %</div></div>
           </div>
           {shared === "copied" && (
@@ -355,7 +360,7 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
           )}
           {remoteLoop && (
             <p className="mt-2 text-[11px] leading-relaxed text-stone-500">
-              Pārbrauciens {remoteLoop.transitOutKm} km · {duration(remoteLoop.transitOutMinutes * 60)} → <span className="font-semibold text-stone-700">{remoteLoop.focus.label.split(",")[0]} aplis {remoteLoop.loops[selected]?.km ?? "–"} km · {duration((remoteLoop.loops[selected]?.minutes ?? 0) * 60)}</span> → atpakaļ {remoteLoop.transitBackKm} km · {duration(remoteLoop.transitBackMinutes * 60)}
+              {fi(m.resTransitOut, { km: remoteLoop.transitOutKm, time: duration(remoteLoop.transitOutMinutes * 60) })} → <span className="font-semibold text-stone-700">{fi(m.resFocusLoop, { place: remoteLoop.focus.label.split(",")[0], km: remoteLoop.loops[selected]?.km ?? "–", time: duration((remoteLoop.loops[selected]?.minutes ?? 0) * 60) })}</span> → {fi(m.resTransitBack, { km: remoteLoop.transitBackKm, time: duration(remoteLoop.transitBackMinutes * 60) })}
             </p>
           )}
           {/* GPX is the one thing every rider presses, so it gets its own full
@@ -364,13 +369,13 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
           <div className="mt-2 grid grid-cols-3 gap-2">
             <button type="button" onClick={toggleSave} aria-label={saved ? m.resUnsave : m.resSaveLater} aria-pressed={saved}
               className={`flex h-10 min-w-0 items-center justify-center gap-1 rounded-full border text-xs font-medium transition ${saved ? "border-[#f56300] bg-[#fff3ea] text-[#bd4b00]" : "border-stone-200 text-stone-700 hover:bg-stone-50"}`}>
-              <Bookmark className={`size-3.5 ${saved ? "fill-current" : ""}`} />{saved ? "Saglabāts" : m.resSave}
+              <Bookmark className={`size-3.5 ${saved ? "fill-current" : ""}`} />{saved ? m.resSaved : m.resSave}
             </button>
             <button type="button" onClick={shareRoute} aria-label={m.resShareRoute} className="flex h-10 min-w-0 items-center justify-center gap-1 rounded-full border border-stone-200 text-xs font-medium text-stone-700 hover:bg-stone-50">
               <Share2 className="size-3.5" />{shared === "copied" ? m.resCopied : m.resShare}
             </button>
             <button type="button" onClick={() => setDetails(!details)} aria-expanded={details} className="flex h-10 min-w-0 items-center justify-center gap-1 rounded-full border border-stone-200 text-xs font-medium text-stone-700 hover:bg-stone-50">
-              Detaļas{warnings.length > 0 && !details ? ` · ${warnings.length} ⚠️` : ""}{details ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+              {m.resDetails}{warnings.length > 0 && !details ? ` · ${warnings.length} ⚠️` : ""}{details ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
             </button>
           </div>
         </div>
@@ -386,16 +391,16 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
         {details && (
           <div className="space-y-3 rounded-xl border border-stone-200 p-3">
             <div>
-              <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-stone-400">Ceļi</div>
-              <Row label="Road" value={`${route.roadMix.roadKm} km · ${route.roadMix.roadPercent} %`} />
-              <Row label="Track / dashed" value={`${route.roadMix.trackKm} km · ${route.roadMix.trackPercent} %`} />
-              <Row label="Trail / dotted" value={`${route.roadMix.trailKm} km · ${route.roadMix.trailPercent} %`} />
+              <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-stone-400">{m.resRoadsHeading}</div>
+              <Row label={m.resMixRoad} value={`${route.roadMix.roadKm} km · ${route.roadMix.roadPercent} %`} />
+              <Row label={m.resMixTrack} value={`${route.roadMix.trackKm} km · ${route.roadMix.trackPercent} %`} />
+              <Row label={m.resMixTrail} value={`${route.roadMix.trailKm} km · ${route.roadMix.trailPercent} %`} />
             </div>
             <div>
-              <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-stone-400">Segums</div>
-              <Row label="Asfalts" value={`${route.surfaces.asphaltPercent} %`} />
-              <Row label="Grants" value={`${route.surfaces.gravelPercent} %`} />
-              <Row label="Zeme / smiltis" value={`${route.surfaces.dirtPercent} %`} />
+              <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-stone-400">{m.resSurfaceHeading}</div>
+              <Row label={m.legendAsphalt} value={`${route.surfaces.asphaltPercent} %`} />
+              <Row label={m.legendGravel} value={`${route.surfaces.gravelPercent} %`} />
+              <Row label={m.resDirt} value={`${route.surfaces.dirtPercent} %`} />
               <Row label={m.resUnknown} value={`${route.surfaces.unknownPercent} %`} />
             </div>
             {(q.forestKm > 0 || q.riversideKm > 0 || q.elevationGainM > 0) && (

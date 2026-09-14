@@ -50,6 +50,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <AnalyticsProvider />
         {/* Google Analytics (gtag.js), loaded after hydration so it never delays the page. */}
         <Script src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`} strategy="afterInteractive" />
+        {/* eslint-disable-next-line react/jsx-no-literals -- a script body, not user-visible text */}
         <Script id="ga-init" strategy="afterInteractive">{`
           window.dataLayer = window.dataLayer || [];
           function gtag(){dataLayer.push(arguments);}

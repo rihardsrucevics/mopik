@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useLocale } from "@/lib/i18n/use-locale";
 import { messages } from "@/lib/i18n/messages";
+import { fi } from "@/lib/i18n/format";
 import Link from "next/link";
 import { Bookmark, ChevronDown, ChevronUp, Download, MessageCircle, SlidersHorizontal, Sparkles } from "lucide-react";
 import { RouteMap } from "@/components/route-map";
@@ -48,14 +49,14 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
   const d = share.details;
   // The same honesty as the result panel, from the numbers that travelled in the link.
   const warnings: string[] = [];
-  if (share.repeatedPercent > 15) warnings.push(`${share.repeatedPercent} % maršruta atkārto jau nobrauktus ceļus.`);
+  if (share.repeatedPercent > 15) warnings.push(fi(m.shWarnRepeated, { pct: share.repeatedPercent }));
   if (d) {
-    if (d.trailKm > 0) warnings.push(`${d.trailKm} km taku.`);
-    if (d.unverifiedPathKm > 0) warnings.push(`${d.unverifiedPathKm} km pa takām ar nepārbaudītu motocikla piekļuvi — pārbaudi zīmes.`);
-    if (d.roughTrackKm >= 1) warnings.push(`${d.roughTrackKm} km grūtu meža ceļu (grade 4–5 vai slikts segums).`);
-    if (d.sandKm >= 0.5) warnings.push(`${d.sandKm} km smilšu.`);
-    if (d.streetKm / Math.max(1, share.km) > 0.15) warnings.push(`${d.streetKm} km pa ielām un pagalmiem.`);
-    if (d.unknownPercent >= 15) warnings.push(`${d.unknownPercent} % ceļu segums OSM nav zināms.`);
+    if (d.trailKm > 0) warnings.push(fi(m.resWarnTrail, { km: d.trailKm }));
+    if (d.unverifiedPathKm > 0) warnings.push(fi(m.resWarnUnverified, { km: d.unverifiedPathKm }));
+    if (d.roughTrackKm >= 1) warnings.push(fi(m.resWarnRough, { km: d.roughTrackKm }));
+    if (d.sandKm >= 0.5) warnings.push(fi(m.resWarnSand, { km: d.sandKm }));
+    if (d.streetKm / Math.max(1, share.km) > 0.15) warnings.push(fi(m.resWarnStreets, { km: d.streetKm }));
+    if (d.unknownPercent >= 15) warnings.push(fi(m.resWarnUnknownSurface, { pct: d.unknownPercent }));
   }
   const segments = useMemo(() => sharedRouteSegments(share), [share]);
   const start = { lat: share.points[0][1], lon: share.points[0][0] };
@@ -71,7 +72,7 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
     const res = await fetch("/api/export-gpx", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
       name: share.name, coordinates: share.points, km: share.km, places: [share.startLabel],
       description: [`${share.name} · ${share.km} km · ${duration(share.minutes)} · ${share.unpavedPercent} % ${m.resGravelPct}`,
-        `${share.repeatedPercent} % atkārtoti · sākums ${share.startLabel}`,
+        fi(m.shGpxRepeated, { pct: share.repeatedPercent, place: share.startLabel }),
         m.shSharedNote].join("\n"),
     }) });
     if (!res.ok) return;
@@ -86,7 +87,7 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
     <main className="mx-auto min-h-screen w-full max-w-[1600px] px-4 py-5 md:px-7">
       <header className="mb-5 flex items-center justify-between border-b border-stone-200 pb-4">
         <div className="flex items-baseline gap-3">
-          <h1 className="text-2xl font-bold tracking-tight"><Link href="/" aria-label="Mopik — uz sākumu">Mopik<span className="text-[#f56300]">.</span></Link></h1>
+          <h1 className="text-2xl font-bold tracking-tight"><Link href="/" aria-label={m.backToHome}>Mopik<span className="text-[#f56300]">.</span></Link></h1>
           <p className="hidden text-xs text-stone-500 sm:block">{m.tagline}</p>
         </div>
         <Link href="/" className="text-xs text-stone-500 underline decoration-stone-300 underline-offset-4 hover:text-stone-900">{m.shMakeYourOwn}</Link>
@@ -95,13 +96,13 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
         <section className="rounded-2xl border border-stone-200 bg-white p-4 md:p-5" aria-label={m.shSharedRoute}>
           <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#bd4b00]">{m.shSharedRoute} · {variantLabel(m, share.variant)}</div>
           <h2 className="mt-1 text-xl font-semibold tracking-tight">{share.name}</h2>
-          <p className="mt-0.5 text-xs text-stone-500">Sākums: {share.startLabel}</p>
+          <p className="mt-0.5 text-xs text-stone-500">{fi(m.shStartLabel, { place: share.startLabel })}</p>
           <div className="mt-4 grid grid-cols-3 gap-2">
-            <div><div className="text-[10px] uppercase tracking-wider text-stone-400">Distance</div><div className="text-lg font-semibold tabular-nums">{share.km} km</div></div>
-            <div><div className="text-[10px] uppercase tracking-wider text-stone-400">Laiks</div><div className="text-lg font-semibold tabular-nums">{duration(share.minutes)}</div></div>
-            <div><div className="text-[10px] uppercase tracking-wider text-stone-400">Grants</div><div className="text-lg font-semibold tabular-nums">{share.unpavedPercent} %</div></div>
+            <div><div className="text-[10px] uppercase tracking-wider text-stone-400">{m.resDistance}</div><div className="text-lg font-semibold tabular-nums">{share.km} km</div></div>
+            <div><div className="text-[10px] uppercase tracking-wider text-stone-400">{m.resTime}</div><div className="text-lg font-semibold tabular-nums">{duration(share.minutes)}</div></div>
+            <div><div className="text-[10px] uppercase tracking-wider text-stone-400">{m.legendGravel}</div><div className="text-lg font-semibold tabular-nums">{share.unpavedPercent} %</div></div>
           </div>
-          <p className="mt-2 text-[11px] text-stone-500">{share.repeatedPercent} % atkārtoti ceļi · laiks pēc seguma, ne pēc kartes vidējā ātruma.</p>
+          <p className="mt-2 text-[11px] text-stone-500">{fi(m.shRepeatedNote, { pct: share.repeatedPercent })}</p>
           <div className="mt-4 flex flex-col gap-2">
             <button type="button" onClick={downloadGpx} className="flex h-11 items-center justify-center gap-2 rounded-full bg-[#f56300] text-sm font-semibold text-white transition hover:bg-[#d85600]"><Download className="size-4" />{m.resDownloadGpx}</button>
             {planCode && (
@@ -109,7 +110,7 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
             )}
             <button type="button" onClick={toggleSave} aria-pressed={saved}
               className={`flex h-11 items-center justify-center gap-2 rounded-full border text-sm font-semibold transition ${saved ? "border-[#f56300] bg-[#fff3ea] text-[#bd4b00]" : "border-stone-200 text-stone-700 hover:bg-stone-50"}`}>
-              <Bookmark className={`size-4 ${saved ? "fill-current" : ""}`} />{saved ? "Saglabāts manos" : m.shSaveForMe}
+              <Bookmark className={`size-4 ${saved ? "fill-current" : ""}`} />{saved ? m.shSavedInMine : m.shSaveForMe}
             </button>
             {/* Editing is the form first: the same fields that made the ride,
                 filled in with it, so a rider changes a stop or the time
@@ -126,7 +127,7 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
               )}
               {d && (
                 <button type="button" onClick={() => setDetails(!details)} aria-expanded={details} className="flex h-10 flex-1 items-center justify-center gap-1 rounded-full border border-stone-200 text-xs font-medium text-stone-700 hover:bg-stone-50">
-                  Detaļas{warnings.length > 0 && !details ? ` · ${warnings.length} ⚠️` : ""}{details ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+                  {m.resDetails}{warnings.length > 0 && !details ? ` · ${warnings.length} ⚠️` : ""}{details ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
                 </button>
               )}
             </div>
@@ -139,12 +140,12 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
           {details && d && (
             <div className="mt-3 space-y-3 rounded-xl border border-stone-200 p-3">
               <div>
-                <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-stone-400">Ceļi</div>
-                <Row label={m.mixRoad} value={`${d.roadKm} km`} /><Row label={m.mixTrack} value={`${d.trackKm} km`} /><Row label="Taka" value={`${d.trailKm} km`} />
+                <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-stone-400">{m.resRoadsHeading}</div>
+                <Row label={m.mixRoad} value={`${d.roadKm} km`} /><Row label={m.mixTrack} value={`${d.trackKm} km`} /><Row label={m.legendTrail} value={`${d.trailKm} km`} />
               </div>
               <div>
-                <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-stone-400">Segums</div>
-                <Row label="Asfalts" value={`${d.asphaltPercent} %`} /><Row label="Grants" value={`${d.gravelPercent} %`} /><Row label="Zeme / smiltis" value={`${d.dirtPercent} %`} /><Row label={m.resUnknown} value={`${d.unknownPercent} %`} />
+                <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-stone-400">{m.resSurfaceHeading}</div>
+                <Row label={m.legendAsphalt} value={`${d.asphaltPercent} %`} /><Row label={m.legendGravel} value={`${d.gravelPercent} %`} /><Row label={m.resDirt} value={`${d.dirtPercent} %`} /><Row label={m.resUnknown} value={`${d.unknownPercent} %`} />
               </div>
               {(d.forestKm > 0 || d.riversideKm > 0 || d.elevationGainM > 0) && (
                 <div>

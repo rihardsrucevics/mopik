@@ -8,12 +8,14 @@ import type { UiLocale } from "@/lib/i18n/locale";
  * appears without a lookup. Latvian is the source — every string was written
  * in it first, and the others are translations of it.
  *
- * **This covers the shell, the form and the map.** The chat's own replies and
- * the result panel's numbers are still Latvian, because they are generated
- * rather than looked up: the chat's wording comes from `lib/chat/ride-plan.ts`
- * and the model prompt, and translating those means translating the prompt
- * too. Half a translation is worse than none, so the untranslated parts are
- * named here rather than silently left behind — see `docs/BACKLOG.md`.
+ * **This now covers the whole interface** — the shell, the form, the map, the
+ * result panel and the chat's own fixed wording. Two things are deliberately
+ * still Latvian. The chat's *model-generated* replies come from the prompt in
+ * `app/api/route-chat/route.ts`, so translating them means translating the
+ * prompt and re-running `scripts/chat-golden.ts` per language. The OpenGraph
+ * share images are server-rendered with no locale to read. Half a translation
+ * is worse than none, so the untranslated parts are named here rather than
+ * silently left behind — see `docs/BACKLOG.md`.
  */
 export type MessageKey =
   | "tagline"
@@ -89,6 +91,44 @@ export type MessageKey =
   | "resGravelShort"
   | "resRoadsLabel"
   | "resGpxFooter"
+  | "resTimeOver"
+  | "resTimeUnder"
+  | "resFindShorter"
+  | "resFindLonger"
+  | "resCleanerLoop"
+  | "resWarnRepeated"
+  | "resWarnTrail"
+  | "resWarnUnverified"
+  | "resWarnRough"
+  | "resWarnSand"
+  | "resWarnStreets"
+  | "resWarnUnknownSurface"
+  | "resSaved"
+  | "resDetails"
+  | "resVersionN"
+  | "resShowAnother"
+  | "resTetApprox"
+  | "resRoadsHeading"
+  | "resSurfaceHeading"
+  | "resMixRoad"
+  | "resMixTrack"
+  | "resMixTrail"
+  | "resDirt"
+  | "resTransitOut"
+  | "resFocusLoop"
+  | "resTransitBack"
+  | "savLength"
+  | "savName"
+  | "savNothingYet"
+  | "savBack"
+  | "savEditRide"
+  | "savDownloadRide"
+  | "savDeleteRide"
+  | "shWarnRepeated"
+  | "shStartLabel"
+  | "shRepeatedNote"
+  | "shSavedInMine"
+  | "shGpxRepeated"
   | "advertSlot"
   | "chatReady"
   | "chatReadyN"
@@ -172,11 +212,16 @@ export type MessageKey =
   | "savNewRide"
   | "savOtherVersions"
   | "beerRideWell"
+  | "beerBuy"
+  | "beerQrAlt"
+  | "beerAuthor"
   | "a11yRideInput"
   | "a11yChatRegion"
   | "a11yChatMessages"
   | "a11yHours"
   | "a11yHoursOther"
+  | "hoursOther"
+  | "saveKeepOld"
   | "backToHome"
   | "language"
   | "footerDisclaimer"
@@ -328,6 +373,44 @@ const lv: Messages = {
   resGravelShort: "grants un zemes ceļu",
   resRoadsLabel: "Ceļi",
   resGpxFooter: "Maršruts veidots no OpenStreetMap datiem — vienmēr ievēro ceļa zīmes.",
+  resTimeOver: "Prasīts {asked}, šī versija ir {got}.",
+  resTimeUnder: "Prasīts ~{asked}, šī versija ir tikai {got} — garākas trases šajā apvidū sāk atkārtot tos pašus ceļus.",
+  resFindShorter: "Meklēt īsāku (līdz {time})",
+  resFindLonger: "Meklēt garāku (~{time})",
+  resCleanerLoop: "Tīrāks aplis ~{time} ({pct} % atkārtoti)",
+  resWarnRepeated: "{km} km atkārto jau nobrauktus ceļus — vari prasīt mazāk atkārtojumu.",
+  resWarnTrail: "{km} km taku.",
+  resWarnUnverified: "{km} km pa takām ar nepārbaudītu motocikla piekļuvi — pārbaudi zīmes.",
+  resWarnRough: "{km} km grūtu meža ceļu (grade 4–5 vai slikts segums).",
+  resWarnSand: "{km} km smilšu.",
+  resWarnStreets: "{km} km pa ielām un pagalmiem.",
+  resWarnUnknownSurface: "{pct} % ceļu segums OSM nav zināms.",
+  resSaved: "Saglabāts",
+  resDetails: "Detaļas",
+  resVersionN: "Versija {n}",
+  resShowAnother: "Rādīt citu {kind} maršrutu ({at} no {total})",
+  resTetApprox: "Aptuveni {km} km pa TET",
+  resRoadsHeading: "Ceļi",
+  resSurfaceHeading: "Segums",
+  resMixRoad: "Ceļš",
+  resMixTrack: "Meža ceļš / svītrots",
+  resMixTrail: "Taka / punktots",
+  resDirt: "Zeme / smiltis",
+  resTransitOut: "Pārbrauciens {km} km · {time}",
+  resFocusLoop: "{place} aplis {km} km · {time}",
+  resTransitBack: "atpakaļ {km} km · {time}",
+  savLength: "Garums",
+  savName: "Nosaukums",
+  savNothingYet: "Vēl nav saglabātu maršrutu. Ģenerē braucienu un nospied",
+  savBack: "Atpakaļ",
+  savEditRide: "Rediģēt {name} formā",
+  savDownloadRide: "Lejupielādēt {name} GPX",
+  savDeleteRide: "Dzēst {name}",
+  shWarnRepeated: "{pct} % maršruta atkārto jau nobrauktus ceļus.",
+  shStartLabel: "Sākums: {place}",
+  shRepeatedNote: "{pct} % atkārtoti ceļi · laiks pēc seguma, ne pēc kartes vidējā ātruma.",
+  shSavedInMine: "Saglabāts manos",
+  shGpxRepeated: "{pct} % atkārtoti · sākums {place}",
   advertSlot: "Brīva vieta reklāmai",
   chatReady: "Gatavs — maršruts kartē.",
   chatReadyN: "Gatavs — {n} versijas zemāk, pārslēdz un skaties kartē.",
@@ -411,11 +494,16 @@ const lv: Messages = {
   savNewRide: "Jauns brauciens",
   savOtherVersions: "Citas versijas",
   beerRideWell: "Lai labi braucas!",
+  beerBuy: "Uzsaukt @rucijs aliņu 🍺",
+  beerQrAlt: "QR kods: revolut.me/rucijs",
+  beerAuthor: "Autors @rucijs",
   a11yRideInput: "Brauciena ievade",
   a11yChatRegion: "Brauciena saruna",
   a11yChatMessages: "Sarunas ziņas",
   a11yHours: "Stundas",
   a11yHoursOther: "Stundas, cits skaitlis",
+  hoursOther: "cits",
+  saveKeepOld: "Paturēt abus",
   backToHome: "Mopik — uz sākumu",
   language: "Valoda",
   footerDisclaimer:
@@ -570,6 +658,44 @@ const lt: Messages = {
   resGravelShort: "žvyro ir žemės kelių",
   resRoadsLabel: "Keliai",
   resGpxFooter: "Maršrutas sudarytas iš OpenStreetMap duomenų — visada paisyk kelio ženklų.",
+  resTimeOver: "Prašyta {asked}, ši versija yra {got}.",
+  resTimeUnder: "Prašyta ~{asked}, ši versija tėra {got} — ilgesnės trasos šioje apylinkėje ima kartoti tuos pačius kelius.",
+  resFindShorter: "Ieškoti trumpesnio (iki {time})",
+  resFindLonger: "Ieškoti ilgesnio (~{time})",
+  resCleanerLoop: "Švaresnis ratas ~{time} ({pct} % kartojasi)",
+  resWarnRepeated: "{km} km kartoja jau važiuotus kelius — gali prašyti mažiau kartojimosi.",
+  resWarnTrail: "{km} km takų.",
+  resWarnUnverified: "{km} km takais su nepatikrintu motociklo privažiavimu — pasitikrink ženklus.",
+  resWarnRough: "{km} km sunkių miško kelių (grade 4–5 arba prasta danga).",
+  resWarnSand: "{km} km smėlio.",
+  resWarnStreets: "{km} km gatvėmis ir kiemais.",
+  resWarnUnknownSurface: "{pct} % kelių danga OSM nežinoma.",
+  resSaved: "Išsaugota",
+  resDetails: "Detalės",
+  resVersionN: "Versija {n}",
+  resShowAnother: "Rodyti kitą {kind} maršrutą ({at} iš {total})",
+  resTetApprox: "Maždaug {km} km TET keliu",
+  resRoadsHeading: "Keliai",
+  resSurfaceHeading: "Danga",
+  resMixRoad: "Kelias",
+  resMixTrack: "Miško kelias / brūkšniuotas",
+  resMixTrail: "Takas / taškuotas",
+  resDirt: "Žemė / smėlis",
+  resTransitOut: "Pervažiavimas {km} km · {time}",
+  resFocusLoop: "{place} ratas {km} km · {time}",
+  resTransitBack: "atgal {km} km · {time}",
+  savLength: "Ilgis",
+  savName: "Pavadinimas",
+  savNothingYet: "Dar nėra išsaugotų maršrutų. Sugeneruok maršrutą ir spausk",
+  savBack: "Atgal",
+  savEditRide: "Redaguoti {name} formoje",
+  savDownloadRide: "Atsisiųsti {name} GPX",
+  savDeleteRide: "Ištrinti {name}",
+  shWarnRepeated: "{pct} % maršruto kartoja jau važiuotus kelius.",
+  shStartLabel: "Pradžia: {place}",
+  shRepeatedNote: "{pct} % kartojasi keliai · laikas pagal dangą, ne pagal žemėlapio vidutinį greitį.",
+  shSavedInMine: "Išsaugota pas mane",
+  shGpxRepeated: "{pct} % kartojasi · pradžia {place}",
   advertSlot: "Laisva vieta reklamai",
   chatReady: "Gatava — maršrutas žemėlapyje.",
   chatReadyN: "Gatava — {n} versijos žemiau, perjunk ir žiūrėk žemėlapyje.",
@@ -653,11 +779,16 @@ const lt: Messages = {
   savNewRide: "Naujas maršrutas",
   savOtherVersions: "Kitos versijos",
   beerRideWell: "Geros kelionės!",
+  beerBuy: "Pavaišinti @rucijs alučiu 🍺",
+  beerQrAlt: "QR kodas: revolut.me/rucijs",
+  beerAuthor: "Autorius @rucijs",
   a11yRideInput: "Maršruto įvestis",
   a11yChatRegion: "Maršruto pokalbis",
   a11yChatMessages: "Pokalbio žinutės",
   a11yHours: "Valandos",
   a11yHoursOther: "Valandos, kitas skaičius",
+  hoursOther: "kitas",
+  saveKeepOld: "Palikti abu",
   backToHome: "Mopik — į pradžią",
   language: "Kalba",
   footerDisclaimer:
@@ -812,6 +943,44 @@ const et: Messages = {
   resGravelShort: "kruusa- ja pinnasteid",
   resRoadsLabel: "Teed",
   resGpxFooter: "Marsruut on koostatud OpenStreetMapi andmetest — järgi alati liiklusmärke.",
+  resTimeOver: "Soovisid {asked}, see versioon on {got}.",
+  resTimeUnder: "Soovisid ~{asked}, see versioon on vaid {got} — pikemad rajad selles piirkonnas hakkavad samu teid kordama.",
+  resFindShorter: "Otsi lühemat (kuni {time})",
+  resFindLonger: "Otsi pikemat (~{time})",
+  resCleanerLoop: "Puhtam ring ~{time} ({pct} % kordub)",
+  resWarnRepeated: "{km} km kordab juba läbitud teid — võid küsida vähem kordusi.",
+  resWarnTrail: "{km} km radu.",
+  resWarnUnverified: "{km} km radadel, kus mootorratta juurdepääs on kontrollimata — kontrolli märke.",
+  resWarnRough: "{km} km raskeid metsateid (grade 4–5 või halb kate).",
+  resWarnSand: "{km} km liiva.",
+  resWarnStreets: "{km} km tänavatel ja hoovides.",
+  resWarnUnknownSurface: "{pct} % teekattest on OSM-is teadmata.",
+  resSaved: "Salvestatud",
+  resDetails: "Üksikasjad",
+  resVersionN: "Versioon {n}",
+  resShowAnother: "Näita teist {kind} marsruuti ({at} / {total})",
+  resTetApprox: "Umbes {km} km TET-i mööda",
+  resRoadsHeading: "Teed",
+  resSurfaceHeading: "Kate",
+  resMixRoad: "Tee",
+  resMixTrack: "Metsatee / kriipsjoon",
+  resMixTrail: "Rada / punktiir",
+  resDirt: "Pinnas / liiv",
+  resTransitOut: "Ülesõit {km} km · {time}",
+  resFocusLoop: "{place} ring {km} km · {time}",
+  resTransitBack: "tagasi {km} km · {time}",
+  savLength: "Pikkus",
+  savName: "Nimi",
+  savNothingYet: "Salvestatud marsruute veel pole. Koosta sõit ja vajuta",
+  savBack: "Tagasi",
+  savEditRide: "Muuda {name} vormis",
+  savDownloadRide: "Laadi alla {name} GPX",
+  savDeleteRide: "Kustuta {name}",
+  shWarnRepeated: "{pct} % marsruudist kordab juba läbitud teid.",
+  shStartLabel: "Algus: {place}",
+  shRepeatedNote: "{pct} % korduvaid teid · aeg katte järgi, mitte kaardi keskmise kiiruse järgi.",
+  shSavedInMine: "Salvestatud minu omadesse",
+  shGpxRepeated: "{pct} % korduv · algus {place}",
   advertSlot: "Vaba reklaamipind",
   chatReady: "Valmis — marsruut kaardil.",
   chatReadyN: "Valmis — {n} versiooni allpool, vaheta ja vaata kaardil.",
@@ -895,11 +1064,16 @@ const et: Messages = {
   savNewRide: "Uus sõit",
   savOtherVersions: "Teised versioonid",
   beerRideWell: "Head sõitu!",
+  beerBuy: "Tee @rucijs’ile õlu välja 🍺",
+  beerQrAlt: "QR-kood: revolut.me/rucijs",
+  beerAuthor: "Autor @rucijs",
   a11yRideInput: "Sõidu sisestus",
   a11yChatRegion: "Sõidu vestlus",
   a11yChatMessages: "Vestluse sõnumid",
   a11yHours: "Tunnid",
   a11yHoursOther: "Tunnid, muu arv",
+  hoursOther: "muu",
+  saveKeepOld: "Jäta mõlemad",
   backToHome: "Mopik — avalehele",
   language: "Keel",
   footerDisclaimer:
@@ -1054,6 +1228,44 @@ const en: Messages = {
   resGravelShort: "gravel and dirt roads",
   resRoadsLabel: "Roads",
   resGpxFooter: "The route is built from OpenStreetMap data — always follow the road signs.",
+  resTimeOver: "You asked for {asked}, this version is {got}.",
+  resTimeUnder: "You asked for ~{asked}, this version is only {got} — longer tracks in this area start retracing the same roads.",
+  resFindShorter: "Find a shorter one (up to {time})",
+  resFindLonger: "Find a longer one (~{time})",
+  resCleanerLoop: "Cleaner loop ~{time} ({pct} % retraced)",
+  resWarnRepeated: "{km} km retrace roads already ridden — you can ask for less overlap.",
+  resWarnTrail: "{km} km of trails.",
+  resWarnUnverified: "{km} km on trails with unverified motorcycle access — check the signs.",
+  resWarnRough: "{km} km of hard forest tracks (grade 4–5 or poor surface).",
+  resWarnSand: "{km} km of sand.",
+  resWarnStreets: "{km} km on streets and yards.",
+  resWarnUnknownSurface: "{pct} % of the surface is unknown in OSM.",
+  resSaved: "Saved",
+  resDetails: "Details",
+  resVersionN: "Version {n}",
+  resShowAnother: "Show another {kind} route ({at} of {total})",
+  resTetApprox: "About {km} km on the TET",
+  resRoadsHeading: "Roads",
+  resSurfaceHeading: "Surface",
+  resMixRoad: "Road",
+  resMixTrack: "Track / dashed",
+  resMixTrail: "Trail / dotted",
+  resDirt: "Dirt / sand",
+  resTransitOut: "Transit {km} km · {time}",
+  resFocusLoop: "{place} loop {km} km · {time}",
+  resTransitBack: "back {km} km · {time}",
+  savLength: "Length",
+  savName: "Name",
+  savNothingYet: "No saved rides yet. Generate a ride and press",
+  savBack: "Back",
+  savEditRide: "Edit {name} in the form",
+  savDownloadRide: "Download {name} GPX",
+  savDeleteRide: "Delete {name}",
+  shWarnRepeated: "{pct} % of the route retraces roads already ridden.",
+  shStartLabel: "Start: {place}",
+  shRepeatedNote: "{pct} % retraced roads · time from the surface, not from a map average speed.",
+  shSavedInMine: "Saved to mine",
+  shGpxRepeated: "{pct} % retraced · start {place}",
   advertSlot: "Advertising space available",
   chatReady: "Ready — the route is on the map.",
   chatReadyN: "Ready — {n} versions below, switch between them to compare.",
@@ -1137,11 +1349,16 @@ const en: Messages = {
   savNewRide: "New ride",
   savOtherVersions: "Other versions",
   beerRideWell: "Ride safe!",
+  beerBuy: "Buy @rucijs a beer 🍺",
+  beerQrAlt: "QR code: revolut.me/rucijs",
+  beerAuthor: "Author @rucijs",
   a11yRideInput: "Ride input",
   a11yChatRegion: "Ride conversation",
   a11yChatMessages: "Conversation messages",
   a11yHours: "Hours",
   a11yHoursOther: "Hours, another number",
+  hoursOther: "other",
+  saveKeepOld: "Keep both",
   backToHome: "Mopik — home",
   language: "Language",
   footerDisclaimer:

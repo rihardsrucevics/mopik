@@ -16,6 +16,7 @@ import { SavedRidesLink } from "@/components/saved-rides-link";
 import { LanguagePicker } from "@/components/language-picker";
 import { useLocale } from "@/lib/i18n/use-locale";
 import { t, messages as uiMessages } from "@/lib/i18n/messages";
+import { fi } from "@/lib/i18n/format";
 import { RideComposer } from "@/components/ride-composer";
 import { ChatMessage, ChatQuickReply, ChatResponse, RidePlan, planSummary } from "@/lib/chat/ride-plan";
 import { describeInfeasible, minutesLabel } from "@/lib/chat/feasibility";
@@ -46,7 +47,7 @@ async function readJson(response: Response, ui: ReturnType<typeof uiMessages>): 
     const timedOut = response.status === 504 || /timeout|timed out/i.test(text);
     throw new Error(timedOut || response.status >= 500
       ? ui.chatServerTimeout
-      : ui.chatErrUnexpected.replace("{status}", String(response.status)));
+      : fi(ui.chatErrUnexpected, { status: response.status }));
   }
 }
 
@@ -220,8 +221,12 @@ export default function Home() {
       // The numbers are in the result card; the message only says what to do next.
       const notes = [
         isLucky ? ui.chatLucky : "",
-        versions > 1 ? ui.chatReadyN.replace("{n}", String(versions)) : ui.chatReady,
-        data.remoteLoop ? ui.chatRemoteLoop.replace("{place}", (data as GenerateRouteResponse).remoteLoop!.focus.label.split(",")[0]).replace("{out}", String((data as GenerateRouteResponse).remoteLoop!.transitOutMinutes)).replace("{back}", String((data as GenerateRouteResponse).remoteLoop!.transitBackMinutes)) : "",
+        versions > 1 ? fi(ui.chatReadyN, { n: versions }) : ui.chatReady,
+        data.remoteLoop ? fi(ui.chatRemoteLoop, {
+          place: (data as GenerateRouteResponse).remoteLoop!.focus.label.split(",")[0],
+          out: (data as GenerateRouteResponse).remoteLoop!.transitOutMinutes,
+          back: (data as GenerateRouteResponse).remoteLoop!.transitBackMinutes,
+        }) : "",
         data.distanceWarning ? ui.chatLongerThanAsked : "",
         ui.chatSayWhatToChange,
       ];
@@ -389,7 +394,7 @@ export default function Home() {
               <div className="mt-2.5 flex flex-wrap gap-2">
                 <button type="button" onClick={() => { track("edited_ride_kept", { was_saved: keepChoice.saved }); setKeepChoice(null); }}
                   className="rounded-full border border-stone-900 px-3.5 py-1.5 text-xs font-semibold text-stone-900 transition hover:bg-stone-900 hover:text-white">
-                  Paturēt abus
+                  {ui.saveKeepOld}
                 </button>
                 <button type="button" onClick={() => { if (keepChoice.saved) removeRide(rideId(keepChoice.code)); track("edited_ride_replaced", { was_saved: keepChoice.saved }); setKeepChoice(null); }}
                   className="rounded-full border border-stone-200 px-3.5 py-1.5 text-xs font-medium text-stone-600 transition hover:bg-white">

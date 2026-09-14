@@ -42,7 +42,7 @@ export function BeerPopup({ open, onClose }: { open: boolean; onClose: () => voi
         <h2 id="beer-title" className="mt-3 text-2xl font-bold tracking-tight">{m.beerRideWell}</h2>
         <a href={BEER_LINK} target="_blank" rel="noopener noreferrer" onClick={onBeer}
           className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[#f56300] text-sm font-semibold text-white transition hover:bg-[#ff7a1f]">
-          Uzsaukt @rucijs aliņu 🍺
+          {m.beerBuy}
         </a>
         {/* Two ways to say thanks, offered as equals: pay, or follow. Neither
             is the small print of the other. Closing is the ✕ or a tap outside;
@@ -55,7 +55,7 @@ export function BeerPopup({ open, onClose }: { open: boolean; onClose: () => voi
         {/* Desktop: the phone scans this. Below both buttons — between them it
             split the pair and made the second read as an afterthought. */}
         <div className="mt-5 hidden flex-col items-center gap-2 md:flex">
-          <Image src="/revolut-qr-dark.svg" alt="QR kods: revolut.me/rucijs" width={132} height={132} unoptimized className="rounded-xl" />
+          <Image src="/revolut-qr-dark.svg" alt={m.beerQrAlt} width={132} height={132} unoptimized className="rounded-xl" />
           <span className="text-[11px] text-stone-500">{m.beerScan}</span>
         </div>
         {/* Who is behind it, quietly, at the very bottom — the author's own
@@ -66,7 +66,7 @@ export function BeerPopup({ open, onClose }: { open: boolean; onClose: () => voi
           <a href={AUTHOR_INSTAGRAM_URL} target="_blank" rel="noopener noreferrer"
             onClick={() => track("instagram_opened", { from: "beer-author" })}
             className="text-[11px] text-stone-600 transition hover:text-stone-400">
-            Autors @rucijs
+            {m.beerAuthor}
           </a>
         </p>
       </div>

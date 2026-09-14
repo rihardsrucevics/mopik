@@ -292,6 +292,27 @@ grep -ohE '(aria-label|title|placeholder)="[A-Za-z][^"]{6,}"' components/*.tsx
 
 It should come back empty apart from the OpenGraph images.
 
+**2026-09-14: the lint rules replace those scans.** A grep only finds what
+someone remembers to run, and this one was run after the damage each time.
+`eslint.config.mjs` now turns the same search into an error on every save and
+every `npm run lint`, for `components/**/*.tsx` and `app/**/*.tsx` with the
+OpenGraph images excluded: `react/jsx-no-literals` catches text written
+between JSX tags and template literals used as JSX children, and a set of
+`no-restricted-syntax` selectors catches the text-bearing attributes
+(`aria-label`, `aria-description`, `title`, `placeholder`, `alt`), including
+template literals in them that carry words of their own. The five strings the
+scans above had missed — the beer popup's button, QR alt text and byline, the
+hours field's "cits" placeholder, and "Paturēt abus" in the plan confirmation
+— were found by the rules and are now dictionary keys.
+
+What the rules cannot see is anything that does not pass through JSX. A string
+built in a `lib/` function or an API route reaches the screen as a value, and
+no lint rule can tell it from a log line or an internal identifier. The fix
+there is not a stricter rule but a signature: give the function a `UiLocale`
+parameter, as `planSummary` got, and the type checker names every caller that
+has not been thought about. That is how the last of the chat wording was
+found, and it is the method to reach for next time.
+
 **Still Latvian, and deliberately:**
 - **The chat's model-generated replies.** They come from the prompt in
   `app/api/route-chat/route.ts`, so translating them means translating the
