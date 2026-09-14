@@ -1,5 +1,34 @@
 # Mopik — progress log
 
+## 2026-09-14 — the day in one place
+
+Fourteen commits, all live at `41e1b9f`. Three halves, which is one too many:
+a routing bug, an afternoon of interface work, and an hour lost to deploying
+into the wrong Vercel account.
+
+**Where the rider corrected me, and was right.** He said Tūrisms + Meži made
+no map; it was neither — `includeSightseeing` never reaches the routing
+profile, and the real cause was a destination snapping onto a footway. He
+said the cancel control was too small to hit, and it was: ~50 × 24 px inside a
+moving animation. He said the badges buried the route, and the measurement
+agreed — ten on a 130 km loop. He spotted "Vari uzreiz pateikt visu, ko zini."
+still in Latvian after I had declared the translation finished three times;
+my sweeps searched for diacritics and that sentence has none.
+
+**Where I wasted his time.** I deployed to `tronpower/mopik` while he was
+watching his own project, twice concluded a change "had not shipped" when it
+had shipped somewhere he could not see, and only checked the account after he
+asked. The rule is now at the top of `CLAUDE.md`: git's wrong account is loud
+(403), Vercel's is silent.
+
+**What the measurements said, against my expectations.** A kilometre threshold
+cannot predict whether a long ride will route: Rīga → Berlin (1133 km) takes
+23 s and Como → Budapest (1126 km) takes 74 s, because the Alps are harder to
+search than the plain. And the public BRouter's refusal tracks search
+difficulty, not distance — the same Berlin → Warszawa leg succeeds on an easy
+profile and fails on a hard one.
+
+
 ## 2026-09-14 — a destination the profile cannot reach, and two dead buttons
 
 ### "Tūrisms + Meži neveido karti" was neither Tūrisms nor Meži

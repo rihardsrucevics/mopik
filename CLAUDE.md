@@ -43,7 +43,61 @@ before concluding a change did not ship.
 Pull to the scratchpad, never to `.env.local` — that is how the local keys
 were lost on 09-12.
 
-## Where this stands — handover, 2026-09-14
+## Where this stands — handover, 2026-09-14 (evening)
+
+Everything below is committed, pushed and **live on www.mopik.eu** at
+`41e1b9f`. Working tree clean. Fourteen commits today.
+
+**Deploy is `vercel --prod --yes`, from the rider's own account.** A GitHub
+push alone did not reliably reach production today — check the account first
+(the section above says how), then deploy, then confirm in a browser rather
+than with curl: Vercel's bot challenge answers curl with a 403 that looks like
+an outage and is not one.
+
+### What got done today
+
+1. **A destination the profile cannot route to** no longer kills the request.
+   Ērgļi's centre geocodes onto a `highway=footway`, which the moto profile
+   forbids, and BRouter refused the whole leg. `fetchRoutePath` now looks for
+   routable ground nearby and the acceptance checks allow the distance moved.
+2. **Mopik has its own BRouter** at `https://brouter.mopik.eu` — Berlin →
+   Warszawa routes in 14 s where the public instance refused it outright.
+   Built by `scripts/deploy-brouter-vps.sh`; see `mopik-brouter-server` memory
+   for the credit that lapses around November.
+3. **Cancel a generation**, and failures that speak in the chat rather than in
+   a box below the fold.
+4. **The map reads like a phone map**: one brown family for everything
+   unpaved, style for road class, zoom-interpolated widths, a glow, and a
+   route that draws itself in. Badges mark trails and unverified access.
+5. **Four languages**, complete — see below for what is deliberately not.
+6. **A footer**, an icon-only header with an unread count on saved rides, and
+   presets renamed Asfalta tūrists / Grants tūrists / Adventure (which now
+   means hard).
+7. **Place fields remember** what the rider picked before.
+
+### What is left, in the rider's order
+
+`docs/BACKLOG.md` is the list. Next up:
+
+- **#7 Long rides (~1000 km) still fail.** Decided with the rider: say it
+  before the search rather than after 50 s of waiting, *then* work out how to
+  plan them properly. Refusing is the interim, not the end state. The rider
+  said "not yet" to starting this.
+- **#8 POI for Europe** — the oldest outstanding request.
+- **#11 Routes still run along the sea**, **#12 through private property**.
+
+### Two things still Latvian, on purpose
+
+The chat's *model-generated* replies come from the prompt in
+`app/api/route-chat/route.ts`; translating them means translating the prompt
+and re-running `scripts/chat-golden.ts` per language. The OpenGraph share
+images are server-rendered with no locale to read.
+
+**When sweeping for untranslated strings, do not search for diacritics.**
+"Vari uzreiz pateikt visu, ko zini." has none and survived three passes. The
+scan that works is in `docs/BACKLOG.md` item 9.
+
+## Where this stood — handover, 2026-09-14 (midday)
 
 **`docs/BACKLOG.md` is the rider's own list, in his order — read it first.**
 Item 1 is a round-trip behaviour he specified step by step; item 2 is POI for
