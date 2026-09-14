@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useLocale } from "@/lib/i18n/use-locale";
+import { listRecentPlaces, rememberPlace } from "@/lib/chat/recent-places";
 import { messages, type MessageKey } from "@/lib/i18n/messages";
 import type { ResolvedPlace } from "@/lib/chat/places";
 
@@ -53,6 +54,15 @@ export function PlaceInput({ value, onChange, onPick, placeholder, icon, label, 
   const [active, setActive] = useState(-1);
   const listId = useId();
   const skipNextSearch = useRef(false);
+  // Read on mount rather than during render: localStorage is nothing on the
+  // server, and reading it while rendering is a hydration mismatch.
+  //
+  // Re-read whenever the field is focused as well. A mount-only read went
+  // stale the moment a place was picked in *another* field — the rider saved
+  // Sigulda in "From", opened "To", and was offered nothing.
+  const [recent, setRecent] = useState<Suggestion[]>([]);
+  const refreshRecent = () => setRecent(listRecentPlaces().map((p) => ({ ...p, kind: "recent" })));
+  useEffect(() => { refreshRecent(); }, []);
 
   useEffect(() => {
     if (skipNextSearch.current) { skipNextSearch.current = false; return; }
@@ -77,12 +87,18 @@ export function PlaceInput({ value, onChange, onPick, placeholder, icon, label, 
   const pick = (s: Suggestion) => {
     skipNextSearch.current = true;
     onChange(s.name);
-    onPick({ name: s.name, label: s.label, lat: s.lat, lon: s.lon });
+    const place = { name: s.name, label: s.label, lat: s.lat, lon: s.lon };
+    rememberPlace(place);
+    onPick(place);
     setSuggestions([]);
     setOpen(false);
   };
 
-  const show = open && suggestions.length > 0;
+  // An empty field shows what the rider has used before; typing switches to
+  // search results. Two letters is where the API starts answering, so below
+  // that the recent list is the only thing worth showing.
+  const listed = value.trim().length >= 2 ? suggestions : recent;
+  const show = open && listed.length > 0;
 
   return (
     <div className={`relative ${className ?? ""}`}>
@@ -96,13 +112,13 @@ export function PlaceInput({ value, onChange, onPick, placeholder, icon, label, 
           aria-controls={listId}
           aria-autocomplete="list"
           onChange={(e) => { onChange(e.target.value); onPick(null); setOpen(true); }}
-          onFocus={() => setOpen(true)}
+          onFocus={() => { refreshRecent(); setOpen(true); }}
           onBlur={() => setTimeout(() => setOpen(false), 120)}
           onKeyDown={(e) => {
             if (!show) return;
-            if (e.key === "ArrowDown") { e.preventDefault(); setActive((a) => Math.min(suggestions.length - 1, a + 1)); }
+            if (e.key === "ArrowDown") { e.preventDefault(); setActive((a) => Math.min(listed.length - 1, a + 1)); }
             else if (e.key === "ArrowUp") { e.preventDefault(); setActive((a) => Math.max(0, a - 1)); }
-            else if (e.key === "Enter" && active >= 0) { e.preventDefault(); pick(suggestions[active]); }
+            else if (e.key === "Enter" && active >= 0) { e.preventDefault(); pick(listed[active]); }
             else if (e.key === "Escape") setOpen(false);
           }}
           className="mt-1 w-full bg-transparent text-base font-medium outline-none md:text-sm"
@@ -113,7 +129,7 @@ export function PlaceInput({ value, onChange, onPick, placeholder, icon, label, 
       </label>
       {show && (
         <ul id={listId} role="listbox" className="absolute left-0 right-0 top-full z-20 mt-1 overflow-hidden rounded-xl border border-stone-200 bg-white shadow-lg">
-          {suggestions.map((s, i) => (
+          {listed.map((s, i) => (
             <li key={`${s.label}-${s.lat}`} role="option" aria-selected={i === active}
               onMouseDown={(e) => { e.preventDefault(); pick(s); }}
               className={`flex cursor-pointer items-baseline justify-between gap-3 px-3 py-2 text-sm ${i === active ? "bg-[#fff3ea]" : "hover:bg-stone-50"}`}>

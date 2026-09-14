@@ -15,7 +15,7 @@ import { IntroSplash } from "@/components/intro-splash";
 import { SavedRidesLink } from "@/components/saved-rides-link";
 import { LanguagePicker } from "@/components/language-picker";
 import { useLocale } from "@/lib/i18n/use-locale";
-import { t } from "@/lib/i18n/messages";
+import { t, messages as uiMessages } from "@/lib/i18n/messages";
 import { RideComposer } from "@/components/ride-composer";
 import { ChatMessage, ChatQuickReply, ChatResponse, RidePlan, planSummary } from "@/lib/chat/ride-plan";
 import { describeInfeasible, minutesLabel } from "@/lib/chat/feasibility";
@@ -85,8 +85,8 @@ export default function Home() {
   const [previewPlaces, setPreviewPlaces] = useState<ResolvedPlace[]>([]);
 
   /**
-   * The ride the rider arrived from, when they came from one: "Rediģēt formā"
-   * or "Pielāgot čatā" on a shared or saved route. It is the way back to that
+   * The ride the rider arrived from, when they came from one: ui.saveEditForm
+   * or ui.chatAdjust on a shared or saved route. It is the way back to that
    * route until a new one is generated, and it decides what happens to the
    * original afterwards — kept alongside the new ride, or replaced by it.
    */
@@ -97,7 +97,7 @@ export default function Home() {
   // A ride generated from an origin: the rider is asked whether it replaces
   // the one they were editing or is kept as a second ride.
   const [keepChoice, setKeepChoice] = useState<{ code: string; saved: boolean } | null>(null);
-  // "Ģenerēt līdzīgu sev" / "Rediģēt formā" from a shared route: the plan
+  // "Ģenerēt līdzīgu sev" / ui.saveEditForm from a shared route: the plan
   // arrives in ?p= and pre-fills the form; the URL is cleaned so a reload does
   // not re-apply it.
   useEffect(() => {
@@ -132,6 +132,7 @@ export default function Home() {
   // to ask where and how long.
   const [profile, changeProfile] = useRideProfile();
   const [locale] = useLocale();
+  const ui = uiMessages(locale);
   const busyRef = useRef(false);
   /**
    * The generation in flight, so the rider can call it off. A long ride
@@ -155,9 +156,9 @@ export default function Home() {
       abortRef.current = controller;
       const response = await fetch("/api/generate-route", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ plan: current, prompt: sourcePrompt, places: pickedPlaces, lucky: isLucky }), signal: controller.signal });
       const data = await readJson(response);
-      if (!response.ok) throw new Error(data.error || "Neizdevās ģenerēt maršrutu.");
+      if (!response.ok) throw new Error(data.error || ui.chatErrGenerate);
       const route = (data as GenerateRouteResponse).routes[0];
-      if (!route) throw new Error("Neizdevās atrast prasībām atbilstošu maršrutu.");
+      if (!route) throw new Error(ui.chatErrNoMatch);
       const verdict = (data as GenerateRouteResponse).infeasible;
       const first = (data as GenerateRouteResponse).routes[0];
       track("route_generated", {
@@ -199,10 +200,10 @@ export default function Home() {
         const km = Math.round(route.overlap.repeatedKm);
         setMessages([...conversation, { role: "assistant", content: `Šeit neizdevās atrast trasi bez atkārtošanās: labākā versija ${bestRepeat} % ceļa (${km} km) brauc pa jau nobrauktiem ceļiem. Trase ir kartē, bet es to labāk pārtaisītu. Ko darām?` }]);
         setQuickReplies([
-          { label: "Mazāk atkārtojumu", message: "Mazāk atkārtojumu, atpakaļ pa citiem ceļiem." },
-          { label: "Var arī lielos ceļus", message: "Var izmantot arī lielos ceļus." },
+          { label: ui.chatLessOverlap, message: ui.chatLessOverlapMsg },
+          { label: ui.chatBigRoadsOk, message: ui.chatBigRoadsMsg },
           ...(current.returnToStart && (current.viaPlaces.length > 0) ? [{ label: `Vienā virzienā līdz ${current.viaPlaces[current.viaPlaces.length - 1]}`, message: `Vienvirziena brauciens līdz ${current.viaPlaces[current.viaPlaces.length - 1]}.` }] : []),
-          { label: "Rādīt trasi tāpat", message: "", action: "show-routes" as const },
+          { label: ui.chatShowAnyway, message: "", action: "show-routes" as const },
         ]);
         setChatting(true);
         setRetry(null);
@@ -218,11 +219,11 @@ export default function Home() {
       const versions = (data as GenerateRouteResponse).routes.length;
       // The numbers are in the result card; the message only says what to do next.
       const notes = [
-        isLucky ? "Bez galamērķa un laika limita? Laimīgais! Atradu tev kaut ko foršu." : "",
-        versions > 1 ? `Gatavs — ${versions} versijas zemāk, pārslēdz un skaties kartē.` : "Gatavs — maršruts kartē.",
+        isLucky ? ui.chatLucky : "",
+        versions > 1 ? ui.chatReadyN.replace("{n}", String(versions)) : ui.chatReady,
         data.remoteLoop ? `Pārbrauciens līdz ${(data as GenerateRouteResponse).remoteLoop!.focus.label.split(",")[0]} ~${(data as GenerateRouteResponse).remoteLoop!.transitOutMinutes} min, atpakaļ ~${(data as GenerateRouteResponse).remoteLoop!.transitBackMinutes} min; pa vidu aplis.` : "",
-        data.distanceWarning ? "Maršruts iznāca garāks par vēlamo." : "",
-        "Saki, ko mainīt: īsāku, vairāk pa mežu, caur kādu vietu…",
+        data.distanceWarning ? ui.chatLongerThanAsked : "",
+        ui.chatSayWhatToChange,
       ];
       setMessages([...conversation, { role: "assistant", content: notes.filter(Boolean).join(" ") }]);
       setRetry(null);
@@ -237,8 +238,8 @@ export default function Home() {
       // A failure belongs in the conversation, like every other reply. It used
       // to sit in a box under the whole panel, off-screen on a laptop, so the
       // chat stayed silent and the rider saw nothing happen after ~50 s.
-      setMessages([...conversation, { role: "assistant", content: describeError(e, "Neizdevās ģenerēt maršrutu.") }]);
-      setQuickReplies([{ label: "Mēģināt vēlreiz", message: "", action: "retry" }]);
+      setMessages([...conversation, { role: "assistant", content: describeError(e, ui.chatErrGenerate) }]);
+      setQuickReplies([{ label: ui.chatRetry, message: "", action: "retry" }]);
       setChatting(true);
       setRetry({ stage: "route", plan: current, messages: conversation });
     } finally {
@@ -251,7 +252,7 @@ export default function Home() {
     try {
       const response = await fetch("/api/route-chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ messages: conversation, plan: previousPlan }) });
       const data = await readJson(response);
-      if (!response.ok) throw new Error(data.error || "Neizdevās saņemt atbildi.");
+      if (!response.ok) throw new Error(data.error || ui.chatErrAnswer);
       const answer = data as ChatResponse;
       const updated: ChatMessage[] = [...conversation, { role: "assistant", content: answer.message }];
       setMessages(updated); setPlan(answer.plan); setResult(null); setRetry(null);
@@ -259,8 +260,8 @@ export default function Home() {
       if (answer.ready) await generate(answer.plan, updated);
     } catch (e) {
       if (e instanceof DOMException && e.name === "AbortError") return;
-      setMessages([...conversation, { role: "assistant", content: describeError(e, "Neizdevās saņemt atbildi.") }]);
-      setQuickReplies([{ label: "Mēģināt vēlreiz", message: "", action: "retry" }]);
+      setMessages([...conversation, { role: "assistant", content: describeError(e, ui.chatErrAnswer) }]);
+      setQuickReplies([{ label: ui.chatRetry, message: "", action: "retry" }]);
       setChatting(true);
       setRetry({ stage: "chat", messages: conversation, plan: previousPlan });
     } finally {
@@ -270,7 +271,7 @@ export default function Home() {
 
   async function send(text: string) {
     if (busyRef.current) return;
-    if (messages.length >= 37) { setError("Saruna sasniegusi šīs versijas garuma robežu. Sāc jaunu braucienu."); return; }
+    if (messages.length >= 37) { setError(ui.chatTooLong); return; }
     busyRef.current = true; setError(null); setRetry(null);
     setQuickReplies([]); setChatting(true);
     track("chat_message_sent", { length: text.length, has_route: Boolean(route), turn: messages.filter((m) => m.role === "user").length + 1 });
@@ -285,7 +286,7 @@ export default function Home() {
     // Short: the profile is in the panel header and the plan object travels
     // with every chat turn, so the message only needs the places and budget.
     const places = [current.startPlace, ...current.viaPlaces, current.returnToStart ? current.startPlace : current.destinationPlace].filter(Boolean).join(" → ");
-    const budget = current.budget.mode === "duration" ? `~${current.budget.value} h` : current.budget.mode === "distance" ? `~${current.budget.value} km` : "brīvs ilgums";
+    const budget = current.budget.mode === "duration" ? `~${current.budget.value} h` : current.budget.mode === "distance" ? `~${current.budget.value} km` : ui.budgetFlexible;
     const conversation: ChatMessage[] = [{ role: "user", content: `${places}, ${budget}.` }];
     setMessages(conversation);
     try { await generate(current, conversation, picked); }
@@ -321,7 +322,7 @@ export default function Home() {
     : null;
   // One map, two homes. On a desktop it is the sticky right column; on a phone
   // it belongs inside the ride block, under the places it confirms — above the
-  // whole page it outranked even "Saglabātie" and read as a separate thing.
+  // whole page it outranked even ui.savedRides and read as a separate thing.
   const desktop = useMediaQuery(DESKTOP_QUERY);
   const mapVisible = Boolean(result) || previewPlaces.length > 0;
   const mapPanel = (
@@ -392,7 +393,7 @@ export default function Home() {
                 </button>
                 <button type="button" onClick={() => { if (keepChoice.saved) removeRide(rideId(keepChoice.code)); track("edited_ride_replaced", { was_saved: keepChoice.saved }); setKeepChoice(null); }}
                   className="rounded-full border border-stone-200 px-3.5 py-1.5 text-xs font-medium text-stone-600 transition hover:bg-white">
-                  {keepChoice.saved ? "Aizstāt veco" : "Neglabāt veco"}
+                  {keepChoice.saved ? ui.saveReplace : ui.saveKeepBoth}
                 </button>
               </div>
               {!keepChoice.saved && <p className="mt-2 text-[11px] text-stone-500">Vecais nebija saglabāts — saite uz to joprojām darbosies.</p>}

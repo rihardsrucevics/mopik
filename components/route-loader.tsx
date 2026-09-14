@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { useLocale } from "@/lib/i18n/use-locale";
-import { t } from "@/lib/i18n/messages";
+import { t, messages, type MessageKey } from "@/lib/i18n/messages";
 
 /**
  * The "route drawing itself" motif, in two sizes.
@@ -20,22 +20,15 @@ const ROUTE_D =
   "M 12 108 C 40 96, 52 70, 82 74 S 128 110, 158 92 C 184 76, 176 40, 206 38 S 250 68, 272 54 C 292 42, 300 28, 314 22";
 
 /** Status lines per phase, cycled while the work runs. */
-const STATUS: Record<"thinking" | "routing" | "lucky", string[]> = {
-  thinking: ["Lasu, ko vēlies mainīt…", "Precizēju plānu…"],
-  lucky: [
-    "Bez galamērķa un laika limita? Laimīgais!",
-    "Atradīsim tev kaut ko foršu…",
-    "Skatos, kur mežs ir dziļāks…",
-    "Meklēju ceļus, pa kuriem vēl neesi bijis…",
-    "Zīmēju trases versijas…",
-  ],
-  routing: [
-    "Kalibrēju apkārtni…",
-    "Meklēju meža ceļus…",
-    "Zīmēju trases versijas…",
-    "Pārbaudu, kur ceļi atkārtojas…",
-    "Vērtēju segumu un pagriezienus…",
-  ],
+/**
+ * The loader's lines, as dictionary keys. They are the text a rider stares at
+ * for the whole generation, so leaving them Latvian while the rest of the app
+ * spoke four languages was the most visible gap of the lot.
+ */
+const STATUS: Record<"thinking" | "routing" | "lucky", MessageKey[]> = {
+  thinking: ["loadThinking1", "loadThinking2"],
+  lucky: ["loadLucky1", "loadLucky2", "loadLucky3", "loadLucky4", "loadRoute3"],
+  routing: ["loadRoute1", "loadRoute2", "loadRoute3", "loadRoute4", "loadRoute5"],
 };
 
 
@@ -46,6 +39,7 @@ export function RouteLoader({ phase, className, onCancel }: {
   onCancel?: () => void;
 }) {
   const [locale] = useLocale();
+  const m = messages(locale);
   const lines = STATUS[phase];
   const [index, setIndex] = useState(0);
   useEffect(() => {
@@ -70,14 +64,14 @@ export function RouteLoader({ phase, className, onCancel }: {
         <RouteScene className="h-28 w-full" />
         {advert && (
           <div className="mopik-fade-in absolute inset-0 flex h-28 flex-col items-center justify-center bg-[#f56300] text-center">
-            <span className="text-sm font-semibold tracking-tight text-white">Brīva vieta reklāmai</span>
+            <span className="text-sm font-semibold tracking-tight text-white">{m.advertSlot}</span>
             <span className="mt-0.5 text-[11px] text-white/80">mopik.eu</span>
           </div>
         )}
       </div>
       <div className="flex items-center gap-2 px-4 pb-3">
         <span className="size-1.5 animate-pulse rounded-full bg-[#f56300]" />
-        <span key={line} className="mopik-fade-in min-w-0 flex-1 truncate text-xs font-medium text-stone-700">{line}</span>
+        <span key={line} className="mopik-fade-in min-w-0 flex-1 truncate text-xs font-medium text-stone-700">{m[line]}</span>
       </div>
     </div>
   );

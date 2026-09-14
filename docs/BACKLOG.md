@@ -267,7 +267,11 @@ is better served by English than by a language they cannot read.
 Second pass added the chat's own shell (titles, placeholders, the send
 control, quick-reply label) and the place-suggestion kinds.
 
-**Still Latvian, deliberately not half-translated:**
+Third pass took the loader lines, the result panel, the chat's own messages
+and the plan summary. What a rider meets from opening the app to downloading a
+GPX now speaks their language.
+
+**Still Latvian:**
 - **The chat's replies.** They come from `lib/chat/ride-plan.ts` and the model
   prompt, so translating them means translating the prompt and re-running
   `scripts/chat-golden.ts` against each language. A separate job.

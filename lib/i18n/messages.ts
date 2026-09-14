@@ -39,6 +39,80 @@ export type MessageKey =
   | "kindCity"
   | "kindVillage"
   | "kindHamlet"
+  | "loadThinking1"
+  | "loadThinking2"
+  | "loadLucky1"
+  | "loadLucky2"
+  | "loadLucky3"
+  | "loadLucky4"
+  | "loadRoute1"
+  | "loadRoute2"
+  | "loadRoute3"
+  | "loadRoute4"
+  | "loadRoute5"
+  | "resRoute"
+  | "resVersions"
+  | "resResult"
+  | "resFaster"
+  | "resFasterHint"
+  | "resComplex"
+  | "resComplexHint"
+  | "resStraight"
+  | "resWinding"
+  | "resBalanced"
+  | "resDistance"
+  | "resTime"
+  | "resRepeated"
+  | "resClimb"
+  | "resDownloadGpx"
+  | "resGpxNote"
+  | "resSave"
+  | "resSaveLater"
+  | "resUnsave"
+  | "resShare"
+  | "resShareRoute"
+  | "resCopyLink"
+  | "resCopied"
+  | "resLinkCopied"
+  | "resWhatToChange"
+  | "resSendCorrection"
+  | "resChangePlaceholder"
+  | "resForest"
+  | "resRiverside"
+  | "resOpenCountry"
+  | "resUnknown"
+  | "resSparse"
+  | "resAssembled"
+  | "resNoOtherRoads"
+  | "resLucky"
+  | "resUpTo"
+  | "resGravelShort"
+  | "resRoadsLabel"
+  | "resGpxFooter"
+  | "advertSlot"
+  | "chatReady"
+  | "chatReadyN"
+  | "chatLucky"
+  | "chatLongerThanAsked"
+  | "chatSayWhatToChange"
+  | "chatErrGenerate"
+  | "chatErrAnswer"
+  | "chatErrNoMatch"
+  | "chatErrTimeout"
+  | "chatTooLong"
+  | "chatRetry"
+  | "chatShowAnyway"
+  | "chatLessOverlap"
+  | "chatLessOverlapMsg"
+  | "chatBigRoadsOk"
+  | "chatBigRoadsMsg"
+  | "chatOverlapWarn"
+  | "saveReplace"
+  | "saveKeepBoth"
+  | "saveEditForm"
+  | "chatYou"
+  | "resLuckyDetail"
+  | "budgetFlexible"
   | "backToHome"
   | "language"
   | "footerDisclaimer"
@@ -140,6 +214,80 @@ const lv: Messages = {
   kindCity: "pilsēta",
   kindVillage: "ciems",
   kindHamlet: "viensēta",
+  loadThinking1: "Lasu, ko vēlies mainīt…",
+  loadThinking2: "Precizēju plānu…",
+  loadLucky1: "Bez galamērķa un laika limita? Laimīgais!",
+  loadLucky2: "Atradīsim tev kaut ko foršu…",
+  loadLucky3: "Skatos, kur mežs ir dziļāks…",
+  loadLucky4: "Meklēju ceļus, pa kuriem vēl neesi bijis…",
+  loadRoute1: "Kalibrēju apkārtni…",
+  loadRoute2: "Meklēju meža ceļus…",
+  loadRoute3: "Zīmēju trases versijas…",
+  loadRoute4: "Pārbaudu, kur ceļi atkārtojas…",
+  loadRoute5: "Vērtēju segumu un pagriezienus…",
+  resRoute: "Maršruts",
+  resVersions: "Maršruta versijas",
+  resResult: "Maršruta rezultāts",
+  resFaster: "Ātrāks",
+  resFasterHint: "gludāk, mazāk pagriezienu",
+  resComplex: "Sarežģītāks",
+  resComplexHint: "mežs, takas, pagriezieni",
+  resStraight: "Taisnākā",
+  resWinding: "Līkumotākā",
+  resBalanced: "Līdzsvarots",
+  resDistance: "Distance",
+  resTime: "Laiks",
+  resRepeated: "Atkārtoti",
+  resClimb: "Kopējais kāpums",
+  resDownloadGpx: "Lejupielādēt GPX",
+  resGpxNote: "GPX der OsmAnd, Garmin, DMD2, Locus, Kurviger. Maršruts veidots no pieejamiem kartes un piekļuves datiem — vienmēr ievēro ceļa zīmes.",
+  resSave: "Saglabāt",
+  resSaveLater: "Saglabāt vēlākam",
+  resUnsave: "Noņemt no saglabātajiem",
+  resShare: "Dalīties",
+  resShareRoute: "Dalīties ar maršrutu",
+  resCopyLink: "Kopē saiti:",
+  resCopied: "Nokopēts",
+  resLinkCopied: "Saite nokopēta. Ielīmē WhatsApp, Telegram vai e-pastā — saņēmējs redzēs karti un skaitļus.",
+  resWhatToChange: "Ko mainīt?",
+  resSendCorrection: "Nosūtīt korekciju",
+  resChangePlaceholder: "Piemēram: īsāku, vairāk pa mežu, caur Limbažiem…",
+  resForest: "Meža apvidū",
+  resRiverside: "Upju tuvumā",
+  resOpenCountry: "Atklātā lauku ainavā",
+  resUnknown: "Nezināms",
+  resSparse: "Ārpus Baltijas Mopik vēl nezina vietu nosaukumus — maršruts un skaitļi ir īsti, bet pieturas paliek nenosauktas.",
+  resAssembled: "Šis brauciens ir garāks, nekā bezmaksas maršrutētājs plāno vienā gabalā, tāpēc tas salikts no posmiem. Trase ir īsta, bet īsākiem braucieniem Mopik atrod labākus ceļus.",
+  resNoOtherRoads: " Šeit citu ceļu šādā garumā nav.",
+  resLucky: "Bez galamērķa un laika limita? Laimīgais!",
+  resUpTo: "līdz",
+  resGravelShort: "grants un zemes ceļu",
+  resRoadsLabel: "Ceļi",
+  resGpxFooter: "Maršruts veidots no OpenStreetMap datiem — vienmēr ievēro ceļa zīmes.",
+  advertSlot: "Brīva vieta reklāmai",
+  chatReady: "Gatavs — maršruts kartē.",
+  chatReadyN: "Gatavs — {n} versijas zemāk, pārslēdz un skaties kartē.",
+  chatLucky: "Bez galamērķa un laika limita? Laimīgais! Atradu tev kaut ko foršu.",
+  chatLongerThanAsked: "Maršruts iznāca garāks par vēlamo.",
+  chatSayWhatToChange: "Saki, ko mainīt: īsāku, vairāk pa mežu, caur kādu vietu…",
+  chatErrGenerate: "Neizdevās ģenerēt maršrutu.",
+  chatErrAnswer: "Neizdevās saņemt atbildi.",
+  chatErrNoMatch: "Neizdevās atrast prasībām atbilstošu maršrutu.",
+  chatErrTimeout: "Serveris pārtrauca ģenerēšanu, jo tā aizņēma pārāk ilgi (limits ~60 s). Garš brauciens pa meža ceļiem var neietilpt. Mēģini vēlreiz vai īsāku ilgumu.",
+  chatTooLong: "Saruna sasniegusi šīs versijas garuma robežu. Sāc jaunu braucienu.",
+  chatRetry: "Mēģināt vēlreiz",
+  chatShowAnyway: "Rādīt trasi tāpat",
+  chatLessOverlap: "Mazāk atkārtojumu",
+  chatLessOverlapMsg: "Mazāk atkārtojumu, atpakaļ pa citiem ceļiem.",
+  chatBigRoadsOk: "Var arī lielos ceļus",
+  chatBigRoadsMsg: "Var izmantot arī lielos ceļus.",
+  chatOverlapWarn: "Šeit neizdevās atrast trasi bez atkārtošanās: labākā versija {pct} % ceļa ({km} km) brauc pa jau nobrauktiem ceļiem. Trase ir kartē, bet es to labāk pārtaisītu. Ko darām?",
+  saveReplace: "Aizstāt veco",
+  saveKeepBoth: "Neglabāt veco",
+  saveEditForm: "Rediģēt formā",
+  chatYou: "Tu",
+  resLuckyDetail: "Šī ir interesantākā trase, ko atradām — versijas zemāk, ja gribi citu.",
+  budgetFlexible: "brīvs ilgums",
   backToHome: "Mopik — uz sākumu",
   language: "Valoda",
   footerDisclaimer:
@@ -244,6 +392,80 @@ const lt: Messages = {
   kindCity: "miestas",
   kindVillage: "kaimas",
   kindHamlet: "vienkiemis",
+  loadThinking1: "Skaitau, ką nori pakeisti…",
+  loadThinking2: "Tikslinu planą…",
+  loadLucky1: "Be tikslo ir laiko limito? Laimingas!",
+  loadLucky2: "Surasim tau ką nors šaunaus…",
+  loadLucky3: "Žiūriu, kur miškas gilesnis…",
+  loadLucky4: "Ieškau kelių, kuriais dar nevažiavai…",
+  loadRoute1: "Kalibruoju apylinkes…",
+  loadRoute2: "Ieškau miško kelių…",
+  loadRoute3: "Braižau maršruto versijas…",
+  loadRoute4: "Tikrinu, kur keliai kartojasi…",
+  loadRoute5: "Vertinu dangą ir posūkius…",
+  resRoute: "Maršrutas",
+  resVersions: "Maršruto versijos",
+  resResult: "Maršruto rezultatas",
+  resFaster: "Greitesnis",
+  resFasterHint: "sklandžiau, mažiau posūkių",
+  resComplex: "Sudėtingesnis",
+  resComplexHint: "miškas, takai, posūkiai",
+  resStraight: "Tiesiausias",
+  resWinding: "Vingiuočiausias",
+  resBalanced: "Subalansuotas",
+  resDistance: "Atstumas",
+  resTime: "Laikas",
+  resRepeated: "Kartojasi",
+  resClimb: "Bendras pakilimas",
+  resDownloadGpx: "Atsisiųsti GPX",
+  resGpxNote: "GPX tinka OsmAnd, Garmin, DMD2, Locus, Kurviger. Maršrutas sudarytas iš prieinamų žemėlapio ir privažiavimo duomenų — visada paisyk kelio ženklų.",
+  resSave: "Išsaugoti",
+  resSaveLater: "Išsaugoti vėliau",
+  resUnsave: "Pašalinti iš išsaugotų",
+  resShare: "Dalintis",
+  resShareRoute: "Dalintis maršrutu",
+  resCopyLink: "Kopijuok nuorodą:",
+  resCopied: "Nukopijuota",
+  resLinkCopied: "Nuoroda nukopijuota. Įklijuok į WhatsApp, Telegram ar el. paštą — gavėjas matys žemėlapį ir skaičius.",
+  resWhatToChange: "Ką pakeisti?",
+  resSendCorrection: "Siųsti pataisymą",
+  resChangePlaceholder: "Pavyzdžiui: trumpiau, daugiau per mišką, per Kėdainius…",
+  resForest: "Miško vietovėje",
+  resRiverside: "Prie upių",
+  resOpenCountry: "Atviroje lauko vietovėje",
+  resUnknown: "Nežinoma",
+  resSparse: "Už Baltijos ribų Mopik dar nežino vietų pavadinimų — maršrutas ir skaičiai tikri, bet sustojimai lieka be pavadinimų.",
+  resAssembled: "Šis maršrutas ilgesnis, nei nemokamas maršrutizatorius planuoja vienu kartu, todėl jis sudėtas iš atkarpų. Trasa tikra, bet trumpesniems maršrutams Mopik randa geresnius kelius.",
+  resNoOtherRoads: " Čia kitų tokio ilgio kelių nėra.",
+  resLucky: "Be tikslo ir laiko limito? Laimingas!",
+  resUpTo: "iki",
+  resGravelShort: "žvyro ir žemės kelių",
+  resRoadsLabel: "Keliai",
+  resGpxFooter: "Maršrutas sudarytas iš OpenStreetMap duomenų — visada paisyk kelio ženklų.",
+  advertSlot: "Laisva vieta reklamai",
+  chatReady: "Gatava — maršrutas žemėlapyje.",
+  chatReadyN: "Gatava — {n} versijos žemiau, perjunk ir žiūrėk žemėlapyje.",
+  chatLucky: "Be tikslo ir laiko limito? Laimingas! Radau tau ką nors šaunaus.",
+  chatLongerThanAsked: "Maršrutas išėjo ilgesnis nei norėta.",
+  chatSayWhatToChange: "Sakyk, ką keisti: trumpiau, daugiau per mišką, per kokią vietą…",
+  chatErrGenerate: "Nepavyko sugeneruoti maršruto.",
+  chatErrAnswer: "Nepavyko gauti atsakymo.",
+  chatErrNoMatch: "Nepavyko rasti reikalavimus atitinkančio maršruto.",
+  chatErrTimeout: "Serveris nutraukė generavimą, nes jis užtruko per ilgai (limitas ~60 s). Ilgas maršrutas miško keliais gali netilpti. Bandyk dar kartą arba trumpesnę trukmę.",
+  chatTooLong: "Pokalbis pasiekė šios versijos ilgio ribą. Pradėk naują maršrutą.",
+  chatRetry: "Bandyti dar kartą",
+  chatShowAnyway: "Rodyti trasą vis tiek",
+  chatLessOverlap: "Mažiau kartojimosi",
+  chatLessOverlapMsg: "Mažiau kartojimosi, atgal kitais keliais.",
+  chatBigRoadsOk: "Galima ir didelius kelius",
+  chatBigRoadsMsg: "Galima naudoti ir didelius kelius.",
+  chatOverlapWarn: "Čia nepavyko rasti trasos be kartojimosi: geriausia versija {pct} % kelio ({km} km) važiuoja jau važiuotais keliais. Trasa žemėlapyje, bet aš ją geriau perdaryčiau. Ką darom?",
+  saveReplace: "Pakeisti seną",
+  saveKeepBoth: "Nesaugoti seno",
+  saveEditForm: "Redaguoti formoje",
+  chatYou: "Tu",
+  resLuckyDetail: "Tai įdomiausia trasa, kurią radome — versijos žemiau, jei nori kitos.",
+  budgetFlexible: "laisva trukmė",
   backToHome: "Mopik — į pradžią",
   language: "Kalba",
   footerDisclaimer:
@@ -348,6 +570,80 @@ const et: Messages = {
   kindCity: "linn",
   kindVillage: "küla",
   kindHamlet: "talu",
+  loadThinking1: "Loen, mida soovid muuta…",
+  loadThinking2: "Täpsustan plaani…",
+  loadLucky1: "Ilma sihtkoha ja ajapiiranguta? Vedas!",
+  loadLucky2: "Leiame sulle midagi lahedat…",
+  loadLucky3: "Vaatan, kus mets on tihedam…",
+  loadLucky4: "Otsin teid, kus sa veel käinud pole…",
+  loadRoute1: "Kalibreerin ümbrust…",
+  loadRoute2: "Otsin metsateid…",
+  loadRoute3: "Joonistan marsruudi versioone…",
+  loadRoute4: "Kontrollin, kus teed korduvad…",
+  loadRoute5: "Hindan katet ja kurve…",
+  resRoute: "Marsruut",
+  resVersions: "Marsruudi versioonid",
+  resResult: "Marsruudi tulemus",
+  resFaster: "Kiirem",
+  resFasterHint: "sujuvam, vähem kurve",
+  resComplex: "Keerulisem",
+  resComplexHint: "mets, rajad, kurvid",
+  resStraight: "Otsem",
+  resWinding: "Käänulisem",
+  resBalanced: "Tasakaalus",
+  resDistance: "Vahemaa",
+  resTime: "Aeg",
+  resRepeated: "Korduv",
+  resClimb: "Kogutõus",
+  resDownloadGpx: "Laadi alla GPX",
+  resGpxNote: "GPX sobib OsmAnd, Garmin, DMD2, Locus, Kurviger jaoks. Marsruut on koostatud saadaolevatest kaardi- ja juurdepääsuandmetest — järgi alati liiklusmärke.",
+  resSave: "Salvesta",
+  resSaveLater: "Salvesta hiljemaks",
+  resUnsave: "Eemalda salvestatutest",
+  resShare: "Jaga",
+  resShareRoute: "Jaga marsruuti",
+  resCopyLink: "Kopeeri link:",
+  resCopied: "Kopeeritud",
+  resLinkCopied: "Link kopeeritud. Kleebi WhatsAppi, Telegrami või e-kirja — saaja näeb kaarti ja numbreid.",
+  resWhatToChange: "Mida muuta?",
+  resSendCorrection: "Saada parandus",
+  resChangePlaceholder: "Näiteks: lühemalt, rohkem läbi metsa, läbi Elva…",
+  resForest: "Metsases piirkonnas",
+  resRiverside: "Jõgede ääres",
+  resOpenCountry: "Avatud maastikul",
+  resUnknown: "Teadmata",
+  resSparse: "Väljaspool Baltikumi ei tea Mopik veel kohanimesid — marsruut ja numbrid on õiged, aga peatused jäävad nimetuks.",
+  resAssembled: "See sõit on pikem, kui tasuta marsruutija ühe korraga planeerib, seega on see kokku pandud lõikudest. Rada on päris, aga lühematele sõitudele leiab Mopik paremaid teid.",
+  resNoOtherRoads: " Siin teisi selle pikkusega teid pole.",
+  resLucky: "Ilma sihtkoha ja ajapiiranguta? Vedas!",
+  resUpTo: "kuni",
+  resGravelShort: "kruusa- ja pinnasteid",
+  resRoadsLabel: "Teed",
+  resGpxFooter: "Marsruut on koostatud OpenStreetMapi andmetest — järgi alati liiklusmärke.",
+  advertSlot: "Vaba reklaamipind",
+  chatReady: "Valmis — marsruut kaardil.",
+  chatReadyN: "Valmis — {n} versiooni allpool, vaheta ja vaata kaardil.",
+  chatLucky: "Ilma sihtkoha ja ajapiiranguta? Vedas! Leidsin sulle midagi lahedat.",
+  chatLongerThanAsked: "Marsruut tuli soovitust pikem.",
+  chatSayWhatToChange: "Ütle, mida muuta: lühemalt, rohkem läbi metsa, läbi mõne koha…",
+  chatErrGenerate: "Marsruudi koostamine ebaõnnestus.",
+  chatErrAnswer: "Vastuse saamine ebaõnnestus.",
+  chatErrNoMatch: "Nõuetele vastavat marsruuti ei leitud.",
+  chatErrTimeout: "Server katkestas koostamise, sest see võttis liiga kaua (piir ~60 s). Pikk metsateede sõit ei pruugi mahtuda. Proovi uuesti või lühemat kestust.",
+  chatTooLong: "Vestlus jõudis selle versiooni pikkuse piirini. Alusta uut sõitu.",
+  chatRetry: "Proovi uuesti",
+  chatShowAnyway: "Näita rada niikuinii",
+  chatLessOverlap: "Vähem kordusi",
+  chatLessOverlapMsg: "Vähem kordusi, tagasi teisi teid.",
+  chatBigRoadsOk: "Suured teed sobivad ka",
+  chatBigRoadsMsg: "Võib kasutada ka suuri teid.",
+  chatOverlapWarn: "Siin ei õnnestunud leida rada ilma kordusteta: parim versioon sõidab {pct} % teest ({km} km) juba läbitud teid. Rada on kaardil, aga ma teeksin selle pigem ümber. Mida teeme?",
+  saveReplace: "Asenda vana",
+  saveKeepBoth: "Ära salvesta vana",
+  saveEditForm: "Muuda vormis",
+  chatYou: "Sina",
+  resLuckyDetail: "See on huvitavaim rada, mille leidsime — versioonid allpool, kui soovid teist.",
+  budgetFlexible: "vaba kestus",
   backToHome: "Mopik — avalehele",
   language: "Keel",
   footerDisclaimer:
@@ -452,6 +748,80 @@ const en: Messages = {
   kindCity: "town",
   kindVillage: "village",
   kindHamlet: "hamlet",
+  loadThinking1: "Reading what you want changed…",
+  loadThinking2: "Refining the plan…",
+  loadLucky1: "No destination, no time limit? Lucky you!",
+  loadLucky2: "Finding you something good…",
+  loadLucky3: "Looking for where the forest is deeper…",
+  loadLucky4: "Searching for roads you have not ridden…",
+  loadRoute1: "Calibrating the area…",
+  loadRoute2: "Looking for forest tracks…",
+  loadRoute3: "Drawing route versions…",
+  loadRoute4: "Checking where roads repeat…",
+  loadRoute5: "Weighing surface and turns…",
+  resRoute: "Route",
+  resVersions: "Route versions",
+  resResult: "Route result",
+  resFaster: "Faster",
+  resFasterHint: "smoother, fewer turns",
+  resComplex: "More complex",
+  resComplexHint: "forest, trails, turns",
+  resStraight: "Straightest",
+  resWinding: "Most winding",
+  resBalanced: "Balanced",
+  resDistance: "Distance",
+  resTime: "Time",
+  resRepeated: "Repeated",
+  resClimb: "Total climb",
+  resDownloadGpx: "Download GPX",
+  resGpxNote: "The GPX works with OsmAnd, Garmin, DMD2, Locus, Kurviger. The route is built from available map and access data — always follow the road signs.",
+  resSave: "Save",
+  resSaveLater: "Save for later",
+  resUnsave: "Remove from saved",
+  resShare: "Share",
+  resShareRoute: "Share the route",
+  resCopyLink: "Copy the link:",
+  resCopied: "Copied",
+  resLinkCopied: "Link copied. Paste it into WhatsApp, Telegram or email — the recipient sees the map and the numbers.",
+  resWhatToChange: "What to change?",
+  resSendCorrection: "Send a correction",
+  resChangePlaceholder: "For example: shorter, more forest, via Limbaži…",
+  resForest: "In forest",
+  resRiverside: "Along rivers",
+  resOpenCountry: "In open country",
+  resUnknown: "Unknown",
+  resSparse: "Outside the Baltics Mopik does not know place names yet — the route and the numbers are real, but the stops stay unnamed.",
+  resAssembled: "This ride is longer than the free router plans in one go, so it was assembled from sections. The track is real, but for shorter rides Mopik finds better roads.",
+  resNoOtherRoads: " There are no other roads of this length here.",
+  resLucky: "No destination, no time limit? Lucky you!",
+  resUpTo: "up to",
+  resGravelShort: "gravel and dirt roads",
+  resRoadsLabel: "Roads",
+  resGpxFooter: "The route is built from OpenStreetMap data — always follow the road signs.",
+  advertSlot: "Advertising space available",
+  chatReady: "Ready — the route is on the map.",
+  chatReadyN: "Ready — {n} versions below, switch between them and watch the map.",
+  chatLucky: "No destination, no time limit? Lucky you! I found you something good.",
+  chatLongerThanAsked: "The route came out longer than asked for.",
+  chatSayWhatToChange: "Tell me what to change: shorter, more forest, via somewhere…",
+  chatErrGenerate: "Could not generate a route.",
+  chatErrAnswer: "Could not get an answer.",
+  chatErrNoMatch: "Could not find a route matching the requirements.",
+  chatErrTimeout: "The server stopped generating because it took too long (the limit is ~60 s). A long ride on forest roads may not fit. Try again or a shorter duration.",
+  chatTooLong: "This conversation has reached the length limit of this version. Start a new ride.",
+  chatRetry: "Try again",
+  chatShowAnyway: "Show the track anyway",
+  chatLessOverlap: "Less overlap",
+  chatLessOverlapMsg: "Less overlap, back on other roads.",
+  chatBigRoadsOk: "Big roads are fine",
+  chatBigRoadsMsg: "Big roads may be used.",
+  chatOverlapWarn: "No track without repetition was found here: the best version rides {pct} % of the way ({km} km) on roads already covered. The track is on the map, but I would rather redo it. What shall we do?",
+  saveReplace: "Replace the old one",
+  saveKeepBoth: "Do not keep the old one",
+  saveEditForm: "Edit in the form",
+  chatYou: "You",
+  resLuckyDetail: "This is the most interesting track we found — other versions below if you want one.",
+  budgetFlexible: "flexible duration",
   backToHome: "Mopik — home",
   language: "Language",
   footerDisclaimer:

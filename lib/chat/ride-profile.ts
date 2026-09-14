@@ -24,8 +24,15 @@ export type RideProfile = {
   surface: ProfileSurface;
 };
 
-/** What ~90% of adventure/enduro riders want: medium-rough, sport, forest. */
-export const DEFAULT_PROFILE: RideProfile = { difficulty: "adventure", style: "riding", surface: "forest" };
+/**
+ * The Adventure preset, and the default: the hard, sporty, forest ride.
+ *
+ * Difficulty was "adventure" (medium) here, which made the preset named
+ * Adventure ask for less than its name promises — the rider's point: if
+ * someone picks Adventure they want the rough stuff, and the medium setting
+ * is what the other two presets are for.
+ */
+export const DEFAULT_PROFILE: RideProfile = { difficulty: "hard", style: "riding", surface: "forest" };
 
 /**
  * Visible names, kept in one place so they can be renamed without touching

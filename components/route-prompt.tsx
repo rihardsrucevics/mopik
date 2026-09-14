@@ -21,7 +21,7 @@ type Props = {
   onBackToForm: () => void;
   /**
    * The route this conversation is adjusting, when the rider arrived from one
-   * (a shared or saved ride opened with "Pielāgot čatā"). Until a new route is
+   * (a shared or saved ride opened with t(locale, "chatAdjust")). Until a new route is
    * generated there is nothing to go back to in this tab, so the way out is
    * the ride itself rather than an empty form.
    */
@@ -70,7 +70,7 @@ export function RoutePrompt({ messages, plan, hasRoute, phase, quickReplies, luc
         <div className="flex items-start justify-between gap-3">
           <div>
             <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#bd4b00]">{hasRoute ? t(locale, "chatRefine") : messages.length ? t(locale, "chatPlanned") : t(locale, "chatFree")}</div>
-            <h2 className="text-lg font-semibold tracking-tight">{hasRoute ? "Ko vēlies mainīt?" : messages.length ? t(locale, "chatTitle") : t(locale, "chatIntro")}</h2>
+            <h2 className="text-lg font-semibold tracking-tight">{hasRoute ? t(locale, "chatWhatToChange") : messages.length ? t(locale, "chatTitle") : t(locale, "chatIntro")}</h2>
           </div>
           {/* Came from a route and none has been generated since? Then "back"
               means that route, not a blank form the rider never filled in. */}
@@ -82,7 +82,7 @@ export function RoutePrompt({ messages, plan, hasRoute, phase, quickReplies, luc
             <button type="button" onClick={onBackToForm} disabled={busy} aria-label={t(locale, "backToForm")} title={t(locale, "backToForm")} className="inline-flex size-8 shrink-0 items-center justify-center rounded-full text-stone-500 transition hover:bg-stone-100 hover:text-stone-900 disabled:opacity-40"><ArrowLeft className="size-4" /></button>
           )}
         </div>
-        {plan && <p className="mt-2 hidden line-clamp-2 text-[11px] leading-relaxed text-stone-500 md:block">{planSummary(plan, true)}</p>}
+        {plan && <p className="mt-2 hidden line-clamp-2 text-[11px] leading-relaxed text-stone-500 md:block">{planSummary(plan, locale === "lv")}</p>}
       </div>
 
       <div ref={logRef} className="relative min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4 md:space-y-5 md:px-5 md:py-5" role="log" aria-label="Sarunas ziņas" aria-live="polite">
@@ -94,7 +94,7 @@ export function RoutePrompt({ messages, plan, hasRoute, phase, quickReplies, luc
         )}
         {messages.map((message, index) => (
           <div key={index} ref={index === messages.length - 1 ? lastRef : undefined} className={message.role === "user" ? "ml-5 rounded-2xl rounded-br-sm bg-stone-900 px-4 py-3 text-white" : "mr-2 text-stone-700"}>
-            <div className={`mb-1 text-[10px] font-semibold uppercase tracking-widest ${message.role === "user" ? "text-stone-400" : "text-[#bd4b00]"}`}>{message.role === "user" ? "Tu" : "Mopik"}</div>
+            <div className={`mb-1 text-[10px] font-semibold uppercase tracking-widest ${message.role === "user" ? "text-stone-400" : "text-[#bd4b00]"}`}>{message.role === "user" ? t(locale, "chatYou") : "Mopik"}</div>
             <p className="whitespace-pre-wrap text-sm leading-relaxed">{message.content}</p>
           </div>
         ))}
