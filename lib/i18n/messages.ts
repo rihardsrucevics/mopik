@@ -336,7 +336,7 @@ export type MessageKey =
   | "badgeUnverifiedDetail"
   | "badgeTrail"
   | "badgeTrailDetail"
-  | "segHeading"
+  | "segDottedLine"
   | "segGrade"
   | "segOnTet"
   | "segRough";
@@ -662,7 +662,7 @@ const lv: Messages = {
   badgeTrail: "Taka",
   badgeTrailDetail:
     "Šaurs, tehnisks posms — punktētā līnija kartē. Šeit brauc lēnāk, nekā rāda plānotais laiks.",
-  segHeading: "Posms",
+  segDottedLine: "Punktotā līnija",
   segGrade: "Grūtība",
   segOnTet: "Pa TET",
   segRough: "Grūts meža ceļš",
@@ -987,7 +987,7 @@ const lt: Messages = {
   badgeTrail: "Takas",
   badgeTrailDetail:
     "Siaura, techniška atkarpa — taškuota linija žemėlapyje. Čia važiuok lėčiau, nei rodo planuotas laikas.",
-  segHeading: "Atkarpa",
+  segDottedLine: "Punktyra linija",
   segGrade: "Sudėtingumas",
   segOnTet: "TET keliu",
   segRough: "Sunkus miško kelias",
@@ -1312,7 +1312,7 @@ const et: Messages = {
   badgeTrail: "Rada",
   badgeTrailDetail:
     "Kitsas, tehniline lõik — punktiirjoon kaardil. Siin sõida aeglasemalt, kui planeeritud aeg näitab.",
-  segHeading: "Lõik",
+  segDottedLine: "Punktiirjoon",
   segGrade: "Raskus",
   segOnTet: "TET-i mööda",
   segRough: "Raske metsatee",
@@ -1637,7 +1637,7 @@ const en: Messages = {
   badgeTrail: "Trail",
   badgeTrailDetail:
     "A narrow, technical stretch — the dotted line on the map. Ride this slower than the planned time suggests.",
-  segHeading: "Segment",
+  segDottedLine: "Dotted line",
   segGrade: "Difficulty",
   segOnTet: "On the TET",
   segRough: "Rough forest track",

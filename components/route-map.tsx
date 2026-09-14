@@ -795,6 +795,20 @@ const roadClassLabel = (m: Messages, roadClass?: string, surface?: string): stri
   : m.legendGravel;
 
 /**
+ * The card's own heading: the class, named as the map draws it.
+ *
+ * Everywhere else a trail is "Taka" — the legend row, the warning badge, the
+ * result panel's mix. The card is the one place the rider asked to have it
+ * named by what he is looking at, because he opens the card by tapping the
+ * dotted line itself. Asphalt still wins over the class, exactly as in
+ * `roadClassLabel`: a paved way tagged `path` is blue on the map, not dotted.
+ */
+const segmentHeading = (m: Messages, roadClass?: string, surface?: string): string =>
+  surface !== "asphalt" && roadClass === "trail"
+    ? m.segDottedLine
+    : roadClassLabel(m, roadClass, surface);
+
+/**
  * The surface, in the rider's language.
  *
  * Only asphalt and the gravel family have legend words of their own; the
@@ -887,7 +901,7 @@ function segmentInfoHtml(
     // this file builds as a string would be the only thing using it.
     `<style>.mopik-warn>summary::-webkit-details-marker{display:none}</style>` +
     `<strong style="display:block;padding-right:24px;margin-bottom:4px">` +
-    `${esc(m.segHeading)} · ${esc(roadClassLabel(m, props.roadClass, props.surface))}</strong>` +
+    `${esc(segmentHeading(m, props.roadClass, props.surface))}</strong>` +
     rows.join("") +
     (flags.length
       ? `<div style="margin-top:6px;padding-top:6px;border-top:1px solid #ececf0">` +
@@ -1396,14 +1410,21 @@ export function RouteMap({ segments, start, destination, via, showTet, onToggleT
       // is cached after its first call, so building the label costs no React
       // work in a mousemove handler.
       if (hover.dataset.label !== label) {
+        // One warning per ROW, not a " · " run-on. A doubly-flagged stretch
+        // read as one long line whose two labels ran together; the rider asked
+        // for them stacked. A two-column grid rather than two flex rows so the
+        // icons share a column and the words start at the same x whatever the
+        // glyphs' widths — `auto 1fr` lets the icon column size to the widest
+        // icon and gives the text the rest.
         hover.innerHTML = warnings
           .map((w) => `${warningIcon(w.kind)}<span>${esc(w.title)}</span>`)
-          .join(`<span style="opacity:0.4">·</span>`);
+          .join("");
         hover.dataset.label = label;
       }
-      // `flex`, not `block`: the label is an icon beside its words, and the
-      // inline style wins over the element's own flex class.
-      hover.style.display = "flex";
+      // The element is hidden with an inline `display:none`, so showing it
+      // again has to restore the `grid` its class already asks for — an inline
+      // style beats the class either way.
+      hover.style.display = "grid";
       hover.style.transform = `translate(${e.point.x + 14}px, ${e.point.y + 14}px)`;
     };
 
@@ -1501,8 +1522,8 @@ export function RouteMap({ segments, start, destination, via, showTet, onToggleT
       <div
         ref={hoverRef}
         aria-hidden="true"
-        style={{ display: "none" }}
-        className="pointer-events-none absolute left-0 top-0 z-10 flex items-center gap-1.5 whitespace-nowrap rounded-md bg-white/95 px-2 py-1 text-[11px] font-medium leading-none text-foreground shadow-sm backdrop-blur"
+        style={{ display: "none", gridTemplateColumns: "auto 1fr" }}
+        className="pointer-events-none absolute left-0 top-0 z-10 grid items-center justify-items-start gap-x-2 gap-y-1 whitespace-nowrap rounded-md bg-white/95 px-2 py-1 text-[11px] font-medium leading-none text-foreground shadow-sm backdrop-blur"
       />
 
       <button
