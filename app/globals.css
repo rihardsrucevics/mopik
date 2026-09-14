@@ -227,10 +227,27 @@ body {
    MapLibre's default is a square white box with a 10 px grey "×" in the
    corner — the rider called it ugly, and it is: nothing else in Mopik looks
    like it. This gives it the app's own rounded card, type scale and a close
-   target big enough to hit with a thumb. */
-.maplibregl-popup-content {
-  border-radius: 14px;
-  border: 1px solid #ececf0;
+   target big enough to hit with a thumb.
+
+   The measurements are not chosen here, they are taken from the cards the
+   rider is comparing it against. The result panel's blocks are `rounded-2xl`
+   (16 px) with `border-stone-200` (#e7e5e4) and `p-3` (12 px); a popup at
+   14 px and #ececf0 was *nearly* the same, which is the one thing a shape
+   sitting beside another shape must not be.
+
+   **The selector is doubled on purpose.** `maplibre-gl.css` sets
+   `border-radius: 3px` and `padding: 15px 10px` on the same single-class
+   selector, and Next.js emits the library's stylesheet *after* the app's — so
+   at equal specificity MapLibre won and the card had square corners however
+   many times the radius was written here. (That is why the previous pass's
+   14 px never took effect either: it was never a wrong number, it was an
+   overridden one.) Repeating the class raises specificity above the library's
+   without `!important`, which would then have to be repeated by anything
+   overriding this in turn. */
+.maplibregl-popup .maplibregl-popup-content,
+.maplibregl-popup-content.maplibregl-popup-content {
+  border-radius: 16px;
+  border: 1px solid #e7e5e4;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
   padding: 12px 14px;
   font-size: 12px;
@@ -245,25 +262,37 @@ body {
   font-weight: 600;
   color: #1c1917;
 }
-/* The close button: a real 28 px target, top-right, out of the text's way. */
-.maplibregl-popup-close-button {
+/* The close button: a real 28 px target, inset from the corner so it clears
+   the 16 px radius, and the same size as the app's other icon-only close
+   controls. Doubled selector for the same reason as the card above. */
+.maplibregl-popup .maplibregl-popup-close-button,
+.maplibregl-popup-close-button.maplibregl-popup-close-button {
   top: 4px;
   right: 4px;
   width: 28px;
   height: 28px;
   border-radius: 14px;
+  padding: 0;
   font-size: 18px;
   line-height: 1;
   color: #a8a29e;
   background: transparent;
   transition: background 0.15s, color 0.15s;
 }
-.maplibregl-popup-close-button:hover {
+.maplibregl-popup .maplibregl-popup-close-button:hover {
   background: #f5f5f4;
   color: #44403c;
 }
-/* The tip inherits the card's border, so the popup reads as one shape. */
-.maplibregl-popup-anchor-bottom .maplibregl-popup-tip { border-top-color: #fff; }
-.maplibregl-popup-anchor-top .maplibregl-popup-tip { border-bottom-color: #fff; }
-.maplibregl-popup-anchor-left .maplibregl-popup-tip { border-right-color: #fff; }
-.maplibregl-popup-anchor-right .maplibregl-popup-tip { border-left-color: #fff; }
+/* The tip is removed rather than styled, and that is a decision rather than a
+   shortcut. MapLibre draws it as a CSS border triangle: it cannot take a
+   radius, it cannot take the card's 1 px border on its two slanted sides, and
+   it draws *over* the card's own border where it meets it. At the old 14 px
+   radius that was nearly invisible; at 16 px the corner curves away from the
+   triangle's base and the seam shows. Every other floating thing in Mopik —
+   the hover readout, the beer popup, the save confirmation — is a plain
+   rounded card with no pointer, so a popup without one is the consistent
+   shape, and the marker under it already says what it belongs to. The
+   element keeps its size so MapLibre's own offset arithmetic is unchanged. */
+.maplibregl-popup-tip {
+  border-color: transparent !important;
+}

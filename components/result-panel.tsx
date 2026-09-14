@@ -16,6 +16,8 @@ import { gpxFilename } from "@/lib/gpx/filename";
 import { RouteActionRow } from "@/components/action-row";
 import { type RoutePoi, type RoutePois } from "@/lib/poi/kinds";
 import { SuggestionsCard, type SelectedPoi } from "@/components/suggestions-card";
+import { useDetourAnalytics, useDetourPrefetch, useSplicedRoute } from "@/lib/routing/use-detours";
+import type { SplicedRoute } from "@/lib/routing/detour";
 
 /**
  * The left column once routes exist: what was asked, the three versions,
@@ -68,7 +70,7 @@ function Row({ label, value, icon }: { label: string; value: string; icon?: stri
   );
 }
 
-export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, remoteLoop, longerSuggestion, tolerancePercent = 20, busy, onSend, onBackToForm, resolvedPlaces, alternatives, offset, onOffsetChange, map, sparsePlaceData = false, assembledFromSegments = false, onShowPoi, onPoisLoaded, selectedPois = [], onToggleSelectPoi, onClearSelectedPois, onRegenerateWithSelection }: {
+export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, remoteLoop, longerSuggestion, tolerancePercent = 20, busy, onSend, onBackToForm, resolvedPlaces, alternatives, offset, onOffsetChange, map, sparsePlaceData = false, assembledFromSegments = false, onShowPoi, onPoisLoaded, selectedPois = [], onToggleSelectPoi, onClearSelectedPois, onRegenerateWithSelection, onSplicedChange }: {
   routes: GeneratedRoute[];
   /** transit → loop → transit split, when the ride was built around a focus area */
   remoteLoop?: GenerateRouteResponse["remoteLoop"];
@@ -145,6 +147,17 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
    * asks, and it asks once per ride.
    */
   onPoisLoaded?: (pois: RoutePois) => void;
+  /**
+   * The ride as it is currently drawn, once ticked sights have been spliced
+   * into it — or null when nothing is ticked and the API's own line stands.
+   *
+   * Reported upwards for the reason `selectedPois` comes down: the map is the
+   * page's, not the panel's, and the line it draws has to be the line these
+   * numbers describe. Null rather than "the original" on purpose, so the
+   * unspliced case is one object identity everywhere and unticking cannot
+   * leave a stale copy behind.
+   */
+  onSplicedChange?: (spliced: SplicedRoute | null) => void;
 }) {
   const [locale] = useLocale();
   const m = messages(locale);
@@ -265,7 +278,54 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [suggestOpen, routeId, locale]);
 
+  /**
+   * The detours, routed in the background the moment the suggestions arrive.
+   *
+   * Not when the card is opened — when the *list* is. The rider is reading the
+   * rows by then, and two short legs per place is a second or two each, so by
+   * the time he has decided which he wants, the answers are here and ticking
+   * one is arithmetic. The prefetch is abandoned if the ride changes under it.
+   */
+  const { byPoi: detours, loading: detoursLoading } = useDetourPrefetch({
+    routeId,
+    geometry: route?.geometry ?? null,
+    durationSeconds: route?.durationSeconds ?? null,
+    plan,
+    nearby: suggestions?.nearby ?? null,
+  });
+
+  /**
+   * The ride with the ticked sights spliced in — null while nothing is ticked,
+   * which is what makes unticking exact rather than an undo.
+   */
+  const spliced = useSplicedRoute({
+    segments: route?.segments ?? null,
+    distanceMeters: route?.distanceMeters ?? null,
+    durationSeconds: route?.durationSeconds ?? null,
+    selectedIds: selectedPois.map((p) => p.id),
+    detours,
+  });
+  useDetourAnalytics(spliced);
+
+  // The map is the page's, so the spliced line has to travel up to it. In an
+  // effect rather than during render: this is a parent state write, and doing
+  // it while rendering is the React warning it looks like.
+  const onSplicedChangeRef = useRef(onSplicedChange);
+  useEffect(() => { onSplicedChangeRef.current = onSplicedChange; }, [onSplicedChange]);
+  useEffect(() => { onSplicedChangeRef.current?.(spliced); }, [spliced]);
+
   if (!route) return null;
+  /**
+   * What the numbers on screen describe: the spliced ride when sights are
+   * ticked, the API's own otherwise.
+   *
+   * Derived in one place and read everywhere below, so the headline, the
+   * SURFACE rows, the GPX and the map can never disagree about which ride the
+   * rider is looking at.
+   */
+  const shownDistanceMeters = spliced?.distanceMeters ?? route.distanceMeters;
+  const shownDurationSeconds = spliced?.durationSeconds ?? route.durationSeconds;
+  const shownSurfaces = spliced?.surfaces ?? route.surfaces;
   const q = route.quality;
   // The RISKS share, on the same denominator the ROADS rows use: road + track
   // + trail is the whole ride, so the two blocks' percentages are comparable
@@ -284,27 +344,46 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
   // one decimal and not two. Real per-surface metres would have to come from
   // `SurfaceMix`, `classify.ts` and the versioned share code — three files
   // outside this change — and can replace this without touching the rows.
-  const surfaceKm = (percent: number) => Math.round((route.distanceMeters / 1000) * (percent / 100) * 10) / 10;
+  const surfaceKm = (percent: number) => Math.round((shownDistanceMeters / 1000) * (percent / 100) * 10) / 10;
   const unpaved = (r: GeneratedRoute) => r.surfaces.gravelPercent + r.surfaces.dirtPercent;
+  // The gravel share of the ride as drawn. A gravel spur to a hillfort moves
+  // it, and a headline that did not move would be describing a different line
+  // from the one on the map.
+  const shownUnpaved = shownSurfaces.gravelPercent + shownSurfaces.dirtPercent;
 
   const downloadGpx = async () => {
     // The thank-you opens in the click itself: on iOS Safari the download
     // sheet and the programmatic click after an await left a timer-driven
     // popup never showing. The file downloads underneath it.
     setBeer(true);
-    track("gpx_downloaded", { variant: route.variant, km: Math.round(route.distanceMeters / 1000), minutes: Math.round(route.durationSeconds / 60), repeated: route.overlap.repeatedPercent, unpaved: unpaved(route) });
+    track("gpx_downloaded", { variant: route.variant, km: Math.round(shownDistanceMeters / 1000), minutes: Math.round(shownDurationSeconds / 60), repeated: route.overlap.repeatedPercent, unpaved: shownUnpaved });
     try {
+      /**
+       * The spliced line, when sights are ticked.
+       *
+       * It is a real routed line — two BRouter legs on the rider's own profile
+       * spliced into the rest of the ride — so exporting it is exporting a
+       * ride, not a sketch. What the file loses is the **elevation profile**
+       * for the detour: `GeneratedRoute.geometry` carries none (the elevations
+       * live on the server's `RoutePath` and never reach the client), so the
+       * GPX has always been a plain track of lon/lat and the spliced one is
+       * exactly as complete as the unspliced one. Segment metadata — surface,
+       * road class — is likewise not in the GPX format we write; it is in the
+       * description, which is generated from the spliced numbers below. So
+       * nothing is lost by splicing that was not already absent.
+       */
+      const coordinates = spliced?.coordinates ?? route.geometry.coordinates;
       const res = await fetch("/api/export-gpx", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: route.name, coordinates: route.geometry.coordinates, description: gpxDescription(), places: ridePlaces(), km: route.distanceMeters / 1000 }),
+        body: JSON.stringify({ name: route.name, coordinates, description: gpxDescription(), places: ridePlaces(), km: shownDistanceMeters / 1000 }),
       });
       if (!res.ok) return;
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = gpxFilename({ places: ridePlaces(), name: route.name, km: route.distanceMeters / 1000 });
+      a.download = gpxFilename({ places: ridePlaces(), name: route.name, km: shownDistanceMeters / 1000 });
       a.rel = "noopener";
       // Attached to the document: some mobile browsers ignore clicks on detached anchors.
       document.body.appendChild(a);
@@ -383,7 +462,9 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
     const mix = route.roadMix;
     return [
       plan ? planSummary(plan, locale) : "",
-      `${Math.round(route.distanceMeters / 1000)} km · ${duration(route.durationSeconds)} · ${unpaved(route)} % ${m.resGravelShort} · ${route.overlap.repeatedPercent} % ${m.resRepeated.toLowerCase()}`,
+      // The spliced figures, so the file describes the track inside it.
+      `${Math.round(shownDistanceMeters / 1000)} km · ${duration(shownDurationSeconds)} · ${shownUnpaved} % ${m.resGravelShort} · ${route.overlap.repeatedPercent} % ${m.resRepeated.toLowerCase()}`,
+      spliced && spliced.applied.length > 0 ? fi(m.resWithSights, { n: spliced.applied.length }) : "",
       `${m.resRoadsLabel}: ${mix.roadKm} km, ${mix.trackKm} km ${m.legendTrack.toLowerCase()}, ${mix.trailKm} km ${m.legendTrail.toLowerCase()}`,
       `${variantLabels(m)[route.variant]?.label ?? route.variant} · Mopik (mopik.eu)`,
       m.resGpxFooter,
@@ -510,11 +591,32 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
             </div>
             {route.tet && <span className="shrink-0 rounded-full border border-[#f5630040] px-2 py-0.5 text-[10px] font-semibold text-[#f56300]" title={fi(m.resTetApprox, { km: route.tet.sliceKm })}>TET</span>}
           </div>
+          {/* The headline numbers describe the line on the map, so when sights
+              are spliced in they are the spliced ride's. The "≈" is not
+              decoration: the distance is exact (it is a routed line) but the
+              time is the ride's own average applied to the few hundred metres
+              each detour replaces, so the total is close rather than measured.
+              Saying so is cheaper than pretending, and the original numbers are
+              one untick away. Repeated % is deliberately NOT recomputed — it is
+              measured by `classify.ts` over a whole path with the yard and
+              coastline datasets in hand, which is a server's job; a spliced
+              figure invented here would be a different measurement wearing the
+              same label. */}
           <div className="mt-2 grid grid-cols-3 gap-2">
-            <div><div className="text-[10px] uppercase tracking-wider text-stone-400">{m.resDistance}</div><div className="text-lg font-semibold tabular-nums">{Math.round(route.distanceMeters / 1000)} km</div></div>
-            <div><div className="text-[10px] uppercase tracking-wider text-stone-400">{m.resTime}</div><div className="text-lg font-semibold tabular-nums">{duration(route.durationSeconds)}</div></div>
+            <div><div className="text-[10px] uppercase tracking-wider text-stone-400">{m.resDistance}</div><div className="text-lg font-semibold tabular-nums">{spliced ? m.resApprox : ""}{Math.round(shownDistanceMeters / 1000)} km</div></div>
+            <div><div className="text-[10px] uppercase tracking-wider text-stone-400">{m.resTime}</div><div className="text-lg font-semibold tabular-nums">{spliced ? m.resApprox : ""}{duration(shownDurationSeconds)}</div></div>
             <div><div className="text-[10px] uppercase tracking-wider text-stone-400">{m.resRepeated}</div><div className="text-lg font-semibold tabular-nums" style={{ color: route.overlap.repeatedPercent > 15 ? "#ff3b30" : undefined }}>{route.overlap.repeatedPercent} %</div></div>
           </div>
+          {spliced && spliced.applied.length > 0 && (
+            <p className="mt-1 text-[11px] text-stone-500">
+              {fi(m.resWithSights, { n: spliced.applied.length })}
+              {" · "}
+              {fi(m.resDetourDelta, {
+                km: (Math.round(spliced.addedMeters / 100) / 10).toFixed(1),
+                min: Math.max(0, Math.round(spliced.addedSeconds / 60)),
+              })}
+            </p>
+          )}
           {shared === "copied" && (
             <p role="status" className="mopik-fade-in mt-2 rounded-lg bg-stone-900 px-3 py-2 text-xs text-white">{m.resLinkCopied}</p>
           )}
@@ -550,6 +652,9 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
           viaCount={plan?.viaPlaces.length ?? 0}
           includedNames={plan?.viaPlaces ?? []}
           busy={busy}
+          detours={detours}
+          detoursLoading={detoursLoading}
+          refusedIds={spliced?.refused.map((d) => d.poiId) ?? []}
         />
 
         {details && notices.length > 0 && (
@@ -581,10 +686,10 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
             )}
             <div>
               <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-stone-400">{m.resSurfaceHeading}</div>
-              <Row label={m.legendAsphalt} value={`${surfaceKm(route.surfaces.asphaltPercent)} km · ${route.surfaces.asphaltPercent} %`} />
-              <Row label={m.legendGravel} value={`${surfaceKm(route.surfaces.gravelPercent)} km · ${route.surfaces.gravelPercent} %`} />
-              <Row label={m.resDirt} value={`${surfaceKm(route.surfaces.dirtPercent)} km · ${route.surfaces.dirtPercent} %`} />
-              <Row label={m.resUnknown} value={`${surfaceKm(route.surfaces.unknownPercent)} km · ${route.surfaces.unknownPercent} %`} />
+              <Row label={m.legendAsphalt} value={`${surfaceKm(shownSurfaces.asphaltPercent)} km · ${shownSurfaces.asphaltPercent} %`} />
+              <Row label={m.legendGravel} value={`${surfaceKm(shownSurfaces.gravelPercent)} km · ${shownSurfaces.gravelPercent} %`} />
+              <Row label={m.resDirt} value={`${surfaceKm(shownSurfaces.dirtPercent)} km · ${shownSurfaces.dirtPercent} %`} />
+              <Row label={m.resUnknown} value={`${surfaceKm(shownSurfaces.unknownPercent)} km · ${shownSurfaces.unknownPercent} %`} />
             </div>
             {(q.forestKm > 0 || q.riversideKm > 0 || q.elevationGainM > 0) && (
               <div>

@@ -6,6 +6,7 @@ import { useLocale } from "@/lib/i18n/use-locale";
 import { messages } from "@/lib/i18n/messages";
 import { fi } from "@/lib/i18n/format";
 import { POI_KIND, osmUrl, type RoutePoi, type RoutePois } from "@/lib/poi/kinds";
+import { isSuspiciousDetour, type DetourResult } from "@/lib/routing/detour";
 
 /** The plan's own cap (`RidePlanSchema` maxes `viaPlaces` at six). */
 export const MAX_VIAS = 6;
@@ -52,6 +53,7 @@ export type SelectedPoi = { id: string; name: string; lat: number; lon: number; 
 export function SuggestionsCard({
   pois, loading, failed = false, expanded, onToggle, onShow,
   selected = [], onToggleSelect, onClearSelection, onRegenerate, viaCount = 0, includedNames = [], busy,
+  detours = {}, detoursLoading = false, refusedIds = [],
 }: {
   /** null until the first expand has answered; both lists may be empty. */
   pois: RoutePois | null;
@@ -74,12 +76,33 @@ export function SuggestionsCard({
   /** Names of places this ride already passes as vias: they show "iekļauts". */
   includedNames?: string[];
   busy?: boolean;
+  /**
+   * The routed detours, by POI id, as the prefetch answers.
+   *
+   * A row with an entry shows what including the place costs — "+4,2 km ·
+   * +9 min" — and ticking it splices that line into the map at once. A row with
+   * an `ok: false` entry says the place cannot be reached and loses its
+   * checkbox: offering a tick that cannot do anything is worse than not
+   * offering one (BACKLOG item 20, seen from the list's side).
+   */
+  detours?: Record<string, DetourResult>;
+  /** The prefetch is still running: rows with no answer yet show a dot. */
+  detoursLoading?: boolean;
+  /**
+   * Ticked places whose detour overlaps an earlier one's, so it could not be
+   * spliced. Named rather than silently ignored — the rider ticked it and must
+   * be told why the map did not change.
+   */
+  refusedIds?: string[];
 }) {
   const [locale] = useLocale();
   const m = messages(locale);
   const count = pois ? pois.onRoute.length + pois.nearby.length : 0;
   const selectedIds = new Set(selected.map((s) => s.id));
   const included = new Set(includedNames);
+  const refusedSet = new Set(refusedIds);
+  // The places a tick could not splice, by name, so the note can say which.
+  const refusedNames = (pois?.nearby ?? []).filter((p) => refusedSet.has(p.id)).map((p) => p.name);
   // Six is the plan's own ceiling, so the button is judged against what the
   // ride already carries plus what is ticked — not against the ticks alone.
   const overCap = viaCount + selected.length > MAX_VIAS;
@@ -140,19 +163,34 @@ export function SuggestionsCard({
                     included={included.has(p.name)}
                     selected={selectedIds.has(p.id)}
                     onToggleSelect={onToggleSelect}
+                    detour={detours[p.id] ?? null}
+                    detourPending={detoursLoading && !detours[p.id]}
+                    refused={refusedSet.has(p.id)}
                   />
                 ))}
               </div>
             )}
           </div>
           {selected.length > 0 && onRegenerate && (
-            /* Sticky so it survives the list's own scroll on a phone. The
-               count is in the label rather than beside it: "Pārģenerēt ar 3
-               objektiem" is the whole sentence, and a bare number next to a
-               verb reads as a badge. */
+            /* Sticky so it survives the list's own scroll on a phone.
+               The button used to be the point of the card — "Pārģenerēt ar 3
+               objektiem", the one press that made a tick mean anything. It is
+               now optional: ticking already changed the map, and this asks for
+               the whole ride to be planned again *through* those places, which
+               is a better ride and costs a generation. The hint under it says
+               exactly that, because "Optimizēt" on its own does not explain
+               what it would do differently. */
             <div className="sticky bottom-0 space-y-1.5 rounded-b-xl border-t border-stone-200 bg-white/95 px-3 py-2 backdrop-blur">
               {overCap && (
                 <p role="status" className="text-[11px] leading-snug text-stone-500">{fi(m.resSelectionCapNote, { max: MAX_VIAS })}</p>
+              )}
+              {/* A tick the splice could not honour. Said here rather than on
+                  the row: it is a fact about two places together, and the way
+                  out — optimise instead — is the button right below it. */}
+              {refusedNames.length > 0 && (
+                <p role="status" className="text-[11px] leading-snug text-[#bd4b00]">
+                  {fi(m.resDetourOverlap, { place: refusedNames[0] })}
+                </p>
               )}
               <div className="flex items-center gap-2">
                 <button
@@ -161,7 +199,7 @@ export function SuggestionsCard({
                   disabled={busy || overCap}
                   className="flex h-9 flex-1 items-center justify-center rounded-full bg-[#f56300] px-3 text-xs font-semibold text-white transition hover:bg-[#d85600] disabled:opacity-40"
                 >
-                  {fi(selected.length === 1 ? m.resRegenerateOne : m.resRegenerateMany, { n: selected.length })}
+                  {m.resOptimize}
                 </button>
                 <button
                   type="button"
@@ -171,6 +209,7 @@ export function SuggestionsCard({
                   {m.resSelectionClear}
                 </button>
               </div>
+              <p className="text-[10px] leading-snug text-stone-400">{m.resOptimizeHint}</p>
             </div>
           )}
         </div>
@@ -203,7 +242,7 @@ function offFigure(meters: number): string {
  * rider ticked on a previous pass — says "iekļauts" instead, which is the one
  * thing the list could not say before.
  */
-function PoiRow({ poi, m, onRoute = false, onShow, selected = false, onToggleSelect, included = false, busy }: {
+function PoiRow({ poi, m, onRoute = false, onShow, selected = false, onToggleSelect, included = false, busy, detour = null, detourPending = false, refused = false }: {
   poi: RoutePoi;
   m: ReturnType<typeof messages>;
   onRoute?: boolean;
@@ -213,21 +252,63 @@ function PoiRow({ poi, m, onRoute = false, onShow, selected = false, onToggleSel
   /** This place is already a via of the current ride. */
   included?: boolean;
   busy?: boolean;
+  /** What including this place costs, once its detour has been routed. */
+  detour?: DetourResult | null;
+  /** Its detour is still being routed. */
+  detourPending?: boolean;
+  /** Ticked, but its detour overlaps an earlier one's and was not spliced. */
+  refused?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const kind = POI_KIND[poi.category];
   const kindLabel = m[kind.key as keyof typeof m] ?? poi.category;
   const figure = onRoute ? `${poi.alongKm} km` : offFigure(poi.distanceMeters);
+  // The router could not reach it. The row keeps its name, its Kartē and its
+  // Vairāk — the place is still real and still worth looking at — and loses
+  // only the tick, because ticking it could do nothing.
+  const unreachable = detour !== null && !detour.ok;
+  /**
+   * Reachable, but by a ride far longer than "205 m away" suggests — across a
+   * river, or on a road this profile declines. The numbers are shown as they
+   * are, muted, and the row offers no tick: a checkbox beside "205 m · +10 km"
+   * reads as a contradiction, which is exactly how the rider reported it.
+   * "Optimizēt maršrutu" remains the way in, and may find a road the spur
+   * search did not.
+   */
+  const suspicious =
+    detour?.ok === true &&
+    isSuspiciousDetour({ offRouteMeters: poi.distanceMeters, deltaMeters: detour.deltaMeters });
 
   return (
     <div className={`border-b border-stone-100 py-1 last:border-b-0 ${selected ? "-mx-1 rounded-lg bg-[#fff3ea] px-1" : ""}`}>
       <div className="flex items-center gap-2 text-xs">
         <span aria-hidden="true" className="shrink-0 text-[12px] leading-none">{kind.icon}</span>
         <span className="min-w-0 flex-1 truncate">
-          <span className="text-stone-900">{poi.name}</span>
+          <span className={unreachable ? "text-stone-400" : "text-stone-900"}>{poi.name}</span>
           <span className="text-stone-400">{" · "}</span>
           <span className="text-stone-500">{kindLabel}</span>
         </span>
+        {/* What the detour costs, muted and small: it is a consequence of the
+            row, not the row's subject. A dot while it is being routed rather
+            than a spinner — eight of them spinning in a list is a reason to
+            look away from the list. */}
+        {!onRoute && detourPending && (
+          <span aria-hidden="true" className="size-1.5 shrink-0 animate-pulse rounded-full bg-stone-300" />
+        )}
+        {!onRoute && detour?.ok && (
+          <span
+            className={`shrink-0 tabular-nums text-[10px] ${suspicious ? "text-stone-300" : "text-stone-400"}`}
+            title={suspicious ? m.resDetourFarNote : undefined}
+          >
+            {fi(m.resDetourDelta, {
+              km: (Math.round(detour.deltaMeters / 100) / 10).toFixed(1),
+              min: Math.max(0, Math.round(detour.deltaSeconds / 60)),
+            })}
+          </span>
+        )}
+        {!onRoute && unreachable && (
+          <span className="shrink-0 text-[10px] text-stone-400">{m.resDetourUnreachable}</span>
+        )}
         <span className="shrink-0 tabular-nums text-[11px] text-stone-500">{figure}</span>
         <div className="flex shrink-0 items-center gap-0.5">
           {included && (
@@ -255,8 +336,11 @@ function PoiRow({ poi, m, onRoute = false, onShow, selected = false, onToggleSel
             <Info className="size-3.5" />
           </button>
           {/* A place the ride already visits offers no tick: ticking it again
-              would ask for a via it already has. Kartē and Vairāk stay. */}
-          {onToggleSelect && !included && (
+              would ask for a via it already has. A place the router cannot
+              reach offers none either — BACKLOG item 20's hillfort, which used
+              to answer a press with a 422 half a minute later. Kartē and
+              Vairāk stay in both cases: the place is still worth looking at. */}
+          {onToggleSelect && !included && !unreachable && !suspicious && (
             <button
               type="button"
               role="checkbox"
@@ -266,9 +350,15 @@ function PoiRow({ poi, m, onRoute = false, onShow, selected = false, onToggleSel
               aria-label={fi(selected ? m.resPoiDeselectAria : m.resPoiSelectAria, { place: poi.name })}
               title={fi(selected ? m.resPoiDeselectAria : m.resPoiSelectAria, { place: poi.name })}
               className={`flex size-7 items-center justify-center rounded-full border transition disabled:opacity-40 ${
-                selected
-                  ? "border-[#f56300] bg-[#f56300] text-white"
-                  : "border-stone-300 text-transparent hover:border-[#f56300] hover:text-[#f5630055]"
+                selected && refused
+                  // Ticked, but the splice could not honour it: the tick is
+                  // outlined rather than filled, so the row does not claim a
+                  // change the map did not make. The note above the bar says
+                  // why and what to do instead.
+                  ? "border-[#f56300] bg-white text-[#f56300]"
+                  : selected
+                    ? "border-[#f56300] bg-[#f56300] text-white"
+                    : "border-stone-300 text-transparent hover:border-[#f56300] hover:text-[#f5630055]"
               }`}
             >
               <Check className="size-3.5" strokeWidth={3} />
@@ -290,6 +380,30 @@ function PoiRow({ poi, m, onRoute = false, onShow, selected = false, onToggleSel
           <Fact label={m.resPoiKind} value={String(kindLabel)} />
           <Fact label={m.resPoiAlong} value={`${poi.alongKm} km`} />
           {!onRoute && <Fact label={m.resPoiOff} value={offFigure(poi.distanceMeters)} />}
+          {/* Which shape the detour takes, and what it costs. Riding a spur
+              twice is a different ride from looping past the sight, and the
+              rider asked to be able to tell them apart — a 600 m out-and-back
+              to a viewpoint is nothing, a 15 km loop round a ravine is a
+              decision. */}
+          {detour?.ok && (
+            <>
+              <Fact
+                label={m.resDetourShape}
+                value={detour.shape === "loop" ? m.resDetourLoop : m.resDetourOutAndBack}
+              />
+              <Fact
+                label={m.resDetourCost}
+                value={fi(m.resDetourDelta, {
+                  km: (Math.round(detour.deltaMeters / 100) / 10).toFixed(1),
+                  min: Math.max(0, Math.round(detour.deltaSeconds / 60)),
+                })}
+              />
+            </>
+          )}
+          {/* Why this row has no tick despite being close by. Said in the
+              detail rather than on the row, where it would be a paragraph in a
+              list — and the row already shows the real kilometres. */}
+          {suspicious && <p className="pt-0.5 text-[11px] leading-snug text-[#bd4b00]">{m.resDetourFarNote}</p>}
           <div className="flex items-center justify-between gap-3 pt-0.5">
             <span className="text-stone-500">{m.resPoiNoDetail}</span>
           </div>

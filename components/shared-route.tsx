@@ -17,6 +17,7 @@ import { decodePlanPlaces, encodePlanShare, sharedRouteSegments, type SharedRout
 import { isCodeSaved, removeRide, rideId, saveSharedRide } from "@/lib/share/saved-rides";
 import { gpxFilename } from "@/lib/gpx/filename";
 import { DESKTOP_QUERY } from "@/lib/use-media-query";
+import { useDetourAnalytics, useDetourPrefetch, useSplicedRoute } from "@/lib/routing/use-detours";
 
 // A function of the language, not a constant: these labels are shown in
 // four languages and a module-level object is built before one is known.
@@ -148,6 +149,40 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
   // must show the same ride the rider shared. The ROADS / SURFACE numbers
   // below and the map's own badges carry it.
   const segments = useMemo(() => sharedRouteSegments(share), [share]);
+
+  /**
+   * The detours, prefetched exactly as on the planner.
+   *
+   * This page is where the rider's own saved rides open, so "tick a sight and
+   * the map changes at once" has to mean the same thing here. The share code
+   * carries the plan, which is what the cost profile is built from; an old
+   * link without one gets no prefetch and the list behaves as it did before.
+   *
+   * The id is the share code rather than a route id: the code *is* this ride's
+   * identity, and it changes exactly when the drawn line does.
+   */
+  const { byPoi: detours, loading: detoursLoading } = useDetourPrefetch({
+    routeId: share.plan ? code : null,
+    geometry: useMemo(() => ({ coordinates: share.points }), [share.points]),
+    durationSeconds: share.minutes * 60,
+    plan: share.plan ?? null,
+    nearby: pois?.nearby ?? null,
+  });
+  const spliced = useSplicedRoute({
+    segments,
+    distanceMeters: share.km * 1000,
+    durationSeconds: share.minutes * 60,
+    selectedIds: selectedPois.map((p) => p.id),
+    detours,
+  });
+  useDetourAnalytics(spliced);
+  // The figures on screen: the spliced ride when sights are ticked, this
+  // ride's own otherwise.
+  const shownKm = spliced ? Math.round(spliced.distanceMeters / 1000) : share.km;
+  const shownMinutes = spliced ? Math.round(spliced.durationSeconds / 60) : share.minutes;
+  const shownUnpaved = spliced
+    ? spliced.surfaces.gravelPercent + spliced.surfaces.dirtPercent
+    : share.unpavedPercent;
 
   // Asked once, when the rider opens the details — the same lazy rule the
   // result panel follows, for the same reason: most visitors never expand it.
@@ -281,17 +316,23 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
   };
 
   const downloadGpx = async () => {
-    track("shared_gpx_downloaded", { km: share.km, variant: share.variant });
+    track("shared_gpx_downloaded", { km: shownKm, variant: share.variant });
+    // The spliced line when sights are ticked — a real routed track, and as
+    // complete as the unspliced one: this page's GPX has always been plain
+    // lon/lat (a share code carries no elevations and no per-point metadata),
+    // so splicing loses nothing that was there.
+    const coordinates = spliced?.coordinates ?? share.points;
     const res = await fetch("/api/export-gpx", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
-      name: share.name, coordinates: share.points, km: share.km, places: [share.startLabel],
-      description: [`${share.name} · ${share.km} km · ${duration(share.minutes)} · ${share.unpavedPercent} % ${m.resGravelPct}`,
+      name: share.name, coordinates, km: shownKm, places: [share.startLabel],
+      description: [`${share.name} · ${shownKm} km · ${duration(shownMinutes)} · ${shownUnpaved} % ${m.resGravelPct}`,
+        spliced && spliced.applied.length > 0 ? fi(m.resWithSights, { n: spliced.applied.length }) : "",
         fi(m.shGpxRepeated, { pct: share.repeatedPercent, place: share.startLabel }),
-        m.shSharedNote].join("\n"),
+        m.shSharedNote].filter(Boolean).join("\n"),
     }) });
     if (!res.ok) return;
     const url = URL.createObjectURL(await res.blob());
     const a = document.createElement("a");
-    a.href = url; a.download = gpxFilename({ places: [share.startLabel, share.startLabel], name: share.name, km: share.km }); a.rel = "noopener";
+    a.href = url; a.download = gpxFilename({ places: [share.startLabel, share.startLabel], name: share.name, km: shownKm }); a.rel = "noopener";
     document.body.appendChild(a); a.click();
     setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 4000);
   };
@@ -309,10 +350,23 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
           <h2 className="mt-1 text-xl font-semibold tracking-tight">{share.name}</h2>
           <p className="mt-0.5 text-xs text-stone-500">{fi(m.shStartLabel, { place: share.startLabel })}</p>
           <div className="mt-4 grid grid-cols-3 gap-2">
-            <div><div className="text-[10px] uppercase tracking-wider text-stone-400">{m.resDistance}</div><div className="text-lg font-semibold tabular-nums">{share.km} km</div></div>
-            <div><div className="text-[10px] uppercase tracking-wider text-stone-400">{m.resTime}</div><div className="text-lg font-semibold tabular-nums">{duration(share.minutes)}</div></div>
-            <div><div className="text-[10px] uppercase tracking-wider text-stone-400">{m.legendGravel}</div><div className="text-lg font-semibold tabular-nums">{share.unpavedPercent} %</div></div>
+            <div><div className="text-[10px] uppercase tracking-wider text-stone-400">{m.resDistance}</div><div className="text-lg font-semibold tabular-nums">{spliced ? m.resApprox : ""}{shownKm} km</div></div>
+            <div><div className="text-[10px] uppercase tracking-wider text-stone-400">{m.resTime}</div><div className="text-lg font-semibold tabular-nums">{spliced ? m.resApprox : ""}{duration(shownMinutes)}</div></div>
+            <div><div className="text-[10px] uppercase tracking-wider text-stone-400">{m.legendGravel}</div><div className="text-lg font-semibold tabular-nums">{shownUnpaved} %</div></div>
           </div>
+          {/* The same "≈" and the same muted line as the planner, for the same
+              reason: the distance is a routed line but the time is scaled, and
+              the original numbers are one untick away. */}
+          {spliced && spliced.applied.length > 0 && (
+            <p className="mt-1 text-[11px] text-stone-500">
+              {fi(m.resWithSights, { n: spliced.applied.length })}
+              {" · "}
+              {fi(m.resDetourDelta, {
+                km: (Math.round(spliced.addedMeters / 100) / 10).toFixed(1),
+                min: Math.max(0, Math.round(spliced.addedSeconds / 60)),
+              })}
+            </p>
+          )}
           <p className="mt-2 text-[11px] text-stone-500">{fi(m.shRepeatedNote, { pct: share.repeatedPercent })}</p>
           <button type="button" onClick={downloadGpx} className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-full bg-[#f56300] text-sm font-semibold text-white transition hover:bg-[#d85600]"><Download className="size-4" />{m.resDownloadGpx}</button>
           <RouteActionRow saved={saved} onToggleSave={toggleSave} onShare={shareRoute} copied={copied} details={details} onToggleDetails={() => setDetails(!details)} />
@@ -370,6 +424,9 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
               onRegenerate={planCode && share.plan ? regenerateWithSelection : undefined}
               viaCount={share.plan?.viaPlaces.length ?? 0}
               includedNames={share.plan?.viaPlaces ?? []}
+              detours={detours}
+              detoursLoading={detoursLoading}
+              refusedIds={spliced?.refused.map((d) => d.poiId) ?? []}
             />
           </div>
         </section>
@@ -402,7 +459,7 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
           <MapPanel
             className="h-[46dvh] overflow-hidden rounded-2xl border border-stone-200 md:h-[calc(100vh-7rem)]"
             expandedClassName="md:relative md:inset-auto md:z-auto md:h-[calc(100vh-7rem)] md:overflow-hidden md:rounded-2xl md:border md:border-stone-200">
-            <RouteMap segments={segments} start={start} destination={null} focus={focusPoi} onFocusCleared={() => setFocusPoi(null)} onFocusToggle={planCode && share.plan ? toggleFocusedPoi : undefined} selectedPois={selectedPois} showTet={showTet} onToggleTet={setShowTet} />
+            <RouteMap segments={spliced?.segments ?? segments} start={start} destination={null} focus={focusPoi} onFocusCleared={() => setFocusPoi(null)} onFocusToggle={planCode && share.plan ? toggleFocusedPoi : undefined} selectedPois={selectedPois} showTet={showTet} onToggleTet={setShowTet} />
           </MapPanel>
         </div>
       </div>

@@ -24,6 +24,7 @@ import { useRideProfile } from "@/lib/chat/use-ride-profile";
 import { DESKTOP_QUERY, useMediaQuery } from "@/lib/use-media-query";
 import { GenerateRouteResponse } from "@/lib/types";
 import { POI_KIND } from "@/lib/poi/kinds";
+import type { SplicedRoute } from "@/lib/routing/detour";
 
 type Retry = { stage: "chat"; messages: ChatMessage[]; plan: RidePlan | null } | { stage: "route"; messages: ChatMessage[]; plan: RidePlan };
 
@@ -150,6 +151,35 @@ export default function Home() {
    * route may not go near.
    */
   const [selectedPois, setSelectedPois] = useState<SelectedPoi[]>([]);
+  /**
+   * The ride with the ticked sights' detours spliced into it, or null while
+   * nothing is ticked.
+   *
+   * Here for the same reason the ticks themselves are: the map draws it, so
+   * the map's owner holds it. The result panel computes it — it is the thing
+   * that knows which suggestions loaded and which are ticked — and reports it
+   * up through `onSplicedChange`.
+   */
+  /**
+   * A splice belongs to the ride it was computed against, so it is *stored*
+   * with that ride and read only when the two still match.
+   *
+   * Not cleared in an effect on `result`. That was the obvious shape and it is
+   * the one React warns about — a setState in an effect body costs a second
+   * render pass, and for one frame after a new ride arrived the map would
+   * still be drawing the old ride's spliced line. Carrying the owner alongside
+   * makes the staleness unrepresentable instead of merely short-lived: a
+   * splice from a replaced ride simply is not read.
+   */
+  const [splicedFor, setSplicedFor] = useState<{
+    result: GenerateRouteResponse | null;
+    spliced: SplicedRoute | null;
+  }>({ result: null, spliced: null });
+  const spliced = splicedFor.result === result ? splicedFor.spliced : null;
+  const handleSplicedChange = useCallback(
+    (next: SplicedRoute | null) => setSplicedFor({ result, spliced: next }),
+    [result],
+  );
   const toggleSelectPoi = useCallback((poi: SelectedPoi) => {
     setSelectedPois((current) =>
       current.some((p) => p.id === poi.id) ? current.filter((p) => p.id !== poi.id) : [...current, poi],
@@ -727,7 +757,10 @@ export default function Home() {
       className={`overflow-hidden rounded-2xl border border-stone-200 md:h-[calc(100vh-7rem)] ${(chatting || phase !== "idle") ? "h-[26dvh]" : "h-[42dvh]"}`}
       expandedClassName="md:relative md:inset-auto md:z-auto md:h-[calc(100vh-7rem)] md:overflow-hidden md:rounded-2xl md:border md:border-stone-200">
       <RouteMap
-        segments={route?.segments ?? null}
+        // The spliced line when sights are ticked — a real routed one, with
+        // the detours' own segments, so the map colours a gravel spur to a
+        // hillfort brown the first time it draws it.
+        segments={spliced?.segments ?? route?.segments ?? null}
         start={result?.start ?? previewPlaces[0] ?? null}
         // A 🅿️ is a stop, so the finish must never be one. While a ride is
         // only being composed the map has to make the same distinction the
@@ -781,7 +814,7 @@ export default function Home() {
           {entryMode === "form"
             ? <RideComposer key={plan ? planSummary(plan, locale) : "new"} initialPlan={plan} initialPlaces={places} profile={profile} onProfileChange={changeProfile} busy={phase !== "idle"} onGenerate={startFromForm} onUseChat={() => setEntryMode("chat")} onPlacesChange={(p, tripType) => { setPreviewPlaces(p); setPreviewRoundTrip(tripType === "round_trip"); }} map={mapInComposer && mapVisible ? mapPanel : undefined} />
             : result && result.routes.length > 0 && !chatting
-              ? <ResultPanel routes={result.routes} selected={selected} onSelect={setSelected} plan={plan} avoidTowns={result.intent.avoidTowns ?? false} lucky={lucky} remoteLoop={result.remoteLoop} longerSuggestion={result.longerSuggestion} tolerancePercent={result.intent.distanceTolerancePercent} busy={phase !== "idle"} onSend={send} onBackToForm={() => setEntryMode("form")} map={mapInResult && mapVisible ? mapPanel : undefined} resolvedPlaces={routedPlaces} alternatives={result.alternatives} sparsePlaceData={result.sparsePlaceData} assembledFromSegments={result.assembledFromSegments} offset={variantOffset} onOffsetChange={setVariantOffset} onShowPoi={showPoi} onPoisLoaded={notePois} selectedPois={selectedPois} onToggleSelectPoi={toggleSelectPoi} onClearSelectedPois={clearSelectedPois} onRegenerateWithSelection={regenerateWithSelection} />
+              ? <ResultPanel routes={result.routes} selected={selected} onSelect={setSelected} plan={plan} avoidTowns={result.intent.avoidTowns ?? false} lucky={lucky} remoteLoop={result.remoteLoop} longerSuggestion={result.longerSuggestion} tolerancePercent={result.intent.distanceTolerancePercent} busy={phase !== "idle"} onSend={send} onBackToForm={() => setEntryMode("form")} map={mapInResult && mapVisible ? mapPanel : undefined} resolvedPlaces={routedPlaces} alternatives={result.alternatives} sparsePlaceData={result.sparsePlaceData} assembledFromSegments={result.assembledFromSegments} offset={variantOffset} onOffsetChange={setVariantOffset} onShowPoi={showPoi} onPoisLoaded={notePois} selectedPois={selectedPois} onToggleSelectPoi={toggleSelectPoi} onClearSelectedPois={clearSelectedPois} onRegenerateWithSelection={regenerateWithSelection} onSplicedChange={handleSplicedChange} />
               : <RoutePrompt messages={messages} plan={plan} hasRoute={Boolean(route)} phase={phase} quickReplies={quickReplies} lucky={lucky && !route} onSend={send} onBackToForm={() => setEntryMode("form")} originCode={origin?.code ?? null} onAction={(action) => { if (action === "retry") { retryLast(); return; } setChatting(false); setQuickReplies([]); }} onCancel={cancel} />}
           {/* A ride that came from editing another one. Asked once, here,
               because only the rider knows whether the original is still

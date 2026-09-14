@@ -264,6 +264,20 @@ export type MessageKey =
   | "resSelectionClear"
   | "resSelectionCapNote"
   | "resSuggestFailed"
+  /* Detours: a ticked sight is spliced into the drawn line at once, and
+     "Pārģenerēt" becomes the optional full search. */
+  | "resOptimize"
+  | "resOptimizeHint"
+  | "resDetourDelta"
+  | "resDetourUnreachable"
+  | "resDetourOverlap"
+  | "resWithSights"
+  | "resApprox"
+  | "resDetourShape"
+  | "resDetourCost"
+  | "resDetourFarNote"
+  | "resDetourOutAndBack"
+  | "resDetourLoop"
   | "kindFerry"
   | "kindFord"
   | "kindTower"
@@ -659,6 +673,30 @@ const lv: Messages = {
   resSelectionClear: "Notīrīt",
   resSelectionCapNote: "Maršrutā var būt ne vairāk kā {max} pieturas — noņem kādu atzīmi.",
   resSuggestFailed: "Neizdevās ielādēt ieteikumus.",
+  /**
+   * The bar's button was "Pārģenerēt ar {n} objektiem" and is now this.
+   *
+   * The rename is the feature, not a wording change. Ticking a sight already
+   * changes the map — the detour is spliced in on the spot — so the button no
+   * longer means "make this happen", it means "and now plan the whole ride
+   * properly through them". "Optimizēt" says that; "Pārģenerēt" said the ride
+   * on screen was provisional, which it no longer is.
+   */
+  resOptimize: "Optimizēt maršrutu",
+  resOptimizeHint: "Pārplāno visu braucienu caur atzīmētajām vietām.",
+  resDetourDelta: "+{km} km · +{min} min",
+  resDetourUnreachable: "nav sasniedzams",
+  resDetourOverlap: "{place} ir par tuvu citai atzīmētai vietai, lai to pievienotu atsevišķi — optimizē maršrutu, lai iekļautu abas.",
+  resWithSights: "ar {n} apskates objektiem",
+  /** The mark on a spliced ride's totals: the distance is a routed line, the time is scaled. Identical in all four languages, but a key rather than a literal because it is user-visible text. */
+  resApprox: "≈ ",
+  /** Which shape the detour takes, shown in the row's detail so the rider can
+   *  judge it: a spur ridden twice is a different ride from a loop. */
+  resDetourShape: "Piebraukšana",
+  resDetourCost: "Papildus",
+  resDetourFarNote: "Vieta ir tuvu, bet aizbraukt līdz tai pa ceļiem ir tālu — visticamāk, pa citu upes krastu. Mēģini “Optimizēt maršrutu”.",
+  resDetourOutAndBack: "turp un atpakaļ",
+  resDetourLoop: "aplis",
   kindFerry: "pārceltuve",
   kindFord: "brasls",
   kindTower: "skatu tornis",
@@ -1024,6 +1062,18 @@ const lt: Messages = {
   resSelectionClear: "Išvalyti",
   resSelectionCapNote: "Maršrute gali būti ne daugiau kaip {max} sustojimai — nuimk kurią nors žymę.",
   resSuggestFailed: "Nepavyko įkelti pasiūlymų.",
+  resOptimize: "Optimizuoti maršrutą",
+  resOptimizeHint: "Iš naujo suplanuoja visą maršrutą pro pažymėtas vietas.",
+  resDetourDelta: "+{km} km · +{min} min",
+  resDetourUnreachable: "nepasiekiama",
+  resDetourOverlap: "{place} yra per arti kitos pažymėtos vietos, kad būtų pridėta atskirai — optimizuok maršrutą, kad tilptų abi.",
+  resWithSights: "su {n} vietomis",
+  resApprox: "≈ ",
+  resDetourShape: "Privažiavimas",
+  resDetourCost: "Papildomai",
+  resDetourFarNote: "Vieta netoli, bet privažiuoti keliais toli — greičiausiai kitame upės krante. Pabandyk „Optimizuoti maršrutą“.",
+  resDetourOutAndBack: "pirmyn ir atgal",
+  resDetourLoop: "ratu",
   kindFerry: "keltas",
   kindFord: "brasta",
   kindTower: "apžvalgos bokštas",
@@ -1389,6 +1439,18 @@ const et: Messages = {
   resSelectionClear: "Tühjenda",
   resSelectionCapNote: "Marsruudil võib olla kuni {max} peatust — eemalda mõni märge.",
   resSuggestFailed: "Soovituste laadimine ebaõnnestus.",
+  resOptimize: "Optimeeri marsruut",
+  resOptimizeHint: "Planeerib kogu sõidu uuesti läbi märgitud kohtade.",
+  resDetourDelta: "+{km} km · +{min} min",
+  resDetourUnreachable: "ei ole ligipääsetav",
+  resDetourOverlap: "{place} on teisele märgitud kohale liiga lähedal, et seda eraldi lisada — optimeeri marsruut, et mõlemad sisse võtta.",
+  resWithSights: "{n} vaatamisväärsusega",
+  resApprox: "≈ ",
+  resDetourShape: "Juurdepääs",
+  resDetourCost: "Lisaks",
+  resDetourFarNote: "Koht on lähedal, aga teed mööda on sinna pikk sõit — tõenäoliselt teisel kaldal. Proovi „Optimeeri marsruut“.",
+  resDetourOutAndBack: "edasi-tagasi",
+  resDetourLoop: "ringiga",
   kindFerry: "praam",
   kindFord: "koolmekoht",
   kindTower: "vaatetorn",
@@ -1752,6 +1814,18 @@ const en: Messages = {
   resSelectionClear: "Clear",
   resSelectionCapNote: "A ride can hold at most {max} stops — clear a selection.",
   resSuggestFailed: "Could not load suggestions.",
+  resOptimize: "Optimise the route",
+  resOptimizeHint: "Plans the whole ride again through the ticked sights.",
+  resDetourDelta: "+{km} km · +{min} min",
+  resDetourUnreachable: "cannot be reached",
+  resDetourOverlap: "{place} is too close to another ticked sight to be added on its own — optimise the route to include both.",
+  resWithSights: "with {n} sights",
+  resApprox: "≈ ",
+  resDetourShape: "Detour shape",
+  resDetourCost: "Adds",
+  resDetourFarNote: "The place is close, but reaching it by road is a long ride — most likely the far bank. Try “Optimise the route”.",
+  resDetourOutAndBack: "out and back",
+  resDetourLoop: "a loop",
   kindFerry: "ferry",
   kindFord: "ford",
   kindTower: "lookout tower",
