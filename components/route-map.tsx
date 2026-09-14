@@ -7,6 +7,7 @@ import { RouteSegmentProperties } from "@/lib/types";
 import { haversineMeters } from "@/lib/geo/geometry";
 import { useLocale } from "@/lib/i18n/use-locale";
 import { messages } from "@/lib/i18n/messages";
+import { fi } from "@/lib/i18n/format";
 import type { UiLocale } from "@/lib/i18n/locale";
 
 // Serve the MapLibre worker from /public — bundler-emitted module workers
@@ -102,18 +103,24 @@ async function markTet(
   }
 }
 
-// The legend reads the way OSM readers already read a map: **one colour family
-// for everything unpaved** (see `UNPAVED` below), and the LINE STYLE says what
-// kind of way it is — solid gravel road, dashed track, dotted trail. Asphalt
-// stays blue, because "is this tarmac or not" is the one distinction a rider
-// makes at a glance.
+// Two independent dimensions, and each one is read off a different property of
+// the line:
 //
-// This replaces a scheme where colour encoded the surface (orange gravel,
-// brown dirt, grey unknown) and trails were always red. It carried more
-// information than a rider could read on a moving map, and it disagreed with
-// every other map they use: a dotted line meant "trail" everywhere else and
-// "red warning" here. Gravel and dirt still share a colour — the style says
-// the rest, and the panel still reports the exact surface split in numbers.
+//   COLOUR  = what the surface is    (see `SURFACE_COLORS`)
+//   PATTERN = what kind of way it is (solid road, dashed track, dotted trail)
+//
+// Keeping them independent is what lets 4 colours × 3 patterns explain all
+// twelve combinations with seven legend entries. It also settles a real
+// complaint: the rider found an asphalt stretch of a Como → Lugano ride drawn
+// as a blue DASHED line and nothing in the legend said what that meant. It
+// means exactly what it looks like — a paved forest track — and the legend now
+// says so in two rows instead of pretending the combination cannot happen.
+//
+// The scheme before this one used colour for the road class (one orange family,
+// a darker shade per class) and left the surface to the dash pattern alone.
+// That made a paved track blue-dashed *by accident*, as a collision between the
+// two rules rather than as a statement, and it had no way at all to say
+// "surface unknown".
 const PAVED_COLOR = "#0071e3";
 /**
  * The TET purple, a step brighter than the `#af52de` it was.
@@ -129,56 +136,39 @@ const TET_COLOR = "#c65cff";
 const TET_LEGEND_ICON = "🟣";
 
 /**
- * The unpaved family — an experiment, and the one place to tune or revert it.
+ * Colour by surface — the four buckets the SEGUMS panel already reports, in
+ * the same order, so the map and the numbers under it agree.
  *
- * It used to be one brown (`#8f5a24`) for every unpaved class, with the dash
- * pattern carrying the whole distinction. This swaps that family for the app's
- * own brand orange `#f56300` (the logo dot, the generate button, the PWA
- * theme colour), so the route on the map belongs to the same palette as the
- * app around it.
+ * Gravel is the app's own brand orange `#f56300` (the logo dot, the generate
+ * button, the PWA theme colour), so the commonest adventure surface belongs to
+ * the same palette as the app around it. Dirt keeps the darker, deeper orange
+ * that used to mark trails: it is the rougher stuff, and it reads that way.
  *
- * The dash patterns still do the work of telling the classes apart — solid
- * gravel road, dashed track, dotted trail. The shades only reinforce what the
- * dashes already say: a trail is darker and deeper because a dotted line is
- * the thinnest ink on the map and the brand orange alone reads washed out at
- * the width of a dot.
+ * Grey for unknown is the point of the fourth bucket. "OSM has not recorded
+ * this surface" is real information a rider wants — it is the stretch to look
+ * at satellite imagery for — and the old scheme had to fold it in with gravel
+ * and silently overstate what it knew. Stone-500 rather than stone-400: on the
+ * green basemap the lighter grey read as a faded route rather than a stated
+ * unknown. The white casing under it is unchanged, so it still reads as a
+ * route and not as a basemap line.
  */
-const UNPAVED = {
-  /** Gravel and everything else unpaved: the brand orange itself. */
-  road: "#f56300",
-  /** Forest track, dashed. The button-hover shade, a step down. */
-  track: "#d85600",
-  /** Trail, dotted. The darkest of the three — see above. */
-  trail: "#bd4b00",
+const SURFACE_COLORS = {
+  /** `asphalt` — the one distinction a rider makes at a glance. */
+  asphalt: PAVED_COLOR,
+  /** `gravel` + `compacted`: the brand orange. */
+  gravel: "#f56300",
+  /** `ground` + `dirt` + `sand`. */
+  dirt: "#bd4b00",
+  /** `unknown`: OSM does not say. */
+  unknown: "#78716c",
 } as const;
 
 /**
- * The glow, the casing-level fill and any layer that is not class-filtered
- * paint with the family's base, so an unpaved stretch never reads as a gap.
+ * The legend's pattern swatches only. Stone-700: dark enough to read at 3 px
+ * on white, and deliberately not any of the four route colours, so the shape
+ * of the sample is the only thing it says.
  */
-const UNPAVED_COLOR = UNPAVED.road;
-
-/**
- * Lever 1 of 3 for low-zoom legibility: the shades track and trail drift to as
- * the map zooms out, so colour can carry some of the distinction once the dash
- * patterns stop being legible.
- *
- * **These must stay clearly ORANGE.** The first version used `#a63d00` /
- * `#8a3a00`, which read as *brown* against the green basemap — "kāpēc nav viss
- * oranžs?" — and the one-orange-family rule the whole legend is built on is
- * worth more than the extra separation. These are a milder step of the same
- * family instead.
- *
- * Setting each of these equal to its `UNPAVED` counterpart switches the effect
- * off completely, which is the intended way to compare it.
- */
-const LOW_ZOOM_TRACK = "#c95300";
-const LOW_ZOOM_TRAIL = "#b04a00";
-
-/** Where the colour drift runs between: full `UNPAVED` shades at and above
- * `DARKEN_FROM_ZOOM`, fully drifted at and below `DARKEN_TO_ZOOM`. */
-const DARKEN_FROM_ZOOM = 12;
-const DARKEN_TO_ZOOM = 9;
+const PATTERN_INK = "#44403c";
 
 /**
  * Where the line stops being able to hold a pattern.
@@ -188,8 +178,9 @@ const DARKEN_TO_ZOOM = 9;
  * - Between the two it is ~3–4 px, so the dashes are stretched: the same ink
  *   in fewer, longer marks survives a thinner line.
  * - Below `ZOOM_PATTERN_OFF` nothing survives — the route is a thread across a
- *   whole region — so track and trail go solid and are told apart by colour
- *   and by a slightly narrower line than the gravel base.
+ *   whole region — so track and trail go solid, drawn a little narrower than
+ *   the road base. At that zoom the class is genuinely not readable and the
+ *   line only claims what it still can: the surface, by colour.
  *
  * `line-dasharray` is a cross-faded property: the style spec declares it
  * `interpolated: false` with `zoom` among its parameters (verified in
@@ -718,49 +709,68 @@ const CLICKABLE_LAYERS = ["route-road", "route-track", "route-trail"] as const;
  */
 const TAP_SLOP_PX = 8;
 
-/**
- * The class heading, in the legend's own words.
- *
- * It has to read `surface` as well as `roadClass`, exactly as the layers do
- * when they choose a colour: a `roadClass: "road"` is drawn BLUE when its
- * surface is asphalt and orange otherwise, so keying the heading on the class
- * alone called every paved road "gravel" — the card and the line it points at
- * disagreed. The rule below is the same one `surfaceColor` paints with:
- * asphalt first, then the class.
- */
-const roadClassLabel = (m: Messages, roadClass?: string, surface?: string): string =>
-  surface === "asphalt" ? m.legendAsphalt
-  : roadClass === "trail" ? m.legendTrail
-  : roadClass === "track" ? m.legendTrack
-  : m.legendGravel;
+/** The four surface buckets, as the map colours them and the panel counts them. */
+type SurfaceBucket = "asphalt" | "gravel" | "dirt" | "unknown";
 
 /**
- * The card's own heading: the class, named as the map draws it.
+ * Which colour bucket a stretch falls in — the one place that answers it.
  *
- * Everywhere else a trail is the short "Taciņas" — the legend row, which has
- * to stay narrow on a phone, and the warning badge. The card is the one place
- * the rider asked for the long form, "Taciņas (punktotā līnija)", because he
- * opens the card by tapping the dotted line itself and the heading should name
- * what he tapped. Asphalt still wins over the class, exactly as in
- * `roadClassLabel`: a paved way tagged `path` is blue on the map, not dotted.
+ * Kept identical to `classifyRoute`'s split for the SEGUMS percentages and to
+ * `SURFACE_COLOR_EXPR`'s `match`: three rules over the same seven values, and
+ * a rider who is told "30 % grants" should see exactly those stretches orange.
  */
-const segmentHeading = (m: Messages, roadClass?: string, surface?: string): string =>
-  surface !== "asphalt" && roadClass === "trail"
-    ? m.segDottedLine
-    : roadClassLabel(m, roadClass, surface);
+const surfaceBucket = (surface?: string): SurfaceBucket =>
+  surface === "asphalt" ? "asphalt"
+  : surface === "gravel" || surface === "compacted" ? "gravel"
+  : surface === "ground" || surface === "dirt" || surface === "sand" ? "dirt"
+  : "unknown";
 
 /**
- * The surface, in the rider's language.
- *
- * Only asphalt and the gravel family have legend words of their own; the
- * looser OSM values (`ground`, `dirt`, `sand`) share the panel's "Zeme /
- * smiltis" line, and an untagged way says so rather than guessing.
+ * The surface on its own, in the rider's language: the SEGUMS row's words, and
+ * the whole heading for a plain road. An untagged way says "unknown" rather
+ * than guessing — that is a fact worth showing, and the map greys it to match.
  */
-const surfaceLabel = (m: Messages, surface?: string): string =>
-  surface === "asphalt" ? m.legendAsphalt
-  : surface === "gravel" || surface === "compacted" ? m.legendGravel
-  : surface === "ground" || surface === "dirt" || surface === "sand" ? m.resDirt
-  : m.resUnknown;
+const surfaceLabel = (m: Messages, surface?: string): string => {
+  const bucket = surfaceBucket(surface);
+  return bucket === "asphalt" ? m.legendAsphalt
+    : bucket === "gravel" ? m.legendGravel
+    : bucket === "dirt" ? m.resDirt
+    : m.resUnknown;
+};
+
+/**
+ * The card's heading: the two things the line is drawn from, in words —
+ * surface + road class, "Grants meža ceļš", "Asfaltēta taciņa".
+ *
+ * It used to name the class alone (with asphalt as a special case that
+ * overrode it), which could not describe a paved track at all: the map drew a
+ * blue dashed line and the card said flatly "Asfalts". Now both dimensions are
+ * always named, so the heading reads as the legend's two rows combined.
+ *
+ * A plain road is the one case with no compound: "Asfalts" or "Grants" on its
+ * own. Naming the class as well ("asphalt road") states the default and makes
+ * the interesting cases harder to spot.
+ *
+ * The compound is assembled through `fi` from a per-locale `{surface} {class}`
+ * template rather than by joining words here, because the order and the
+ * modifier's form are the translator's business: Latvian and Lithuanian
+ * inflect the surface for the class noun's gender, which is why the surface
+ * keys come in masculine and feminine forms.
+ */
+const segmentHeading = (m: Messages, roadClass?: string, surface?: string): string => {
+  const bucket = surfaceBucket(surface);
+  const plain = surfaceLabel(m, surface);
+  if (roadClass !== "track" && roadClass !== "trail") return plain;
+
+  const feminine = roadClass === "trail";
+  const cls = feminine ? m.segClassTrail : m.segClassTrack;
+  const mod =
+    bucket === "asphalt" ? (feminine ? m.segSurfaceAsphaltF : m.segSurfaceAsphaltM)
+    : bucket === "gravel" ? m.segSurfaceGravel
+    : bucket === "dirt" ? (feminine ? m.segSurfaceDirtF : m.segSurfaceDirtM)
+    : m.segSurfaceUnknown;
+  return fi(m.segCompound, { surface: mod, class: cls });
+};
 
 /** Metres along a line, for the length of a run the API did not measure. */
 function lineMeters(coordinates: number[][]): number {
@@ -896,40 +906,25 @@ function revealRoute(map: maplibregl.Map) {
   requestAnimationFrame(step);
 }
 
-// Asphalt is the only surface that changes the colour. Anything else — gravel,
-// compacted, ground, dirt, sand, or a way with no surface tag at all — takes
-// the unpaved family, so an unpaved stretch never reads as a gap in the line.
-//
-// A layer already filtered to one road class passes that class's shade;
-// the unfiltered layers (the glow) take the family's base.
-const surfaceColor = (unpaved: string): maplibregl.ExpressionSpecification => [
+/**
+ * Surface → colour, for every value of `SurfaceClass` that can reach the
+ * client. The buckets are the SEGUMS panel's own (see `classifyRoute`, which
+ * folds the seven classes into asphalt / gravel / dirt / unknown for the
+ * percentages): map and numbers have to group the same way or the rider is
+ * told 30 % gravel and shown two different oranges.
+ *
+ * Every class is listed explicitly rather than leaning on the fallback, so a
+ * new `SurfaceClass` shows up here as a missing case instead of quietly
+ * rendering as "unknown" grey. The fallback stays for an unrecognised value
+ * off the wire — an old share link, or a router that learns a new tag.
+ */
+const SURFACE_COLOR_EXPR: maplibregl.ExpressionSpecification = [
   "match",
   ["get", "surface"],
-  "asphalt",
-  PAVED_COLOR,
-  unpaved,
-];
-
-const SURFACE_COLOR_EXPR = surfaceColor(UNPAVED_COLOR);
-
-/**
- * The same rule, but the unpaved shade widens away from the base as the map
- * zooms out — see `LOW_ZOOM_TRACK` / `LOW_ZOOM_TRAIL`. Asphalt is unaffected: blue vs orange never
- * stops being legible, however thin the line gets.
- */
-const surfaceColorByZoom = (
-  near: string,
-  far: string
-): maplibregl.ExpressionSpecification => [
-  // `zoom` may only appear at the TOP level of a `step` or `interpolate`, so
-  // the interpolation is the outer expression and the per-surface `match` is
-  // evaluated inside each stop. Nesting it the other way round — one `match`
-  // over two interpolated branches — is what the style spec rejects, and
-  // MapLibre drops the whole paint property when it does: the track and trail
-  // lines rendered as bare white casing with no colour on top at all.
-  "interpolate", ["linear"], ["zoom"],
-  DARKEN_TO_ZOOM, surfaceColor(far),
-  DARKEN_FROM_ZOOM, surfaceColor(near),
+  "asphalt", SURFACE_COLORS.asphalt,
+  ["gravel", "compacted"], SURFACE_COLORS.gravel,
+  ["ground", "dirt", "sand"], SURFACE_COLORS.dirt,
+  SURFACE_COLORS.unknown,
 ];
 
 export function RouteMap({ segments, start, destination, via, showTet, onToggleTet }: Props) {
@@ -1122,7 +1117,7 @@ export function RouteMap({ segments, start, destination, via, showTet, onToggleT
         // line at low zoom.
         layout: { "line-cap": "butt", "line-join": "round" },
         paint: {
-          "line-color": surfaceColorByZoom(UNPAVED.track, LOW_ZOOM_TRACK),
+          "line-color": SURFACE_COLOR_EXPR,
           "line-width": PATTERNED_WIDTH,
           // Long dash, short gap: reads as a continuous way that happens to be
           // unsealed, rather than as a row of ticks. Stretched, then dropped
@@ -1141,10 +1136,10 @@ export function RouteMap({ segments, start, destination, via, showTet, onToggleT
         // like before.
         layout: { "line-cap": "round", "line-join": "round" },
         paint: {
-          // A trail is a dotted line, not a red one. The dots already say
-          // "this is the narrow, uncertain stuff"; painting it red as well
-          // said it twice and broke the one-colour-per-surface rule.
-          "line-color": surfaceColorByZoom(UNPAVED.trail, LOW_ZOOM_TRAIL),
+          // The dots alone say "trail"; the colour is free to say what the
+          // trail is made of. A gravel trail and a gravel track are therefore
+          // the same orange in two patterns, which is the whole scheme.
+          "line-color": SURFACE_COLOR_EXPR,
           "line-width": PATTERNED_WIDTH,
           "line-dasharray": TRAIL_DASH,
           "line-opacity": 1,
@@ -1512,43 +1507,81 @@ export function RouteMap({ segments, start, destination, via, showTet, onToggleT
 
           The button stays bottom-left (thumb reach on a phone), so the legend
           gives way to it two different ways:
-          - Narrow: the legend cannot fit beside a 52 px button and still show
-            five entries at a readable size, so it sits ABOVE the button —
-            `bottom: var(--map-btn)` plus a gutter — full width, items
-            wrapping onto two rows. Wrapping beats a scrollable single row
-            here: every entry stays visible at a glance, which is the whole
-            point of a legend, and a horizontal scroller hides entries behind
-            a gesture nothing on the map suggests.
-          - Wide: it returns to the bottom row but starts to the right of the
+          - Narrow: the legend takes the very bottom of the map and the button
+            sits directly ABOVE it. The rider asked for this after testing
+            full screen on his phone: the legend is a strip of text, the
+            button is the control, and the control belongs nearest the thumb.
+            The legend is full width and its items wrap onto two rows — every
+            entry stays visible at a glance, which is the whole point of a
+            legend, and a horizontal scroller would hide entries behind a
+            gesture nothing on the map suggests. Because the row count varies
+            with width and language, the button cannot use a fixed offset: it
+            is stacked above the legend by MapPanel, which measures the
+            legend's real height (see `data-map-legend` below).
+          - Wide: it sits in the bottom row but starts to the right of the
             button's footprint, and `max-w-max` keeps it well short of the
             attribution ⓘ in the opposite corner.
           Text never goes below 12 px in either case.
 
+          The max-width is the narrow-screen guard against the attribution ⓘ in
+          the bottom-right: compact, it measures 36 px, and 3.25 rem (52 px)
+          leaves it a gutter. The 0.75 rem is the legend's own left inset —
+          `max-width` is measured from the box's left edge, not from the
+          viewport's, so without it the cap lands 12 px too far right and the
+          legend's corner runs under the ⓘ (measured: a 6 px overlap at
+          375 px). It only binds when the legend is wide enough to reach
+          across, which is exactly when it would otherwise collide.
+
           On a phone it appears only in full screen: on the inline 26-42dvh
           strip the legend is a third of the map and covers the route it is
           meant to explain. Desktop always shows it — there is room. */}
-      <div className="absolute bottom-[calc(var(--map-btn,3.25rem)+0.5rem)] left-3 right-3 hidden flex-col gap-1.5 rounded-xl border border-[#ececf0] bg-white/95 px-2.5 py-2 text-xs leading-none shadow-sm backdrop-blur [[data-map-expanded]_&]:flex md:bottom-3 md:left-[calc(var(--map-btn,3.25rem)+0.75rem)] md:right-12 md:flex md:max-w-max md:px-3 md:py-2.5">
-        {/* No heading: four labelled samples in a row need no title, and at
-            the bottom of the map the line it would cost is the difference
-            between one row and two. Read left to right as the ride gets
-            rougher: asphalt, gravel road, track, trail. The samples use the
-            same colours and dash patterns as the map, so the legend is the
-            map in miniature rather than a description of it. */}
+      <div data-map-legend className="absolute bottom-3 left-3 right-3 hidden max-w-[calc(100%-0.75rem-3.25rem)] flex-col gap-1.5 rounded-xl border border-[#ececf0] bg-white/95 px-2.5 py-2 text-xs leading-none shadow-sm backdrop-blur [[data-map-expanded]_&]:flex md:left-[calc(var(--map-btn,3.25rem)+0.75rem)] md:right-12 md:flex md:max-w-max md:px-3 md:py-2.5">
+        {/* Two rows, because the line carries two independent facts and a
+            single row could only ever explain one of them. Row 1 is the
+            colours — what the surface is; row 2 is the patterns — what kind of
+            way it is. Read together they cover all twelve combinations with
+            seven entries, which is why a blue dashed line (a paved forest
+            track) is now something the legend can actually say.
+
+            No heading, and no "colour:" / "pattern:" labels either: the
+            swatches are the distinction — four flat colours above, three grey
+            patterns below — and at the bottom of a phone map every line costs
+            more than it explains. Each row wraps on its own. */}
         <div className="flex flex-col gap-1.5">
+          {/* Colour = surface. Flat solid samples: the pattern is deliberately
+              not varied here, or the row would be making two claims at once. */}
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
             <span className="flex items-center gap-1.5">
-              <span className="inline-block h-[3px] w-5 rounded-full" style={{ background: PAVED_COLOR }} />
+              <span className="inline-block h-[3px] w-5 rounded-full" style={{ background: SURFACE_COLORS.asphalt }} />
               {m.legendAsphalt}
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="inline-block h-[3px] w-5 rounded-full" style={{ background: UNPAVED.road }} />
+              <span className="inline-block h-[3px] w-5 rounded-full" style={{ background: SURFACE_COLORS.gravel }} />
               {m.legendGravel}
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block h-[3px] w-5 rounded-full" style={{ background: SURFACE_COLORS.dirt }} />
+              {m.resDirt}
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block h-[3px] w-5 rounded-full" style={{ background: SURFACE_COLORS.unknown }} />
+              {m.legendUnknown}
+            </span>
+          </div>
+          {/* Pattern = road class, drawn in a neutral dark grey. Painting these
+              samples in any route colour would imply a surface — "dashed means
+              orange" is exactly the confusion the two-row legend exists to
+              undo — so the ink here says nothing but the shape. */}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block h-[3px] w-5 rounded-full" style={{ background: PATTERN_INK }} />
+              {m.legendSolid}
             </span>
             <span className="flex items-center gap-1.5">
               <span
                 className="inline-block h-[3px] w-5"
                 style={{
-                  background: `repeating-linear-gradient(90deg, ${UNPAVED.track} 0 5px, transparent 5px 8px)`,
+                  background: `repeating-linear-gradient(90deg, ${PATTERN_INK} 0 5px, transparent 5px 8px)`,
                 }}
               />
               {m.legendTrack}
@@ -1557,7 +1590,7 @@ export function RouteMap({ segments, start, destination, via, showTet, onToggleT
               <span
                 className="inline-block h-[3px] w-5"
                 style={{
-                  background: `repeating-linear-gradient(90deg, ${UNPAVED.trail} 0 2px, transparent 2px 5px)`,
+                  background: `repeating-linear-gradient(90deg, ${PATTERN_INK} 0 2px, transparent 2px 5px)`,
                 }}
               />
               {m.legendTrail}
@@ -1566,12 +1599,13 @@ export function RouteMap({ segments, start, destination, via, showTet, onToggleT
                 halo around the route's own colour, which is what the rider
                 now sees where their ride runs along the trail. Shown whether
                 or not the reference overlay is switched on, because the
-                casing is too — it is a fact about this route, not a layer. */}
+                casing is too — it is a fact about this route, not a layer.
+                Its core stays gravel orange: this swatch is about the halo. */}
             <span className="flex items-center gap-1.5">
               <span
                 className="inline-block h-[7px] w-5 rounded-full"
                 style={{
-                  background: UNPAVED.road,
+                  background: SURFACE_COLORS.gravel,
                   boxShadow: `0 0 0 2px ${TET_COLOR}`,
                 }}
               />

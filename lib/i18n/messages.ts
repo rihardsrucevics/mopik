@@ -151,6 +151,7 @@ export type MessageKey =
   | "savEditRide"
   | "savDownloadRide"
   | "savDeleteRide"
+  | "savDeleteConfirm"
   | "shStartLabel"
   | "shRepeatedNote"
   | "shSavedInMine"
@@ -242,7 +243,6 @@ export type MessageKey =
   | "savView"
   | "savEdit"
   | "savDownload"
-  | "savDelete"
   | "savOtherVersions"
   | "beerRideWell"
   | "beerBuy"
@@ -329,10 +329,31 @@ export type MessageKey =
   | "badgeUnverifiedDetail"
   | "badgeTrail"
   | "badgeTrailDetail"
-  // The long form, used only as the segment card's heading: the rider opens
-  // that card by tapping the dotted line, so the card names the line. The
-  // legend and the warning badge use the short `legendTrail` / `badgeTrail`.
-  | "segDottedLine"
+  // The legend's second row: the three line patterns, named. The colours in
+  // the first row say what a way is made of, these say what kind of way it is.
+  | "legendSolid"
+  | "legendUnknown"
+  // The segment card's heading, built from the two dimensions the map draws:
+  // surface + road class, e.g. "Grants meža ceļš". `segCompound` is the word
+  // order (`{surface} {class}`), which lt/et/en set for themselves; the
+  // `segSurface*` keys carry the surface as the MODIFIER form the class noun
+  // needs. Latvian and Lithuanian inflect that modifier for the noun's gender
+  // — "Asfaltēts meža ceļš" (m.) against "Asfaltēta taciņa" (f.) — so the
+  // adjective-like surfaces have one key per gender and the invariant
+  // genitive ones ("Grants", "Žvyro") reuse a single key for both.
+  | "segCompound"
+  | "segSurfaceAsphaltM"
+  | "segSurfaceAsphaltF"
+  | "segSurfaceGravel"
+  | "segSurfaceDirtM"
+  | "segSurfaceDirtF"
+  | "segSurfaceUnknown"
+  // The class nouns as the compound heading needs them: `segClassTrack` is
+  // masculine ("meža ceļš"), `segClassTrail` feminine ("taciņa"), which is
+  // what the gendered surface keys above agree with. A plain road needs no
+  // compound at all — it is named by its surface alone ("Asfalts").
+  | "segClassTrack"
+  | "segClassTrail"
   | "segGrade"
   | "segOnTet"
   | "segRough";
@@ -473,6 +494,7 @@ const lv: Messages = {
   savEditRide: "Rediģēt {name} formā",
   savDownloadRide: "Lejupielādēt {name} GPX",
   savDeleteRide: "Dzēst {name}",
+  savDeleteConfirm: "Izdzēst?",
   shStartLabel: "Sākums: {place}",
   shRepeatedNote: "{pct} % atkārtoti ceļi · laiks pēc seguma, ne pēc kartes vidējā ātruma.",
   shSavedInMine: "Saglabāts manos",
@@ -543,7 +565,6 @@ const lv: Messages = {
   savView: "Apskatīt",
   savEdit: "Rediģēt",
   savDownload: "Lejupielādēt",
-  savDelete: "Izdzēst",
   mixRoad: "Ceļš",
   mixTrack: "Meža ceļš",
   chatServerTimeout: "Serveris pārtrauca ģenerēšanu, jo tā aizņēma pārāk ilgi (limits ~60 s). Garš brauciens pa meža ceļiem var neietilpt. Mēģini vēlreiz vai īsāku ilgumu.",
@@ -651,10 +672,17 @@ const lv: Messages = {
   badgeTrail: "Taciņas",
   badgeTrailDetail:
     "Šaurs, tehnisks posms — punktotā līnija kartē. Šeit brauc lēnāk, nekā rāda plānotais laiks.",
-  // The long form, used only as the segment card's heading: the rider opens
-  // that card by tapping the dotted line, so the card names the line. The
-  // legend and the warning badge use the short `legendTrail` / `badgeTrail`.
-  segDottedLine: "Taciņas (punktotā līnija)",
+  legendSolid: "Ceļš",
+  legendUnknown: "Nezināms",
+  segCompound: "{surface} {class}",
+  segSurfaceAsphaltM: "Asfaltēts",
+  segSurfaceAsphaltF: "Asfaltēta",
+  segSurfaceGravel: "Grants",
+  segSurfaceDirtM: "Zemes / smilšu",
+  segSurfaceDirtF: "Zemes / smilšu",
+  segSurfaceUnknown: "Nezināms segums ·",
+  segClassTrack: "meža ceļš",
+  segClassTrail: "taciņa",
   segGrade: "Grūtība",
   segOnTet: "Pa TET",
   segRough: "Grūts meža ceļš",
@@ -794,6 +822,7 @@ const lt: Messages = {
   savEditRide: "Redaguoti {name} formoje",
   savDownloadRide: "Atsisiųsti {name} GPX",
   savDeleteRide: "Ištrinti {name}",
+  savDeleteConfirm: "Ištrinti?",
   shStartLabel: "Pradžia: {place}",
   shRepeatedNote: "{pct} % kartojasi keliai · laikas pagal dangą, ne pagal žemėlapio vidutinį greitį.",
   shSavedInMine: "Išsaugota pas mane",
@@ -864,7 +893,6 @@ const lt: Messages = {
   savView: "Peržiūrėti",
   savEdit: "Redaguoti",
   savDownload: "Atsisiųsti",
-  savDelete: "Ištrinti",
   mixRoad: "Kelias",
   mixTrack: "Miško kelias",
   chatServerTimeout: "Serveris nutraukė generavimą, nes jis užtruko per ilgai (limitas ~60 s). Ilgas maršrutas miško keliais gali netilpti. Bandyk dar kartą arba trumpesnę trukmę.",
@@ -972,7 +1000,17 @@ const lt: Messages = {
   badgeTrail: "Takeliai",
   badgeTrailDetail:
     "Siaura, techniška atkarpa — taškuota linija žemėlapyje. Čia važiuok lėčiau, nei rodo planuotas laikas.",
-  segDottedLine: "Takeliai (punktyra linija)",
+  legendSolid: "Kelias",
+  legendUnknown: "Nežinoma",
+  segCompound: "{surface} {class}",
+  segSurfaceAsphaltM: "Asfaltuotas",
+  segSurfaceAsphaltF: "Asfaltuotas",
+  segSurfaceGravel: "Žvyro",
+  segSurfaceDirtM: "Žemės / smėlio",
+  segSurfaceDirtF: "Žemės / smėlio",
+  segSurfaceUnknown: "Nežinoma danga ·",
+  segClassTrack: "miško kelias",
+  segClassTrail: "takelis",
   segGrade: "Sudėtingumas",
   segOnTet: "TET keliu",
   segRough: "Sunkus miško kelias",
@@ -1112,6 +1150,7 @@ const et: Messages = {
   savEditRide: "Muuda {name} vormis",
   savDownloadRide: "Laadi alla {name} GPX",
   savDeleteRide: "Kustuta {name}",
+  savDeleteConfirm: "Kustutada?",
   shStartLabel: "Algus: {place}",
   shRepeatedNote: "{pct} % korduvaid teid · aeg katte järgi, mitte kaardi keskmise kiiruse järgi.",
   shSavedInMine: "Salvestatud minu omadesse",
@@ -1182,7 +1221,6 @@ const et: Messages = {
   savView: "Vaata",
   savEdit: "Muuda",
   savDownload: "Laadi alla",
-  savDelete: "Kustuta",
   mixRoad: "Tee",
   mixTrack: "Metsatee",
   chatServerTimeout: "Server katkestas koostamise, sest see võttis liiga kaua (piir ~60 s). Pikk metsateede sõit ei pruugi mahtuda. Proovi uuesti või lühemat kestust.",
@@ -1290,7 +1328,17 @@ const et: Messages = {
   badgeTrail: "Rajad",
   badgeTrailDetail:
     "Kitsas, tehniline lõik — punktiirjoon kaardil. Siin sõida aeglasemalt, kui planeeritud aeg näitab.",
-  segDottedLine: "Rajad (punktiirjoon)",
+  legendSolid: "Tee",
+  legendUnknown: "Teadmata",
+  segCompound: "{surface} {class}",
+  segSurfaceAsphaltM: "Asfalteeritud",
+  segSurfaceAsphaltF: "Asfalteeritud",
+  segSurfaceGravel: "Kruusa",
+  segSurfaceDirtM: "Pinnase / liiva",
+  segSurfaceDirtF: "Pinnase / liiva",
+  segSurfaceUnknown: "Teadmata kate ·",
+  segClassTrack: "metsatee",
+  segClassTrail: "rada",
   segGrade: "Raskus",
   segOnTet: "TET-i mööda",
   segRough: "Raske metsatee",
@@ -1430,6 +1478,7 @@ const en: Messages = {
   savEditRide: "Edit {name} in the form",
   savDownloadRide: "Download {name} GPX",
   savDeleteRide: "Delete {name}",
+  savDeleteConfirm: "Delete?",
   shStartLabel: "Start: {place}",
   shRepeatedNote: "{pct} % retraced roads · time from the surface, not from a map average speed.",
   shSavedInMine: "Saved to mine",
@@ -1500,7 +1549,6 @@ const en: Messages = {
   savView: "View",
   savEdit: "Edit",
   savDownload: "Download",
-  savDelete: "Delete",
   mixRoad: "Road",
   mixTrack: "Forest track",
   chatServerTimeout: "The server stopped generating because it took too long (the limit is ~60 s). A long ride on forest roads may not fit. Try again or a shorter duration.",
@@ -1608,7 +1656,17 @@ const en: Messages = {
   badgeTrail: "Trails",
   badgeTrailDetail:
     "A narrow, technical stretch — the dotted line on the map. Ride this slower than the planned time suggests.",
-  segDottedLine: "Trails (dotted line)",
+  legendSolid: "Road",
+  legendUnknown: "Unknown",
+  segCompound: "{surface} {class}",
+  segSurfaceAsphaltM: "Paved",
+  segSurfaceAsphaltF: "Paved",
+  segSurfaceGravel: "Gravel",
+  segSurfaceDirtM: "Dirt / sand",
+  segSurfaceDirtF: "Dirt / sand",
+  segSurfaceUnknown: "Unknown surface ·",
+  segClassTrack: "forest track",
+  segClassTrail: "trail",
   segGrade: "Difficulty",
   segOnTet: "On the TET",
   segRough: "Rough forest track",

@@ -420,7 +420,9 @@ it would make Sports rides better too. Depends on item 8 outside the Baltics.
 Find events along the way that might be interesting to visit during the ride.
 Explicitly filed as further future.
 
-## 17. Saved rides: list on the left, map on the right
+## 17. ~~Saved rides: list on the left, map on the right~~ — CANCELLED 2026-09-14
+
+The rider dropped this the same evening: the list page stays a list.
 
 Decided with the rider on 2026-09-14, then parked as "good enough for now".
 The saved-rides page got the shared header, the app's card language and a
@@ -445,7 +447,9 @@ full-width secondary buttons ("Ģenerēt līdzīgu sev", "Saglabāt sev",
 badges use Lucide icons now, with the rough-track (grade 4–5) badge switched
 off via `BADGE_KINDS` in `route-map.tsx` until a better icon is chosen.
 
-## 18. Next: drop the sparkle icon from "Izveidot maršrutu"
+## 18. ~~Drop the sparkle icon from "Izveidot maršrutu"~~ — CANCELLED 2026-09-14
+
+Withdrawn by the rider the same evening; the icon stays.
 
 Filed by the rider on 2026-09-14 as the next ticket. The main form's
 primary button carries a Sparkles icon before the label; remove the icon and

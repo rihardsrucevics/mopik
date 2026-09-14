@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useLocale } from "@/lib/i18n/use-locale";
 import { messages } from "@/lib/i18n/messages";
 import type { UiLocale } from "@/lib/i18n/locale";
@@ -56,6 +56,47 @@ export function SavedRidesPage() {
   const [rides, setRides] = useState<SavedRide[]>([]);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortKey>("recent");
+  // Which card is asking "Izdzēst?" right now — one id, never a set, because
+  // two cards mid-confirmation is two ways to lose a ride at once. Setting it
+  // to another id is what closes the previous card's pill.
+  const [confirming, setConfirming] = useState<string | null>(null);
+
+  // The timer belongs to the state that owns it, and to nothing else: one
+  // effect keyed on `confirming` arms a timeout when a card opens and clears
+  // that same timeout in its own cleanup. React runs the cleanup whenever
+  // `confirming` changes again (second tap, Escape, a tap outside, another
+  // card) and once more on unmount, so the id is held in the effect's closure
+  // rather than in a ref and a pending timer can never outlive the component.
+  useEffect(() => {
+    if (!confirming) return;
+    const t = setTimeout(() => setConfirming(null), 4000);
+    return () => clearTimeout(t);
+  }, [confirming]);
+
+  // The ways out that are not the pill itself. Both listeners exist only while
+  // a card is confirming, so the idle page carries no document handlers. The
+  // pointerdown handler stops at the pill via `data-confirm-pill` — without it
+  // the tap that should delete would first close the pill underneath the
+  // finger, and the click would land on nothing.
+  useEffect(() => {
+    if (!confirming) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (!(e.target instanceof Element) || !e.target.closest("[data-confirm-pill]")) setConfirming(null);
+    };
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === "Escape") setConfirming(null); };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [confirming]);
+
+  const confirmDelete = useCallback((id: string) => {
+    setConfirming(null);
+    removeRide(id);
+    track("saved_ride_removed");
+  }, []);
 
   useEffect(() => {
     const sync = () => setRides(listSaved());
@@ -155,19 +196,61 @@ export function SavedRidesPage() {
             <ul className="mt-3 space-y-3">
               {visible.map((r) => (
                 <li key={r.id} className="rounded-2xl border border-stone-200 bg-white p-4">
-                  <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start justify-between gap-2">
                     {/* Plain text, not a link: the card's own "Apskatīt" button
                         goes to the same place, and two controls to one
-                        destination is one too many. */}
+                        destination is one too many.
+
+                        The name and the variant chip share one flex-wrap row,
+                        so the chip sits beside the title when there is room and
+                        drops under it when the title is long. The alternative —
+                        parking the chip next to the trash icon — was tried and
+                        loses: "Pilsblīdene → Tukums via TET" at 390px then has
+                        to truncate to leave the chip its width, and the rider
+                        reads "Pilsblīdene → Tuk…". Wrapping costs a line only
+                        on the long names, and never hides the name. */}
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-semibold text-stone-900">{r.name}</div>
+                      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                        <span className="min-w-0 max-w-full truncate text-sm font-semibold text-stone-900">{r.name}</span>
+                        {/* The version this ride is, as the quiet outlined chip
+                            the result panel puts beside a route's name. */}
+                        <span className="shrink-0 rounded-full border border-[#f5630040] px-2 py-0.5 text-[10px] font-semibold text-[#f56300]">{variantLabel(m, r.variant)}</span>
+                      </div>
                       <div className="truncate text-[11px] text-stone-500">
                         {r.from === "shared" ? m.savReceived : m.savSaved} {savedOn(r.savedAt, locale)}
                       </div>
                     </div>
-                    {/* The version this ride is, as the quiet outlined chip the
-                        result panel puts beside a route's name. */}
-                    <span className="shrink-0 rounded-full border border-[#f5630040] px-2 py-0.5 text-[10px] font-semibold text-[#f56300]">{variantLabel(m, r.variant)}</span>
+                    {/* Delete is an icon in the corner, not a fourth pill: it is
+                        the one action on this card a rider does not want to hit
+                        by accident, so it stays out of the row their thumb
+                        sweeps. The name lives only in the aria-label — the icon
+                        carries no text. The 40x40 box is the tap target; the
+                        negative margin keeps it from pushing the card's padding
+                        around.
+
+                        Two taps, because there is no undo: the rides live in
+                        localStorage only. The first tap turns the icon into a
+                        red text pill in the same corner, the second deletes;
+                        tapping anywhere else, Escape, or four seconds of doubt
+                        puts the icon back. Both states keep the ride's name in
+                        the accessible name — "Dzēst Sigulda…" then "Izdzēst?
+                        Dzēst Sigulda…" — so a screen reader never hears a bare
+                        "Delete?" with nothing to say what is being deleted.
+                        `data-confirm-pill` is what the outside-tap listener
+                        looks for; without it the document handler would close
+                        the pill before its own click landed. */}
+                    {confirming === r.id ? (
+                      <button type="button" data-confirm-pill autoFocus onClick={() => confirmDelete(r.id)}
+                        aria-label={`${m.savDeleteConfirm} ${fi(m.savDeleteRide, { name: r.name })}`} title={fi(m.savDeleteRide, { name: r.name })}
+                        className="-mr-1.5 -mt-1.5 flex h-10 shrink-0 items-center justify-center rounded-full bg-red-50 px-3 text-[13px] font-semibold text-red-700 transition hover:bg-red-100">
+                        {m.savDeleteConfirm}
+                      </button>
+                    ) : (
+                      <button type="button" data-confirm-pill onClick={() => setConfirming(r.id)} aria-label={fi(m.savDeleteRide, { name: r.name })} title={fi(m.savDeleteRide, { name: r.name })}
+                        className="-mr-1.5 -mt-1.5 flex size-10 shrink-0 items-center justify-center rounded-full text-stone-500 transition hover:bg-red-50 hover:text-red-700">
+                        <Trash2 className="size-[18px]" />
+                      </button>
+                    )}
                   </div>
 
                   <div className="mt-3 grid grid-cols-3 gap-2">
@@ -178,44 +261,48 @@ export function SavedRidesPage() {
 
                   {summaryOf(r, locale) && <p className="mt-2 line-clamp-2 text-[11px] leading-relaxed text-stone-500">{summaryOf(r, locale)}</p>}
 
-                  {/* One row, four equal outline buttons — no primary among
-                      them: on a list where every card is a ride the rider
-                      already chose to keep, a filled button per card turned
-                      the page into a column of orange. "Apskatīt" is first
-                      because it is the most likely, not louder.
+                  {/* One row of three equal outline buttons at every width — no
+                      primary among them: on a list where every card is a ride
+                      the rider already chose to keep, a filled button per card
+                      turned the page into a column of orange. "Apskatīt" is
+                      first because it is the most likely, not louder.
 
-                      Two columns on a phone, four from `sm` up: at 400px four
-                      one-word pills do not fit, and shrinking the type to make
-                      them fit is worse than a 2x2 block.
+                      Three fit on one row where four did not. The labels are
+                      one word each; the longest, "Lejupielādēt", is what sets
+                      the width, so the phone step drops the icon gap and the
+                      horizontal padding to nothing and lets the text truncate
+                      rather than wrap — at 375px the three pills still read in
+                      full. The type stays at 13px (`text-[13px]`), the floor
+                      the rider set, instead of shrinking further.
 
                       A saved ride stores only its share code
                       (lib/share/saved-rides.ts), and /r/<code> is already the
                       result view — map, name, numbers, other versions, GPX —
                       so "view" is that link, not a rebuilt panel. */}
-                  <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {/* Two columns when this ride carries no plan part and so has
+                      no "Rediģēt" — older saves and some received links — so
+                      the two remaining pills fill the row instead of leaving a
+                      third of it empty. */}
+                  <div className={`mt-3 grid gap-1.5 sm:gap-2 ${planPart(r.code) ? "grid-cols-3" : "grid-cols-2"}`}>
                     <Link href={`/r/${r.code}`} onClick={() => track("saved_ride_opened", { km: r.km })}
                       aria-label={`${m.savView}: ${r.name}`}
-                      className="flex h-10 min-w-0 items-center justify-center gap-1 rounded-full border border-stone-200 text-xs font-medium text-stone-700 transition hover:bg-stone-50">
-                      <Map className="size-3.5 shrink-0" />{m.savView}
+                      className="flex h-10 min-w-0 items-center justify-center gap-0.5 rounded-full border border-stone-200 px-0.5 text-[13px] font-medium text-stone-700 transition hover:bg-stone-50 sm:gap-1.5 sm:px-3">
+                      <Map className="size-3.5 shrink-0" /><span className="truncate">{m.savView}</span>
                     </Link>
+                    <button type="button" onClick={() => downloadGpx(r)} aria-label={fi(m.savDownloadRide, { name: r.name })}
+                      className="flex h-10 min-w-0 items-center justify-center gap-0.5 rounded-full border border-stone-200 px-0.5 text-[13px] font-medium text-stone-700 transition hover:bg-stone-50 sm:gap-1.5 sm:px-3">
+                      <Download className="size-3.5 shrink-0" /><span className="truncate">{m.savDownload}</span>
+                    </button>
                     {/* Straight into the form, prefilled. Without it editing a
                         kept ride meant opening it and then finding the button
                         there — two hops for the thing a rider does most. */}
                     {planPart(r.code) && (
                       <Link href={`/?p=${planPart(r.code)}&from=${encodeURIComponent(r.code)}`} onClick={() => track("ride_edit_opened", { from: "saved", saved: true })}
                         aria-label={fi(m.savEditRide, { name: r.name })}
-                        className="flex h-10 min-w-0 items-center justify-center gap-1 rounded-full border border-stone-200 text-xs font-medium text-stone-700 transition hover:bg-stone-50">
-                        <SlidersHorizontal className="size-3.5 shrink-0" />{m.savEdit}
+                        className="flex h-10 min-w-0 items-center justify-center gap-0.5 rounded-full border border-stone-200 px-0.5 text-[13px] font-medium text-stone-700 transition hover:bg-stone-50 sm:gap-1.5 sm:px-3">
+                        <SlidersHorizontal className="size-3.5 shrink-0" /><span className="truncate">{m.savEdit}</span>
                       </Link>
                     )}
-                    <button type="button" onClick={() => downloadGpx(r)} aria-label={fi(m.savDownloadRide, { name: r.name })}
-                      className="flex h-10 min-w-0 items-center justify-center gap-1 rounded-full border border-stone-200 text-xs font-medium text-stone-700 transition hover:bg-stone-50">
-                      <Download className="size-3.5 shrink-0" />{m.savDownload}
-                    </button>
-                    <button type="button" onClick={() => { removeRide(r.id); track("saved_ride_removed"); }} aria-label={fi(m.savDeleteRide, { name: r.name })}
-                      className="flex h-10 min-w-0 items-center justify-center gap-1 rounded-full border border-stone-200 text-xs font-medium text-stone-500 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700">
-                      <Trash2 className="size-3.5 shrink-0" />{m.savDelete}
-                    </button>
                   </div>
 
                   {/* The other versions of the same request, kept when the ride
