@@ -107,13 +107,30 @@ Related: the message itself is often wrong. "Precizē ilgumu vai prasības čat�
 is useless when the real cause is that the ride is too long to plan (item 7) —
 the text should say what actually happened.
 
-## 4. Draw trails the way OSM draws them
+## 4. ~~Draw trails the way OSM draws them~~ — DONE 2026-09-14
 
 Today every trail is a brown dashed line. Where OSM shows a **dotted** line,
 Mopik should show a **red dotted** one. Update the map legend to match.
 
 Touches `components/route-map.tsx` (the line paint) and the legend block that
 lists Asfalts / Grants / Zeme / Nezināms and Ceļš / Meža ceļš / Taka.
+
+**Done, and it turned into a palette decision.** The rider settled it: one
+brown family for everything unpaved, with the line *style* carrying the rest —
+solid gravel road, dashed track, dotted trail. Asphalt stays blue. Gone are
+the separate orange/brown/grey surface colours and the always-red trail, which
+carried more than a rider can read on a moving map and disagreed with every
+other map they use.
+
+The legend is now one row, read left to right as the ride gets rougher, drawn
+with the same colours and dash patterns the map uses.
+
+Same pass, at the rider's request ("iedomājies, ka tas būtu Apple karte"): the
+line is drawn the way a good phone map draws one — zoom-interpolated widths
+instead of a fixed 4 px, a soft white casing, round caps and joins, butt caps
+on the dashes so they do not close their own gaps, and a zero-length dash with
+round caps so dots are round. A wide, faint glow sits under it all, and a new
+route now draws itself in over 900 ms instead of appearing at once.
 
 ## 5. ~~Long European rides are impossible on the public router~~ — DONE 2026-09-14
 
