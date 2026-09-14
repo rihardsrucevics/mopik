@@ -82,7 +82,7 @@ export function RoutePrompt({ messages, plan, hasRoute, phase, quickReplies, luc
             <button type="button" onClick={onBackToForm} disabled={busy} aria-label={t(locale, "backToForm")} title={t(locale, "backToForm")} className="inline-flex size-8 shrink-0 items-center justify-center rounded-full text-stone-500 transition hover:bg-stone-100 hover:text-stone-900 disabled:opacity-40"><ArrowLeft className="size-4" /></button>
           )}
         </div>
-        {plan && <p className="mt-2 hidden line-clamp-2 text-[11px] leading-relaxed text-stone-500 md:block">{planSummary(plan, locale === "lv")}</p>}
+        {plan && <p className="mt-2 hidden line-clamp-2 text-[11px] leading-relaxed text-stone-500 md:block">{planSummary(plan, locale)}</p>}
       </div>
 
       <div ref={logRef} className="relative min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4 md:space-y-5 md:px-5 md:py-5" role="log" aria-label="Sarunas ziņas" aria-live="polite">

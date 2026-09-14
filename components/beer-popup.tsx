@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect } from "react";
+import { useLocale } from "@/lib/i18n/use-locale";
+import { messages } from "@/lib/i18n/messages";
 import Image from "next/image";
 import { AUTHOR_INSTAGRAM_URL, InstagramLink } from "@/components/instagram-link";
 import { X } from "lucide-react";
@@ -14,6 +16,8 @@ import { track } from "@/lib/analytics";
 export const BEER_LINK = "https://revolut.me/rucijs";
 
 export function BeerPopup({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [locale] = useLocale();
+  const m = messages(locale);
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -46,13 +50,13 @@ export function BeerPopup({ open, onClose }: { open: boolean; onClose: () => voi
         <div className="mt-2.5">
           <InstagramLink from="beer" label="Piesekot @mopik.eu"
             className="flex h-12 w-full items-center justify-center gap-2 rounded-full border border-stone-600 text-sm font-semibold text-stone-100 transition hover:border-stone-400 hover:bg-white/5" />
-          <p className="mx-auto mt-2 max-w-[15rem] text-[11px] leading-snug text-stone-500">Tago Mopik savos braucienos, sūti atsauksmes un idejas.</p>
+          <p className="mx-auto mt-2 max-w-[15rem] text-[11px] leading-snug text-stone-500">{m.beerTagline}</p>
         </div>
         {/* Desktop: the phone scans this. Below both buttons — between them it
             split the pair and made the second read as an afterthought. */}
         <div className="mt-5 hidden flex-col items-center gap-2 md:flex">
           <Image src="/revolut-qr-dark.svg" alt="QR kods: revolut.me/rucijs" width={132} height={132} unoptimized className="rounded-xl" />
-          <span className="text-[11px] text-stone-500">Noskenē ar telefonu, lai uzsauktu</span>
+          <span className="text-[11px] text-stone-500">{m.beerScan}</span>
         </div>
         {/* Who is behind it, quietly, at the very bottom — the author's own
             account, not Mopik's, so the two links mean different things. */}

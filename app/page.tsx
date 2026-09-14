@@ -39,14 +39,14 @@ type Retry = { stage: "chat"; messages: ChatMessage[]; plan: RidePlan | null } |
  * turns into a cryptic SyntaxError. Read the text, then decide.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the API's shapes are checked where they are used
-async function readJson(response: Response): Promise<any> {
+async function readJson(response: Response, ui: ReturnType<typeof uiMessages>): Promise<any> {
   const text = await response.text();
   try { return JSON.parse(text); }
   catch {
     const timedOut = response.status === 504 || /timeout|timed out/i.test(text);
     throw new Error(timedOut || response.status >= 500
-      ? "Serveris pārtrauca ģenerēšanu, jo tā aizņēma pārāk ilgi (limits ~60 s). Garš brauciens pa meža ceļiem var neietilpt. Mēģini vēlreiz vai īsāku ilgumu."
-      : `Serveris atgriezja negaidītu atbildi (${response.status}).`);
+      ? ui.chatServerTimeout
+      : ui.chatErrUnexpected.replace("{status}", String(response.status)));
   }
 }
 
@@ -97,7 +97,7 @@ export default function Home() {
   // A ride generated from an origin: the rider is asked whether it replaces
   // the one they were editing or is kept as a second ride.
   const [keepChoice, setKeepChoice] = useState<{ code: string; saved: boolean } | null>(null);
-  // "Ģenerēt līdzīgu sev" / ui.saveEditForm from a shared route: the plan
+  // ui.shGenerateSimilar / ui.saveEditForm from a shared route: the plan
   // arrives in ?p= and pre-fills the form; the URL is cleaned so a reload does
   // not re-apply it.
   useEffect(() => {
@@ -107,7 +107,7 @@ export default function Home() {
     const shared = decodePlanShare(p);
     const mode = params.get("mode") === "chat" ? "chat" : "form";
     // `from` is the share code of the ride being edited, present only on the
-    // edit paths — "Ģenerēt līdzīgu sev" deliberately starts a ride of its own
+    // edit paths — ui.shGenerateSimilar deliberately starts a ride of its own
     // and carries no origin.
     const from = params.get("from");
     // No cleanup on purpose: development StrictMode runs the effect twice and
@@ -155,7 +155,7 @@ export default function Home() {
       const controller = new AbortController();
       abortRef.current = controller;
       const response = await fetch("/api/generate-route", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ plan: current, prompt: sourcePrompt, places: pickedPlaces, lucky: isLucky }), signal: controller.signal });
-      const data = await readJson(response);
+      const data = await readJson(response, ui);
       if (!response.ok) throw new Error(data.error || ui.chatErrGenerate);
       const route = (data as GenerateRouteResponse).routes[0];
       if (!route) throw new Error(ui.chatErrNoMatch);
@@ -221,7 +221,7 @@ export default function Home() {
       const notes = [
         isLucky ? ui.chatLucky : "",
         versions > 1 ? ui.chatReadyN.replace("{n}", String(versions)) : ui.chatReady,
-        data.remoteLoop ? `Pārbrauciens līdz ${(data as GenerateRouteResponse).remoteLoop!.focus.label.split(",")[0]} ~${(data as GenerateRouteResponse).remoteLoop!.transitOutMinutes} min, atpakaļ ~${(data as GenerateRouteResponse).remoteLoop!.transitBackMinutes} min; pa vidu aplis.` : "",
+        data.remoteLoop ? ui.chatRemoteLoop.replace("{place}", (data as GenerateRouteResponse).remoteLoop!.focus.label.split(",")[0]).replace("{out}", String((data as GenerateRouteResponse).remoteLoop!.transitOutMinutes)).replace("{back}", String((data as GenerateRouteResponse).remoteLoop!.transitBackMinutes)) : "",
         data.distanceWarning ? ui.chatLongerThanAsked : "",
         ui.chatSayWhatToChange,
       ];
@@ -251,7 +251,7 @@ export default function Home() {
     setPhase("thinking");
     try {
       const response = await fetch("/api/route-chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ messages: conversation, plan: previousPlan }) });
-      const data = await readJson(response);
+      const data = await readJson(response, ui);
       if (!response.ok) throw new Error(data.error || ui.chatErrAnswer);
       const answer = data as ChatResponse;
       const updated: ChatMessage[] = [...conversation, { role: "assistant", content: answer.message }];
@@ -376,7 +376,7 @@ export default function Home() {
         <div className="min-w-0 space-y-4">
           <InstallPrompt show={Boolean(result) && !chatting} />
           {entryMode === "form"
-            ? <RideComposer key={plan ? planSummary(plan, false) : "new"} initialPlan={plan} initialPlaces={places} profile={profile} onProfileChange={changeProfile} busy={phase !== "idle"} onGenerate={startFromForm} onUseChat={() => setEntryMode("chat")} onPlacesChange={setPreviewPlaces} map={mapInComposer && mapVisible ? mapPanel : undefined} />
+            ? <RideComposer key={plan ? planSummary(plan, locale) : "new"} initialPlan={plan} initialPlaces={places} profile={profile} onProfileChange={changeProfile} busy={phase !== "idle"} onGenerate={startFromForm} onUseChat={() => setEntryMode("chat")} onPlacesChange={setPreviewPlaces} map={mapInComposer && mapVisible ? mapPanel : undefined} />
             : result && result.routes.length > 0 && !chatting
               ? <ResultPanel routes={result.routes} selected={selected} onSelect={setSelected} plan={plan} avoidTowns={result.intent.avoidTowns ?? false} lucky={lucky} remoteLoop={result.remoteLoop} longerSuggestion={result.longerSuggestion} tolerancePercent={result.intent.distanceTolerancePercent} busy={phase !== "idle"} onSend={send} onBackToForm={() => setEntryMode("form")} map={mapInResult && mapVisible ? mapPanel : undefined} resolvedPlaces={routedPlaces} alternatives={result.alternatives} sparsePlaceData={result.sparsePlaceData} assembledFromSegments={result.assembledFromSegments} offset={variantOffset} onOffsetChange={setVariantOffset} />
               : <RoutePrompt messages={messages} plan={plan} hasRoute={Boolean(route)} phase={phase} quickReplies={quickReplies} lucky={lucky && !route} onSend={send} onBackToForm={() => setEntryMode("form")} originCode={origin?.code ?? null} onAction={(action) => { if (action === "retry") { retryLast(); return; } setChatting(false); setQuickReplies([]); }} onCancel={cancel} />}
@@ -385,7 +385,7 @@ export default function Home() {
               wanted — and the answer is one tap either way. */}
           {keepChoice && (
             <div className="rounded-xl border border-stone-200 bg-[#faf9f6] p-4 text-sm">
-              <p className="text-stone-700">Šis ir pārtaisīts maršruts. Ko darām ar to, no kura sāki?</p>
+              <p className="text-stone-700">{ui.saveRemadeQuestion}</p>
               <div className="mt-2.5 flex flex-wrap gap-2">
                 <button type="button" onClick={() => { track("edited_ride_kept", { was_saved: keepChoice.saved }); setKeepChoice(null); }}
                   className="rounded-full border border-stone-900 px-3.5 py-1.5 text-xs font-semibold text-stone-900 transition hover:bg-stone-900 hover:text-white">
@@ -396,10 +396,10 @@ export default function Home() {
                   {keepChoice.saved ? ui.saveReplace : ui.saveKeepBoth}
                 </button>
               </div>
-              {!keepChoice.saved && <p className="mt-2 text-[11px] text-stone-500">Vecais nebija saglabāts — saite uz to joprojām darbosies.</p>}
+              {!keepChoice.saved && <p className="mt-2 text-[11px] text-stone-500">{ui.saveOldNotKept}</p>}
             </div>
           )}
-          {error && <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><p>{error}</p>{retry && <button onClick={retryLast} disabled={phase !== "idle"} className="mt-2 underline underline-offset-4 disabled:opacity-40">Mēģināt vēlreiz</button>}</div>}
+          {error && <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><p>{error}</p>{retry && <button onClick={retryLast} disabled={phase !== "idle"} className="mt-2 underline underline-offset-4 disabled:opacity-40">{ui.chatRetry}</button>}</div>}
         </div>
         {/* Sticky on the desktop. On the phone the map appears once there is
             something to show — inside the ride block while the form is open,

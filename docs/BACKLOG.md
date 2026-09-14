@@ -247,7 +247,7 @@ rate-limits a full build and the script already rotates mirrors.
 The rider also asked whether **Google** could supply this instead. Not costed
 yet; do that before committing to another Overpass run.
 
-## 9. ~~Multilingual UI~~ — MOSTLY DONE 2026-09-14
+## 9. ~~Multilingual UI~~ — DONE 2026-09-14
 
 Latvian for Latvians, Lithuanian for Lithuanians, Estonian for Estonians,
 English for everyone else.
@@ -271,7 +271,22 @@ Third pass took the loader lines, the result panel, the chat's own messages
 and the plan summary. What a rider meets from opening the app to downloading a
 GPX now speaks their language.
 
-**Still Latvian:**
+Fourth pass finished it. `planSummary` took a `lv: boolean`, which was fine
+with two languages and wrong with four — a Lithuanian rider got English
+because "not Latvian" was the only other thing the signature could say. It
+takes a `UiLocale` now, and the type checker found every caller.
+
+Measured after: a full Lithuanian generation, from the form to the result
+panel, contains **no Latvian words at all**.
+
+**Still Latvian, and deliberately:**
+- **The chat's model-generated replies.** They come from the prompt in
+  `app/api/route-chat/route.ts`, so translating them means translating the
+  prompt and re-running `scripts/chat-golden.ts` per language.
+- **The OpenGraph share images.** Server-rendered with no locale available;
+  they are the card someone sees in WhatsApp, not part of the app.
+
+**Was still Latvian before this pass:**
 - **The chat's replies.** They come from `lib/chat/ride-plan.ts` and the model
   prompt, so translating them means translating the prompt and re-running
   `scripts/chat-golden.ts` against each language. A separate job.

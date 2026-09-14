@@ -71,10 +71,10 @@ import { planSummary } from "../lib/chat/ride-plan";
 import { joinPaths } from "../lib/routing/join-paths";
 test("a focus area reads as transit → loop → transit, with the budget scope", () => {
   const remote = RidePlanSchema.parse({ ...complete, startPlace: "Rīga", viaPlaces: [], focusArea: "Baldone", budgetScope: "focus" });
-  const lv = planSummary(remote, true);
+  const lv = planSummary(remote, "lv");
   assert.match(lv, /^Rīga → Baldone \(aplis\) → Rīga · ~ 2 h aplim/);
-  assert.match(planSummary({ ...remote, budgetScope: "total" }, true), /~ 2 h · /);
-  assert.match(planSummary(remote, false), /Baldone \(loop\)/);
+  assert.match(planSummary({ ...remote, budgetScope: "total" }, "lv"), /~ 2 h · /);
+  assert.match(planSummary(remote, "en"), /Baldone \(loop\)/);
   // Older plans without the new fields still parse, as a plain loop.
   const legacy = RidePlanSchema.parse({ ...complete, focusArea: undefined, budgetScope: undefined });
   assert.equal(legacy.focusArea, null); assert.equal(legacy.budgetScope, "total");

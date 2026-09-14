@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useLocale } from "@/lib/i18n/use-locale";
+import { messages } from "@/lib/i18n/messages";
 import { RouteScene } from "@/components/route-loader";
 
 /**
@@ -35,6 +37,8 @@ function decide(): boolean {
 }
 
 export function IntroSplash() {
+  const [locale] = useLocale();
+  const m = messages(locale);
   const [state, setState] = useState<"hidden" | "playing" | "leaving">("hidden");
 
   useEffect(() => {
@@ -59,7 +63,7 @@ export function IntroSplash() {
       <div className="mt-2 flex items-baseline gap-3">
         <span className="mopik-wordmark text-4xl font-bold tracking-tight text-stone-900 md:text-5xl">Mopik<span className="text-[#f56300]">.</span></span>
       </div>
-      <p className="mopik-tagline mt-3 text-sm text-stone-500">Mazāk plānošanas. Vairāk braukšanas.</p>
+      <p className="mopik-tagline mt-3 text-sm text-stone-500">{m.tagline}</p>
     </div>
   );
 }

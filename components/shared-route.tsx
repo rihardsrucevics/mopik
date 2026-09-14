@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useLocale } from "@/lib/i18n/use-locale";
+import { messages } from "@/lib/i18n/messages";
 import Link from "next/link";
 import { Bookmark, ChevronDown, ChevronUp, Download, MessageCircle, SlidersHorizontal, Sparkles } from "lucide-react";
 import { RouteMap } from "@/components/route-map";
@@ -10,7 +12,10 @@ import { sharedRouteSegments, type SharedRoute } from "@/lib/share/route-code";
 import { isCodeSaved, removeRide, rideId, saveSharedRide } from "@/lib/share/saved-rides";
 import { gpxFilename } from "@/lib/gpx/filename";
 
-const VARIANT_LABELS: Record<string, string> = { direct: "Taisnākā", balanced: "Līkumotākā", complex: "Sarežģītākā" };
+// A function of the language, not a constant: these labels are shown in
+// four languages and a module-level object is built before one is known.
+const variantLabel = (m: ReturnType<typeof messages>, variant: string): string =>
+  ({ direct: m.resStraight, balanced: m.resWinding, complex: m.resComplex } as Record<string, string>)[variant] ?? variant;
 
 function Row({ label, value }: { label: string; value: string }) {
   return <div className="flex justify-between gap-3 py-0.5 text-xs"><span className="text-stone-500">{label}</span><span className="tabular-nums text-stone-900">{value}</span></div>;
@@ -25,6 +30,8 @@ function duration(minutes: number): string {
  * button, and the way into Mopik — generate a similar ride, or your own.
  */
 export function SharedRouteView({ share, planCode, code }: { share: SharedRoute; planCode: string | null; code: string }) {
+  const [locale] = useLocale();
+  const m = messages(locale);
   const [showTet, setShowTet] = useState(false);
   const [details, setDetails] = useState(false);
   // Someone else's ride can be kept too: same store as one's own. localStorage
@@ -63,9 +70,9 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
     track("shared_gpx_downloaded", { km: share.km, variant: share.variant });
     const res = await fetch("/api/export-gpx", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
       name: share.name, coordinates: share.points, km: share.km, places: [share.startLabel],
-      description: [`${share.name} · ${share.km} km · ${duration(share.minutes)} · ${share.unpavedPercent} % grants`,
+      description: [`${share.name} · ${share.km} km · ${duration(share.minutes)} · ${share.unpavedPercent} % ${m.resGravelPct}`,
         `${share.repeatedPercent} % atkārtoti · sākums ${share.startLabel}`,
-        "Dalīts maršruts no Mopik (mopik.eu) — vienmēr ievēro ceļa zīmes."].join("\n"),
+        m.shSharedNote].join("\n"),
     }) });
     if (!res.ok) return;
     const url = URL.createObjectURL(await res.blob());
@@ -80,13 +87,13 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
       <header className="mb-5 flex items-center justify-between border-b border-stone-200 pb-4">
         <div className="flex items-baseline gap-3">
           <h1 className="text-2xl font-bold tracking-tight"><Link href="/" aria-label="Mopik — uz sākumu">Mopik<span className="text-[#f56300]">.</span></Link></h1>
-          <p className="hidden text-xs text-stone-500 sm:block">Mazāk plānošanas. Vairāk braukšanas.</p>
+          <p className="hidden text-xs text-stone-500 sm:block">{m.tagline}</p>
         </div>
-        <Link href="/" className="text-xs text-stone-500 underline decoration-stone-300 underline-offset-4 hover:text-stone-900">Uztaisīt savu</Link>
+        <Link href="/" className="text-xs text-stone-500 underline decoration-stone-300 underline-offset-4 hover:text-stone-900">{m.shMakeYourOwn}</Link>
       </header>
       <div className="grid items-start gap-5 md:grid-cols-[minmax(340px,460px)_1fr]">
-        <section className="rounded-2xl border border-stone-200 bg-white p-4 md:p-5" aria-label="Dalīts maršruts">
-          <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#bd4b00]">Dalīts maršruts · {VARIANT_LABELS[share.variant] ?? share.variant}</div>
+        <section className="rounded-2xl border border-stone-200 bg-white p-4 md:p-5" aria-label={m.shSharedRoute}>
+          <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#bd4b00]">{m.shSharedRoute} · {variantLabel(m, share.variant)}</div>
           <h2 className="mt-1 text-xl font-semibold tracking-tight">{share.name}</h2>
           <p className="mt-0.5 text-xs text-stone-500">Sākums: {share.startLabel}</p>
           <div className="mt-4 grid grid-cols-3 gap-2">
@@ -96,13 +103,13 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
           </div>
           <p className="mt-2 text-[11px] text-stone-500">{share.repeatedPercent} % atkārtoti ceļi · laiks pēc seguma, ne pēc kartes vidējā ātruma.</p>
           <div className="mt-4 flex flex-col gap-2">
-            <button type="button" onClick={downloadGpx} className="flex h-11 items-center justify-center gap-2 rounded-full bg-[#f56300] text-sm font-semibold text-white transition hover:bg-[#d85600]"><Download className="size-4" />Lejupielādēt GPX</button>
+            <button type="button" onClick={downloadGpx} className="flex h-11 items-center justify-center gap-2 rounded-full bg-[#f56300] text-sm font-semibold text-white transition hover:bg-[#d85600]"><Download className="size-4" />{m.resDownloadGpx}</button>
             {planCode && (
-              <Link href={`/?p=${planCode}`} className="flex h-11 items-center justify-center gap-2 rounded-full border border-stone-900 text-sm font-semibold text-stone-900 transition hover:bg-stone-900 hover:text-white"><Sparkles className="size-4" />Ģenerēt līdzīgu sev</Link>
+              <Link href={`/?p=${planCode}`} className="flex h-11 items-center justify-center gap-2 rounded-full border border-stone-900 text-sm font-semibold text-stone-900 transition hover:bg-stone-900 hover:text-white"><Sparkles className="size-4" />{m.shGenerateSimilar}</Link>
             )}
             <button type="button" onClick={toggleSave} aria-pressed={saved}
               className={`flex h-11 items-center justify-center gap-2 rounded-full border text-sm font-semibold transition ${saved ? "border-[#f56300] bg-[#fff3ea] text-[#bd4b00]" : "border-stone-200 text-stone-700 hover:bg-stone-50"}`}>
-              <Bookmark className={`size-4 ${saved ? "fill-current" : ""}`} />{saved ? "Saglabāts manos" : "Saglabāt sev"}
+              <Bookmark className={`size-4 ${saved ? "fill-current" : ""}`} />{saved ? "Saglabāts manos" : m.shSaveForMe}
             </button>
             {/* Editing is the form first: the same fields that made the ride,
                 filled in with it, so a rider changes a stop or the time
@@ -111,11 +118,11 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
                 the new one knows what it was made from. */}
             {planCode && (
               <Link href={`/?p=${planCode}&from=${encodeURIComponent(code)}`} onClick={() => track("ride_edit_opened", { from: "shared", saved })}
-                className="flex h-11 items-center justify-center gap-2 rounded-full border border-stone-200 text-sm font-semibold text-stone-700 transition hover:bg-stone-50"><SlidersHorizontal className="size-4" />Rediģēt formā</Link>
+                className="flex h-11 items-center justify-center gap-2 rounded-full border border-stone-200 text-sm font-semibold text-stone-700 transition hover:bg-stone-50"><SlidersHorizontal className="size-4" />{m.saveEditForm}</Link>
             )}
             <div className="flex gap-2">
               {planCode && (
-                <Link href={`/?p=${planCode}&mode=chat&from=${encodeURIComponent(code)}`} className="flex h-10 flex-1 items-center justify-center gap-1.5 rounded-full border border-stone-200 text-xs font-medium text-stone-700 transition hover:bg-stone-50"><MessageCircle className="size-3.5" />Pielāgot čatā</Link>
+                <Link href={`/?p=${planCode}&mode=chat&from=${encodeURIComponent(code)}`} className="flex h-10 flex-1 items-center justify-center gap-1.5 rounded-full border border-stone-200 text-xs font-medium text-stone-700 transition hover:bg-stone-50"><MessageCircle className="size-3.5" />{m.chatAdjust}</Link>
               )}
               {d && (
                 <button type="button" onClick={() => setDetails(!details)} aria-expanded={details} className="flex h-10 flex-1 items-center justify-center gap-1 rounded-full border border-stone-200 text-xs font-medium text-stone-700 hover:bg-stone-50">
@@ -133,22 +140,22 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
             <div className="mt-3 space-y-3 rounded-xl border border-stone-200 p-3">
               <div>
                 <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-stone-400">Ceļi</div>
-                <Row label="Ceļš" value={`${d.roadKm} km`} /><Row label="Meža ceļš" value={`${d.trackKm} km`} /><Row label="Taka" value={`${d.trailKm} km`} />
+                <Row label={m.mixRoad} value={`${d.roadKm} km`} /><Row label={m.mixTrack} value={`${d.trackKm} km`} /><Row label="Taka" value={`${d.trailKm} km`} />
               </div>
               <div>
                 <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-stone-400">Segums</div>
-                <Row label="Asfalts" value={`${d.asphaltPercent} %`} /><Row label="Grants" value={`${d.gravelPercent} %`} /><Row label="Zeme / smiltis" value={`${d.dirtPercent} %`} /><Row label="Nezināms" value={`${d.unknownPercent} %`} />
+                <Row label="Asfalts" value={`${d.asphaltPercent} %`} /><Row label="Grants" value={`${d.gravelPercent} %`} /><Row label="Zeme / smiltis" value={`${d.dirtPercent} %`} /><Row label={m.resUnknown} value={`${d.unknownPercent} %`} />
               </div>
               {(d.forestKm > 0 || d.riversideKm > 0 || d.elevationGainM > 0) && (
                 <div>
                   <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-stone-400">Daba un ainava</div>
-                  <Row label="Meža apvidū" value={`${d.forestKm} km`} /><Row label="Upju tuvumā" value={`${d.riversideKm} km`} /><Row label="Atklātā lauku ainavā" value={`${d.ruralOpenKm} km`} />
-                  {d.elevationGainM > 0 && <Row label="Kopējais kāpums" value={`${d.elevationGainM} m`} />}
+                  <Row label={m.resForest} value={`${d.forestKm} km`} /><Row label={m.resRiverside} value={`${d.riversideKm} km`} /><Row label={m.resOpenCountry} value={`${d.ruralOpenKm} km`} />
+                  {d.elevationGainM > 0 && <Row label={m.resClimb} value={`${d.elevationGainM} m`} />}
                 </div>
               )}
             </div>
           )}
-          <p className="mt-4 text-[11px] leading-relaxed text-stone-500">Mopik uzzīmē adventure maršrutus pa grants un meža ceļiem no pāris vārdiem: no kurienes, cik ilgi, cik dziļi mežā. GPX der DMD2, OsmAnd, Garmin, Locus. Vienmēr ievēro ceļa zīmes.</p>
+          <p className="mt-4 text-[11px] leading-relaxed text-stone-500">{m.shIntro}</p>
         </section>
         <div className="order-first min-w-0 md:order-none">
           <MapPanel

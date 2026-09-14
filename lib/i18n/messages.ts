@@ -113,6 +113,60 @@ export type MessageKey =
   | "chatYou"
   | "resLuckyDetail"
   | "budgetFlexible"
+  | "sumLoop"
+  | "sumForLoop"
+  | "sumDurationUnknown"
+  | "sumFlexible"
+  | "sumUpTo"
+  | "sumDirection"
+  | "sumEasy"
+  | "sumMedium"
+  | "sumHard"
+  | "sumTourism"
+  | "sumSport"
+  | "sumMix"
+  | "sumAsphaltOnly"
+  | "sumForest"
+  | "sumGravelFine"
+  | "sumRepeatAtMost"
+  | "sumLessRetracing"
+  | "sumMoreAround"
+  | "sumNoSand"
+  | "sumAvoidTowns"
+  | "sumAvoidMainRoads"
+  | "sumAllowUnverified"
+  | "sumVerifiedAccess"
+  | "sumDirect"
+  | "sumBalanced"
+  | "sumExplore"
+  | "shSharedRoute"
+  | "shSaveForMe"
+  | "shMakeYourOwn"
+  | "shGenerateSimilar"
+  | "shSharedNote"
+  | "shIntro"
+  | "savTitle"
+  | "savSearch"
+  | "savSort"
+  | "savNewest"
+  | "savNothingFound"
+  | "savDeviceNote"
+  | "savReceived"
+  | "savSaved"
+  | "mixRoad"
+  | "mixTrack"
+  | "chatServerTimeout"
+  | "chatRemoteLoop"
+  | "saveRemadeQuestion"
+  | "saveOldNotKept"
+  | "installTitle"
+  | "installBody"
+  | "installAdd"
+  | "chatErrUnexpected"
+  | "beerTagline"
+  | "beerScan"
+  | "resGravelPct"
+  | "resAnother"
   | "backToHome"
   | "language"
   | "footerDisclaimer"
@@ -288,6 +342,60 @@ const lv: Messages = {
   chatYou: "Tu",
   resLuckyDetail: "Šī ir interesantākā trase, ko atradām — versijas zemāk, ja gribi citu.",
   budgetFlexible: "brīvs ilgums",
+  sumLoop: "aplis",
+  sumForLoop: "aplim",
+  sumDurationUnknown: "ilgums vēl jāprecizē",
+  sumFlexible: "brīvs ilgums",
+  sumUpTo: "līdz",
+  sumDirection: "virzienā",
+  sumEasy: "Viegli",
+  sumMedium: "Vidēji",
+  sumHard: "Grūti",
+  sumTourism: "Tūrisms",
+  sumSport: "Sports",
+  sumMix: "Mix",
+  sumAsphaltOnly: "Tikai asfalts",
+  sumForest: "Meži",
+  sumGravelFine: "Der arī grants",
+  sumRepeatAtMost: "atkārtojums līdz",
+  sumLessRetracing: "mazāk atkārtojumu",
+  sumMoreAround: "vairāk apkārtnes",
+  sumNoSand: "bez smiltīm",
+  sumAvoidTowns: "izvairīties no pilsētām",
+  sumAvoidMainRoads: "izvairīties no lielajiem ceļiem",
+  sumAllowUnverified: "atļaut nepārbaudītas takas",
+  sumVerifiedAccess: "pārbaudāma piekļuve",
+  sumDirect: "tiešāks",
+  sumBalanced: "līdzsvarots",
+  sumExplore: "izpēte",
+  shSharedRoute: "Dalīts maršruts",
+  shSaveForMe: "Saglabāt sev",
+  shMakeYourOwn: "Uztaisīt savu",
+  shGenerateSimilar: "Ģenerēt līdzīgu sev",
+  shSharedNote: "Dalīts maršruts no Mopik (mopik.eu) — vienmēr ievēro ceļa zīmes.",
+  shIntro: "Mopik uzzīmē adventure maršrutus pa grants un meža ceļiem no pāris vārdiem: no kurienes, cik ilgi, cik dziļi mežā. GPX der DMD2, OsmAnd, Garmin, Locus. Vienmēr ievēro ceļa zīmes.",
+  savTitle: "Saglabātie maršruti",
+  savSearch: "Meklēt pēc nosaukuma",
+  savSort: "Kārtot",
+  savNewest: "Jaunākie",
+  savNothingFound: "Nekas neatbilst meklējumam.",
+  savDeviceNote: "Maršruti glabājas tikai šajā ierīcē un pārlūkā. Dzēšot pārlūka datus, tie pazūd — dalies ar saiti, lai saglabātu drošāk.",
+  savReceived: "Atsūtīts · saglabāts",
+  savSaved: "Saglabāts",
+  mixRoad: "Ceļš",
+  mixTrack: "Meža ceļš",
+  chatServerTimeout: "Serveris pārtrauca ģenerēšanu, jo tā aizņēma pārāk ilgi (limits ~60 s). Garš brauciens pa meža ceļiem var neietilpt. Mēģini vēlreiz vai īsāku ilgumu.",
+  chatRemoteLoop: "Pārbrauciens līdz {place} ~{out} min, atpakaļ ~{back} min; pa vidu aplis.",
+  saveRemadeQuestion: "Šis ir pārtaisīts maršruts. Ko darām ar to, no kura sāki?",
+  saveOldNotKept: "Vecais nebija saglabāts — saite uz to joprojām darbosies.",
+  installTitle: "Pievienot sākuma ekrānam",
+  installBody: "Pievieno Mopik sākuma ekrānam — atveras kā aplikācija.",
+  installAdd: "Pievienot",
+  chatErrUnexpected: "Serveris atgrieza negaidītu atbildi ({status}).",
+  beerTagline: "Tago Mopik savos braucienos, sūti atsauksmes un idejas.",
+  beerScan: "Noskenē ar telefonu, lai uzsauktu",
+  resGravelPct: "grants",
+  resAnother: "Cits",
   backToHome: "Mopik — uz sākumu",
   language: "Valoda",
   footerDisclaimer:
@@ -466,6 +574,60 @@ const lt: Messages = {
   chatYou: "Tu",
   resLuckyDetail: "Tai įdomiausia trasa, kurią radome — versijos žemiau, jei nori kitos.",
   budgetFlexible: "laisva trukmė",
+  sumLoop: "ratas",
+  sumForLoop: "ratui",
+  sumDurationUnknown: "trukmė dar tikslinama",
+  sumFlexible: "laisva trukmė",
+  sumUpTo: "iki",
+  sumDirection: "kryptimi",
+  sumEasy: "Lengva",
+  sumMedium: "Vidutiniškai",
+  sumHard: "Sunku",
+  sumTourism: "Turizmas",
+  sumSport: "Sportas",
+  sumMix: "Mix",
+  sumAsphaltOnly: "Tik asfaltas",
+  sumForest: "Miškai",
+  sumGravelFine: "Tinka ir žvyras",
+  sumRepeatAtMost: "kartojimasis iki",
+  sumLessRetracing: "mažiau kartojimosi",
+  sumMoreAround: "daugiau apylinkių",
+  sumNoSand: "be smėlio",
+  sumAvoidTowns: "vengti miestų",
+  sumAvoidMainRoads: "vengti didelių kelių",
+  sumAllowUnverified: "leisti nepatikrintus takus",
+  sumVerifiedAccess: "tikrinamas privažiavimas",
+  sumDirect: "tiesesnis",
+  sumBalanced: "subalansuotas",
+  sumExplore: "tyrinėjimas",
+  shSharedRoute: "Bendrinamas maršrutas",
+  shSaveForMe: "Išsaugoti sau",
+  shMakeYourOwn: "Sukurti savo",
+  shGenerateSimilar: "Sugeneruoti panašų sau",
+  shSharedNote: "Bendrinamas maršrutas iš Mopik (mopik.eu) — visada paisyk kelio ženklų.",
+  shIntro: "Mopik nubraižo adventure maršrutus žvyro ir miško keliais iš kelių žodžių: iš kur, kiek laiko, kaip giliai į mišką. GPX tinka DMD2, OsmAnd, Garmin, Locus. Visada paisyk kelio ženklų.",
+  savTitle: "Išsaugoti maršrutai",
+  savSearch: "Ieškoti pagal pavadinimą",
+  savSort: "Rikiuoti",
+  savNewest: "Naujausi",
+  savNothingFound: "Nieko neatitinka paieškos.",
+  savDeviceNote: "Maršrutai saugomi tik šiame įrenginyje ir naršyklėje. Išvalius naršyklės duomenis jie dings — dalinkis nuoroda, kad išsaugotum saugiau.",
+  savReceived: "Atsiųsta · išsaugota",
+  savSaved: "Išsaugota",
+  mixRoad: "Kelias",
+  mixTrack: "Miško kelias",
+  chatServerTimeout: "Serveris nutraukė generavimą, nes jis užtruko per ilgai (limitas ~60 s). Ilgas maršrutas miško keliais gali netilpti. Bandyk dar kartą arba trumpesnę trukmę.",
+  chatRemoteLoop: "Pervažiavimas iki {place} ~{out} min, atgal ~{back} min; per vidurį ratas.",
+  saveRemadeQuestion: "Tai perdarytas maršrutas. Ką darom su tuo, nuo kurio pradėjai?",
+  saveOldNotKept: "Senas nebuvo išsaugotas — nuoroda į jį vis tiek veiks.",
+  installTitle: "Pridėti į pradžios ekraną",
+  installBody: "Pridėk Mopik į pradžios ekraną — atsidarys kaip programėlė.",
+  installAdd: "Pridėti",
+  chatErrUnexpected: "Serveris grąžino netikėtą atsakymą ({status}).",
+  beerTagline: "Pažymėk Mopik savo maršrutuose, siųsk atsiliepimus ir idėjas.",
+  beerScan: "Nuskenuok telefonu, jei nori pavaišinti",
+  resGravelPct: "žvyro",
+  resAnother: "Kitas",
   backToHome: "Mopik — į pradžią",
   language: "Kalba",
   footerDisclaimer:
@@ -644,6 +806,60 @@ const et: Messages = {
   chatYou: "Sina",
   resLuckyDetail: "See on huvitavaim rada, mille leidsime — versioonid allpool, kui soovid teist.",
   budgetFlexible: "vaba kestus",
+  sumLoop: "ring",
+  sumForLoop: "ringile",
+  sumDurationUnknown: "kestus veel täpsustamata",
+  sumFlexible: "vaba kestus",
+  sumUpTo: "kuni",
+  sumDirection: "suunas",
+  sumEasy: "Kerge",
+  sumMedium: "Keskmine",
+  sumHard: "Raske",
+  sumTourism: "Turism",
+  sumSport: "Sport",
+  sumMix: "Mix",
+  sumAsphaltOnly: "Ainult asfalt",
+  sumForest: "Metsad",
+  sumGravelFine: "Sobib ka kruus",
+  sumRepeatAtMost: "kordus kuni",
+  sumLessRetracing: "vähem kordusi",
+  sumMoreAround: "rohkem ümbrust",
+  sumNoSand: "ilma liivata",
+  sumAvoidTowns: "vältida linnu",
+  sumAvoidMainRoads: "vältida suuri teid",
+  sumAllowUnverified: "lubada kontrollimata radu",
+  sumVerifiedAccess: "kontrollitav juurdepääs",
+  sumDirect: "otsem",
+  sumBalanced: "tasakaalus",
+  sumExplore: "uurimine",
+  shSharedRoute: "Jagatud marsruut",
+  shSaveForMe: "Salvesta endale",
+  shMakeYourOwn: "Tee oma",
+  shGenerateSimilar: "Genereeri sarnane endale",
+  shSharedNote: "Jagatud marsruut Mopikust (mopik.eu) — järgi alati liiklusmärke.",
+  shIntro: "Mopik joonistab adventure-marsruute kruusa- ja metsateedel paarist sõnast: kust, kui kaua, kui sügavale metsa. GPX sobib DMD2, OsmAnd, Garmin, Locus jaoks. Järgi alati liiklusmärke.",
+  savTitle: "Salvestatud marsruudid",
+  savSearch: "Otsi nime järgi",
+  savSort: "Sorteeri",
+  savNewest: "Uusimad",
+  savNothingFound: "Otsingule ei vasta midagi.",
+  savDeviceNote: "Marsruudid on salvestatud ainult sellesse seadmesse ja brauserisse. Brauseri andmete kustutamisel kaovad need — jaga linki, et hoida kindlamalt.",
+  savReceived: "Saadetud · salvestatud",
+  savSaved: "Salvestatud",
+  mixRoad: "Tee",
+  mixTrack: "Metsatee",
+  chatServerTimeout: "Server katkestas koostamise, sest see võttis liiga kaua (piir ~60 s). Pikk metsateede sõit ei pruugi mahtuda. Proovi uuesti või lühemat kestust.",
+  chatRemoteLoop: "Ülesõit kohta {place} ~{out} min, tagasi ~{back} min; vahepeal ring.",
+  saveRemadeQuestion: "See on ümbertehtud marsruut. Mida teeme sellega, millest alustasid?",
+  saveOldNotKept: "Vana ei olnud salvestatud — link sellele töötab edasi.",
+  installTitle: "Lisa avaekraanile",
+  installBody: "Lisa Mopik avaekraanile — avaneb nagu rakendus.",
+  installAdd: "Lisa",
+  chatErrUnexpected: "Server tagastas ootamatu vastuse ({status}).",
+  beerTagline: "Märgi Mopik oma sõitudel, saada tagasisidet ja ideid.",
+  beerScan: "Skaneeri telefoniga, kui tahad välja teha",
+  resGravelPct: "kruusa",
+  resAnother: "Teine",
   backToHome: "Mopik — avalehele",
   language: "Keel",
   footerDisclaimer:
@@ -822,6 +1038,60 @@ const en: Messages = {
   chatYou: "You",
   resLuckyDetail: "This is the most interesting track we found — other versions below if you want one.",
   budgetFlexible: "flexible duration",
+  sumLoop: "loop",
+  sumForLoop: "for the loop",
+  sumDurationUnknown: "duration to clarify",
+  sumFlexible: "flexible duration",
+  sumUpTo: "up to",
+  sumDirection: "direction",
+  sumEasy: "Easy",
+  sumMedium: "Medium",
+  sumHard: "Hard",
+  sumTourism: "Tourism",
+  sumSport: "Sport",
+  sumMix: "Mix",
+  sumAsphaltOnly: "Asphalt only",
+  sumForest: "Forest",
+  sumGravelFine: "Gravel is fine",
+  sumRepeatAtMost: "repeat at most",
+  sumLessRetracing: "less retracing",
+  sumMoreAround: "more around the stops",
+  sumNoSand: "avoid sand",
+  sumAvoidTowns: "avoid towns",
+  sumAvoidMainRoads: "avoid main roads",
+  sumAllowUnverified: "allow unverified paths",
+  sumVerifiedAccess: "verified access",
+  sumDirect: "direct",
+  sumBalanced: "balanced",
+  sumExplore: "exploration",
+  shSharedRoute: "Shared route",
+  shSaveForMe: "Save it for me",
+  shMakeYourOwn: "Make your own",
+  shGenerateSimilar: "Generate a similar one",
+  shSharedNote: "A route shared from Mopik (mopik.eu) — always follow the road signs.",
+  shIntro: "Mopik draws adventure routes on gravel and forest roads from a few words: where from, how long, how deep into the forest. The GPX works with DMD2, OsmAnd, Garmin, Locus. Always follow the road signs.",
+  savTitle: "Saved rides",
+  savSearch: "Search by name",
+  savSort: "Sort",
+  savNewest: "Newest",
+  savNothingFound: "Nothing matches the search.",
+  savDeviceNote: "Rides are stored on this device and browser only. Clearing browser data loses them — share a link to keep one safely.",
+  savReceived: "Received · saved",
+  savSaved: "Saved",
+  mixRoad: "Road",
+  mixTrack: "Forest track",
+  chatServerTimeout: "The server stopped generating because it took too long (the limit is ~60 s). A long ride on forest roads may not fit. Try again or a shorter duration.",
+  chatRemoteLoop: "The transit to {place} is ~{out} min, back ~{back} min; a loop in between.",
+  saveRemadeQuestion: "This is a remade route. What shall we do with the one you started from?",
+  saveOldNotKept: "The old one was not saved — its link still works.",
+  installTitle: "Add to home screen",
+  installBody: "Add Mopik to your home screen — it opens like an app.",
+  installAdd: "Add",
+  chatErrUnexpected: "The server returned an unexpected response ({status}).",
+  beerTagline: "Tag Mopik on your rides, send feedback and ideas.",
+  beerScan: "Scan with your phone to buy one",
+  resGravelPct: "gravel",
+  resAnother: "Another",
   backToHome: "Mopik — home",
   language: "Language",
   footerDisclaimer:

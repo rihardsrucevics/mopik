@@ -216,7 +216,7 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
     // `mix`, not `m`: the messages object is already called that here.
     const mix = route.roadMix;
     return [
-      plan ? planSummary(plan, locale === "lv") : "",
+      plan ? planSummary(plan, locale) : "",
       `${Math.round(route.distanceMeters / 1000)} km · ${duration(route.durationSeconds)} · ${unpaved(route)} % ${m.resGravelShort} · ${route.overlap.repeatedPercent} % ${m.resRepeated.toLowerCase()}`,
       `${m.resRoadsLabel}: ${mix.roadKm} km, ${mix.trackKm} km ${m.legendTrack.toLowerCase()}, ${mix.trailKm} km ${m.legendTrail.toLowerCase()}`,
       `${variantLabels(m)[route.variant]?.label ?? route.variant} · Mopik (mopik.eu)`,
@@ -238,7 +238,7 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
       // The three the rider is looking at, not the API's original picks: a
       // card that has been swapped shows a different ride, and "citas
       // versijas" in the saved list must match what was on screen.
-      saveRide(route, startLabel, plan, { alternatives: routes.map(shownFor), prompt: plan ? planSummary(plan, locale === "lv") : route.sourcePrompt, places: resolvedPlaces });
+      saveRide(route, startLabel, plan, { alternatives: routes.map(shownFor), prompt: plan ? planSummary(plan, locale) : route.sourcePrompt, places: resolvedPlaces });
       track("ride_saved", { km: Math.round(route.distanceMeters / 1000), variant: route.variant });
     }
     setSavedTick((n) => n + 1);
@@ -271,7 +271,7 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
       <div className="flex items-start justify-between gap-3 border-b border-stone-200 bg-[#faf9f6] px-4 py-3">
         <div className="min-w-0">
           <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#bd4b00]">{m.resRoute}</div>
-          {plan && <p className="mt-0.5 line-clamp-2 text-[11px] leading-relaxed text-stone-500">{planSummary(plan, locale === "lv")}</p>}
+          {plan && <p className="mt-0.5 line-clamp-2 text-[11px] leading-relaxed text-stone-500">{planSummary(plan, locale)}</p>}
         </div>
         {/* Icon only: a left arrow already means "back to the form". */}
         <button type="button" onClick={onBackToForm} disabled={busy} aria-label={t(locale, "backToForm")} title={t(locale, "backToForm")} className="inline-flex size-8 shrink-0 items-center justify-center rounded-full text-stone-500 transition hover:bg-stone-100 hover:text-stone-900 disabled:opacity-40"><ArrowLeft className="size-4" /></button>
@@ -314,7 +314,7 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
                     <div className="truncate text-xs font-semibold">{meta.label}</div>
                     <div className={`truncate text-[10px] ${active ? "text-stone-300" : "text-stone-500"}`}>{meta.detail}</div>
                     <div className="mt-1 truncate text-xs font-semibold tabular-nums">{Math.round(r.distanceMeters / 1000)} km</div>
-                    <div className={`truncate text-[10px] tabular-nums ${active ? "text-stone-300" : "text-stone-500"}`}><span className={requestedMinutes !== null && r.durationSeconds / 60 > requestedMinutes + (isMaximum ? 0 : freeMinutes) ? (active ? "text-amber-300" : "text-amber-700") : ""}>{duration(r.durationSeconds)}</span> · {unpaved(r)} % grants</div>
+                    <div className={`truncate text-[10px] tabular-nums ${active ? "text-stone-300" : "text-stone-500"}`}><span className={requestedMinutes !== null && r.durationSeconds / 60 > requestedMinutes + (isMaximum ? 0 : freeMinutes) ? (active ? "text-amber-300" : "text-amber-700") : ""}>{duration(r.durationSeconds)}</span> · {unpaved(r)} % {m.resGravelPct}</div>
                   </button>
                   {/* Only where another ride of this kind exists. On request,
                       one at a time: the pool is not a list to browse, it is a
@@ -329,7 +329,7 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
                       }}
                       className={`mt-1.5 flex w-full items-center justify-center gap-1 rounded-b-xl border-t px-2 py-2 text-[10px] font-semibold transition ${active ? "border-stone-700 bg-white/10 text-white hover:bg-white/20" : "border-stone-200 bg-white text-[#bd4b00] hover:bg-[#fff4ec]"}`}
                       aria-label={`Rādīt citu ${meta.label.toLowerCase()} maršrutu (${at + 1} no ${family.length})`}>
-                      <RefreshCw className="size-3" />Cits · {at + 1}/{family.length}
+                      <RefreshCw className="size-3" />{m.resAnother} · {at + 1}/{family.length}
                     </button>
                   ) : <div className="pb-2" />}
                 </div>

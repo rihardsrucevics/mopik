@@ -207,7 +207,7 @@ export async function POST(req: Request) {
       ? `${lv ? "Sapratu" : "Got it"}: ${understanding.trim().replace(/^(sapratu|got it)[:,]?\s*/i, "").replace(/\.?$/, ".")}`
       : describeChanges(previous, plan, lv);
     const question = next?.message || clarificationText;
-    const message = [acknowledgement, question || `${lv ? "Plānoju braucienu" : "Planning your ride"}: ${planSummary(plan, lv)}.`].filter(Boolean).join("\n\n");
+    const message = [acknowledgement, question || `${lv ? "Plānoju braucienu" : "Planning your ride"}: ${planSummary(plan, lv ? "lv" : "en")}.`].filter(Boolean).join("\n\n");
     return NextResponse.json({ plan, ready: !question, message, quickReplies: next?.quickReplies ?? [] });
   } catch (error) {
     console.error("Ride conversation failed:", error);

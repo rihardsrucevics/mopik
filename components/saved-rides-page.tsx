@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useLocale } from "@/lib/i18n/use-locale";
+import { messages } from "@/lib/i18n/messages";
 import Link from "next/link";
 import { ArrowLeft, Bookmark, Download, Plus, Search, SlidersHorizontal, Trash2 } from "lucide-react";
 import { track } from "@/lib/analytics";
@@ -8,7 +10,10 @@ import { listSaved, markSavedSeen, removeRide, decodeSaved, type SavedRide } fro
 import { planPart } from "@/lib/share/route-code";
 import { gpxFilename } from "@/lib/gpx/filename";
 
-const VARIANT_LABELS: Record<string, string> = { direct: "Taisnākā", balanced: "Līkumotākā", complex: "Sarežģītākā" };
+// A function of the language: the labels are shown in four, and a module
+// constant is built before one is known.
+const variantLabel = (m: ReturnType<typeof messages>, variant: string): string =>
+  ({ direct: m.resStraight, balanced: m.resWinding, complex: m.resComplex } as Record<string, string>)[variant] ?? variant;
 type SortKey = "recent" | "km" | "name";
 
 function duration(minutes: number): string {
@@ -20,6 +25,8 @@ function savedOn(ms: number): string {
 
 /** Every saved ride, with search, sorting and a direct GPX download. */
 export function SavedRidesPage() {
+  const [locale] = useLocale();
+  const m = messages(locale);
   const [rides, setRides] = useState<SavedRide[]>([]);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortKey>("recent");
@@ -46,7 +53,7 @@ export function SavedRidesPage() {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: ride.name, coordinates: share.points, km: ride.km, places: share.startLabel ? [share.startLabel] : undefined,
-        description: `${ride.name} · ${ride.km} km · ${duration(ride.minutes)} · ${ride.unpavedPercent} % grants\nSaglabāts ${savedOn(ride.savedAt)} · Mopik (mopik.eu)`,
+        description: `${ride.name} · ${ride.km} km · ${duration(ride.minutes)} · ${ride.unpavedPercent} % ${m.resGravelPct}\n${m.savSaved} ${savedOn(ride.savedAt)} · Mopik (mopik.eu)`,
       }),
     });
     if (!res.ok) return;
@@ -72,24 +79,24 @@ export function SavedRidesPage() {
 
       <div className="flex items-center gap-2">
         <Bookmark className="size-4 text-[#f56300]" />
-        <h2 className="text-lg font-semibold tracking-tight">Saglabātie maršruti</h2>
+        <h2 className="text-lg font-semibold tracking-tight">{m.savTitle}</h2>
         <span className="text-sm text-stone-400">({rides.length})</span>
       </div>
 
       {rides.length === 0 ? (
         <p className="mt-6 rounded-2xl border border-dashed border-stone-300 p-6 text-center text-sm text-stone-500">
-          Vēl nav saglabātu maršrutu. Ģenerē braucienu un nospied <span className="font-medium text-stone-700">Saglabāt</span>.
+          Vēl nav saglabātu maršrutu. Ģenerē braucienu un nospied <span className="font-medium text-stone-700">{m.resSave}</span>.
         </p>
       ) : (
         <>
           <div className="mt-4 flex flex-col gap-2 sm:flex-row">
             <label className="flex h-10 flex-1 items-center gap-2 rounded-xl border border-stone-200 px-3 focus-within:border-[#f56300]">
               <Search className="size-3.5 shrink-0 text-stone-400" />
-              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Meklēt pēc nosaukuma" aria-label="Meklēt saglabātajos"
+              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={m.savSearch} aria-label={m.savSearch}
                 className="min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-stone-400 md:text-sm" />
             </label>
-            <div className="flex gap-1.5" role="group" aria-label="Kārtot">
-              {([["recent", "Jaunākie"], ["km", "Garums"], ["name", "Nosaukums"]] as const).map(([key, label]) => (
+            <div className="flex gap-1.5" role="group" aria-label={m.savSort}>
+              {([["recent", m.savNewest], ["km", "Garums"], ["name", "Nosaukums"]] as const).map(([key, label]) => (
                 <button key={key} type="button" onClick={() => setSort(key)} aria-pressed={sort === key}
                   className={`h-10 rounded-xl border px-3 text-xs font-medium transition ${sort === key ? "border-stone-900 bg-stone-900 text-white" : "border-stone-200 text-stone-700 hover:bg-stone-50"}`}>
                   {label}
@@ -105,9 +112,9 @@ export function SavedRidesPage() {
                 <Link href={`/r/${r.code}`} onClick={() => track("saved_ride_opened", { km: r.km })} className="min-w-0 flex-1">
                   <div className="truncate text-sm font-semibold text-stone-900">{r.name}</div>
                   <div className="truncate text-[11px] tabular-nums text-stone-500">
-                    {r.km} km · {duration(r.minutes)} · {r.unpavedPercent} % grants · {VARIANT_LABELS[r.variant] ?? r.variant}
+                    {r.km} km · {duration(r.minutes)} · {r.unpavedPercent} % {m.resGravelPct} · {variantLabel(m, r.variant)}
                   </div>
-                  <div className="truncate text-[10px] text-stone-400">{r.from === "shared" ? "Atsūtīts · saglabāts" : "Saglabāts"} {savedOn(r.savedAt)}</div>
+                  <div className="truncate text-[10px] text-stone-400">{r.from === "shared" ? m.savReceived : m.savSaved} {savedOn(r.savedAt)}</div>
                   {r.prompt && <div className="truncate text-[10px] text-stone-400">{r.prompt}</div>}
                 </Link>
                 {/* Straight into the form, prefilled. Without it editing a
@@ -131,7 +138,7 @@ export function SavedRidesPage() {
                     {r.alternatives.map((alt) => (
                       <Link key={`${r.id}-${alt.variant}`} href={`/r/${alt.code}`} onClick={() => track("saved_alternative_opened", { variant: alt.variant })}
                         className="rounded-full border border-stone-200 px-2.5 py-1 text-[11px] text-stone-700 transition hover:border-stone-300 hover:bg-stone-50">
-                        {VARIANT_LABELS[alt.variant] ?? alt.variant} · {alt.km} km
+                        {variantLabel(m, alt.variant)} · {alt.km} km
                       </Link>
                     ))}
                   </div>
@@ -139,8 +146,8 @@ export function SavedRidesPage() {
               </li>
             ))}
           </ul>
-          {visible.length === 0 && <p className="mt-4 text-center text-sm text-stone-500">Nekas neatbilst meklējumam.</p>}
-          <p className="mt-4 text-[11px] text-stone-400">Maršruti glabājas tikai šajā ierīcē un pārlūkā. Dzēšot pārlūka datus, tie pazūd — dalies ar saiti, lai saglabātu drošāk.</p>
+          {visible.length === 0 && <p className="mt-4 text-center text-sm text-stone-500">{m.savNothingFound}</p>}
+          <p className="mt-4 text-[11px] text-stone-400">{m.savDeviceNote}</p>
         </>
       )}
     </main>

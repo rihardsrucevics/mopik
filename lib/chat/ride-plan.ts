@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { messages } from "@/lib/i18n/messages";
+import type { UiLocale } from "@/lib/i18n/locale";
 import { RouteIntentSchema, type RouteIntent } from "@/lib/types";
 
 export const RidePlanSchema = z.object({
@@ -137,31 +139,42 @@ export function planToIntent(plan: RidePlan): RouteIntent {
   });
 }
 
-export function planSummary(plan: RidePlan, lv: boolean): string {
-  const focus = plan.focusArea?.trim() ? `${plan.focusArea} (${lv ? "aplis" : "loop"})` : null;
+/**
+ * The ride in one line, in the rider's language.
+ *
+ * Took a `lv: boolean` until 2026-09-14, which was fine while there were two
+ * languages and wrong once there were four: a Lithuanian rider got English,
+ * because "not Latvian" was the only other option the signature could express.
+ * Callers that have no locale (the chat API derives one from the prompt) pass
+ * "lv" or "en" as before.
+ */
+export function planSummary(plan: RidePlan, locale: UiLocale): string {
+  const m = messages(locale);
+  const focus = plan.focusArea?.trim() ? `${plan.focusArea} (${m.sumLoop})` : null;
   const places = [plan.startPlace, ...(focus ? [focus] : []), ...plan.viaPlaces, plan.returnToStart ? plan.startPlace : plan.destinationPlace].filter(Boolean).join(" → ");
-  const scope = focus && plan.budgetScope === "focus" && plan.budget.mode !== "flexible" && plan.budget.mode !== "unknown" ? (lv ? " aplim" : " for the loop") : "";
-  const budget = (plan.budget.mode === "unknown" ? (lv ? "ilgums vēl jāprecizē" : "duration to clarify")
-    : plan.budget.mode === "flexible" ? (lv ? "brīvs ilgums" : "flexible duration")
-    : plan.budget.constraint === "range" ? `${plan.budget.minimumValue}–${plan.budget.value} ${plan.budget.mode === "duration" ? "h" : "km"}`
-    : `${plan.budget.constraint === "maximum" ? (lv ? "līdz" : "up to") : "~"} ${plan.budget.value} ${plan.budget.mode === "duration" ? "h" : "km"}`) + scope;
-  const difficulty = { unknown: "", easy: lv ? "Viegli" : "Easy", adventure: lv ? "Vidēji" : "Medium", hard: lv ? "Grūti" : "Hard" }[plan.difficulty];
+  const scope = focus && plan.budgetScope === "focus" && plan.budget.mode !== "flexible" && plan.budget.mode !== "unknown" ? ` ${m.sumForLoop}` : "";
+  const unit = plan.budget.mode === "duration" ? "h" : "km";
+  const budget = (plan.budget.mode === "unknown" ? m.sumDurationUnknown
+    : plan.budget.mode === "flexible" ? m.sumFlexible
+    : plan.budget.constraint === "range" ? `${plan.budget.minimumValue}–${plan.budget.value} ${unit}`
+    : `${plan.budget.constraint === "maximum" ? m.sumUpTo : "~"} ${plan.budget.value} ${unit}`) + scope;
+  const difficulty = { unknown: "", easy: m.sumEasy, adventure: m.sumMedium, hard: m.sumHard }[plan.difficulty];
   const style = plan.rideStyle === "unknown" ? ""
-    : plan.rideStyle === "direct" && plan.includeSightseeing ? (lv ? "Tūrisms" : "Tourism")
-    : plan.rideStyle === "explore" && !plan.includeSightseeing ? (lv ? "Sports" : "Sport")
-    : plan.rideStyle === "balanced" && plan.includeSightseeing ? "Mix"
-    : ({ direct: lv ? "tiešāks" : "direct", balanced: lv ? "līdzsvarots" : "balanced", explore: lv ? "izpēte" : "exploration" })[plan.rideStyle];
-  const surface = plan.gravelPreference !== null && plan.gravelPreference <= 10 && plan.trailPreference === "none" ? (lv ? "Tikai asfalts" : "Asphalt only")
-    : plan.preferForest && (plan.gravelPreference ?? 0) >= 90 && plan.trailPreference === "lots" ? (lv ? "Meži" : "Forest")
-    : plan.gravelPreference !== null ? (lv ? "Der arī grants" : "Gravel is fine") : "";
-  const details = [places, plan.directionPlace ? `${plan.directionPlace} ${lv ? "virzienā" : "direction"}` : "", budget, difficulty, style, surface,
-    plan.maxRepeatedPercent !== null ? `${lv ? "atkārtojums līdz" : "repeat at most"} ${plan.maxRepeatedPercent}%` : "",
-    plan.prioritizeLowOverlap && plan.maxRepeatedPercent === null ? (lv ? "mazāk atkārtojumu" : "less retracing") : "",
-    plan.surroundings === "more" ? (lv ? "vairāk apkārtnes" : "more around the stops") : "",
-    plan.noSand ? (lv ? "bez smiltīm" : "avoid sand") : "",
-    plan.avoidTowns ? (lv ? "izvairīties no pilsētām" : "avoid towns") : "",
-    plan.avoidMainRoads ? (lv ? "izvairīties no lielajiem ceļiem" : "avoid main roads") : "",
-    plan.accessPolicy === "allow_unverified" ? (lv ? "atļaut nepārbaudītas takas" : "allow unverified paths") : (lv ? "pārbaudāma piekļuve" : "verified access"),
+    : plan.rideStyle === "direct" && plan.includeSightseeing ? m.sumTourism
+    : plan.rideStyle === "explore" && !plan.includeSightseeing ? m.sumSport
+    : plan.rideStyle === "balanced" && plan.includeSightseeing ? m.sumMix
+    : ({ direct: m.sumDirect, balanced: m.sumBalanced, explore: m.sumExplore })[plan.rideStyle];
+  const surface = plan.gravelPreference !== null && plan.gravelPreference <= 10 && plan.trailPreference === "none" ? m.sumAsphaltOnly
+    : plan.preferForest && (plan.gravelPreference ?? 0) >= 90 && plan.trailPreference === "lots" ? m.sumForest
+    : plan.gravelPreference !== null ? m.sumGravelFine : "";
+  const details = [places, plan.directionPlace ? `${plan.directionPlace} ${m.sumDirection}` : "", budget, difficulty, style, surface,
+    plan.maxRepeatedPercent !== null ? `${m.sumRepeatAtMost} ${plan.maxRepeatedPercent}%` : "",
+    plan.prioritizeLowOverlap && plan.maxRepeatedPercent === null ? m.sumLessRetracing : "",
+    plan.surroundings === "more" ? m.sumMoreAround : "",
+    plan.noSand ? m.sumNoSand : "",
+    plan.avoidTowns ? m.sumAvoidTowns : "",
+    plan.avoidMainRoads ? m.sumAvoidMainRoads : "",
+    plan.accessPolicy === "allow_unverified" ? m.sumAllowUnverified : m.sumVerifiedAccess,
   ];
   return details.filter(Boolean).join(" · ");
 }
