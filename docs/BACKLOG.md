@@ -646,3 +646,13 @@ loader. Nothing typed there can be acted on until the ride exists, so:
 hide the input while a generation runs and put "Atcelt" in its place at the
 bottom, where the thumb already is; the input returns when the ride is
 drawn. `components/route-prompt.tsx` / `components/route-loader.tsx`.
+
+## 22. A road a car takes in 500 m costs the moto profile 10 km
+
+Found 2026-09-14 while building detours. Taurētāju kalns is 206 m from the
+Sigulda loop; `car-fast` reaches it in 0.50 km, `trekking` in 1.02 km, our
+Adventure profile in 10.3 km — so a road exists and the profile declines
+it. Gūtmaņa ala (170 m away, 10.4 km on every motor profile) is the honest
+case for comparison. Worth finding which way the profile refuses there and
+why (access tag? surface? a `path` that is in fact a lane?) — the same
+rule may be pushing other rides off short connectors. `lib/routing/moto-profile.ts`.
