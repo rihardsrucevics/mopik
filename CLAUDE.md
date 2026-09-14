@@ -2,10 +2,48 @@
 
 # Mopik — adventure motorcycle route generator
 
-## Where this stands — handover, 2026-09-13 (evening)
+## Where this stands — handover, 2026-09-14
+
+**`docs/BACKLOG.md` is the rider's own list, in his order — read it first.**
+Item 1 is a round-trip behaviour he specified step by step; item 2 is POI for
+Europe, which had been the next job before he re-prioritised.
+
+Fixed on 2026-09-14 (details and numbers in `docs/PROGRESS.md`), **not yet
+committed**:
+- **A destination the profile cannot route to killed the whole request.**
+  BRouter answers 400 `error re-tracking track` when an endpoint snaps onto a
+  forbidden way — Ērgļi's centre is nearest a `highway=footway`. Reproduced on
+  brouter.de too, so it is not a local-instance artefact, and it had nothing to
+  do with the Tūrisms setting the rider suspected (`includeSightseeing` never
+  reaches the profile). `fetchRoutePath` now looks for routable ground nearby
+  and the acceptance checks honour the distance moved.
+- **Profile buttons were dead after returning from a result.** `RideComposer`
+  read the profile from `initialPlan`, which exists for the rest of the session
+  once a ride is generated, so clicks were overwritten on every render.
+
+**Mopik now has its own BRouter: `https://brouter.mopik.eu`** (`94.130.224.197`) (Hetzner CPX12, Nuremberg,
+€14.51/mo on the rider's €25 credit; `scripts/deploy-brouter-vps.sh` builds
+it from scratch, 88 European segments / 3.1 GB). It is behind an
+`X-Mopik-Token` header — `.env.local` has both values, and **Vercel needs
+`BROUTER_BASE_URL` and `BROUTER_TOKEN` set before production benefits.**
+Berlin → Warszawa routes in 14.4 s where brouter.de refused it outright.
+
+Rides around ~1000 km still fail — now on time, not refusal: one such leg takes
+75 s on our own server and a generation tries ~36 candidates. Backlog item 5.
+
+**Traps this added, both mine:** `RouteServer` resolves the custom-profile
+directory *against* the profiles directory, so absolute paths silently break
+every upload (nginx still says 200; BRouter's 500 is inside the body). And an
+*empty* `BROUTER_BASE_URL` used to read as self-hosted — use the trimmed
+helpers, never `process.env.BROUTER_BASE_URL` directly.
+
+The section below is the 2026-09-13 state; everything in it is live at
+`508f2f4`.
+
+## Where this stood — handover, 2026-09-13 (evening)
 
 Everything below is committed, pushed and **live on www.mopik.eu** at
-`977d80f`. Working tree clean. Read this section first; the rest of the file is
+`977d80f`. Read this section first; the rest of the file is
 the accumulated rules.
 
 ### Mopik is no longer Baltics-only
@@ -28,6 +66,9 @@ Four steps, each measured (details and numbers in `docs/PROGRESS.md`):
    outside LV/LT/EE.
 
 ### What is left, in the order it matters
+
+**Superseded on 2026-09-14 by `docs/BACKLOG.md`, which is the rider's own
+ordering.** The list below is kept for the detail it carries on each item.
 
 1. **POI for Europe (the rider asked for this explicitly).** Outside LV/LT/EE
    loop anchors are geometric, so rides are unnamed and cannot be planned

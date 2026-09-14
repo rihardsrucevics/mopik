@@ -48,7 +48,7 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = false, lucky = false, remoteLoop, longerSuggestion, tolerancePercent = 20, busy, onSend, onBackToForm, resolvedPlaces, alternatives, offset, onOffsetChange, map, sparsePlaceData = false }: {
+export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = false, lucky = false, remoteLoop, longerSuggestion, tolerancePercent = 20, busy, onSend, onBackToForm, resolvedPlaces, alternatives, offset, onOffsetChange, map, sparsePlaceData = false, assembledFromSegments = false }: {
   routes: GeneratedRoute[];
   /** transit → loop → transit split, when the ride was built around a focus area */
   remoteLoop?: GenerateRouteResponse["remoteLoop"];
@@ -92,6 +92,7 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
   map?: ReactNode;
   /** The ride is outside the pre-baked POI data, so stops have no names. */
   sparsePlaceData?: boolean;
+  assembledFromSegments?: boolean;
 }) {
   const [details, setDetails] = useState(false);
   // Alternatives are appended, never swapped in: the three the rider is
@@ -242,6 +243,10 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
   // Outside the Baltics the ride and its numbers are real; what is missing is
   // the named stops. Better said plainly than discovered as an empty list.
   if (sparsePlaceData) warnings.push("Ārpus Baltijas Mopik vēl nezina vietu nosaukumus — maršruts un skaitļi ir īsti, bet pieturas paliek nenosauktas.");
+  // Long rides need Mopik's own router. Without it the ride is stitched from
+  // shorter sections, which is worth saying plainly rather than letting the
+  // rider wonder why a long route looks less considered than a short one.
+  if (assembledFromSegments) warnings.push("Šis brauciens ir garāks, nekā bezmaksas maršrutētājs plāno vienā gabalā, tāpēc tas salikts no posmiem. Trase ir īsta, bet īsākiem braucieniem Mopik atrod labākus ceļus.");
   if (route.overlap.repeatedPercent > 15) warnings.push(`${route.overlap.repeatedKm} km atkārto jau nobrauktus ceļus — vari prasīt mazāk atkārtojumu.`);
   if (route.roadMix.trailKm > 0) warnings.push(`${route.roadMix.trailKm} km taku.`);
   if (q.unverifiedPathKm > 0) warnings.push(`${q.unverifiedPathKm} km pa takām ar nepārbaudītu motocikla piekļuvi — pārbaudi zīmes.`);

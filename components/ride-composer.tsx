@@ -222,7 +222,18 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
 
   // A plan the chat has modified carries its own profile; otherwise the
   // rider's remembered one applies.
-  const effectiveProfile = initialPlan ? profileFromPlan(initialPlan) : profile;
+  //
+  // Once a ride has been generated, `initialPlan` is set for the rest of the
+  // session, so reading the profile from it alone made every profile button
+  // dead on the way back from a result: the click updated the remembered
+  // profile, the plan re-rendered over it, and nothing moved. The plan only
+  // seeds the choice; a click made here wins until the plan itself changes.
+  const [profileOverride, setProfileOverride] = useState<RideProfile | null>(null);
+  const effectiveProfile = profileOverride ?? (initialPlan ? profileFromPlan(initialPlan) : profile);
+  const changeProfile = (next: RideProfile) => {
+    setProfileOverride(next);
+    onProfileChange(next);
+  };
 
   const submit = () => {
     const filled = places.map((p) => p.trim()).filter(Boolean);
@@ -298,7 +309,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
           </div>
         )}
 
-        <ProfileLine profile={effectiveProfile} onChange={onProfileChange} />
+        <ProfileLine profile={effectiveProfile} onChange={changeProfile} />
 
         {error && <p role="alert" className="text-xs text-red-700">{error}</p>}
 

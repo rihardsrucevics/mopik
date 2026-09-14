@@ -1,5 +1,198 @@
 # Mopik — progress log
 
+## 2026-09-14 — a destination the profile cannot reach, and two dead buttons
+
+### "Tūrisms + Meži neveido karti" was neither Tūrisms nor Meži
+
+The rider reported that Jūdaži -> Ērgļi with the profile Vidēji / Tūrisms /
+Meži produced no map, and guessed the Tūrisms+Meži combination was
+unsupported. It is supported; the combination was a coincidence.
+
+**`includeSightseeing` never reaches the routing profile at all** —
+`buildMotoProfileOptions` takes only surface, difficulty, trails, access and
+the avoid flags. Proof it was not the style: the identical plan with Sports
+also failed on every candidate that ended at Ērgļi. Sports appeared to work
+only because one TET candidate ends somewhere else.
+
+**The real cause: BRouter answers 400 `error re-tracking track` when an
+endpoint snaps onto a way the profile forbids.** Ērgļi's Photon coordinate
+(25.6398822, 56.8962277) is nearest to a `highway=footway`, which is
+`motor_forbidden` (cost 100000) in our profile. BRouter snaps the destination
+to it and then refuses the *whole request* rather than returning a best effort.
+`trekking` and `car-fast` route there fine, which is what made it look like our
+bug rather than a snap problem — it is both.
+
+Measured, and it is not a local-instance artefact: the same profile uploaded to
+**brouter.de gives the same 400 on the same leg**.
+
+**Where a blind nudge would have gone wrong.** An early test moved the endpoint
+and "worked", but that test routed from a point 30 km away, not from Jūdaži.
+Over the real leg only **1 bearing of 8 routes at 400-700 m, 2 of 8 at 900 m,
+and nothing at all at 200-300 m** — so a single offset is a coin flip and a
+close one never helps. The forbidden footway network around such a point
+extends a few hundred metres.
+
+Lowering the forbidden cost from 100000 to 10000 does **not** help; BRouter
+treats these as blocked whatever the number. Don't retry that.
+
+**The fix** (`lib/routing/brouter.ts`): on `re-tracking track`, search for
+routable ground around the endpoints — destination first and exhausted before
+the start, nearest radius first, 400/700/1200 m x 8 bearings — and record the
+distance moved as `endpointMovedMeters` on the path. The replacement is cached
+per profile, because one bad endpoint is bad for all ~36 candidates of a
+generation and the search would otherwise run 36 times.
+
+Three acceptance checks then had to honour that slack or the rescued route was
+thrown away downstream — this is what made the first two attempts look like
+they had changed nothing:
+- `visitsRequiredStops` in `route()` (threw "did not reach all required stops")
+- `reachesStops` in the selection stage
+- `pruneSpurs` rebuilds the path object, so the field has to be carried over
+
+And a margin: **BRouter snaps the moved point too**, so a 400 m nudge measured
+**402 m** from the destination and failed a `<= 400` check by 2 m.
+`ENDPOINT_SNAP_MARGIN_M` (150) is the router's snap, not ours.
+
+Result on the rider's case, three runs, stable: 422 -> **200, two routes,
+81.9 km / 2 h 10 min and 76.2 km / 2 h 16 min, 0 % repeated, 75-93 % gravel**,
+~1.8 s. Sigulda 2 h unaffected (2.0 h, unchanged). Verified in the real UI, not
+only against the API.
+
+### Profile buttons were dead on the way back from a result
+
+Reported in the same session. After generating a ride and pressing "Ievades
+forma", no button in the profile panel responded.
+
+`RideComposer` read `effectiveProfile` from `initialPlan` whenever a plan
+existed — and once a ride is generated, it exists for the rest of the session.
+A click wrote to the remembered device profile, the plan re-rendered over it,
+and nothing moved. The plan now only *seeds* the choice; a click held in
+`profileOverride` wins until the plan itself changes. Verified on all three
+axes: Grūti / Tūrisms / Der arī grants.
+
+### Como → Budapest fails too, for an unrelated reason
+
+Reported in the same session and it looks identical in the UI — the same
+"Neizdevās atrast maršrutu" — but it is not the endpoint bug above.
+
+**brouter.de refuses long legs.** Measured with our profile: Como → Budapest
+(~800 km) and **Berlin → Warszawa (~570 km, flat, no Alps)** both answer 400
+`error re-tracking track`; the same ~700 km length (Nida → Narva) routes fine
+on the local instance. Stock `trekking` fails on the public instance too, so it
+is not our cost script.
+
+Ruled out along the way: both endpoints route fine on their own (Como → 40 km,
+Budapest → 30 km, both 200), and intermediate points ~140 km from Budapest fail
+**to any target**, not only to Budapest — so it is not a snap problem and the
+nudge search cannot help. It is the public instance giving up on a long search,
+reported in the same words as a genuine routing failure.
+
+Filed as backlog item 3: this is the self-hosted-VPS item with a measurement
+behind it. Until then any ride over roughly 500 km fails in production, and the
+honest interim would be to say the ride is too long rather than "Precizē
+ilgumu".
+
+### Mopik has its own BRouter
+
+`https://brouter.mopik.eu` (`94.130.224.197`) — Hetzner CPX12 (1 vCPU, 2 GB RAM, 40 GB), Nuremberg,
+Ubuntu 26.04, €14.51/mo, running on the rider's €25 starting credit.
+`scripts/deploy-brouter-vps.sh` built it: BRouter 1.7.10, **88 European
+segments (3.1 GB)**, systemd, nginx with an `X-Mopik-Token` gate (verified: a
+request without the header gets 403), weekly profile pruning, ufw.
+
+Sizing was measured rather than guessed and held up: the tiles are
+memory-mapped, so the process needs a fraction of the 3.1 GB on disk.
+
+**HTTPS since the same evening.** The token rides in a header on every
+request, and over plain HTTP that header is readable in transit — so an A
+record `brouter.mopik.eu` was added at the registrar and certbot issued a
+Let's Encrypt certificate. Verified: 200 with the token, 403 without, HTTP 301
+to HTTPS, `certbot.timer` enabled for renewal.
+
+**What it fixes, measured on our own server:**
+
+| leg | length | brouter.de | ours |
+|---|---|---|---|
+| Rīga → Tallinn | 343 km | ok | 2.4 s |
+| Rīga → Vilnius | 319 km | ok | 5.5 s |
+| Berlin → Warszawa | 646 km | **400** | **14.4 s** |
+| Como → Budapest | 1126 km | **400** | 75 s |
+
+**Two bugs this exposed in my own work:**
+
+1. **`baseUrl()` broke on an empty `BROUTER_BASE_URL`.** `?? ` only catches
+   undefined, so `BROUTER_BASE_URL= next dev` produced relative URLs
+   ("/brouter/profile") and every request died with `ERR_INVALID_URL`. Five
+   other `process.env.BROUTER_BASE_URL` truthiness checks had the same hole —
+   a blank value would have unlocked the self-hosted concurrency and budget
+   against the throttled public server. All now go through one trimmed helper.
+
+2. **The deploy script passed absolute paths to `RouteServer`.** BRouter
+   resolves the custom-profile directory *against* the profiles directory, so
+   it looked in `/opt/brouter/profiles2/opt/brouter/customprofiles` and every
+   uploaded profile failed with `FileNotFoundException`. Nginx still answered
+   200, because BRouter's 500 is inside its own response body — so the client
+   saw `Unexpected token 'H', "HTTP/1.1 5"...`. The local dev script passes
+   relative paths; the deploy script now matches it.
+
+**And one in the API:** `TIME_BUDGET_MS` was 110 s when self-hosted while
+`maxDuration` is 60 s, so the self-hosted budget could never be reached —
+Vercel would have killed the function first and returned its HTML error page.
+Now 50 s.
+
+### Production is on it, after a 403 that was not a wrong token
+
+Every production request 403'd after the env vars were set. The value was
+correct all along — logging what nginx actually received settled it in one
+step:
+
+    log_format tok '$status tok=[$http_x_mopik_token]';
+
+`tok=[-]` — **the header never arrived.** A variable added after the last build
+is not in the running function, so the fix was a cacheless redeploy, not a new
+secret. Vercel's "Needs Attention" badge says exactly this, and reads like an
+error about the value. Worth remembering: from outside, a missing header and a
+wrong one are indistinguishable, so log before rotating anything.
+
+Production, measured after the redeploy:
+
+| ride | result |
+|---|---|
+| Jūdaži → Ērgļi | 200, 2 routes, 83 km, 0 % repeated, **7.8 s** |
+| Rīga → Tallinn (hard forest) | 200, 2 routes, 486 km, 60 % gravel, 0 % repeated, **52.8 s** |
+
+**52.8 s against a 60 s `maxDuration` is too close.** The budget is 50 s, so
+this one only just fit; a slower day fails. Long rides need fewer candidates —
+backlog item 5, now with a second measurement behind it.
+
+### The free-router fallback, and what it does not cover
+
+Long rides also got a fallback for when the credit runs out: `routeInSegments`
+splits a leg the public instance refuses and stitches the pieces with
+`joinPaths`, flagging the result so the panel says the ride was assembled
+rather than searched ("Šis brauciens ir garāks, nekā bezmaksas maršrutētājs
+plāno vienā gabalā…").
+
+**It is written but unproven, and I should not claim otherwise.** It triggers
+on `error re-tracking track`. Measured on Berlin → Warszawa with the hard
+forest profile against the public instance, it never fires — the generation
+dies of `time budget exhausted` first, because 350 ms pacing plus retries
+across ~36 candidates eats the 40 s. With an easy profile the same leg simply
+succeeds (2 routes, 739 km).
+
+That also corrects my earlier reading: **the public instance's limit tracks
+search difficulty, not distance alone.** Berlin → Warszawa "fails over 500 km"
+was true for the hard profile I tested with, not for the leg as such.
+
+Filed as backlog item 5 with the numbers: rides around ~1000 km still fail, now
+on time rather than refusal, and the fix is fewer candidates for a long
+request rather than a better fallback.
+
+### Backlog
+
+`docs/BACKLOG.md` now holds the rider's own list in his order, starting with
+the round-trip stop-insertion behaviour he specified step by step.
+
 ## 2026-09-13 — the day in one place
 
 Fourteen commits, all live at `977d80f`. Two halves: a long UI pass in the

@@ -1,5 +1,6 @@
 import { buildMotoProfile, type MotoProfileOptions } from "./moto-profile";
 import { haversineMeters, type Point } from "@/lib/geo/geometry";
+import { joinPaths } from "./join-paths";
 import type { RoutePath, RouteEdge } from "@/lib/types";
 
 /**
@@ -22,8 +23,31 @@ const ROUTE_TIMEOUT_MS = 20_000;
 /** BRouter accepts long waypoint lists; this is a sanity bound, not a limit. */
 export const MAX_LOCATIONS = 30;
 
+/**
+ * An empty `BROUTER_BASE_URL` is how you ask for the public instance —
+ * `BROUTER_BASE_URL= next dev`, or a blank value in an environment that has no
+ * way to unset one. `?? ` only catches undefined, so an empty string used to
+ * survive and every URL came out relative ("/brouter/profile"), failing with
+ * `ERR_INVALID_URL` on the server where there is no origin to resolve against.
+ */
 function baseUrl(): string {
-  return process.env.BROUTER_BASE_URL?.replace(/\/$/, "") ?? DEFAULT_BASE_URL;
+  const configured = process.env.BROUTER_BASE_URL?.trim();
+  return configured ? configured.replace(/\/$/, "") : DEFAULT_BASE_URL;
+}
+
+/** Whether Mopik has a BRouter of its own, rather than the throttled public one. */
+function isSelfHosted(): boolean {
+  return Boolean(process.env.BROUTER_BASE_URL?.trim());
+}
+
+/**
+ * Our own instance is behind a shared secret — an open BRouter is a free
+ * routing service for whoever finds the IP. Absent for brouter.de and for the
+ * local dev server, which are reached without one.
+ */
+function authHeaders(): Record<string, string> {
+  const token = process.env.BROUTER_TOKEN;
+  return token ? { "X-Mopik-Token": token } : {};
 }
 
 /**
@@ -39,7 +63,7 @@ export async function uploadProfile(options: MotoProfileOptions): Promise<string
 
   const res = await fetch(`${baseUrl()}/brouter/profile`, {
     method: "POST",
-    headers: { "Content-Type": "text/plain" },
+    headers: { "Content-Type": "text/plain", ...authHeaders() },
     body: script,
     signal: AbortSignal.timeout(ROUTE_TIMEOUT_MS),
   });
@@ -79,9 +103,9 @@ let queue: Promise<unknown> = Promise.resolve();
 /** Serialises requests with a small gap; the queue never rejects. */
 function paced<T>(fn: () => Promise<T>): Promise<T> {
   // The public throttle must not serialise the self-hosted server.
-  if (process.env.BROUTER_BASE_URL) return fn();
+  if (isSelfHosted()) return fn();
   const run = queue.then(async () => {
-    if (!process.env.BROUTER_BASE_URL) {
+    if (!isSelfHosted()) {
       const wait = lastRequestAt + MIN_GAP_MS - Date.now();
       if (wait > 0) await new Promise((r) => setTimeout(r, wait));
       lastRequestAt = Date.now();
@@ -100,7 +124,7 @@ async function fetchWithRetry(url: string): Promise<Response> {
     if (attempt > 0) {
       await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt - 1]));
     }
-    const res = await paced(() => fetch(url, { signal: AbortSignal.timeout(ROUTE_TIMEOUT_MS) }));
+    const res = await paced(() => fetch(url, { headers: authHeaders(), signal: AbortSignal.timeout(ROUTE_TIMEOUT_MS) }));
     if (res.ok) return res;
 
     lastStatus = res.status;
@@ -227,6 +251,14 @@ export async function fetchRoutePath(params: {
 
   const profileId = await uploadProfile(params.profileOptions);
 
+  // A leg already known to be beyond the public instance is split up front,
+  // rather than every candidate paying for the same refusal (see
+  // `publicRefusedBeyondKm`).
+  if (!isSelfHosted() && longestLegKm(params.points) >= publicRefusedBeyondKm) {
+    const pieced = await routeInSegments(params.points, profileId);
+    if (pieced) return pieced;
+  }
+
   // A via point can land on a disconnected fragment of the network — a track
   // with no routable link to anything, which BRouter reports as "target
   // island detected for section N". Losing a whole candidate to one bad
@@ -246,6 +278,30 @@ export async function fetchRoutePath(params: {
       return await requestPath(url);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+
+      // A start or destination can geocode onto a way this profile forbids —
+      // Ērgļi's Photon coordinate sits on a `highway=footway`, which costs
+      // 100000 here. BRouter snaps the endpoint to it anyway and then fails
+      // the whole request with "error re-tracking track". The point is not
+      // unreachable, it is only *this* profile's nearest way that is, so the
+      // fix is to look for routable ground a short walk away rather than to
+      // lose the ride. Only about one bearing in eight routes (see
+      // NUDGE_RADII_M), so a single blind offset is a coin flip — the ring is
+      // searched, nearest first.
+      if (/re-tracking track/.test(message)) {
+        const nudged = await routeWithNudgedEndpoints(points, profileId);
+        if (nudged) return nudged;
+        // The same error also means "this leg is too long for the public
+        // instance" — see `routeInSegments`. Nudging cannot help there, so
+        // the leg is ridden in pieces instead.
+        // Remember how long a leg this instance refuses, so the rest of this
+        // generation splits without asking first.
+        publicRefusedBeyondKm = Math.min(publicRefusedBeyondKm, longestLegKm(points));
+        const pieced = await routeInSegments(points, profileId);
+        if (pieced) return pieced;
+        throw err;
+      }
+
       const island = /island detected for section (\d+)/.exec(message);
       if (!island || drop >= maxDrops) throw err;
 
@@ -258,6 +314,211 @@ export async function fetchRoutePath(params: {
       points = [...points.slice(0, index), ...points.slice(index + 1)];
     }
   }
+}
+
+/**
+ * Distances a mis-snapped endpoint is looked for at, and the bearings tried
+ * at each.
+ *
+ * Measured at Ērgļi (the case that found this bug), routing from Jūdaži:
+ * nothing routes at 200 or 300 m, one bearing of eight at 400–700 m, two at
+ * 900 m. So a close nudge is not merely unlucky — the forbidden footway
+ * network around such a point extends a few hundred metres, and the search
+ * has to clear it. 1200 m is the stop: beyond that the ride no longer starts
+ * or ends at the place the rider named, and reporting the failure honestly
+ * beats silently moving their destination.
+ */
+const NUDGE_RADII_M = [400, 700, 1200];
+const NUDGE_BEARINGS_DEG = [0, 45, 90, 135, 180, 225, 270, 315];
+
+/**
+ * A bad endpoint is bad for every candidate in the same generation — all ~36
+ * of them start or end there — so the replacement found for it is remembered
+ * per profile and reused. Without this the search runs once per candidate,
+ * which on the throttled public instance costs more wall-clock than the whole
+ * generation has. Keyed by profile because "routable" is a property of the
+ * profile, not of the ground.
+ */
+const nudgeCache = new Map<string, Point>();
+const nudgeKey = (profileId: string, [lon, lat]: Point) => `${profileId}|${lon},${lat}`;
+
+function offsetPoint([lon, lat]: Point, bearingDeg: number, meters: number): Point {
+  const rad = (bearingDeg * Math.PI) / 180;
+  const dLat = (meters * Math.cos(rad)) / 111320;
+  const dLon = (meters * Math.sin(rad)) / (111320 * Math.cos((lat * Math.PI) / 180));
+  return [Number((lon + dLon).toFixed(7)), Number((lat + dLat).toFixed(7))];
+}
+
+/**
+ * Retry the route with the start or the end moved to nearby routable ground.
+ * Only the endpoints are moved: an intermediate point that cannot be snapped
+ * is already handled by the island-drop above, and the rider's two named
+ * places are the ones worth saving.
+ *
+ * Returns null when nothing within `NUDGE_RADII_M` routes, so the caller can
+ * report the original failure rather than a route to somewhere else.
+ */
+async function routeWithNudgedEndpoints(
+  points: Point[],
+  profileId: string
+): Promise<RoutePath | null> {
+  const last = points.length - 1;
+  const request = async (candidate: Point[]) => {
+    const lonlats = candidate.map(([lon, lat]) => `${lon},${lat}`).join("|");
+    try {
+      return await requestPath(
+        `${baseUrl()}/brouter?lonlats=${encodeURIComponent(lonlats)}` +
+          `&profile=${encodeURIComponent(profileId)}&alternativeidx=0&format=geojson`
+      );
+    } catch {
+      return null;
+    }
+  };
+
+  // A replacement already found for either endpoint is used straight away:
+  // the first candidate of a generation pays for the search, the rest do not.
+  const cachedStart = nudgeCache.get(nudgeKey(profileId, points[0]));
+  const cachedEnd = nudgeCache.get(nudgeKey(profileId, points[last]));
+  if (cachedStart || cachedEnd) {
+    const settled = await request([
+      cachedStart ?? points[0],
+      ...points.slice(1, last),
+      cachedEnd ?? points[last],
+    ]);
+    if (settled) {
+      const moved = Math.max(
+        cachedStart ? haversineMeters(points[0], cachedStart) : 0,
+        cachedEnd ? haversineMeters(points[last], cachedEnd) : 0
+      );
+      return { ...settled, endpointMovedMeters: Math.round(moved) };
+    }
+  }
+
+  // Which end is at fault is not in BRouter's message. The destination is
+  // tried first and exhausted before the start is touched: a destination is
+  // the far more common mis-snap (a start usually came from the rider's own
+  // position or a previous ride), and interleaving the two doubles the cost
+  // of the common case. Only one bearing in eight tends to work, so the
+  // ordering is what keeps this affordable on the throttled public instance.
+  for (const [index, label] of [[last, "end"], [0, "start"]] as const) {
+    for (const meters of NUDGE_RADII_M) {
+      for (const bearing of NUDGE_BEARINGS_DEG) {
+        const moved = offsetPoint(points[index], bearing, meters);
+        const candidate = [...points];
+        candidate[index] = moved;
+        const path = await request(candidate);
+        if (path) {
+          console.warn(
+            `brouter: ${label} ${points[index].join(",")} is not routable on this profile; ` +
+              `used a point ${meters} m away at ${bearing}°`
+          );
+          nudgeCache.set(nudgeKey(profileId, points[index]), moved);
+          return { ...path, endpointMovedMeters: meters };
+        }
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Longest leg the public instance will actually route. Measured 2026-09-14:
+ * Como → Budapest (~800 km) and Berlin → Warszawa (~570 km, flat, no Alps)
+ * both answer 400 `error re-tracking track`, while the same lengths route in
+ * 4.4 s on our own instance — so it is the public server giving up on a long
+ * search, not a limit of BRouter. 300 km is comfortably under the shortest
+ * failure seen and leaves room for a leg that wanders.
+ */
+const PUBLIC_MAX_LEG_KM = 300;
+
+/**
+ * Whether the public instance has already refused a leg this long.
+ *
+ * Being too long is a property of the *request*, not of one candidate: all ~36
+ * candidates of a generation span the same two places, so without this each
+ * one rediscovers the refusal and pays for its own split. Measured: Como →
+ * Budapest spent the whole 40 s budget that way and still returned nothing.
+ * The first candidate to hit the wall records the crow-flight distance, and
+ * the rest split immediately instead of asking again.
+ */
+let publicRefusedBeyondKm = Infinity;
+
+/** Straight-line length of the longest leg in a waypoint list. */
+function longestLegKm(points: Point[]): number {
+  let longest = 0;
+  for (let i = 0; i < points.length - 1; i++) {
+    longest = Math.max(longest, haversineMeters(points[i], points[i + 1]) / 1000);
+  }
+  return longest;
+}
+
+/**
+ * Ride a leg the public instance refuses in pieces, and stitch them together.
+ *
+ * This is the free fallback for when Mopik has no BRouter of its own: a long
+ * European route still comes back, built from sections the public server will
+ * answer. It is a worse route than one search over the whole leg would give —
+ * the split points are arbitrary, so the router optimises each piece rather
+ * than the ride — which is why it runs only after a self-hosted instance has
+ * had its chance, never in front of one.
+ *
+ * Returns null when even the pieces fail, so the caller reports the original
+ * error rather than half a ride.
+ */
+async function routeInSegments(points: Point[], profileId: string): Promise<RoutePath | null> {
+  // A self-hosted instance has no such limit; if it refused this leg, the
+  // reason is something else and splitting would only hide it.
+  if (isSelfHosted()) return null;
+
+  const fetchLeg = async (from: Point, to: Point): Promise<RoutePath | null> => {
+    const lonlats = `${from[0]},${from[1]}|${to[0]},${to[1]}`;
+    try {
+      return await requestPath(
+        `${baseUrl()}/brouter?lonlats=${encodeURIComponent(lonlats)}` +
+          `&profile=${encodeURIComponent(profileId)}&alternativeidx=0&format=geojson`
+      );
+    } catch {
+      return null;
+    }
+  };
+
+  const parts: RoutePath[] = [];
+  for (let i = 0; i < points.length - 1; i++) {
+    const from = points[i];
+    const to = points[i + 1];
+    const km = haversineMeters(from, to) / 1000;
+    // Straight-line distance understates the ride, so the piece count is
+    // deliberately generous: a 300 km crow-flight leg is often 400 km ridden.
+    const pieces = Math.max(1, Math.ceil(km / PUBLIC_MAX_LEG_KM));
+    let legFrom = from;
+
+    for (let p = 1; p <= pieces; p++) {
+      // Interpolating along the straight line puts each split point on
+      // whatever ground happens to be there, which may itself be unroutable —
+      // so each one gets the same nudge search the endpoints get.
+      const t = p / pieces;
+      const legTo: Point = p === pieces
+        ? to
+        : [
+            Number((from[0] + (to[0] - from[0]) * t).toFixed(7)),
+            Number((from[1] + (to[1] - from[1]) * t).toFixed(7)),
+          ];
+      const part = (await fetchLeg(legFrom, legTo)) ?? (await routeWithNudgedEndpoints([legFrom, legTo], profileId));
+      if (!part) return null;
+      parts.push(part);
+      // Continue from where the piece actually ended, not from the point we
+      // asked for: a nudged split point would otherwise leave a gap.
+      legFrom = part.coordinates[part.coordinates.length - 1];
+    }
+  }
+
+  if (!parts.length) return null;
+  console.warn(
+    `brouter: leg too long for the public instance; rode it in ${parts.length} pieces`
+  );
+  // The flag travels with the path so the UI can say the ride was assembled
+  // rather than searched, and is honest about the quality that costs.
+  return { ...joinPaths(parts), assembledFromSegments: true };
 }
 
 async function requestPath(url: string): Promise<RoutePath> {

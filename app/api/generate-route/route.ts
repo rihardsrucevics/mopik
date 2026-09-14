@@ -414,13 +414,21 @@ async function buildCandidates(
   const route = async (points: [number, number][], options = profileOptions) => {
     const path = await fetchRoutePath({ points, profileOptions: options });
     const stops = [...requiredVia, ...(destination ? [destination] : [])].map(p => [p.lon, p.lat] as [number, number]);
-    if (!visitsRequiredStops(path.coordinates, stops)) throw new Error("Route did not reach all required stops in order");
+    // A place the profile cannot route to at all (a centre mapped onto a
+    // footway) is reached as closely as the network allows; `fetchRoutePath`
+    // says how far that was, and the stop check has to allow the same, or the
+    // rescued route is thrown away here before anything can use it.
+    const stopTolerance = Math.max(300, (path.endpointMovedMeters ?? 0) + ENDPOINT_SNAP_MARGIN_M);
+    if (!visitsRequiredStops(path.coordinates, stops, stopTolerance)) throw new Error("Route did not reach all required stops in order");
     if (destination || intent.includeSightseeing) return path;
     let cleaned: RoutePath;
     try { cleaned = pruneSpurs(path); }
     catch (error) { if (requiredVia.length) return path; throw error; }
+    // `pruneSpurs` rebuilds the path, so the moved-endpoint note has to be
+    // carried over or the acceptance checks downstream lose the slack.
+    if (path.endpointMovedMeters !== undefined) cleaned.endpointMovedMeters = path.endpointMovedMeters;
     // A requested visit may itself need an out-and-back. Never remove it.
-    return visitsRequiredStops(cleaned.coordinates, stops) ? cleaned : path;
+    return visitsRequiredStops(cleaned.coordinates, stops, stopTolerance) ? cleaned : path;
   };
 
 
@@ -438,7 +446,7 @@ async function buildCandidates(
     // The public brouter.de answers ~2-3 s a route and throttles by IP (Vercel's
     // egress is shared), so there the via search runs a quarter of the shapes
     // and lets the time budget do the rest; self-hosted runs them all.
-    const selfHostedVia = !!process.env.BROUTER_BASE_URL;
+    const selfHostedVia = selfHostedRouter();
     const scales = intent.rideStyle === "direct" ? [0, 0.25, 0.5] : selfHostedVia ? [0, 0.35, 0.7, 1, 1.4, 1.8, 2.2, 2.8] : [0, 0.7, 1.4, 2.2];
     const candidates: Candidate[] = [];
     // On a round trip the -1 side is the +1 shape ridden the other way round
@@ -584,7 +592,7 @@ async function buildCandidates(
   // route and the probe, six requests, because its burst limit lost two of
   // six test prompts at eight. A self-hosted server (~0.2 s a route) makes
   // more shapes free, and more shapes is more chances at a low-retrace loop.
-  const selfHosted = !!process.env.BROUTER_BASE_URL;
+  const selfHosted = selfHostedRouter();
   const extraStops = Math.min(10, baseStops + 1);
   const cityStart = calibration?.cityStart ?? false;
 
@@ -827,7 +835,32 @@ function mutations(shape: LoopShape): LoopShape[] {
  * the "bug" riders saw on long rides via the public BRouter. Below the cap the
  * search stops launching new batches and answers with the best it has.
  */
-const TIME_BUDGET_MS = process.env.BROUTER_BASE_URL ? 110_000 : 40_000;
+/**
+ * How far past a moved endpoint the route's own end may sit. BRouter snaps
+ * the point it is given to the nearest routable node, so a 400 m nudge
+ * measured 402 m out — the endpoint checks have to allow the router's snap
+ * on top of the nudge or a rescued route fails by a couple of metres.
+ */
+const ENDPOINT_SNAP_MARGIN_M = 150;
+
+/**
+ * Whether Mopik has a BRouter of its own. An empty `BROUTER_BASE_URL` means
+ * the public instance, so it must not read as truthy — a blank value would
+ * otherwise unlock the self-hosted budget and concurrency against a server
+ * that throttles.
+ */
+const selfHostedRouter = (): boolean => Boolean(process.env.BROUTER_BASE_URL?.trim());
+
+/**
+ * Wall-clock for one generation. It must stay inside `maxDuration` (60 s
+ * above): Vercel kills the function at that cap and the client gets the
+ * platform's HTML error page, not our JSON — the "string did not match the
+ * expected pattern" failure. The self-hosted budget was 110 s, which could
+ * never have been reached; 50 s leaves room for the response to be built and
+ * sent. A self-hosted router still gets the longer half of the range because
+ * it answers far faster per candidate and is not paced.
+ */
+const TIME_BUDGET_MS = selfHostedRouter() ? 50_000 : 40_000;
 
 /** Rejects when the budget runs out; the underlying fetch is left to finish alone. */
 function withDeadline<T>(promise: Promise<T>, ms: number): Promise<T> {
@@ -1039,7 +1072,7 @@ export async function POST(req: NextRequest) {
       exploratory: boolean;
     };
 
-    const CONCURRENCY = process.env.BROUTER_BASE_URL ? 4 : 2;
+    const CONCURRENCY = selfHostedRouter() ? 4 : 2;
     const runAll = async (cands: Candidate[]): Promise<{ settled: PromiseSettledResult<Awaited<ReturnType<Candidate["run"]>>>[]; scored: Scored[] }> => {
       const settled: PromiseSettledResult<Awaited<ReturnType<Candidate["run"]>>>[] = [];
       for (let i = 0; i < cands.length; i += CONCURRENCY) {
@@ -1111,7 +1144,7 @@ export async function POST(req: NextRequest) {
           secondPass: true,
         }, direction, requiredVia);
         const retry = again.candidates.filter((c) => !c.exploratory);
-        const second = await runAll(process.env.BROUTER_BASE_URL ? retry : retry.slice(0, PUBLIC_SECOND_PASS_SHAPES));
+        const second = await runAll(selfHostedRouter() ? retry : retry.slice(0, PUBLIC_SECOND_PASS_SHAPES));
         scored = [...scored, ...second.scored];
       }
     }
@@ -1127,9 +1160,22 @@ export async function POST(req: NextRequest) {
     // 7%-gravel loop beat a 59%-gravel one for a rider who asked for woods,
     // hence the unpaved shortfall term.
     // Named places and maximum budgets are acceptance conditions, not score weights.
+    // 300 m is "this ride starts and ends where you asked". The exception is
+    // a place that cannot be routed to at all on this profile — Ērgļi's
+    // centre geocodes onto a `highway=footway`, which the moto profile
+    // forbids, and BRouter then refuses the whole request. The router moves
+    // such an endpoint to the nearest routable ground and says how far, so
+    // the ride is judged against the closest the road network allows rather
+    // than thrown away. Nothing else gets the slack.
+    // The moved point is where we *asked* to route; BRouter still snaps that
+    // to the nearest node, which measured 402 m out for a 400 m nudge. The
+    // snap margin is the router's, not ours, so the allowance is the nudge
+    // plus one snap radius rather than the nudge exactly.
+    const endpointTolerance = (s: Scored) =>
+      Math.max(300, (s.path.endpointMovedMeters ?? 0) + ENDPOINT_SNAP_MARGIN_M);
     const reachesStops = (s: Scored) => visitsRequiredStops(s.path.coordinates, requiredVia.map(p => [p.lon,p.lat])) &&
-      haversineMeters(s.path.coordinates[0], [start.lon,start.lat]) <= 300 &&
-      haversineMeters(s.path.coordinates[s.path.coordinates.length-1], [destination?.lon ?? start.lon,destination?.lat ?? start.lat]) <= 300;
+      haversineMeters(s.path.coordinates[0], [start.lon,start.lat]) <= endpointTolerance(s) &&
+      haversineMeters(s.path.coordinates[s.path.coordinates.length-1], [destination?.lon ?? start.lon,destination?.lat ?? start.lat]) <= endpointTolerance(s);
     const acceptable = (s: Scored) => reachesStops(s) && meetsRideLimits(intent, {
       durationSeconds: s.classified.durationSeconds,
       distanceMeters: s.path.distanceMeters,
@@ -1220,7 +1266,7 @@ export async function POST(req: NextRequest) {
       // routes). A rider with a map does exactly this — nudges the good
       // shape rather than starting over — and it finds loops the fixed
       // shape list misses.
-      if (process.env.BROUTER_BASE_URL && built.fromShapes && !outOfTime()) {
+      if (selfHostedRouter() && built.fromShapes && !outOfTime()) {
         // The two best by rank, plus the wide loop that retraces least: when
         // nothing inside tolerance loops cleanly, that is the one worth
         // refining into an offer.
@@ -1611,6 +1657,10 @@ export async function POST(req: NextRequest) {
       routes,
       // Outside LV/LT/EE the ride is real but its stops are unnamed; say so.
       ...(hasPlaceData(start) ? {} : { sparsePlaceData: true }),
+      // Any shown route stitched from sections means the free public router
+      // could not plan this ride in one search — the rider is told, because a
+      // long route otherwise just looks less considered for no visible reason.
+      ...(chosen.some((c) => c.path.assembledFromSegments) ? { assembledFromSegments: true } : {}),
       ...(alternatives.length ? { alternatives } : {}),
       ...(remote
         ? {

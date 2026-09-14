@@ -62,6 +62,24 @@ export type RoutePath = {
   elevations?: (number | null)[];
   /** per-edge detail; empty when the attribute lookup was unavailable */
   edges: RouteEdge[];
+  /**
+   * How far, in metres, an endpoint had to be moved to route at all. Some
+   * places geocode onto a way this profile forbids — Ērgļi's centre sits on a
+   * `highway=footway` — and BRouter then refuses the whole request rather
+   * than stopping short. The router looks for routable ground nearby and
+   * records the distance here so the endpoint check can allow exactly that
+   * much slack instead of discarding a ride that is as close as the road
+   * network permits. Absent when the route ends where it was asked to.
+   */
+  endpointMovedMeters?: number;
+  /**
+   * True when the leg was too long for the public BRouter and was ridden in
+   * pieces and stitched together (see `routeInSegments`). The split points are
+   * arbitrary, so the router optimised each piece rather than the whole ride —
+   * the route is real and rideable, but not as good as one search would give,
+   * and the UI says so rather than presenting it as equivalent.
+   */
+  assembledFromSegments?: boolean;
 };
 
 /** One routed edge, carrying raw provider enum values for classification. */
@@ -259,6 +277,13 @@ export type GenerateRouteResponse = {
    * loud rather than left for the rider to notice.
    */
   sparsePlaceData?: boolean;
+  /**
+   * Set when the ride was too long for the free public router and had to be
+   * assembled from shorter sections. The route is real and rideable, but each
+   * section was optimised on its own rather than the whole ride, so it is
+   * honestly a worse route than Mopik's own server would produce.
+   */
+  assembledFromSegments?: boolean;
   /**
    * Set when nothing came close to the request and `routes` are the nearest
    * rides instead: Rīga → Jelgava → Rīga on forest roads is at least ~4 h,
