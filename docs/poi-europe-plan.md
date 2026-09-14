@@ -16,8 +16,15 @@ single category.
 
 ## 1. What the script actually collects
 
-`scripts/build_poi_dataset.py` has eleven categories. The score is how far an
+`scripts/build_poi_dataset.py` has thirteen categories. The score is how far an
 adventure rider will detour for one; it is the same table in both modes.
+
+**Eleven until 2026-09-14**, when a rider was shown "Gūtmaņa ala ·
+ūdenskritums". One query matched `natural=waterfall|cliff|cave_entrance` and
+called all three `waterfall`. Measured in the Overpass cache: the Baltics
+contain **no named waterfall at all** — every one of the 155 LV, 110 LT and
+104 EE points in that category was a cave or a cliff, so the label was wrong
+100 % of the time rather than occasionally. Three categories now.
 
 | category | score | OSM tags |
 |---|---:|---|
@@ -26,7 +33,9 @@ adventure rider will detour for one; it is the same table in both modes.
 | hillfort | 8 | `historic=archaeological_site` |
 | lighthouse | 8 | `man_made=lighthouse` |
 | ford | 7 | `ford=yes\|stepping_stones` |
-| waterfall | 7 | `natural=waterfall\|cliff\|cave_entrance` (named) |
+| waterfall | 7 | `natural=waterfall` (named) |
+| cave | 7 | `natural=cave_entrance` (named) |
+| cliff | 6 | `natural=cliff` (named) |
 | manor | 6 | `historic=castle\|manor\|ruins\|fort` |
 | viewpoint | 6 | `tourism=viewpoint` |
 | mill | 5 | `man_made=watermill\|windmill`, `historic=watermill` |
@@ -363,3 +372,60 @@ The Overpass path in the script is **unchanged** — byte-identical collection
 loop and helpers, verified after the refactor. Running the script with no
 arguments still rebuilds `public/poi-baltics.geojson` from `.poi-cache`
 exactly as before.
+
+## 7. The "Vairāk" row — what a feature carries, 2026-09-14
+
+Until now a feature carried `id`/`category`/`score`/`country` and the three
+name fields, so a rider who wanted to know *what* a place is had nowhere to go
+but openstreetmap.org. The `.pbf` is already open and the tag dict already
+built, so taking more tags costs **no extra pass** — the only real question is
+file size.
+
+Nine optional fields, written only when present and never as null:
+`wikipedia`, `website`, `description`, `ele`, `historic`, `tourism`,
+`opening_hours`, `fee`, `access`.
+
+**Measured on the real published `data/poi-LV.geojson`** (4,573 features,
+1,036 KB) by re-running only the enrichment step against the raw tags still
+in `.poi-cache/LV-*.json` — the same objects, 4,561 of 4,573 matched by id, so
+this is a measurement and not an estimate:
+
+| field | features | share | cost |
+|---|---:|---:|---:|
+| website | 386 | 8.5 % | 29.6 KB |
+| historic | 1,006 | 22.1 % | 27.8 KB |
+| wikipedia | 348 | 7.6 % | 12.7 KB |
+| tourism | 261 | 5.7 % | 6.4 KB |
+| description | 49 | 1.1 % | 3.6 KB |
+| opening_hours | 17 | 0.4 % | 0.6 KB |
+| ele | 27 | 0.6 % | 0.4 KB |
+| access | 16 | 0.4 % | 0.4 KB |
+| fee | 0 | 0 % | 0 KB |
+| **total** | **1,768 (39 %)** | | **+81.6 KB (+7.9 %)** |
+
+**Thinning is what makes this cheap.** Before thinning, 41 % of Latvian POIs
+carry `wikipedia` — because 51 % of *villages* do, and villages are 74 % of
+the raw set. Thinning drops most of them, and the post-thinning share falls to
+7.6 %. Anyone estimating this cost from raw tag frequency would have predicted
+~550 KB and been 6.7× too high.
+
+Deliberately **not** carried: `wikidata` (an opaque Q-number the UI cannot
+render without a second network call, and `wikipedia` already links the same
+article) and free-text `note`/`inscription` (long, untranslated, usually
+surveyor's chatter). `description` is capped at 300 characters — OSM has no
+length limit on it and a handful run to paragraphs. `ele` is parsed to a
+number rather than shipped as the raw string, which is variously `"123"`,
+`"123 m"` and `"123,5"`. `historic`/`tourism` skip the placeholder values
+`yes`/`no`, which say nothing a category does not already say.
+
+`wikipedia` prefers `wikipedia:lv` when the object names one: sending a
+Latvian rider to the English article about a Latvian cave is the worse of two
+links.
+
+Both paths enrich. The Overpass query already asked for `out center tags`, so
+its cached answers carry these tags too and the two paths must produce the
+same feature shape — otherwise the app would have to branch on which build
+wrote the file.
+
+A build now prints what the extras cost, per field, so keeping or dropping one
+is decided on measured bytes.

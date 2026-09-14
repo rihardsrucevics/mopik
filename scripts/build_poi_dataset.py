@@ -65,7 +65,17 @@ CATEGORIES = [
     ("tower", 9, ['nwr["man_made"="tower"]["tower:type"~"observation|watchtower"]({b});']),
     ("hillfort", 8, ['nwr["historic"="archaeological_site"]({b});']),
     ("lighthouse", 8, ['nwr["man_made"="lighthouse"]({b});']),
-    ("waterfall", 7, ['nwr["natural"~"^(waterfall|cliff|cave_entrance)$"]["name"]({b});']),
+    # Three separate categories, not one bucket. These used to be a single
+    # `waterfall` query over natural=waterfall|cliff|cave_entrance, which is
+    # how a rider was shown "Gūtmaņa ala · ūdenskritums" — the best-known cave
+    # in Latvia, labelled a waterfall. A cave is not a waterfall and the label
+    # is the whole point of the row.
+    ("waterfall", 7, ['nwr["natural"="waterfall"]["name"]({b});']),
+    # Caves and cliffs sit just under waterfalls: rarer, and a named one is
+    # almost always a genuine landmark (Gūtmaņa ala, Gaujas senlejas klintis)
+    # rather than the anonymous rock face that an unnamed one usually is.
+    ("cave", 7, ['nwr["natural"="cave_entrance"]["name"]({b});']),
+    ("cliff", 6, ['nwr["natural"="cliff"]["name"]({b});']),
     ("manor", 6, ['nwr["historic"~"^(castle|manor|ruins|fort)$"]({b});']),
     ("viewpoint", 6, ['nwr["tourism"="viewpoint"]({b});']),
     ("mill", 5, ['nwr["man_made"~"^(watermill|windmill)$"]({b});', 'nwr["historic"="watermill"]({b});']),
@@ -182,8 +192,9 @@ PBF_MATCHERS = {
     and t.get("tower:type") in ("observation", "watchtower"),
     "hillfort": _is_archaeological,
     "lighthouse": lambda t: t.get("man_made") == "lighthouse",
-    "waterfall": lambda t: t.get("natural") in ("waterfall", "cliff", "cave_entrance")
-    and bool(t.get("name")),
+    "waterfall": lambda t: t.get("natural") == "waterfall" and bool(t.get("name")),
+    "cave": lambda t: t.get("natural") == "cave_entrance" and bool(t.get("name")),
+    "cliff": lambda t: t.get("natural") == "cliff" and bool(t.get("name")),
     "manor": lambda t: t.get("historic") in ("castle", "manor", "ruins", "fort"),
     "viewpoint": lambda t: t.get("tourism") == "viewpoint",
     "mill": lambda t: t.get("man_made") in ("watermill", "windmill")
@@ -202,6 +213,89 @@ assert {k for k, _, _ in CATEGORIES} == set(PBF_MATCHERS), (
 # "village" is node-only in the Overpass query, so keep it node-only here too —
 # otherwise a .pbf build picks up place polygons the Baltic dataset never had.
 PBF_NODE_ONLY = {"village"}
+
+
+# --- the "Vairāk" row ------------------------------------------------------
+#
+# Until now a feature carried id/category/score/country/names and nothing
+# else, so a rider who wanted to know *what* a place is had nowhere to go but
+# openstreetmap.org. These tags are already in the .pbf being read — the file
+# is open, the tag dict is built, and taking them costs no extra pass — so the
+# only real question is file size, which is why this list is short and why
+# every field is omitted when absent rather than written as null.
+#
+# Deliberately NOT here: `wikidata` (an opaque Q-number the UI cannot render
+# without a second network call, and `wikipedia` already links the same
+# article), and free-text `note`/`inscription` (long, untranslated, and
+# frequently surveyor's chatter rather than anything a rider wants).
+#
+# `description` is capped because OSM has no length limit on it and a handful
+# of entries run to paragraphs; 300 characters is a phone-screen paragraph.
+DESCRIPTION_MAX = 300
+
+# Plain string tags, copied through under the same name.
+ENRICH_STRING = ("website", "opening_hours", "fee", "access", "historic", "tourism")
+
+
+def enrichment(tags, locale_hint="lv"):
+    """The optional extras for one POI, as a dict of only what is present.
+
+    Returns `{}` for the common case — most OSM objects carry none of this —
+    so a feature that has nothing gains not one byte.
+    """
+    extra = {}
+
+    # `wikipedia` is "lang:Article Title". Prefer the article in the rider's
+    # own language when the object names one (`wikipedia:lv=…`), because
+    # sending a Latvian rider to the English article about a Latvian cave is
+    # the worse of two links.
+    wiki = tags.get(f"wikipedia:{locale_hint}")
+    if wiki:
+        wiki = f"{locale_hint}:{wiki}"
+    else:
+        wiki = tags.get("wikipedia")
+    if wiki and ":" in wiki:
+        extra["wikipedia"] = wiki
+
+    # Elevation: a number the UI can format, not the raw string. OSM has
+    # "123", "123 m" and the occasional "123,5"; anything else is dropped
+    # rather than shipped as text that no caller can do arithmetic on.
+    ele = tags.get("ele")
+    if ele:
+        cleaned = ele.replace(",", ".").replace("m", "").strip()
+        try:
+            extra["ele"] = round(float(cleaned), 1)
+        except ValueError:
+            pass
+
+    desc = tags.get(f"description:{locale_hint}") or tags.get("description")
+    if desc:
+        desc = " ".join(desc.split())
+        extra["description"] = (
+            desc if len(desc) <= DESCRIPTION_MAX else desc[: DESCRIPTION_MAX - 1].rstrip() + "…"
+        )
+
+    for tag in ENRICH_STRING:
+        value = tags.get(tag)
+        # `historic`/`tourism` are what a category was *derived* from for some
+        # kinds; keeping them lets the row say "muiža" where the category only
+        # says `manor`. Skip the placeholder values that say nothing.
+        if value and value not in ("yes", "no"):
+            extra[tag] = value
+
+    # `website` has a second common spelling; only used when the first is absent.
+    if "website" not in extra:
+        alt = tags.get("contact:website") or tags.get("url")
+        if alt:
+            extra["website"] = alt
+
+    return extra
+
+
+# Which extras may reach the output file. `thin_and_write` copies exactly
+# these, so a tag added above is written and nothing else ever is.
+ENRICH_FIELDS = ("wikipedia", "website", "description", "ele", "historic", "tourism",
+                 "opening_hours", "fee", "access")
 
 
 def collect_from_pbf(path, code):
@@ -235,19 +329,22 @@ def collect_from_pbf(path, code):
                 continue
             seen.add((key, ident))
             name_lv = tags.get("name:lv") or tags.get("name")
-            collected.append(
-                {
-                    "id": ident,
-                    "lon": round(point[0], 5),
-                    "lat": round(point[1], 5),
-                    "category": key,
-                    "score": scores[key],
-                    "country": code,
-                    "nameLv": name_lv,
-                    "nameEn": tags.get("name:en") or tags.get("name"),
-                    "nameLvAcc": latvian_accusative(name_lv),
-                }
-            )
+            poi = {
+                "id": ident,
+                "lon": round(point[0], 5),
+                "lat": round(point[1], 5),
+                "category": key,
+                "score": scores[key],
+                "country": code,
+                "nameLv": name_lv,
+                "nameEn": tags.get("name:en") or tags.get("name"),
+                "nameLvAcc": latvian_accusative(name_lv),
+            }
+            # The tag dict is already built and the file already open, so the
+            # extras cost no extra pass — only bytes, which is why
+            # `enrichment` omits rather than nulls.
+            poi.update(enrichment(tags))
+            collected.append(poi)
 
     # `with_areas()` turns closed ways and multipolygon relations into Area
     # objects with real geometry; nodes and open ways still arrive as
@@ -346,19 +443,23 @@ def collect_from_overpass():
                 if not name and key == "village":
                     continue
                 name_lv = tags.get("name:lv") or tags.get("name")
-                collected.append(
-                    {
-                        "id": f"{el['type'][0]}{el['id']}",
-                        "lon": round(point[0], 5),
-                        "lat": round(point[1], 5),
-                        "category": key,
-                        "score": score,
-                        "country": code,
-                        "nameLv": name_lv,
-                        "nameEn": tags.get("name:en") or tags.get("name"),
-                        "nameLvAcc": latvian_accusative(name_lv),
-                    }
-                )
+                poi = {
+                    "id": f"{el['type'][0]}{el['id']}",
+                    "lon": round(point[0], 5),
+                    "lat": round(point[1], 5),
+                    "category": key,
+                    "score": score,
+                    "country": code,
+                    "nameLv": name_lv,
+                    "nameEn": tags.get("name:en") or tags.get("name"),
+                    "nameLvAcc": latvian_accusative(name_lv),
+                }
+                # `out center tags` already returned every tag, so the extras
+                # cost nothing here either — and both paths must produce the
+                # same feature shape or the app would have to branch on which
+                # build wrote the file.
+                poi.update(enrichment(tags))
+                collected.append(poi)
                 kept += 1
             print(f" {kept:>6} kept", flush=True)
             # Only pause after a real request; cached reads need no throttle.
@@ -403,7 +504,7 @@ def thin_and_write(collected, out_path):
             "score": p["score"],
             "country": p["country"],
         }
-        for field in ("nameLv", "nameEn", "nameLvAcc"):
+        for field in ("nameLv", "nameEn", "nameLvAcc", *ENRICH_FIELDS):
             if p.get(field):
                 props[field] = p[field]
         features.append(
@@ -426,6 +527,25 @@ def thin_and_write(collected, out_path):
     print(f"{size_mb:.2f} MB")
     for key, n in sorted(counts.items(), key=lambda kv: -kv[1]):
         print(f"  {key:<11} {n:>6}")
+
+    # What the "Vairāk" extras actually cost, per field, so the decision to
+    # keep or drop one is made on measured bytes rather than on a guess. The
+    # cost is the serialised key *and* value, which is what the file grows by.
+    extra_bytes = {}
+    extra_count = {}
+    for p in thinned:
+        for field in ENRICH_FIELDS:
+            if p.get(field):
+                extra_count[field] = extra_count.get(field, 0) + 1
+                extra_bytes[field] = extra_bytes.get(field, 0) + len(
+                    json.dumps({field: p[field]}, ensure_ascii=False).encode("utf-8")
+                )
+    if extra_bytes:
+        total = sum(extra_bytes.values()) / 1024
+        print(f"  — extras: {total:.0f} KB of {size_mb * 1024:.0f} KB "
+              f"({100 * total / (size_mb * 1024):.1f}%)")
+        for field, n in sorted(extra_count.items(), key=lambda kv: -extra_bytes[kv[0]]):
+            print(f"      {field:<13} {n:>6} on {extra_bytes[field] / 1024:>7.1f} KB")
 
 
 def main():

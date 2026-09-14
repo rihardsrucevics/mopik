@@ -71,6 +71,11 @@ export type PoiCategory =
   | "hillfort"
   | "lighthouse"
   | "waterfall"
+  // Split out of `waterfall` on 2026-09-14: one Overpass bucket matched
+  // natural=waterfall|cliff|cave_entrance and labelled all three a waterfall,
+  // so Gūtmaņa ala — a cave — was shown as "ūdenskritums".
+  | "cave"
+  | "cliff"
   | "manor"
   | "viewpoint"
   | "mill"

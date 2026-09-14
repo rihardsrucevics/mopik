@@ -62,6 +62,12 @@ const STOP_APPEAL: Record<PoiCategory, number> = {
   viewpoint: 2.0,
   hillfort: 1.9,
   waterfall: 1.9,
+  // A named cave is worth as much of a stop as a waterfall — Gūtmaņa ala is
+  // the single most-visited natural object in Latvia. A named cliff slightly
+  // less: the Baltic ones are riverbank sandstone you look at from the road,
+  // not somewhere you stop and walk to.
+  cave: 1.9,
+  cliff: 1.6,
   manor: 1.7,
   lighthouse: 1.6,
   tower: 1.4,

@@ -10,7 +10,7 @@
  * anything that touches the file system stays there.
  */
 
-/** The eleven kinds `scripts/build_poi_dataset.py` produces. */
+/** The thirteen kinds `scripts/build_poi_dataset.py` produces. */
 export type PoiCategory =
   | "ferry"
   | "ford"
@@ -18,6 +18,8 @@ export type PoiCategory =
   | "hillfort"
   | "lighthouse"
   | "waterfall"
+  | "cave"
+  | "cliff"
   | "manor"
   | "viewpoint"
   | "mill"
@@ -47,11 +49,29 @@ export type RoutePois = { onRoute: RoutePoi[]; nearby: RoutePoi[] };
  * found it in Ieteikumi. Six of the eleven dataset categories had no key —
  * ferry, ford, tower, mill, lighthouse, reserve are things the picker never
  * offers — and those are new, in all four languages.
+ *
+ * `cave` and `cliff` need no new key at all: `lib/chat/photon.ts` already
+ * offers both as `PlaceKind`s, so `kindCave` and `kindCliff` exist in all
+ * four dictionaries. Reused rather than duplicated, which is the whole point
+ * of sharing this key set — Gūtmaņa ala reads "ala" wherever it is met.
  */
 export const POI_KIND: Record<PoiCategory, { key: string; icon: string }> = {
   viewpoint: { key: "kindViewpoint", icon: "👁️" },
   hillfort: { key: "kindHillfort", icon: "⛰️" },
   waterfall: { key: "kindWaterfall", icon: "💦" },
+  // 🕳️ is the literal "hole" emoji and the obvious pick, but at the 14px the
+  // suggestion rows render at it is a dark ellipse with no cave in it —
+  // indistinguishable from a bullet. 🏞️ carries a recognisable silhouette at
+  // that size and reads as "the natural place you walk into", which is what a
+  // cave entrance is on this list; the word beside it ("ala") does the
+  // naming, so the glyph only has to be legible and not wrong.
+  cave: { key: "kindCave", icon: "🏞️" },
+  // 🪨 was rejected as a *warning* badge, where a boulder means "hazard".
+  // Here nothing is being warned about, but ⛰️ is already hillfort's and two
+  // kinds sharing a glyph is exactly the confusion this change is fixing, so
+  // 🧗 it is: a cliff is the thing you climb, the figure is unmistakable at
+  // 14px, and it collides with nothing else in this table.
+  cliff: { key: "kindCliff", icon: "🧗" },
   manor: { key: "kindManor", icon: "🏰" },
   lighthouse: { key: "kindLighthouse", icon: "🗼" },
   tower: { key: "kindTower", icon: "🔭" },
