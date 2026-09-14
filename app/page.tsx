@@ -130,6 +130,17 @@ export default function Home() {
   // to ask where and how long.
   const [profile, changeProfile] = useRideProfile();
   const busyRef = useRef(false);
+  /**
+   * The generation in flight, so the rider can call it off. A long ride
+   * legitimately takes most of a minute on our own router (Rīga → Tallinn
+   * measured at 52.8 s), which is long enough to notice the wrong place was
+   * typed — and without this the only way out was to wait for the answer.
+   */
+  const abortRef = useRef<AbortController | null>(null);
+  const cancel = () => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+  };
 
   async function generate(current: RidePlan, conversation: ChatMessage[], pickedPlaces: ResolvedPlace[] = places) {
     setPhase("routing");
@@ -137,7 +148,9 @@ export default function Home() {
     try {
       const isLucky = current.returnToStart === true && current.viaPlaces.length === 0 && !current.focusArea && current.budget.mode === "flexible";
       setLucky(isLucky);
-      const response = await fetch("/api/generate-route", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ plan: current, prompt: sourcePrompt, places: pickedPlaces, lucky: isLucky }) });
+      const controller = new AbortController();
+      abortRef.current = controller;
+      const response = await fetch("/api/generate-route", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ plan: current, prompt: sourcePrompt, places: pickedPlaces, lucky: isLucky }), signal: controller.signal });
       const data = await readJson(response);
       if (!response.ok) throw new Error(data.error || "Neizdevās ģenerēt maršrutu.");
       const route = (data as GenerateRouteResponse).routes[0];
@@ -211,8 +224,22 @@ export default function Home() {
       setMessages([...conversation, { role: "assistant", content: notes.filter(Boolean).join(" ") }]);
       setRetry(null);
     } catch (e) {
-      setError(describeError(e, "Neizdevās ģenerēt maršrutu."));
+      // The rider called it off. That is an answer, not an error: no message,
+      // no retry, straight back to the form they were looking at.
+      if (e instanceof DOMException && e.name === "AbortError") {
+        setChatting(false);
+        setQuickReplies([]);
+        return;
+      }
+      // A failure belongs in the conversation, like every other reply. It used
+      // to sit in a box under the whole panel, off-screen on a laptop, so the
+      // chat stayed silent and the rider saw nothing happen after ~50 s.
+      setMessages([...conversation, { role: "assistant", content: describeError(e, "Neizdevās ģenerēt maršrutu.") }]);
+      setQuickReplies([{ label: "Mēģināt vēlreiz", message: "", action: "retry" }]);
+      setChatting(true);
       setRetry({ stage: "route", plan: current, messages: conversation });
+    } finally {
+      abortRef.current = null;
     }
   }
 
@@ -228,8 +255,13 @@ export default function Home() {
       setQuickReplies(answer.quickReplies ?? []);
       if (answer.ready) await generate(answer.plan, updated);
     } catch (e) {
-      setError(describeError(e, "Neizdevās saņemt atbildi."));
+      if (e instanceof DOMException && e.name === "AbortError") return;
+      setMessages([...conversation, { role: "assistant", content: describeError(e, "Neizdevās saņemt atbildi.") }]);
+      setQuickReplies([{ label: "Mēģināt vēlreiz", message: "", action: "retry" }]);
+      setChatting(true);
       setRetry({ stage: "chat", messages: conversation, plan: previousPlan });
+    } finally {
+      abortRef.current = null;
     }
   }
 
@@ -331,7 +363,7 @@ export default function Home() {
             ? <RideComposer key={plan ? planSummary(plan, false) : "new"} initialPlan={plan} initialPlaces={places} profile={profile} onProfileChange={changeProfile} busy={phase !== "idle"} onGenerate={startFromForm} onUseChat={() => setEntryMode("chat")} onPlacesChange={setPreviewPlaces} map={mapInComposer && mapVisible ? mapPanel : undefined} />
             : result && result.routes.length > 0 && !chatting
               ? <ResultPanel routes={result.routes} selected={selected} onSelect={setSelected} plan={plan} avoidTowns={result.intent.avoidTowns ?? false} lucky={lucky} remoteLoop={result.remoteLoop} longerSuggestion={result.longerSuggestion} tolerancePercent={result.intent.distanceTolerancePercent} busy={phase !== "idle"} onSend={send} onBackToForm={() => setEntryMode("form")} map={mapInResult && mapVisible ? mapPanel : undefined} resolvedPlaces={routedPlaces} alternatives={result.alternatives} sparsePlaceData={result.sparsePlaceData} assembledFromSegments={result.assembledFromSegments} offset={variantOffset} onOffsetChange={setVariantOffset} />
-              : <RoutePrompt messages={messages} plan={plan} hasRoute={Boolean(route)} phase={phase} quickReplies={quickReplies} lucky={lucky && !route} onSend={send} onBackToForm={() => setEntryMode("form")} originCode={origin?.code ?? null} onAction={() => { setChatting(false); setQuickReplies([]); }} />}
+              : <RoutePrompt messages={messages} plan={plan} hasRoute={Boolean(route)} phase={phase} quickReplies={quickReplies} lucky={lucky && !route} onSend={send} onBackToForm={() => setEntryMode("form")} originCode={origin?.code ?? null} onAction={(action) => { if (action === "retry") { retryLast(); return; } setChatting(false); setQuickReplies([]); }} onCancel={cancel} />}
           {/* A ride that came from editing another one. Asked once, here,
               because only the rider knows whether the original is still
               wanted — and the answer is one tap either way. */}

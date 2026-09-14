@@ -25,10 +25,12 @@ type Props = {
    */
   originCode?: string | null;
   /** a quick reply that acts on the client (show the routes) instead of being sent */
-  onAction?: (action: "show-routes") => void;
+  onAction?: (action: "show-routes" | "retry") => void;
+  /** Call the generation in flight off. */
+  onCancel?: () => void;
 };
 
-export function RoutePrompt({ messages, plan, hasRoute, phase, quickReplies, lucky = false, onSend, onBackToForm, originCode = null, onAction }: Props) {
+export function RoutePrompt({ messages, plan, hasRoute, phase, quickReplies, lucky = false, onSend, onBackToForm, originCode = null, onAction, onCancel }: Props) {
   const [text, setText] = useState("");
   const endRef = useRef<HTMLDivElement>(null);
   const logRef = useRef<HTMLDivElement>(null);
@@ -96,7 +98,7 @@ export function RoutePrompt({ messages, plan, hasRoute, phase, quickReplies, luc
             {quickReplies.map((reply) => <button key={reply.label} type="button" onClick={() => { track("quick_reply_used", { label: reply.label, action: reply.action ?? "message" }); if (reply.action) onAction?.(reply.action); else send(reply.message); }} className="rounded-full border border-[#f56300] bg-white px-3.5 py-2 text-xs font-medium text-[#bd4b00] transition hover:bg-[#fff4ec]">{reply.label}</button>)}
           </div>
         )}
-        {busy && <RouteLoader phase={phase === "thinking" ? "thinking" : lucky ? "lucky" : "routing"} />}
+        {busy && <RouteLoader phase={phase === "thinking" ? "thinking" : lucky ? "lucky" : "routing"} onCancel={onCancel} />}
         <div ref={endRef} />
       </div>
 

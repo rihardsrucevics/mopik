@@ -873,7 +873,10 @@ function withDeadline<T>(promise: Promise<T>, ms: number): Promise<T> {
 export async function POST(req: NextRequest) {
   const startedAt = Date.now();
   const remainingMs = () => TIME_BUDGET_MS - (Date.now() - startedAt);
-  const outOfTime = () => remainingMs() <= 0;
+  // A rider who cancelled is not waiting for this any more, and on our own
+  // BRouter the ~36 candidates left in flight are time we are still paying
+  // for. Treated exactly like the budget running out: the batch loop stops.
+  const outOfTime = () => remainingMs() <= 0 || req.signal.aborted;
   let body;
   try {
     body = RequestSchema.parse(await req.json());

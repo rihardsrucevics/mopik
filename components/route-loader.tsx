@@ -36,7 +36,12 @@ const STATUS: Record<"thinking" | "routing" | "lucky", string[]> = {
 };
 
 
-export function RouteLoader({ phase, className }: { phase: "thinking" | "routing" | "lucky"; className?: string }) {
+export function RouteLoader({ phase, className, onCancel }: {
+  phase: "thinking" | "routing" | "lucky";
+  className?: string;
+  /** Call the generation off. Absent = no control, for callers with nothing to cancel. */
+  onCancel?: () => void;
+}) {
   const lines = STATUS[phase];
   const [index, setIndex] = useState(0);
   useEffect(() => {
@@ -68,7 +73,16 @@ export function RouteLoader({ phase, className }: { phase: "thinking" | "routing
       </div>
       <div className="flex items-center gap-2 px-4 pb-3">
         <span className="size-1.5 animate-pulse rounded-full bg-[#f56300]" />
-        <span key={line} className="mopik-fade-in text-xs font-medium text-stone-700">{line}</span>
+        <span key={line} className="mopik-fade-in min-w-0 flex-1 truncate text-xs font-medium text-stone-700">{line}</span>
+        {/* A long ride takes the better part of a minute on real roads, which
+            is long enough to notice the wrong place was typed. Quiet, so it
+            reads as a way out rather than as something gone wrong. */}
+        {onCancel && (
+          <button type="button" onClick={onCancel}
+            className="shrink-0 rounded-lg px-2 py-1 text-xs font-medium text-stone-500 underline underline-offset-4 transition hover:text-stone-800">
+            Atcelt
+          </button>
+        )}
       </div>
     </div>
   );

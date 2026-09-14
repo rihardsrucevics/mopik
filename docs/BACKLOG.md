@@ -47,7 +47,7 @@ Verified in the browser on the rider's own steps: Rīga → Baldone, round trip,
 "Pievienot vietu" gives `Rīga, [empty], Baldone, ↩ Atpakaļ uz Rīga`, and the
 empty stop moves into the Baldone → Rīga leg with the ordinary arrow.
 
-## 2. Let the rider cancel a generation in progress
+## 2. ~~Let the rider cancel a generation in progress~~ — DONE 2026-09-14
 
 Once "Izveidot maršrutu" is pressed there is no way back: the rider waits for
 whatever comes, even after realising they typed the wrong place. This matters
@@ -67,7 +67,18 @@ Two halves, and the second is the one that actually saves anything:
   out ~36 routing calls; if the client disappears they currently all still run
   and are still paid for in time on our own BRouter. `req.signal` is the hook.
 
-## 3. A failure must speak in the chat, not in a box below the fold
+**Done.** An `AbortController` per generation, an "Atcelt" control on the
+loader, and `outOfTime()` on the server now also returns true when
+`req.signal.aborted` — so the batch loop stops instead of finishing candidates
+nobody is waiting for. Verified on Rīga → Tallinn: the loader offered Atcelt,
+the request stopped, and the server logged "stopping after 4 of 5 candidates".
+A cancel deliberately leaves no message and no retry: the rider chose it.
+
+Also fixed here, reported while testing: a stop the rider had just added but
+not yet typed into had no ✕, so it could only be left empty. Removing now
+shows for any row beyond the two the form always offers.
+
+## 3. ~~A failure must speak in the chat, not in a box below the fold~~ — DONE 2026-09-14
 
 Reported 2026-09-14: "to error paziņojumu neredz, tam ir jābūt iekš čata."
 Correct — the chat panel sits there empty with the rider's own line at the
@@ -80,9 +91,12 @@ including the "nothing fits" verdict and the overlap warning — is pushed into
 `messages` and read as a reply. A failure is the one case that leaves the chat
 silent, which is exactly backwards.
 
-Fix: push failures into `messages` as an assistant turn, with the retry as a
-quick reply, the way `describeInfeasible` already does. Keep one path for
-"Mopik answers", whatever the answer is.
+**Done.** Failures from both `generate` and `converse` are pushed into
+`messages` as an assistant turn, with "Mēģināt vēlreiz" as a quick reply
+carrying a new `retry` action (not a text message, which would have been sent
+to the chat as if the rider typed it). One path for "Mopik answers", whatever
+the answer is. Verified in the browser: the failure now reads as a MOPIK reply
+in the conversation instead of a box below the fold.
 
 Related: the message itself is often wrong. "Precizē ilgumu vai prasības čatā"
 is useless when the real cause is that the ride is too long to plan (item 7) —

@@ -164,12 +164,17 @@ export function RoutePlaces({ places, oneWay, busy, onChange, onPick, onUseLocat
                     </button>
                   </>
                 )}
-                {place.trim() && (
+                {/* Removing shows for a filled row and for any row beyond the
+                    two the form always offers — a stop the rider has just
+                    added but not yet typed into still has to be removable,
+                    and without this it could only be left empty. The two base
+                    rows keep the old rule: nothing to clear, nothing to show. */}
+                {(place.trim() || places.length > MIN_ROWS) && (
                   <button
                     type="button"
                     disabled={busy}
                     onClick={() => remove(i)}
-                    aria-label={`Noņemt ${place}`}
+                    aria-label={place.trim() ? `Noņemt ${place}` : "Noņemt tukšo vietu"}
                     className="flex size-8 items-center justify-center rounded-lg text-stone-400 transition hover:bg-stone-100 hover:text-stone-700"
                   >
                     <X className="size-4" />
