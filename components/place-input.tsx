@@ -1,17 +1,20 @@
 "use client";
 
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useLocale } from "@/lib/i18n/use-locale";
+import { messages, type MessageKey } from "@/lib/i18n/messages";
 import type { ResolvedPlace } from "@/lib/chat/places";
 
 type Suggestion = ResolvedPlace & { kind: string; kindLabel?: string };
 
-const KIND_LABEL: Record<string, string> = {
-  city: "pilsēta",
-  town: "pilsēta",
-  village: "ciems",
-  hamlet: "viensēta",
-  isolated_dwelling: "viensēta",
-};
+/** OSM place kinds, as the dictionary keys that name them in each language. */
+const KIND_KEY = {
+  city: "kindCity",
+  town: "kindCity",
+  village: "kindVillage",
+  hamlet: "kindHamlet",
+  isolated_dwelling: "kindHamlet",
+} as const satisfies Record<string, MessageKey>;
 
 /**
  * A place field with suggestions. Typing shows matching places — worldwide,
@@ -43,6 +46,8 @@ export function PlaceInput({ value, onChange, onPick, placeholder, icon, label, 
    */
   trailing?: ReactNode;
 }) {
+  const [locale] = useLocale();
+  const m = messages(locale);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
@@ -113,7 +118,7 @@ export function PlaceInput({ value, onChange, onPick, placeholder, icon, label, 
               onMouseDown={(e) => { e.preventDefault(); pick(s); }}
               className={`flex cursor-pointer items-baseline justify-between gap-3 px-3 py-2 text-sm ${i === active ? "bg-[#fff3ea]" : "hover:bg-stone-50"}`}>
               <span className="truncate"><span className="font-medium text-stone-900">{s.name}</span>{s.label !== s.name && <span className="text-stone-500">{s.label.slice(s.name.length)}</span>}</span>
-              <span className="shrink-0 text-[10px] uppercase tracking-wider text-stone-400">{s.kindLabel ? "" : KIND_LABEL[s.kind] ?? ""}</span>
+              <span className="shrink-0 text-[10px] uppercase tracking-wider text-stone-400">{s.kindLabel ? "" : (KIND_KEY[s.kind as keyof typeof KIND_KEY] ? m[KIND_KEY[s.kind as keyof typeof KIND_KEY]] : "")}</span>
             </li>
           ))}
         </ul>

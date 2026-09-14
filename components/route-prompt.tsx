@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useLocale } from "@/lib/i18n/use-locale";
+import { t } from "@/lib/i18n/messages";
 import Link from "next/link";
 import { ArrowLeft, ArrowUp } from "lucide-react";
 import { RouteLoader } from "@/components/route-loader";
@@ -31,6 +33,7 @@ type Props = {
 };
 
 export function RoutePrompt({ messages, plan, hasRoute, phase, quickReplies, lucky = false, onSend, onBackToForm, originCode = null, onAction, onCancel }: Props) {
+  const [locale] = useLocale();
   const [text, setText] = useState("");
   const endRef = useRef<HTMLDivElement>(null);
   const logRef = useRef<HTMLDivElement>(null);
@@ -66,15 +69,17 @@ export function RoutePrompt({ messages, plan, hasRoute, phase, quickReplies, luc
       <div className="border-b border-stone-200 px-4 py-3 md:px-5 md:py-4">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#bd4b00]">{hasRoute ? "Maršruta korekcijas" : messages.length ? "Brauciena plāns" : "Brīvā saruna"}</div>
-            <h2 className="text-lg font-semibold tracking-tight">{hasRoute ? "Ko vēlies mainīt?" : messages.length ? "Precizēsim ieceri." : "Apraksti ieceri saviem vārdiem."}</h2>
+            <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#bd4b00]">{hasRoute ? t(locale, "chatRefine") : messages.length ? t(locale, "chatPlanned") : t(locale, "chatFree")}</div>
+            <h2 className="text-lg font-semibold tracking-tight">{hasRoute ? "Ko vēlies mainīt?" : messages.length ? t(locale, "chatTitle") : t(locale, "chatIntro")}</h2>
           </div>
           {/* Came from a route and none has been generated since? Then "back"
               means that route, not a blank form the rider never filled in. */}
           {originCode && !hasRoute ? (
-            <Link href={`/r/${originCode}`} className="inline-flex shrink-0 items-center gap-1 text-xs text-stone-500 underline decoration-stone-300 underline-offset-4"><ArrowLeft className="size-3.5" />Maršruts</Link>
+            <Link href={`/r/${originCode}`} aria-label={t(locale, "backToRoute")} title={t(locale, "backToRoute")} className="inline-flex size-8 shrink-0 items-center justify-center rounded-full text-stone-500 transition hover:bg-stone-100 hover:text-stone-900"><ArrowLeft className="size-4" /></Link>
           ) : (
-            <button type="button" onClick={onBackToForm} disabled={busy} className="inline-flex shrink-0 items-center gap-1 text-xs text-stone-500 underline decoration-stone-300 underline-offset-4 disabled:opacity-40"><ArrowLeft className="size-3.5" />Ievades forma</button>
+            // Icon only: a left arrow already means "back to the form", and
+            // the words were competing with the ride summary beside them.
+            <button type="button" onClick={onBackToForm} disabled={busy} aria-label={t(locale, "backToForm")} title={t(locale, "backToForm")} className="inline-flex size-8 shrink-0 items-center justify-center rounded-full text-stone-500 transition hover:bg-stone-100 hover:text-stone-900 disabled:opacity-40"><ArrowLeft className="size-4" /></button>
           )}
         </div>
         {plan && <p className="mt-2 hidden line-clamp-2 text-[11px] leading-relaxed text-stone-500 md:block">{planSummary(plan, true)}</p>}
@@ -84,7 +89,7 @@ export function RoutePrompt({ messages, plan, hasRoute, phase, quickReplies, luc
         {messages.length === 0 && (
           <div className="py-5 text-sm leading-7 text-stone-600">
             <p>Vari uzreiz pateikt visu, ko zini.</p>
-            <p className="mt-3 border-l-2 border-[#f56300] pl-4 text-stone-500">Piemēram: no Ķekavas caur Baldoni un atpakaļ, ap 3 stundām, meži un tehniskāki ceļi.</p>
+            <p className="mt-3 border-l-2 border-[#f56300] pl-4 text-stone-500">{t(locale, "chatExample")}</p>
           </div>
         )}
         {messages.map((message, index) => (
@@ -94,7 +99,7 @@ export function RoutePrompt({ messages, plan, hasRoute, phase, quickReplies, luc
           </div>
         ))}
         {!busy && quickReplies.length > 0 && (
-          <div className="flex flex-wrap gap-2" aria-label="Ātrās atbildes">
+          <div className="flex flex-wrap gap-2" aria-label={t(locale, "chatQuickReplies")}>
             {quickReplies.map((reply) => <button key={reply.label} type="button" onClick={() => { track("quick_reply_used", { label: reply.label, action: reply.action ?? "message" }); if (reply.action) onAction?.(reply.action); else send(reply.message); }} className="rounded-full border border-[#f56300] bg-white px-3.5 py-2 text-xs font-medium text-[#bd4b00] transition hover:bg-[#fff4ec]">{reply.label}</button>)}
           </div>
         )}
@@ -103,15 +108,15 @@ export function RoutePrompt({ messages, plan, hasRoute, phase, quickReplies, luc
       </div>
 
       <form onSubmit={(event) => { event.preventDefault(); submit(); }} className="border-t border-stone-200 bg-white p-3">
-        <label htmlFor="ride-message" className="sr-only">Ziņa par braucienu</label>
+        <label htmlFor="ride-message" className="sr-only">{t(locale, "chatMessageLabel")}</label>
         <div className="flex items-end gap-2 rounded-xl border border-stone-200 p-2 focus-within:border-[#f56300]">
           <textarea id="ride-message" value={text} onChange={(event) => setText(event.target.value)} rows={2} maxLength={6000} disabled={busy}
             onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); submit(); } }}
-            placeholder={hasRoute ? "Piemēram: īsāku un vairāk pa mežu…" : messages.length ? "Papildini ieceri…" : "Apraksti savu braucienu…"}
+            placeholder={hasRoute ? t(locale, "chatPlaceholder") : messages.length ? "Papildini ieceri…" : "Apraksti savu braucienu…"}
             className="min-w-0 flex-1 resize-none bg-transparent px-2 py-1 text-base outline-none placeholder:text-stone-400 disabled:opacity-60 md:text-sm" />
-          <button type="submit" disabled={busy || !text.trim()} aria-label="Nosūtīt ziņu" className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-[#f56300] text-white transition hover:bg-[#d85600] disabled:opacity-35"><ArrowUp className="size-5" /></button>
+          <button type="submit" disabled={busy || !text.trim()} aria-label={t(locale, "chatSend")} className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-[#f56300] text-white transition hover:bg-[#d85600] disabled:opacity-35"><ArrowUp className="size-5" /></button>
         </div>
-        <p className="mt-2 hidden px-1 text-[10px] text-stone-400 md:block">Enter — nosūtīt · Shift + Enter — jauna rinda</p>
+        <p className="mt-2 hidden px-1 text-[10px] text-stone-400 md:block">{t(locale, "chatEnterHint")}</p>
       </form>
     </section>
   );

@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
+import { useLocale } from "@/lib/i18n/use-locale";
+import { t } from "@/lib/i18n/messages";
 import { ArrowLeft, ArrowUp, ChevronDown, ChevronUp, Download, LoaderCircle, RefreshCw, Share2, Bookmark } from "lucide-react";
 import { GeneratedRoute, GenerateRouteResponse } from "@/lib/types";
 import { RidePlan, planSummary } from "@/lib/chat/ride-plan";
@@ -94,6 +96,7 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
   sparsePlaceData?: boolean;
   assembledFromSegments?: boolean;
 }) {
+  const [locale] = useLocale();
   const [details, setDetails] = useState(false);
   // Alternatives are appended, never swapped in: the three the rider is
   // comparing stay exactly where they are.
@@ -268,7 +271,8 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
           <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#bd4b00]">Maršruts</div>
           {plan && <p className="mt-0.5 line-clamp-2 text-[11px] leading-relaxed text-stone-500">{planSummary(plan, true)}</p>}
         </div>
-        <button type="button" onClick={onBackToForm} disabled={busy} className="inline-flex shrink-0 items-center gap-1 text-xs text-stone-500 underline decoration-stone-300 underline-offset-4 disabled:opacity-40"><ArrowLeft className="size-3.5" />Forma</button>
+        {/* Icon only: a left arrow already means "back to the form". */}
+        <button type="button" onClick={onBackToForm} disabled={busy} aria-label={t(locale, "backToForm")} title={t(locale, "backToForm")} className="inline-flex size-8 shrink-0 items-center justify-center rounded-full text-stone-500 transition hover:bg-stone-100 hover:text-stone-900 disabled:opacity-40"><ArrowLeft className="size-4" /></button>
       </div>
 
       <div className="flex-1 space-y-3 overflow-y-auto p-3 md:p-4">

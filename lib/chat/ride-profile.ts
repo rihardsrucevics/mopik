@@ -53,11 +53,20 @@ export const PROFILE_LABELS = {
 
 export type ProfilePreset = { id: string; label: string; profile: RideProfile };
 
-/** Ready-made combinations; a custom mix is any other combination. */
+/**
+ * Ready-made combinations, ordered as the ride gets rougher: asphalt, gravel,
+ * forest. A rider picks the row that describes them and never opens the three
+ * dials below it; the dials are for the ones who want to disagree with the
+ * preset, and doing that simply deselects it.
+ *
+ * `label` is a key into the dictionary rather than a string, because these
+ * names are shown in four languages. "Adventure" is deliberately the same
+ * word everywhere — it is what the riders themselves call it.
+ */
 export const PROFILE_PRESETS: ProfilePreset[] = [
-  { id: "adventure", label: "Adventure", profile: DEFAULT_PROFILE },
-  { id: "calm", label: "Mierīgs izbrauciens", profile: { difficulty: "rest", style: "tourism", surface: "gravel" } },
-  { id: "asphalt", label: "Asfalta tūre", profile: { difficulty: "rest", style: "tourism", surface: "asphalt" } },
+  { id: "asphalt", label: "presetAsphalt", profile: { difficulty: "rest", style: "tourism", surface: "asphalt" } },
+  { id: "gravel", label: "presetGravel", profile: { difficulty: "rest", style: "tourism", surface: "gravel" } },
+  { id: "adventure", label: "presetAdventure", profile: DEFAULT_PROFILE },
 ];
 
 /** Asphalt-only rides have no technical sections to choose between. */

@@ -6,7 +6,7 @@ import { RidePlan } from "@/lib/chat/ride-plan";
 import { composeRidePlan, placesFromPlan } from "@/lib/chat/compose-plan";
 import { RoutePlaces } from "@/components/route-places";
 import { useLocale } from "@/lib/i18n/use-locale";
-import { t, messages } from "@/lib/i18n/messages";
+import { t, messages, type MessageKey } from "@/lib/i18n/messages";
 import { track } from "@/lib/analytics";
 import type { ResolvedPlace } from "@/lib/chat/places";
 import {
@@ -66,7 +66,7 @@ function ProfileLine({ profile, onChange }: { profile: RideProfile; onChange: (p
             {PROFILE_PRESETS.map((preset) => (
               <button key={preset.id} type="button" aria-pressed={activePreset === preset.id} onClick={() => onChange(preset.profile)}
                 className={`rounded-full px-3 py-1 text-xs font-medium transition ${activePreset === preset.id ? "bg-stone-900 text-white" : "bg-white text-stone-600 ring-1 ring-stone-200 hover:text-stone-900"}`}>
-                {preset.label}
+                {m[preset.label as MessageKey]}
               </button>
             ))}
           </div>

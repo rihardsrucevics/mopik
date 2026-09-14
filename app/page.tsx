@@ -326,7 +326,13 @@ export default function Home() {
   const mapVisible = Boolean(result) || previewPlaces.length > 0;
   const mapPanel = (
     <MapPanel
-      className={`overflow-hidden rounded-2xl border border-stone-200 md:h-[calc(100vh-7rem)] ${result && chatting ? "h-[26dvh]" : "h-[42dvh]"}`}
+      // Phone heights. The map yields to words whenever there are words to
+      // read — while the chat is speaking *and* while a route is being
+      // generated. The old condition was `result && chatting`, so during the
+      // first generation there was no result yet, the map kept 42dvh, and the
+      // loader's "Atcelt" and the chat below it were pushed off the screen:
+      // the rider was left watching an animation with no way out of it.
+      className={`overflow-hidden rounded-2xl border border-stone-200 md:h-[calc(100vh-7rem)] ${(chatting || phase !== "idle") ? "h-[26dvh]" : "h-[42dvh]"}`}
       expandedClassName="md:relative md:inset-auto md:z-auto md:h-[calc(100vh-7rem)] md:overflow-hidden md:rounded-2xl md:border md:border-stone-200">
       <RouteMap
         segments={route?.segments ?? null}
@@ -358,7 +364,11 @@ export default function Home() {
             picker needed. */}
         <SavedRidesLink label={t(locale, "savedRides")} />
         <LanguagePicker />
-        {(messages.length > 0 || plan) && <button disabled={phase !== "idle"} onClick={() => { setEntryMode("form"); setMessages([]); setPlan(null); setPlaces([]); setResult(null); setChatting(false); setError(null); setRetry(null); setQuickReplies([]); }} className="inline-flex items-center gap-1 text-xs text-stone-500 underline underline-offset-4 disabled:opacity-40"><Plus className="size-3.5" />{t(locale, "newRide")}</button>}
+        {/* Icons only. Three words in a row (Saglabātie · Sazinies · Jauns
+            brauciens) took most of a phone header for things a rider needs
+            rarely; a plus is the same meaning in a fraction of the width, and
+            the name still reaches a screen reader. */}
+        {(messages.length > 0 || plan) && <button disabled={phase !== "idle"} onClick={() => { setEntryMode("form"); setMessages([]); setPlan(null); setPlaces([]); setResult(null); setChatting(false); setError(null); setRetry(null); setQuickReplies([]); }} aria-label={t(locale, "newRide")} title={t(locale, "newRide")} className="inline-flex size-9 items-center justify-center rounded-full text-stone-600 transition hover:bg-stone-100 hover:text-stone-900 disabled:opacity-40"><Plus className="size-5" strokeWidth={1.75} /></button>}
         </div>
       </header>
       <div className="grid items-start gap-5 md:grid-cols-[minmax(340px,460px)_1fr]">

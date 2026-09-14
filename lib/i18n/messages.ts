@@ -21,10 +21,31 @@ export type MessageKey =
   | "savedRidesLong"
   | "contact"
   | "newRide"
+  | "backToForm"
+  | "backToRoute"
+  | "chatTitle"
+  | "chatFree"
+  | "chatPlanned"
+  | "chatIntro"
+  | "chatExample"
+  | "chatPlaceholder"
+  | "chatRefine"
+  | "chatSend"
+  | "chatMessageLabel"
+  | "chatEnterHint"
+  | "chatQuickReplies"
+  | "chatWhatToChange"
+  | "chatAdjust"
+  | "kindCity"
+  | "kindVillage"
+  | "kindHamlet"
   | "backToHome"
   | "language"
   | "footerDisclaimer"
   | "profileTitle"
+  | "presetAsphalt"
+  | "presetGravel"
+  | "presetAdventure"
   | "profileDifficulty"
   | "profileStyle"
   | "profileSurface"
@@ -101,11 +122,32 @@ const lv: Messages = {
   savedRidesLong: "Saglabātie braucieni",
   contact: "Sazinies",
   newRide: "Jauns brauciens",
+  backToForm: "Ievades forma",
+  backToRoute: "Maršruts",
+  chatTitle: "Precizēsim ieceri.",
+  chatFree: "Brīvā saruna",
+  chatPlanned: "Brauciena plāns",
+  chatIntro: "Apraksti ieceri saviem vārdiem.",
+  chatExample: "Piemēram: no Ķekavas caur Baldoni un atpakaļ, ap 3 stundām, meži un tehniskāki ceļi.",
+  chatPlaceholder: "Piemēram: īsāku un vairāk pa mežu…",
+  chatRefine: "Maršruta korekcijas",
+  chatSend: "Nosūtīt ziņu",
+  chatMessageLabel: "Ziņa par braucienu",
+  chatEnterHint: "Enter — nosūtīt · Shift + Enter — jauna rinda",
+  chatQuickReplies: "Ātrās atbildes",
+  chatWhatToChange: "Ko vēlies mainīt?",
+  chatAdjust: "Pielāgot čatā",
+  kindCity: "pilsēta",
+  kindVillage: "ciems",
+  kindHamlet: "viensēta",
   backToHome: "Mopik — uz sākumu",
   language: "Valoda",
   footerDisclaimer:
     "Ceļa stāvokli un piekļuves ierobežojumus pārbaudi uz vietas — dati ne vienmēr ir pilnīgi.",
   profileTitle: "Tavs profils",
+  presetAsphalt: "Asfalta tūrists",
+  presetGravel: "Grants tūrists",
+  presetAdventure: "Adventure",
   profileDifficulty: "Grūtība",
   profileStyle: "Stils",
   profileSurface: "Segums",
@@ -184,11 +226,32 @@ const lt: Messages = {
   savedRidesLong: "Išsaugoti maršrutai",
   contact: "Susisiek",
   newRide: "Naujas maršrutas",
+  backToForm: "Įvesties forma",
+  backToRoute: "Maršrutas",
+  chatTitle: "Patikslinkim sumanymą.",
+  chatFree: "Laisvas pokalbis",
+  chatPlanned: "Maršruto planas",
+  chatIntro: "Aprašyk sumanymą savais žodžiais.",
+  chatExample: "Pavyzdžiui: nuo Kėdainių per Josvainius ir atgal, apie 3 valandas, miškai ir techniškesni keliai.",
+  chatPlaceholder: "Pavyzdžiui: trumpiau ir daugiau per mišką…",
+  chatRefine: "Maršruto pataisymai",
+  chatSend: "Siųsti žinutę",
+  chatMessageLabel: "Žinutė apie maršrutą",
+  chatEnterHint: "Enter — siųsti · Shift + Enter — nauja eilutė",
+  chatQuickReplies: "Greiti atsakymai",
+  chatWhatToChange: "Ką nori pakeisti?",
+  chatAdjust: "Koreguoti pokalbyje",
+  kindCity: "miestas",
+  kindVillage: "kaimas",
+  kindHamlet: "vienkiemis",
   backToHome: "Mopik — į pradžią",
   language: "Kalba",
   footerDisclaimer:
     "Kelio būklę ir privažiavimo apribojimus pasitikrink vietoje — duomenys ne visada pilni.",
   profileTitle: "Tavo profilis",
+  presetAsphalt: "Asfalto turistas",
+  presetGravel: "Žvyro turistas",
+  presetAdventure: "Adventure",
   profileDifficulty: "Sudėtingumas",
   profileStyle: "Stilius",
   profileSurface: "Danga",
@@ -267,11 +330,32 @@ const et: Messages = {
   savedRidesLong: "Salvestatud sõidud",
   contact: "Võta ühendust",
   newRide: "Uus sõit",
+  backToForm: "Sisestusvorm",
+  backToRoute: "Marsruut",
+  chatTitle: "Täpsustame plaani.",
+  chatFree: "Vaba vestlus",
+  chatPlanned: "Sõiduplaan",
+  chatIntro: "Kirjelda plaani oma sõnadega.",
+  chatExample: "Näiteks: Tartust läbi Elva ja tagasi, umbes 3 tundi, metsad ja tehnilisemad teed.",
+  chatPlaceholder: "Näiteks: lühemalt ja rohkem läbi metsa…",
+  chatRefine: "Marsruudi parandused",
+  chatSend: "Saada sõnum",
+  chatMessageLabel: "Sõnum sõidu kohta",
+  chatEnterHint: "Enter — saada · Shift + Enter — uus rida",
+  chatQuickReplies: "Kiirvastused",
+  chatWhatToChange: "Mida soovid muuta?",
+  chatAdjust: "Kohanda vestluses",
+  kindCity: "linn",
+  kindVillage: "küla",
+  kindHamlet: "talu",
   backToHome: "Mopik — avalehele",
   language: "Keel",
   footerDisclaimer:
     "Tee seisukorda ja juurdepääsupiiranguid kontrolli kohapeal — andmed ei ole alati täielikud.",
   profileTitle: "Sinu profiil",
+  presetAsphalt: "Asfaldi turist",
+  presetGravel: "Kruusa turist",
+  presetAdventure: "Adventure",
   profileDifficulty: "Raskus",
   profileStyle: "Stiil",
   profileSurface: "Kate",
@@ -350,11 +434,32 @@ const en: Messages = {
   savedRidesLong: "Saved rides",
   contact: "Get in touch",
   newRide: "New ride",
+  backToForm: "Input form",
+  backToRoute: "Route",
+  chatTitle: "Let's pin down the plan.",
+  chatFree: "Free conversation",
+  chatPlanned: "Ride plan",
+  chatIntro: "Describe the ride in your own words.",
+  chatExample: "For example: from Kekava via Baldone and back, about 3 hours, forests and more technical roads.",
+  chatPlaceholder: "For example: shorter and more forest…",
+  chatRefine: "Route adjustments",
+  chatSend: "Send message",
+  chatMessageLabel: "Message about the ride",
+  chatEnterHint: "Enter — send · Shift + Enter — new line",
+  chatQuickReplies: "Quick replies",
+  chatWhatToChange: "What would you like to change?",
+  chatAdjust: "Adjust in chat",
+  kindCity: "town",
+  kindVillage: "village",
+  kindHamlet: "hamlet",
   backToHome: "Mopik — home",
   language: "Language",
   footerDisclaimer:
     "Check road conditions and access restrictions on the ground — the data is not always complete.",
   profileTitle: "Your profile",
+  presetAsphalt: "Asphalt tourer",
+  presetGravel: "Gravel tourer",
+  presetAdventure: "Adventure",
   profileDifficulty: "Difficulty",
   profileStyle: "Style",
   profileSurface: "Surface",

@@ -247,7 +247,7 @@ rate-limits a full build and the script already rotates mirrors.
 The rider also asked whether **Google** could supply this instead. Not costed
 yet; do that before committing to another Overpass run.
 
-## 9. ~~Multilingual UI~~ — PARTLY DONE 2026-09-14
+## 9. ~~Multilingual UI~~ — MOSTLY DONE 2026-09-14
 
 Latvian for Latvians, Lithuanian for Lithuanians, Estonian for Estonians,
 English for everyone else.
@@ -264,13 +264,17 @@ choice is remembered on the device and wins from then on. Anything Mopik does
 not speak falls through to English, not Latvian — someone browsing in German
 is better served by English than by a language they cannot read.
 
+Second pass added the chat's own shell (titles, placeholders, the send
+control, quick-reply label) and the place-suggestion kinds.
+
 **Still Latvian, deliberately not half-translated:**
-- **The chat.** Its replies come from `lib/chat/ride-plan.ts` and the model
+- **The chat's replies.** They come from `lib/chat/ride-plan.ts` and the model
   prompt, so translating them means translating the prompt and re-running
   `scripts/chat-golden.ts` against each language. A separate job.
-- **The result panel.** ~29 strings, several of them assembled from numbers
-  ("83 km atkārto jau nobrauktus ceļus"), which need per-language grammar
-  rather than concatenation.
+- **The result panel.** ~36 strings, several assembled from numbers ("83 km
+  atkārto jau nobrauktus ceļus"), which need per-language grammar rather than
+  concatenation.
+- **The saved-rides page.** ~13 strings.
 - **Route names**, the problem named above: `detectLocale` still reads the
   prompt rather than the chosen UI language, and only knows lv/en because
   that is what the POI dataset carries.
