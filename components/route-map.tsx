@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import * as maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { RouteSegmentProperties } from "@/lib/types";
+import { haversineMeters } from "@/lib/geo/geometry";
 
 // Serve the MapLibre worker from /public — bundler-emitted module workers
 // 404 under the Next.js dev server, leaving the map blank.
@@ -107,6 +108,125 @@ const GLOW_WIDTH: maplibregl.ExpressionSpecification = [
   17, 28,
 ];
 
+/**
+ * A badge on the line: a white pill with one emoji, the way a phone map marks
+ * a hazard. Built as an HTML element rather than a GL symbol layer because an
+ * emoji in a `text-field` renders through the style's glyph stack and comes
+ * out as boxes on most basemaps.
+ */
+function badgeElement(icon: string, title: string): HTMLElement {
+  const el = document.createElement("button");
+  el.type = "button";
+  // A `title` is a desktop hover and does not exist on a phone, which is where
+  // the rider actually reads this. The marker carries a popup as well, so the
+  // badge is tappable and explains itself.
+  el.title = title;
+  el.setAttribute("aria-label", title);
+  el.style.cssText =
+    "display:flex;align-items:center;justify-content:center;" +
+    "width:19px;height:19px;border-radius:10px;" +
+    "background:rgba(255,255,255,0.92);box-shadow:0 1px 2px rgba(0,0,0,0.2);" +
+    "font-size:10px;line-height:1;cursor:pointer;user-select:none;border:0;padding:0;opacity:0.9;" +
+    // Under the start/finish pins, which are the rider's own answers and must
+    // never be covered by an annotation about the road.
+    "z-index:1";
+  el.textContent = icon;
+  return el;
+}
+
+/**
+ * Metres a badge must be from the start and finish pins before it is drawn.
+ *
+ * A run often begins or ends exactly at an endpoint — the first measured case
+ * put the warning underneath the Ērgļi pin, where it was invisible. Dropping
+ * it loses nothing: the panel already counts those kilometres, and a warning
+ * sitting on the finish says nothing the rider can act on while riding.
+ */
+const BADGE_CLEARANCE_M = 900;
+
+/**
+ * Most badges a route may carry, and how far apart they must sit.
+ *
+ * Measured on a 130 km hard-forest Sigulda loop: 19 markable runs, 10 after
+ * 900 m spacing — and on screen those ten covered the route they annotate.
+ * The badge is a hint that rough ground is coming, not an index of every
+ * stretch of it, so the spacing is now a share of the ride and the count is
+ * capped. The panel still reports the full kilometres.
+ */
+const BADGE_MAX = 5;
+const BADGE_MIN_SPACING_SHARE = 0.12;
+
+type Badge = { point: [number, number]; icon: string; title: string; detail: string };
+
+/**
+ * Where the badges go: the midpoint of every run worth marking.
+ *
+ * One per run, not one per kilometre — a route with 27 km of track has seven
+ * runs, and seven badges annotate it while seventy would bury it. A run that
+ * is both a trail and unverified gets the warning: "check the signs" is the
+ * more actionable of the two.
+ */
+function badgesFor(
+  segments: GeoJSON.FeatureCollection,
+  avoid: [number, number][] = []
+): Badge[] {
+  const out: Badge[] = [];
+
+  // Spacing scales with the ride: 12 % of a 60 km loop is 7 km, of a 300 km
+  // day 36 km. A fixed metre figure gave a short ride too few badges and a
+  // long one a wall of them.
+  let routeMeters = 0;
+  for (const f of segments.features) {
+    const m = (f.properties as { distanceMeters?: number } | null)?.distanceMeters;
+    if (typeof m === "number") routeMeters += m;
+  }
+  const spacing = Math.max(BADGE_CLEARANCE_M, routeMeters * BADGE_MIN_SPACING_SHARE);
+
+  const tooClose = (p: [number, number]) =>
+    avoid.some((a) => haversineMeters(p, a) < BADGE_CLEARANCE_M) ||
+    // Two badges on top of each other are one unreadable badge.
+    out.some((b) => haversineMeters(p, b.point) < spacing);
+
+  // Longest runs first, so the badges that survive the cap mark the stretches
+  // that actually matter rather than whichever came first along the line.
+  const ordered = [...segments.features].sort(
+    (a, b) =>
+      (((b.properties as { distanceMeters?: number } | null)?.distanceMeters) ?? 0) -
+      (((a.properties as { distanceMeters?: number } | null)?.distanceMeters) ?? 0)
+  );
+  for (const f of ordered) {
+    if (out.length >= BADGE_MAX) break;
+    if (f.geometry.type !== "LineString") continue;
+    const props = (f.properties ?? {}) as { roadClass?: string; unverified?: boolean };
+    const unverified = Boolean(props.unverified);
+    const trail = props.roadClass === "trail";
+    if (!unverified && !trail) continue;
+
+    const coords = f.geometry.coordinates as [number, number][];
+    if (coords.length === 0) continue;
+    const mid = coords[Math.floor(coords.length / 2)];
+    if (tooClose(mid)) continue;
+    out.push(
+      unverified
+        ? {
+            point: mid,
+            icon: "⚠️",
+            title: "Nepārbaudīta piekļuve",
+            detail:
+              "Šim posmam OSM datos nav apstiprinātas motocikla piekļuves. Tas nenozīmē, ka braukt aizliegts — tikai to, ka neviens to nav atzīmējis. Pārbaudi zīmes uz vietas.",
+          }
+        : {
+            point: mid,
+            icon: "🔥",
+            title: "Taka",
+            detail:
+              "Šaurs, tehnisks posms — punktētā līnija kartē. Šeit brauc lēnāk, nekā rāda plānotais laiks.",
+          }
+    );
+  }
+  return out;
+}
+
 /** How long the route takes to draw itself in. */
 const REVEAL_MS = 900;
 
@@ -163,6 +283,7 @@ export function RouteMap({ segments, start, destination, via, showTet, onToggleT
   const destMarkerRef = useRef<maplibregl.Marker | null>(null);
   const loadedRef = useRef(false);
   const viaMarkersRef = useRef<maplibregl.Marker[]>([]);
+  const badgeMarkersRef = useRef<maplibregl.Marker[]>([]);
   const syncRef = useRef<() => void>(() => {});
   /** Which route has already played its reveal, so a pan never replays it. */
   const revealedRef = useRef<string | null>(null);
@@ -354,6 +475,22 @@ export function RouteMap({ segments, start, destination, via, showTet, onToggleT
         destMarkerRef.current?.remove();
       }
 
+      for (const marker of badgeMarkersRef.current) marker.remove();
+      badgeMarkersRef.current = segments
+        ? badgesFor(segments, [
+            ...(start ? [[start.lon, start.lat] as [number, number]] : []),
+            ...(destination ? [[destination.lon, destination.lat] as [number, number]] : []),
+            ...(via ?? []).map(v => [v.lon, v.lat] as [number, number]),
+          ]).map(b =>
+            new maplibregl.Marker({ element: badgeElement(b.icon, b.title) })
+              .setLngLat(b.point)
+              .setPopup(new maplibregl.Popup({ offset: 14, maxWidth: "260px" })
+                // The title reserves room on its right so the close button
+                // never lands on top of the words.
+                .setHTML(`<strong style="padding-right:24px">${b.icon} ${b.title}</strong>${b.detail}`))
+              .addTo(map))
+        : [];
+
       for (const marker of viaMarkersRef.current) marker.remove();
       viaMarkersRef.current = (via ?? []).map(place => new maplibregl.Marker({ color: "#f56300" })
         .setLngLat([place.lon, place.lat])
@@ -415,16 +552,22 @@ export function RouteMap({ segments, start, destination, via, showTet, onToggleT
           <span className="h-3 w-3 rounded-full bg-white shadow-sm" />
         </span>
       </button>
-      <div className="absolute left-3 top-14 hidden flex-col gap-2 rounded-xl border border-[#ececf0] bg-white/95 px-3 py-2.5 text-[11px] leading-none shadow-sm backdrop-blur md:flex">
+      {/* Bottom of the map, in one row.
+          At the top-left it covered the corner the route is usually framed
+          into. Down here it sits over the edge of the frame, clear of the TET
+          switch and the zoom controls.
+          On a phone it appears only in full screen: on the inline 26-42dvh
+          strip the legend is a third of the map and covers the route it is
+          meant to explain. Desktop always shows it — there is room. */}
+      <div className="absolute bottom-16 left-3 right-3 hidden flex-col gap-1.5 rounded-xl border border-[#ececf0] bg-white/95 px-2.5 py-2 text-[10px] leading-none shadow-sm backdrop-blur [[data-map-expanded]_&]:flex md:bottom-3 md:left-16 md:right-auto md:flex md:max-w-max md:px-3 md:py-2.5 md:text-[11px]">
+        {/* No heading: four labelled samples in a row need no title, and at
+            the bottom of the map the line it would cost is the difference
+            between one row and two. Read left to right as the ride gets
+            rougher: asphalt, gravel road, track, trail. The samples use the
+            same colours and dash patterns as the map, so the legend is the
+            map in miniature rather than a description of it. */}
         <div className="flex flex-col gap-1.5">
-          <span className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
-            Ceļa veids
-          </span>
-          {/* One row, read left to right as the ride gets rougher: asphalt,
-              gravel road, track, trail. The samples are drawn with the same
-              colours and dash patterns the map uses, so the legend is the map
-              in miniature rather than a description of it. */}
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
             <span className="flex items-center gap-1.5">
               <span className="inline-block h-[3px] w-5 rounded-full" style={{ background: PAVED_COLOR }} />
               Asfalts

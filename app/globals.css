@@ -208,3 +208,48 @@ body {
   .mopik-curtain-up { animation: none; }
   .mopik-draw { stroke-dashoffset: 0; }
 }
+
+/* Map popups.
+   MapLibre's default is a square white box with a 10 px grey "×" in the
+   corner — the rider called it ugly, and it is: nothing else in Mopik looks
+   like it. This gives it the app's own rounded card, type scale and a close
+   target big enough to hit with a thumb. */
+.maplibregl-popup-content {
+  border-radius: 14px;
+  border: 1px solid #ececf0;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  padding: 12px 14px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #44403c;
+  max-width: 260px;
+}
+.maplibregl-popup-content strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1c1917;
+}
+/* The close button: a real 28 px target, top-right, out of the text's way. */
+.maplibregl-popup-close-button {
+  top: 4px;
+  right: 4px;
+  width: 28px;
+  height: 28px;
+  border-radius: 14px;
+  font-size: 18px;
+  line-height: 1;
+  color: #a8a29e;
+  background: transparent;
+  transition: background 0.15s, color 0.15s;
+}
+.maplibregl-popup-close-button:hover {
+  background: #f5f5f4;
+  color: #44403c;
+}
+/* The tip inherits the card's border, so the popup reads as one shape. */
+.maplibregl-popup-anchor-bottom .maplibregl-popup-tip { border-top-color: #fff; }
+.maplibregl-popup-anchor-top .maplibregl-popup-tip { border-bottom-color: #fff; }
+.maplibregl-popup-anchor-left .maplibregl-popup-tip { border-right-color: #fff; }
+.maplibregl-popup-anchor-right .maplibregl-popup-tip { border-left-color: #fff; }

@@ -133,6 +133,12 @@ export type RouteSegmentProperties = {
   roadClass: RoadClass;
   surface: SurfaceClass;
   trackGrade?: string;
+  /**
+   * An OSM path with no positive motorcycle access tag. Already counted in
+   * `quality.unverifiedPathKm`; carried per segment so the map can mark the
+   * stretches the rider should check signs on.
+   */
+  unverified?: boolean;
   distanceMeters: number;
 };
 

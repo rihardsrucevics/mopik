@@ -30,7 +30,11 @@ export function MapPanel({ children, className = "", expandedClassName = "" }: {
   }, [expanded]);
 
   return (
-    <div className={expanded ? `fixed inset-0 z-40 flex flex-col bg-[#faf9f6] ${expandedClassName}` : `relative ${className}`}>
+    // `data-map-expanded` lets the map's own overlays react to full screen
+    // without threading the state through — the legend is worth its space on a
+    // full screen and not on a 26dvh strip, where it covers the route.
+    <div data-map-expanded={expanded ? "true" : undefined}
+      className={expanded ? `fixed inset-0 z-40 flex flex-col bg-[#faf9f6] ${expandedClassName}` : `relative ${className}`}>
       {/* The map must fill the fixed layer itself. Inside the composer's flex
           column a plain child of `fixed inset-0` collapsed to zero height,
           which took the close button (positioned against it) down to 0 x 0 px

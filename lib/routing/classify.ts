@@ -358,7 +358,11 @@ export function classifyRoute(path: RoutePath): ClassifiedRoute {
   };
 
   let segStart = 0;
-  let current: { roadClass: RoadClass; surface: SurfaceClass; trackGrade?: string } | null = null;
+  // `unverified` travels with the segment so the map can mark exactly the
+  // stretches the panel already counts in `unverifiedPathKm` — a path with no
+  // positive motor access in OSM. Splitting on it too means a run is either
+  // wholly unverified or wholly not, never half.
+  let current: { roadClass: RoadClass; surface: SurfaceClass; trackGrade?: string; unverified?: boolean } | null = null;
 
   const flush = (endIndex: number) => {
     if (!current || endIndex <= segStart) return;
@@ -386,16 +390,18 @@ export function classifyRoute(path: RoutePath): ClassifiedRoute {
     const roadClass = toRoadClass(edge?.use);
     const surface = toSurfaceClass(edge?.surface, edge?.unpaved, edge?.use);
     const trackGrade = roadClass === "track" ? edge?.tags?.tracktype : undefined;
+    const unverified = isUnverifiedMotorPath(edge?.tags);
 
     if (
       !current ||
       current.roadClass !== roadClass ||
       current.surface !== surface ||
-      current.trackGrade !== trackGrade
+      current.trackGrade !== trackGrade ||
+      Boolean(current.unverified) !== unverified
     ) {
       flush(i);
       segStart = i;
-      current = { roadClass, surface, ...(trackGrade ? { trackGrade } : {}) };
+      current = { roadClass, surface, ...(trackGrade ? { trackGrade } : {}), ...(unverified ? { unverified: true } : {}) };
     }
   }
   flush(coords.length - 1);
