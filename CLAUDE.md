@@ -2,6 +2,25 @@
 
 # Mopik — adventure motorcycle route generator
 
+## Vercel: the project moved accounts, 2026-09-14
+
+Mopik now deploys from **`rihards-projects-3063811e/mopik`** (the rider's own
+account), not the old `tronpower/mopik`. The CLI is linked to it and all eight
+production env vars were migrated — including `BROUTER_BASE_URL` and
+`BROUTER_TOKEN`, without which every route silently falls back to the
+throttled public BRouter.
+
+**`mopik.eu` was still on the old account when this was written.** Vercel
+wants a `_vercel` TXT record at the registrar to prove ownership before it
+will move; that record is in place and propagated, and the rider presses
+Refresh in the Vercel UI to finish it. Until then a deploy lands on
+`mopik-*.vercel.app`, not on www.mopik.eu — check which one you are looking at
+before concluding a change did not ship.
+
+**Trap:** `vercel env pull` still overwrites whatever file you point it at.
+Pull to the scratchpad, never to `.env.local` — that is how the local keys
+were lost on 09-12.
+
 ## Where this stands — handover, 2026-09-14
 
 **`docs/BACKLOG.md` is the rider's own list, in his order — read it first.**
