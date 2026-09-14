@@ -14,6 +14,11 @@ The .pbf mode needs pyosmium (`pip install osmium`) and is the only path that
 scales to Europe: Overpass rate-limits a 33-query Baltic build into a 21-minute
 run, and Europe is ~50x that. See docs/poi-europe-plan.md for the costing.
 
+Since 2026-09-14 the .pbf read pre-filters in C++ on the tag keys the category
+matchers actually read (`PBF_KEYS`), which took Latvia from 130 s to 21 s with
+byte-identical output. `--no-prefilter` restores the old chain; the note above
+`PBF_KEYS` has the measurements and the reason.
+
 Why pre-baked rather than querying Overpass per request: the public instances
 queue requests up to 15s then discard them, and return 429 under even light
 use. That is unusable on a synchronous "Generate routes" click. Baking also
@@ -215,6 +220,75 @@ assert {k for k, _, _ in CATEGORIES} == set(PBF_MATCHERS), (
 PBF_NODE_ONLY = {"village"}
 
 
+# --- why a .pbf build used to take hours ------------------------------------
+#
+# Poland's 2 GB extract sat in uninterruptible disk wait for 2 h 30 min where
+# Estonia's 117 MB took 88 s — far worse than the 17x the file sizes predict.
+# Measured on Latvia (134 MB, same venv, 8-core/8 GB laptop):
+#
+#     with_areas(), EmptyTagFilter  (the old default)     130 s   269 MB RSS
+#     with_locations("flex_mem") + with_areas()            89 s   333 MB
+#     with_locations("sparse_file_array") + with_areas()   97 s   338 MB
+#     with_areas(KeyFilter(...))  — area first pass only   92 s   359 MB
+#     KeyFilter in BOTH chains  (the new default)          21 s   392 MB
+#
+# **The location index is not the culprit.** Every storage variant lands
+# within 10 % of the others; swapping it buys nothing, and `dense_mmap_array`
+# is not even compiled into this pyosmium build. What costs the time is that
+# `FileProcessor.__iter__` installs the area handler's second-pass handler
+# *before* the filter chain, so with `with_areas()` every closed way in the
+# file — a couple of million building outlines in Poland — is assembled into
+# an Area and handed to Python before `EmptyTagFilter` can reject it.
+#
+# A `KeyFilter` over the keys the matchers actually read stops those objects
+# in C++ instead. It is exact rather than a heuristic: `PBF_KEYS` below is
+# derived from `PBF_MATCHERS` by asking each matcher which tags it reads, so
+# a category added above widens the filter automatically and can never be
+# silently filtered away. Measured output: **identical**, 12,603 raw POIs and
+# the same 4,624 after thinning, id for id, with no coordinate drift.
+
+
+def _matcher_keys():
+    """The tag keys `PBF_MATCHERS` reads, asked of the matchers themselves.
+
+    Hand-typing this list is exactly the drift `CATEGORIES`/`PBF_MATCHERS`
+    already has a guard against, and getting it wrong here is silent: a
+    category whose key is missing simply returns nothing. So each matcher is
+    run once against a dict that records every key it looks up.
+    """
+
+    class Probe(dict):
+        def __init__(self):
+            super().__init__()
+            self.touched = set()
+
+        def get(self, key, default=None):
+            self.touched.add(key)
+            return None
+
+    keys = set()
+    for match in PBF_MATCHERS.values():
+        probe = Probe()
+        match(probe)
+        keys |= probe.touched
+
+    # Every lookup returns None, so Python stops at the first operand of an
+    # `and`: `tower` is `man_made == "tower" and t.get("tower:type") in …`,
+    # and `tower:type` is never probed. That is correct rather than a gap,
+    # because `KeyFilter` is an OR — a tower carries `man_made`, passes on
+    # that key alone, and the full matcher then runs against its real tags.
+    # It would stop being correct if a matcher put its narrow key first, so
+    # `scripts/poi-thinning.test.ts` checks that no matcher's first-evaluated
+    # key is one this probe misses.
+    # `name` is only ever an extra condition on a match, never the thing that
+    # makes one — every category is identified by one of the other keys — so
+    # filtering on it would drop named-only objects for no gain.
+    return tuple(sorted(keys - {"name"}))
+
+
+PBF_KEYS = _matcher_keys()
+
+
 # --- the "Vairāk" row ------------------------------------------------------
 #
 # Until now a feature carried id/category/score/country/names and nothing
@@ -298,15 +372,19 @@ ENRICH_FIELDS = ("wikipedia", "website", "description", "ele", "historic", "tour
                  "opening_hours", "fee", "access")
 
 
-def collect_from_pbf(path, code):
+def collect_from_pbf(path, code, prefilter=True):
     """Every POI in one extract, in the same shape the Overpass path produces.
 
     Overpass's `out center` returns one representative point per object
     whatever its type, so this must do the same for nodes, ways and
     relations. Relations matter more than their rarity suggests: 24 of
-    Estonia's 27 nature reserves are multipolygons, and skipping them dropped
-    the category to 9. pyosmium assembles them with `with_areas()`, which
-    costs one extra pass over the file (~6 s on a 117 MB extract).
+    Estonia's 27 nature reserves are multipolygons (45 of Latvia's 353), and
+    skipping them dropped the category to 9. pyosmium assembles them with
+    `with_areas()`, which needs a second pass over the file.
+
+    `prefilter=False` restores the pre-2026-09-14 chain — `EmptyTagFilter`
+    alone — for anyone who wants to prove the filter changes nothing. It is
+    6x slower and produces the same POIs; see the note above `PBF_KEYS`.
     """
     import osmium  # imported here so the Overpass path needs no pyosmium
 
@@ -351,8 +429,18 @@ def collect_from_pbf(path, code):
     # themselves. An area reports whether it came from a way or a relation,
     # which is what keeps the ids in the same `n`/`w`/`r` namespace the
     # Overpass build used.
-    fp = osmium.FileProcessor(path).with_areas()
-    fp = fp.with_filter(osmium.filter.EmptyTagFilter())
+    #
+    # The same filter goes in **both** chains, and both placements matter:
+    # the one inside `with_areas()` keeps the area first pass from collecting
+    # member ways for relations no category wants, and the one in
+    # `with_filter()` keeps assembled areas and untagged nodes from reaching
+    # Python. With only the first, Latvia still takes 92 s; with both, 21 s.
+    if prefilter:
+        fp = osmium.FileProcessor(path).with_areas(osmium.filter.KeyFilter(*PBF_KEYS))
+        fp = fp.with_filter(osmium.filter.KeyFilter(*PBF_KEYS))
+    else:
+        fp = osmium.FileProcessor(path).with_areas()
+        fp = fp.with_filter(osmium.filter.EmptyTagFilter())
 
     for obj in fp:
         tags = dict(obj.tags)
@@ -483,6 +571,24 @@ def thin_and_write(collected, out_path):
 
     # Spatial thinning: without it a loop gets offered five hillforts in one
     # parish. Highest score wins; ties prefer the named one.
+    # NOTE: this sort has no explicit tiebreak, and Python's sort is stable, so
+    # two POIs of the same score and namedness are thinned in *collection*
+    # order. That is an accident of the reader rather than a property of the
+    # data — pyosmium emits assembled areas at a different point in the stream
+    # once the .pbf read is pre-filtered (`PBF_KEYS`) — so in principle which
+    # of two neighbours 3 km apart survives could depend on the chain.
+    #
+    # Measured on Latvia it does not: both chains thin 12,603 raw POIs to the
+    # same 4,624 ids, and `scripts/poi-thinning.test.ts` pins that. Adding a
+    # tiebreak was tried and *rejected*: ordering ties by id reshuffles ~1,150
+    # cluster representatives, and ordering by type swaps named landmarks for
+    # their neighbours either way round (way-first loses Jelgavas Pils,
+    # relation-first loses Cēsu pils muzejs and six reserves). Every one of
+    # those is an equally valid representative of its 3 km cluster, so the
+    # churn buys nothing and would invalidate the published datasets. If a
+    # future extract ever does diverge, that is the moment to choose a
+    # tiebreak deliberately — on what makes the better rider-facing row, not
+    # on id order.
     collected.sort(key=lambda p: (-p["score"], 0 if p["nameLv"] else 1))
     by_category = {}
     thinned = []
@@ -496,8 +602,16 @@ def thin_and_write(collected, out_path):
         peers.append(poi)
         thinned.append(poi)
 
+    # Emit in a fixed order so the same extract always produces the same
+    # bytes. `thinned` is in thinning order, which follows collection order,
+    # which the .pbf pre-filter (`PBF_KEYS`) changes: both chains keep exactly
+    # the same POIs, but written straight out they land in different positions
+    # and the files differ byte-wise for no reason a reader could act on.
+    # Sorting here is safe in a way a tiebreak in the thinning sort above is
+    # not — the set of POIs is already decided by this point, so this moves
+    # rows around without changing which rows exist.
     features = []
-    for p in thinned:
+    for p in sorted(thinned, key=lambda p: (p["category"], p["id"])):
         props = {
             "id": p["id"],
             "category": p["category"],
@@ -567,9 +681,14 @@ def main():
         print("--pbf needs --country CC and --out path", file=sys.stderr)
         sys.exit(2)
 
+    # `--no-prefilter` is the old, 6x slower chain, kept so the claim that the
+    # filter changes nothing stays checkable on any extract.
+    prefilter = "--no-prefilter" not in args
+
     started = time.time()
-    print(f"reading {pbf} ({os.path.getsize(pbf) / 1024 / 1024:.0f} MB) …", flush=True)
-    collected = collect_from_pbf(pbf, code)
+    print(f"reading {pbf} ({os.path.getsize(pbf) / 1024 / 1024:.0f} MB) …"
+          f"{'' if prefilter else ' [unfiltered]'}", flush=True)
+    collected = collect_from_pbf(pbf, code, prefilter=prefilter)
     print(f"{len(collected)} raw POIs in {time.time() - started:.0f}s", flush=True)
     thin_and_write(collected, out_path)
 

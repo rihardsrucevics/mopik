@@ -429,3 +429,147 @@ wrote the file.
 
 A build now prints what the extras cost, per field, so keeping or dropping one
 is decided on measured bytes.
+
+## 8. The .pbf read was 6x slower than it needed to be (2026-09-14, late)
+
+Poland's 2 GB extract took **2 h 43 min** (9,800 s) against Estonia's 88 s for
+117 MB. That is **111x the time for 15x the file** — superlinear, and the
+machine spent it in uninterruptible disk wait at ~25 % CPU, which is the
+signature of memory pressure rather than of work.
+
+### What it was not
+
+The obvious suspect was the node location index, so all three storage options
+were measured on Latvia (134 MB, same venv, 8-core / 8 GB laptop). **None of
+them is the problem** — they land within 10 % of each other, and
+`dense_mmap_array` is not even compiled into this pyosmium build:
+
+| variant | time | RSS | raw POIs |
+|---|---:|---:|---:|
+| `with_areas()` + `EmptyTagFilter` (the old default) | **130 s** | 269 MB | 12,603 |
+| `with_locations("flex_mem")` + `with_areas()` | 89 s | 333 MB | 12,603 |
+| `with_locations("sparse_file_array")` + `with_areas()` | 97 s | 338 MB | 12,603 |
+| `with_areas(KeyFilter(…))` — area first pass filtered only | 92 s | 359 MB | 12,603 |
+| **`KeyFilter` in both chains (the new default)** | **21 s** | 392 MB | **12,603** |
+| no `with_areas()` at all | 57 s | 306 MB | 12,544 |
+| two-pass, ids then coordinates | 8 s | 768 MB | 12,613 |
+
+(The 130 s baseline is this laptop with the Poland build running beside it;
+the same code logged 88 s on a quiet machine. Every row above was measured
+under the same contention, so the ratios are what matter, not the absolutes.)
+
+### What it was
+
+`FileProcessor.__iter__` installs the area handler's second-pass handler
+**before** the filter chain. So with `with_areas()` every closed way in the
+file — a couple of million building outlines in Poland — is assembled into an
+`Area` with full geometry and handed to Python, and only *then* does
+`EmptyTagFilter` get to reject it. The filter was running after the expensive
+part, not before it.
+
+A `KeyFilter` over the tag keys the category matchers actually read stops
+those objects in C++. It goes in **both** chains and both placements earn
+their keep: the one inside `with_areas()` keeps the first pass from collecting
+member ways for relations no category wants, the one in `with_filter()` keeps
+assembled areas and untagged nodes out of Python. With only the first, Latvia
+is still 92 s; with both, 21 s.
+
+**The filter is derived, not hand-typed.** `PBF_KEYS` comes from
+`_matcher_keys()`, which runs every matcher against a dict that records which
+keys it looks up. A hand-written list is exactly the drift `CATEGORIES` /
+`PBF_MATCHERS` already has a guard against, and getting it wrong here would be
+silent — a category whose key is missing simply collects nothing, with no
+error. `scripts/poi-thinning.test.ts` pins the derivation.
+
+One subtlety worth knowing: the probe stops at the first operand of an `and`,
+so `tower`'s `tower:type` is never seen and `PBF_KEYS` omits it. That is
+correct, because `KeyFilter` is an OR — a tower carries `man_made`, passes on
+that key alone, and the real matcher then runs against its real tags. It would
+stop being correct if a matcher put its narrow key first, so the test checks
+that no matcher's first-evaluated key is one the probe misses.
+
+### Verification: the output does not change
+
+Latvia, both chains, from the same extract:
+
+- **12,603 raw POIs** either way, **4,624 after thinning**, the same ids.
+- **Byte-identical output files** (`--no-prefilter` restores the old chain).
+- Against the shipped `data/poi-LV.geojson`: **0 features lost**, 15 gained,
+  **0 geometries moved**. All 15 are `cliff`/`cave` — the category split made
+  earlier the same day, which that file predates.
+
+`scripts/poi-kinds.test.ts` (4 tests) and the new
+`scripts/poi-thinning.test.ts` (6) pass.
+
+### The two rejected variants, and why
+
+**No `with_areas()` (57 s)** loses 59 POIs — 45 reserves and 14 manors,
+including Rīgas Pils, Cēsu pilsdrupas and Krustpils pils. 45 of Latvia's 353
+reserves are multipolygons (Estonia's 24-of-27 figure from §5 is the same
+finding). Relations are only 0.5 % of the POIs and they are the landmarks.
+
+**The two-pass id-then-coordinate approach (8 s)** is the fastest thing
+measured and it was still rejected. It recovers relations cheaply — pass 1
+reads tags with no location cache and records member way ids, pass 2 resolves
+only the ~200k node ids that matter — and it finds *ten more* POIs than the
+area path, because it places relations whose rings pyosmium cannot assemble
+(Braslavas ezeru nacionālais parks, two coastal-battery hillforts).
+
+But it computes a relation's centroid by averaging raw member-way nodes rather
+than assembled outer rings, and those are not the same point: 56 POIs move,
+median 16 m, **max 2.3 km**. No point crosses the 3 km thinning radius on its
+own, but the drift changes which of two neighbours survives thinning, and the
+two it costs are **Ķemeru nacionālais parks** and **Jelgavas Pils**. Losing
+two of Latvia's best-known landmarks to buy 13 s is the wrong trade. It is
+worth revisiting if a proper ring-aware centroid can be computed in pass 2.
+
+### Estimates, and what is not measured
+
+The new path streams once and the area assembly no longer blows up, so it
+should be roughly linear in file size. Latvia gives 0.17 s/MB:
+
+| country | `.pbf` | old path | new path (est.) |
+|---|---:|---:|---:|
+| LV | 134 MB | 88 s (measured) | **23 s (measured)** |
+| EE | 117 MB | 89 s (measured) | ~20 s |
+| LT | 212 MB | 169 s (measured) | ~36 s |
+| SI | 298 MB | — | ~51 s |
+| CH | 450 MB | — | ~77 s |
+| AT | 800 MB | — | ~2.3 min |
+| PL | 2.0 GB | **163 min (measured)** | ~5.7 min |
+| IT | 2.1 GB | — | ~6.0 min |
+| DE | 4.6 GB | running | ~13 min |
+| **LV LT EE PL DE CH AT IT SI** | **10.7 GB** | **~1 day** | **~31 min** |
+
+**The linearity is an assumption, not a measurement.** It was to be checked on
+a 946 MB Czechia extract, but the Germany build was saturating the disk at the
+time — both processes sat in uninterruptible wait at 3–5 % CPU with 1.7 M
+pageouts — so the run measured contention rather than code and was abandoned.
+The old path's superlinearity came from area assembly, which the filter
+removes, so linear is the reasonable expectation; **confirm it on the first
+big country that runs on a quiet machine.** Downloads are separate and
+unchanged (Poland's 2 GB took 953 s, Germany's 4.6 GB took 245 s).
+
+### The rebuild command
+
+Not run here — the Germany build from the earlier batch was still going, on
+the old code. Once it finishes, the second-pass rebuild is:
+
+```bash
+VENV=<scratchpad>/poi-venv/bin/python
+for CC in LV LT EE PL DE CH AT IT SI; do
+  # download <geofabrik>/<country>-latest.osm.pbf to <scratchpad>/pbf/$CC.osm.pbf
+  $VENV scripts/build_poi_dataset.py \
+      --pbf <scratchpad>/pbf/$CC.osm.pbf --country $CC --out data/poi-$CC.geojson
+  rm <scratchpad>/pbf/$CC.osm.pbf     # disk is the constraint, not CPU
+done
+```
+
+`scripts/build_gates_dataset.py` already has the `GEOFABRIK` code→path table
+and the download/delete loop; the POI script takes a path, so the loop lives
+in the caller. **~31 min of processing plus ~40 min of downloading**, against
+roughly a day on the old path.
+
+Disk: the largest single extract is Germany at 4.6 GB and the machine had
+13–22 GB free during this work, so one country at a time with a delete after
+each is the constraint that matters — unchanged from §4.
