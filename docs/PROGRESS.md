@@ -578,6 +578,165 @@ Tooling left behind: `scripts/measure-coast.ts` (routes the eight legs) and
 the Overpass + scoring script in the scratchpad, which needs re-fetching to
 re-run — the coastline extract is 37 MB and deliberately not committed.
 
+## 2026-09-14 — Item 11b: prefer the coast on real roads
+
+The rider's second half of item 11: *"braukt gar krastu pa īstu ceļu jābūt
+labāk (vēlamāk) kā braukt pa ceļu, kas neiet gar krastu — tāpēc, ka taču būtu
+smuks skats!"* Riding the coast on a real road — asphalt, gravel, track —
+should beat an inland road of the same class. Beach paths stay refused.
+
+**The asked-for fix cannot be built, and the reason is in BRouter itself. No
+code shipped.** What shipped is the measurement that proves it and the tests
+that stop it being rebuilt.
+
+### The plan was a river-class discount for roads. It was built and measured out.
+
+Item 11a found that `estimated_river_class` 5–6 marked shoreline *paths*, and
+used it for `shore_path_factor`. The obvious next step was to reuse the same
+key as a *discount* for roads and tracks, so a coastal road beats an inland
+one. That was implemented (`water_road_factor`, applied to everything except
+path/primary/trunk/motorway), swept on all eight legs, and reverted.
+
+**`estimated_river_class` is a river signal. It does not see the sea.** On
+roads and tracks over the six coastal legs, with paths excluded, a high class
+is *less* common beside the sea than inland:
+
+| | km ridden | class ≥ 3 | class ≥ 4 | class ≥ 5 |
+|---|---:|---:|---:|---:|
+| within 1 km of the coastline | 88.2 | 9.7 % | **5.3 %** | 2.3 % |
+| inland (> 1 km) | 681.1 | 10.9 % | **7.2 %** | 5.0 % |
+
+Probed directly onto roads that are unarguably on the coast — the P111 at
+Jurkalne, the Pāvilosta seafront, the Kolka cape road, the Saulkrasti
+seafront — every one reports `estimated_river_class` **1, or no class at
+all**. The class 5–6 kilometres these rides do collect sit 3–10 km inland: the
+Gauja, the Venta, the Irbe.
+
+The sweep behaved exactly as that predicts — the discount is either noise or
+actively harmful, because what it actually rewards is inland river valleys:
+
+| water_road_factor (class 5–6) | total km | km < 1 km of sea | shoreline path km |
+|---|---:|---:|---:|
+| none (shipped) | 1028.8 | **103.5** | 15.35 |
+| 0.70 | 1030.3 | 104.8 | 15.35 |
+| 0.40 | 1030.9 | 105.6 | 16.96 |
+| 0.15 | 1045.0 | **98.3** | 12.80 |
+
+At 0.15 the routes get 16 km longer and end up *further* from the sea.
+
+### Why: BRouter's tag vocabulary has no sea in it
+
+From `lookups.dat` (1.7.10), the file that defines every tag the cost script
+may read: there is a `waterway` key (`river`, `canal`, `riverbank`, `dam`, …)
+and **no `natural` key at all** — no `coastline`, no `water`, no `sea`. Zero
+occurrences of the string "coastline" in the whole file.
+`estimated_river_class` is derived from `waterway`, which is why it tracks
+rivers and is blind to the Baltic.
+
+So **no costfactor discount keyed on any available tag can prefer the coast.**
+This is a property of the router's data model, not a tuning problem. The
+profile half of item 11b is closed.
+
+### What the routes actually do, and why the rider is right to complain
+
+Liepāja → Ventspils, sampled every ~5 km — metres from the coastline:
+
+```
+2310 4697 4845 4585 6679 9345 9795 5923 2900 5021 7284 5362 6373
+8348 8209 7404 10689 8665 5530 5394 2882 169 912 1883 343 587
+```
+
+The whole middle of the ride sits 5–10 km inland and only the last ~30 km come
+to the water, although the coastal P111 runs the full length. Nothing in the
+cost script pulls west, so the route takes the straighter inland line. This is
+the rider's complaint, reproduced and quantified.
+
+Which classes carry the coastal kilometres today (km within 1 km of the sea):
+
+| leg | km < 1 km of sea | what carries them |
+|---|---:|---|
+| Ventspils → Kolka | 46.4 | track 37.9, unclassified 3.7, path 1.7 |
+| Liepāja → Ventspils | 19.4 | track 9.8, unclassified 4.0, path 3.8 |
+| Jūrmala → Kolka | 16.7 | track 5.7, path 5.2, residential 2.5 |
+| Rīga → Ainaži | 14.9 | track 4.7, path 3.7, tertiary 1.9 |
+| Klaipėda → Palanga | 5.2 | residential 2.8, path 0.9 |
+| Pärnu → Haapsalu | 0.9 | residential 0.8 |
+
+Real roads and tracks already carry most of it — the preference is not
+*absent* on those classes, it is simply *unexpressed*: nothing rewards them
+for being there.
+
+### The feasible lever is scoring, and it is cheap — but it is not mine to wire
+
+Coastline proximity as a runtime scoring input **is** affordable, measured
+rather than guessed:
+
+- The Baltic `natural=coastline` extract is 569,155 vertices, but
+  grid-deduplicated at ~200 m it is **31,594 cells / 0.36 MB** of JSON.
+- Building the index: **177 ms**, once per process.
+- Scoring one 204 km route (3,891 shape points): **11 ms** — about **0.4 s**
+  across a 36-candidate generation.
+
+So a "sea" term separate from rivers is practical, and it must be separate:
+the data above shows `estimated_river_class` cannot tell the two apart, so the
+distinction has to come from the coastline geometry, not from a tag.
+
+**Not built, deliberately.** The term would have to be fed by a `coastalKm`
+metric computed in `lib/routing/classify.ts` and carried through
+`lib/types.ts` — both owned by another agent this session — and the Europe-wide
+coastline index is a data build (`natural=coastline` per country) that does not
+exist yet. Adding a scoring term in `score.ts` with nothing feeding it would be
+dead code. `score.ts` is therefore unchanged.
+
+The next agent's job, in order: (1) build the coastline index as a committed
+data artefact the way `poi-*.geojson` is built, (2) add `coastalKm` to
+`classify.ts`'s quality block, (3) add a bounded `coastalValue` to
+`natureScore` or a shortfall term to `loopRank`. Only step 3 touches `score.ts`.
+
+### Before / after
+
+No routing change shipped, so the re-measurement is a control: it confirms the
+experiment was fully reverted. Identical to item 11a's numbers to the metre.
+
+| ride | km | beach km | shore-path km | <300 m | <1 km | <3 km |
+|---|---|---|---|---|---|---|
+| Rīga → Ainaži | 207.9 → 207.9 | 0.00 → 0.00 | 3.67 → 3.67 | 2.4 → 2.4 | 14.9 → 14.9 | 35.4 → 35.4 |
+| Jūrmala → Kolka | 203.8 → 203.8 | 0.72 → 0.72 | 5.20 → 5.20 | 6.2 → 6.2 | 16.7 → 16.7 | 54.1 → 54.1 |
+| Liepāja → Ventspils | 140.4 → 140.4 | 0.00 → 0.00 | 3.77 → 3.77 | 7.2 → 7.2 | 19.4 → 19.4 | 35.5 → 35.5 |
+| Pärnu → Haapsalu | 138.5 → 138.5 | 0.00 → 0.00 | 0.06 → 0.06 | 0.0 → 0.0 | 0.9 → 0.9 | 10.4 → 10.4 |
+| Klaipėda → Palanga | 42.5 → 42.5 | 0.00 → 0.00 | 0.94 → 0.94 | 0.1 → 0.1 | 5.2 → 5.2 | 24.8 → 24.8 |
+| Ventspils → Kolka | 110.1 → 110.1 | 0.00 → 0.00 | 1.72 → 1.72 | 4.4 → 4.4 | 46.4 → 46.4 | 82.0 → 82.0 |
+| *Sigulda → Cēsis (inland)* | 59.5 → 59.5 | 0.00 → 0.00 | — | 0.0 | 0.0 | 0.0 |
+| *Cēsis → Madona (inland)* | 126.1 → 126.1 | 0.00 → 0.00 | — | 0.0 | 0.0 | 0.0 |
+| **total** | **1028.8 → 1028.8** | **0.72 → 0.72** | **15.35 → 15.35** | **20.3** | **103.5** | **242.2** |
+
+Beach km stays at 0.72 and both inland controls are unchanged, as required.
+
+The 3 km radius is new here and is the useful one for this question: 242.2 km
+of the 1028.8 are within 3 km of the sea against 103.5 within 1 km, so there is
+a large band of riding that is *near* the coast without being *on* it. That
+band is what a scoring term would have to move inward.
+
+### Tooling
+
+`scripts/measure-coast.ts` now routes **and scores** in one command — it loads
+the coastline and beach indexes itself, reports the 300 m / 1 km / 3 km
+buckets, beach km, shoreline-path km, and which `highway/surface` carries the
+coastal kilometres, and writes `scores.json`. The indexes stay scratchpad
+artefacts (12 MB and 5 MB); point at them with `SEA_DIR=`, or the script
+routes and skips scoring with a notice rather than failing.
+
+### Not settled
+
+- `estimated_river_class` was checked against the Baltic only. The conclusion
+  that it cannot see any sea rests on `lookups.dat` having no `natural` key,
+  which is global — but the class distribution near shore was measured here.
+- The coastal-proximity dip from item 11a (112.3 → 103.5 km within 1 km) is
+  still not recovered, and cannot be by the profile. It needs the scoring
+  route above.
+- Single legs, not full generations: loop anchor placement near the shore is
+  still unexamined.
+
 ## 2026-09-14 — the day in one place
 
 Fourteen commits, all live at `41e1b9f`. Three halves, which is one too many:

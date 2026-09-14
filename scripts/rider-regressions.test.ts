@@ -113,3 +113,50 @@ test("the sea is to ride along, not on (backlog item 11, measured 2026-09-14)", 
   // A generated profile must never carry a stray backtick out of the template.
   assert.doesNotMatch(hard, /`/);
 });
+
+test("estimated_river_class is a RIVER signal, not a sea one (item 11b, measured 2026-09-14)", () => {
+  // Item 11b asked for a costfactor discount that scales with river class for
+  // roads/tracks, so that riding the coast on a real road beats the inland
+  // alternative. It was built, swept and measured out again: BRouter CANNOT
+  // SEE THE SEA, so there is nothing for such a discount to key on.
+  //
+  // The proof is in BRouter's own lookups.dat (1.7.10): the tag vocabulary has
+  // `waterway=river|canal|riverbank|...` and no `natural` key at all — no
+  // `coastline`, no `water`, no `sea`. `estimated_river_class` is derived from
+  // `waterway`, which is why it tracks the Gauja and the Venta and not the
+  // Baltic.
+  //
+  // Measured over the six coastal legs, on roads and tracks only (paths
+  // excluded), class >= 4 is LESS common beside the sea than inland:
+  //   within 1 km of the coastline : 88.2 km ridden, 5.3% at class >= 4
+  //   inland (> 1 km)              : 681.1 km ridden, 7.2% at class >= 4
+  // And probed directly onto known coastal roads — the P111 at Jurkalne, the
+  // Pāvilosta seafront, the Kolka cape road — every one reports class 1 or no
+  // class at all.
+  //
+  // So the discount was implemented anyway and swept, since the brief asked
+  // for it to be measured rather than argued:
+  //   strong=0.70 : 103.5 -> 104.8 km within 1 km of the sea (+1.3, noise)
+  //   strong=0.40 : 103.5 -> 105.6 km (+2.1, and +2.1 km of shoreline path)
+  //   strong=0.15 : 103.5 ->  98.3 km (WORSE) and +16 km of total distance —
+  //                 a strong discount chases inland rivers, which is exactly
+  //                 what the tag actually marks.
+  // It was reverted. Do not rebuild it against estimated_river_class.
+  //
+  // This test pins the one thing that must stay true: no road class may be
+  // given a water-keyed discount beyond river_factor's existing mild one,
+  // because the key does not mean what such a discount would assume.
+  const hard = buildMotoProfile({
+    offRoad: 1, difficulty: "hard", trails: "lots", accessPolicy: "allow_unverified",
+    avoidMainRoads: true, avoidMotorways: true, noSand: false, avoidTowns: false,
+  });
+  assert.doesNotMatch(hard, /water_road_factor/);
+  // river_factor stays mild and applies to every class equally — it is a
+  // "scenic parallel road wins a close call" nudge, not a coast seeker.
+  assert.match(hard, /assign river_factor =\n\s+switch or estimated_river_class=5 estimated_river_class=6 0\.92\n\s+switch or estimated_river_class=3 estimated_river_class=4 0\.97\n\s+1\.0/);
+  // The path-side signal is real and must survive: on paths, class >= 5 is
+  // 19% of the metres within 300 m of the sea against 1% elsewhere. That is
+  // what shore_path_factor keys on, and why it works where a road-side
+  // version cannot.
+  assert.match(hard, /assign shore_path_factor =/);
+});
