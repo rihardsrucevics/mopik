@@ -42,8 +42,8 @@ type Props = {
    * The rider asked for it in as many words — "kā man šos ērti pievienot
    * maršrutam?" — after browsing suggestions on the map: having flown to a
    * place and decided he wants it, going back to the list to find the row
-   * again is a step that should not exist. Absent on the shared-route page,
-   * which has no plan of its own to regenerate.
+   * again is a step that should not exist. Absent only where there is no plan
+   * to re-plan — a share code old enough to carry none.
    */
   onFocusAdd?: () => void;
   showTet: boolean;

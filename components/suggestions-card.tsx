@@ -21,8 +21,11 @@ import { POI_KIND, osmUrl, type RoutePoi, type RoutePois } from "@/lib/poi/kinds
  * One component for both the planner and the shared-route page, for the same
  * reason `RouteActionRow` is one: the rider asked for the two pages to look
  * identical here, and two copies of a list drifted apart the moment one was
- * touched. The only difference is `onAdd` — a shared ride has no plan of its
- * own to regenerate, so its rows offer Kartē and Vairāk and nothing else.
+ * touched. `onAdd` decides whether a row can change the ride, and both pages
+ * pass it whenever there is a plan to re-plan — /r/<code> is where the rider's
+ * own saved rides open, so "a shared ride is someone else's" was never true of
+ * the page he uses. Only a share code old enough to carry no plan leaves it
+ * off, and then the rows simply offer Kartē and Vairāk.
  */
 export function SuggestionsCard({ pois, loading, expanded, onToggle, onShow, onAdd, busy }: {
   /** null until the first expand has answered; both lists may be empty. */

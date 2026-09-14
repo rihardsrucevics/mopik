@@ -569,3 +569,14 @@ control: pressing it makes the place a via point of the ride and regenerates
 the route through it — so suggestions are how stops come into a ride, not only
 the form. Depends on the POI dataset (Baltics today; Europe is item 8), and on
 the loop machinery already planning through anchors.
+
+## 20. A suggested place that cannot be routed to
+
+Found 2026-09-14 while wiring "Pievienot" on the saved-ride page. Pressing
+it on Satezeles pilskalns (24.8707, 57.17161) gives a 422 from
+`/api/generate-route`, reproduced with curl, while Ķeizarskats, Lojas
+pilskalns and Gūtmaņa ala route fine with the same plan. Same class as the
+Ērgļi footway case: the point snaps onto a way the hard profile forbids.
+`fetchRoutePath` already looks for routable ground near a *destination*;
+a via added from a suggestion needs the same treatment, and the suggestion
+list could hide places the profile cannot reach at all.

@@ -145,6 +145,18 @@ export default function Home() {
    * that first has the plan, and setting it must not cost a render of its own.
    */
   const askRef = useRef<string | null>(null);
+  /**
+   * `?go=1`: the plan that arrived in `?p=` is to be generated at once, with
+   * no stop in the form.
+   *
+   * This is what "Pievienot" on a shared or saved ride's Ieteikumi sends. The
+   * rider has already pressed the button that means "plan it again through
+   * here" — landing him in a pre-filled form to press Generate a second time
+   * would be asking the same question twice. A ref for the same reason
+   * `askRef` is one: it is read once, by the render that first has the plan,
+   * and setting it must not cost a render.
+   */
+  const goRef = useRef(false);
   // A ride generated from an origin: the rider is asked whether it replaces
   // the one they were editing or is kept as a second ride.
   const [keepChoice, setKeepChoice] = useState<{ code: string; saved: boolean } | null>(null);
@@ -180,6 +192,10 @@ export default function Home() {
         // with it as an argument — the same reason `generate` takes its places
         // rather than reading them (the Valmiera-in-Rīga bug).
         if (ask && mode === "chat") askRef.current = ask;
+        // A plan that arrives ready to ride. Never together with `ask`: one
+        // says "generate this", the other "ask the chat about this", and the
+        // generate-at-once path wins only because nothing sends both.
+        if (!ask && params.get("go") === "1") goRef.current = true;
       }
       window.history.replaceState(null, "", window.location.pathname);
     }, 0);
@@ -527,6 +543,31 @@ export default function Home() {
     const id = setTimeout(() => { void send(ask); }, 0);
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `send` is re-created every render; the ref guard is what makes this run once
+  }, [plan]);
+  /**
+   * A plan that arrived with `?go=1`: generate it now, through the path the
+   * form uses.
+   *
+   * Same shape as the `?ask=` effect above and for the same reasons —
+   * `startFromForm` reads nothing from state that this render has not got, but
+   * the *places* it must be given are the ones the URL carried, and those
+   * arrive in state a render after the plan. So the run waits for `plan`,
+   * takes `places` as they are by then, and the ref guard makes it happen once
+   * however many times StrictMode re-runs it.
+   *
+   * Deliberately `startFromForm` rather than a path of its own: the rider who
+   * pressed Pievienot on a saved ride should land in exactly the ride a rider
+   * who typed the same stops into the form would get — same summary bubble,
+   * same cancel-back-to-the-form behaviour, same `form_generate` event.
+   */
+  useEffect(() => {
+    if (!goRef.current || !plan) return;
+    goRef.current = false;
+    const current = plan;
+    const picked = places;
+    const id = setTimeout(() => { void startFromForm(current, picked); }, 0);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `startFromForm` is re-created every render; the ref guard is what makes this run once
   }, [plan]);
   /**
    * What the POI dataset knows about the ride's stops, by name.

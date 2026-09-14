@@ -13,7 +13,7 @@ import { SuggestionsCard } from "@/components/suggestions-card";
 import { MapPanel } from "@/components/map-panel";
 import { SiteHeader } from "@/components/site-header";
 import { track } from "@/lib/analytics";
-import { sharedRouteSegments, type SharedRoute } from "@/lib/share/route-code";
+import { decodePlanPlaces, encodePlanShare, sharedRouteSegments, type SharedRoute } from "@/lib/share/route-code";
 import { isCodeSaved, removeRide, rideId, saveSharedRide } from "@/lib/share/saved-rides";
 import { gpxFilename } from "@/lib/gpx/filename";
 import { DESKTOP_QUERY } from "@/lib/use-media-query";
@@ -52,12 +52,15 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
   /**
    * The places this ride passes, loaded when the details are opened.
    *
-   * The read-only half of the result panel's Ieteikumi: someone else's ride
-   * has no plan here to regenerate, so there is no "+ Pievienot" — a shared
-   * link is a ride to look at, and the way to make it one's own is the button
-   * that already carries that meaning. Both groups are listed with their
-   * figures; nothing shows when the lookup finds nothing, which is also what
-   * happens outside the Baltics.
+   * The same Ieteikumi the result panel has, and — when the code carries a
+   * plan — with the same three actions, Pievienot included. It was read-only
+   * on the reasoning that "a shared ride has no plan to regenerate", which is
+   * wrong for the page the rider actually spends his time on: /r/<code> is
+   * where his own saved rides open, and he asked for this looking straight at
+   * one. The plan travels in the code, so there is a ride to re-plan.
+   *
+   * Both groups are listed with their figures; nothing shows when the lookup
+   * finds nothing, which is also what happens outside the Baltics.
    */
   const [pois, setPois] = useState<RoutePois | null>(null);
   const [poisLoading, setPoisLoading] = useState(false);
@@ -186,6 +189,67 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
     router.push(`/?p=${planCode}&mode=chat&from=${encodeURIComponent(code)}&ask=${encodeURIComponent(ask)}`);
   };
 
+  /**
+   * "Pievienot" on a suggestion, from a ride that is already finished.
+   *
+   * The planner's own add-stop (`addStop` in app/page.tsx) can put the new via
+   * into the plan it holds in state; this page has no planner, so the plan
+   * itself makes the trip — **re-encoded into `p`**, with the stop already in
+   * it, rather than sent as a separate `&addVia=lat,lon,name`.
+   *
+   * That choice is about app/page.tsx: `?p=` is already decoded there by
+   * `decodePlanShare` + `decodePlanPlaces`, so a plan with one more via and
+   * one more resolved place needs **no new parsing at all** — no coordinate
+   * string to split, no place to merge into `places` after the fact, no second
+   * way for a via to enter a plan. An `addVia` parameter would have added a
+   * parser, a validator and an ordering rule to the one file that has to stay
+   * simple. The URL grows by roughly the length of the place name; a plan part
+   * is a few hundred bytes against the route's own few kilobytes.
+   *
+   * Appended, not inserted, for the reason the planner appends: the place is
+   * somewhere this ride already passes near, so its position belongs to the
+   * router, and on a one-way ride the destination stays the destination.
+   */
+  const addStop = (place: { name: string; lat: number; lon: number }) => {
+    // No plan in the code (an old share link) means no button in the first
+    // place; this is the belt to that brace.
+    if (!planCode || !share.plan) return;
+    if (share.plan.viaPlaces.includes(place.name)) return;
+    // `RidePlanSchema` caps the list at six. Past that the press does nothing
+    // rather than building a plan the schema would refuse on arrival.
+    if (share.plan.viaPlaces.length >= 6) return;
+    const next = { ...share.plan, viaPlaces: [...share.plan.viaPlaces, place.name] };
+    // The coordinates travel as a picked place for the same reason the form's
+    // do: "Pilskalns" names dozens of hillforts and the one meant is the one
+    // on this map, not whatever a geocoder picks tomorrow. Any place the code
+    // already carried under this name is replaced, so the list never holds two
+    // rows claiming to be the same stop.
+    const picked = [
+      ...decodePlanPlaces(planCode).filter((p) => p.name !== place.name),
+      { name: place.name, label: place.name, lat: place.lat, lon: place.lon },
+    ];
+    track("suggestion_added", { via_count: next.viaPlaces.length, source: "shared" });
+    // `go=1` is what makes the planner generate on arrival instead of showing
+    // a filled-in form; `from` keeps this ride as the origin, so the new one
+    // knows what it was made from and the rider is asked whether it replaces
+    // it. No `mode=chat`: `startFromForm` moves to the chat itself, and saying
+    // so here would have been a second answer to the same question.
+    const p = encodePlanShare(next, picked);
+    router.push(`/?p=${encodeURIComponent(p)}&go=1&from=${encodeURIComponent(code)}`);
+  };
+
+  /**
+   * The Pievienot inside the card the map opens on a focused suggestion — the
+   * same mechanism the planner has, and the same reason the ring goes first:
+   * the ride is about to be re-planned somewhere else, and a "look at this"
+   * marker left standing would claim the place is still only a suggestion.
+   */
+  const addFocusedPoi = () => {
+    if (!focusPoi) return;
+    setFocusPoi(null);
+    addStop({ name: focusPoi.label, lat: focusPoi.lat, lon: focusPoi.lon });
+  };
+
   const downloadGpx = async () => {
     track("shared_gpx_downloaded", { km: share.km, variant: share.variant });
     const res = await fetch("/api/export-gpx", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
@@ -257,9 +321,11 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
           )}
           {/* Ieteikumi as its own block, below the route card — the same shape
               the planner has, because the rider asked for the two pages to be
-              identical here. Read-only: a shared ride has no plan of its own
-              to regenerate, so the rows offer Kartē and Vairāk and the way to
-              make the ride one's own is the button that already says so. */}
+              identical here, and now the same three actions too wherever the
+              code carries a plan. `onAdd` is simply left off when it does not
+              (an old link): a row with two buttons instead of three is the
+              whole statement, where a disabled third or an explanatory line
+              would be an apology for a limit the rider cannot act on. */}
           <div className="mt-3">
             <SuggestionsCard
               pois={pois}
@@ -267,6 +333,7 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
               expanded={poisOpen}
               onToggle={() => setPoisOpen(!poisOpen)}
               onShow={showPoi}
+              onAdd={planCode && share.plan ? addStop : undefined}
             />
           </div>
         </section>
@@ -299,7 +366,7 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
           <MapPanel
             className="h-[46dvh] overflow-hidden rounded-2xl border border-stone-200 md:h-[calc(100vh-7rem)]"
             expandedClassName="md:relative md:inset-auto md:z-auto md:h-[calc(100vh-7rem)] md:overflow-hidden md:rounded-2xl md:border md:border-stone-200">
-            <RouteMap segments={segments} start={start} destination={null} focus={focusPoi} onFocusCleared={() => setFocusPoi(null)} showTet={showTet} onToggleTet={setShowTet} />
+            <RouteMap segments={segments} start={start} destination={null} focus={focusPoi} onFocusCleared={() => setFocusPoi(null)} onFocusAdd={planCode && share.plan ? addFocusedPoi : undefined} showTet={showTet} onToggleTet={setShowTet} />
           </MapPanel>
         </div>
       </div>
