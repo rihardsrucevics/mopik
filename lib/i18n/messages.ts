@@ -255,6 +255,15 @@ export type MessageKey =
   | "resPoiOsmAria"
   | "resPoiNoDetail"
   | "resPoiOnRouteNote"
+  | "resSight"
+  | "resPoiSelectAria"
+  | "resPoiDeselectAria"
+  | "resPoiIncluded"
+  | "resRegenerateOne"
+  | "resRegenerateMany"
+  | "resSelectionClear"
+  | "resSelectionCapNote"
+  | "resSuggestFailed"
   | "kindFerry"
   | "kindFord"
   | "kindTower"
@@ -614,7 +623,7 @@ const lv: Messages = {
   resSuggestNearby: "Tuvumā",
   resSuggestLoading: "Meklēju vietas…",
   resAddStop: "Pievienot",
-  resAddStopAria: "Pievienot {place} kā pieturvietu un pārrēķināt maršrutu",
+  resAddStopAria: "Pievienot {place} kā apskates objektu un pārrēķināt maršrutu",
   resPoiShow: "Kartē",
   resPoiShowAria: "Parādīt {place} kartē",
   resPoiMore: "Vairāk",
@@ -627,6 +636,29 @@ const lv: Messages = {
   resPoiOsmAria: "Atvērt {place} OpenStreetMap kartē",
   resPoiNoDetail: "Datos par šo vietu vairāk nekā nosaukums un veids nav.",
   resPoiOnRouteNote: "Maršruts jau iet tam garām.",
+  /**
+   * "Apskates objekts", not "pieturvieta" — the rider's own correction. A
+   * stop is something you typed into the form because the ride must go
+   * there; a sight is something worth looking at that the suggestions found.
+   * The form's own stops keep `mapStop` ("Pieturvieta").
+   */
+  resSight: "Apskates objekts",
+  resPoiSelectAria: "Atzīmēt {place}",
+  resPoiDeselectAria: "Noņemt atzīmi no {place}",
+  resPoiIncluded: "iekļauts",
+  /**
+   * Latvian counts in three classes and this button meets two of them: 1
+   * takes the singular accusative ("ar 1 objektu"), everything else the
+   * plural dative ("ar 3 objektiem"). One template per class rather than a
+   * `{n} objekt{s}` fudge, because the ending changes the stem's case, not
+   * just its last letter. 11–19 take the plural form, which is what the
+   * `n === 1` test gives.
+   */
+  resRegenerateOne: "Pārģenerēt ar {n} objektu",
+  resRegenerateMany: "Pārģenerēt ar {n} objektiem",
+  resSelectionClear: "Notīrīt",
+  resSelectionCapNote: "Maršrutā var būt ne vairāk kā {max} pieturas — noņem kādu atzīmi.",
+  resSuggestFailed: "Neizdevās ielādēt ieteikumus.",
   kindFerry: "pārceltuve",
   kindFord: "brasls",
   kindTower: "skatu tornis",
@@ -968,7 +1000,7 @@ const lt: Messages = {
   resSuggestNearby: "Netoliese",
   resSuggestLoading: "Ieškau vietų…",
   resAddStop: "Pridėti",
-  resAddStopAria: "Pridėti {place} kaip sustojimą ir perskaičiuoti maršrutą",
+  resAddStopAria: "Pridėti {place} kaip lankytiną vietą ir perskaičiuoti maršrutą",
   resPoiShow: "Žemėlapyje",
   resPoiShowAria: "Parodyti {place} žemėlapyje",
   resPoiMore: "Daugiau",
@@ -981,6 +1013,17 @@ const lt: Messages = {
   resPoiOsmAria: "Atverti {place} OpenStreetMap žemėlapyje",
   resPoiNoDetail: "Duomenyse apie šią vietą nėra nieko daugiau nei pavadinimas ir tipas.",
   resPoiOnRouteNote: "Maršrutas jau pro ją eina.",
+  resSight: "Lankytina vieta",
+  resPoiSelectAria: "Pažymėti {place}",
+  resPoiDeselectAria: "Nuimti žymę nuo {place}",
+  resPoiIncluded: "įtraukta",
+  // Lithuanian splits the same way Latvian does: 1 takes the singular
+  // accusative, the rest the plural instrumental.
+  resRegenerateOne: "Perskaičiuoti su {n} vieta",
+  resRegenerateMany: "Perskaičiuoti su {n} vietomis",
+  resSelectionClear: "Išvalyti",
+  resSelectionCapNote: "Maršrute gali būti ne daugiau kaip {max} sustojimai — nuimk kurią nors žymę.",
+  resSuggestFailed: "Nepavyko įkelti pasiūlymų.",
   kindFerry: "keltas",
   kindFord: "brasta",
   kindTower: "apžvalgos bokštas",
@@ -1322,7 +1365,7 @@ const et: Messages = {
   resSuggestNearby: "Lähedal",
   resSuggestLoading: "Otsin kohti…",
   resAddStop: "Lisa",
-  resAddStopAria: "Lisa {place} peatusena ja arvuta marsruut uuesti",
+  resAddStopAria: "Lisa {place} vaatamisväärsusena ja arvuta marsruut uuesti",
   resPoiShow: "Kaardil",
   resPoiShowAria: "Näita {place} kaardil",
   resPoiMore: "Rohkem",
@@ -1335,6 +1378,17 @@ const et: Messages = {
   resPoiOsmAria: "Ava {place} OpenStreetMapis",
   resPoiNoDetail: "Andmestik ei tea selle koha kohta rohkem kui nime ja liiki.",
   resPoiOnRouteNote: "Marsruut läheb sellest juba mööda.",
+  resSight: "Vaatamisväärsus",
+  resPoiSelectAria: "Märgi {place}",
+  resPoiDeselectAria: "Eemalda märge kohalt {place}",
+  resPoiIncluded: "lisatud",
+  // Estonian needs no split — the partitive singular follows every numeral —
+  // but both keys carry the same string so every locale reads the same code.
+  resRegenerateOne: "Arvuta uuesti {n} kohaga",
+  resRegenerateMany: "Arvuta uuesti {n} kohaga",
+  resSelectionClear: "Tühjenda",
+  resSelectionCapNote: "Marsruudil võib olla kuni {max} peatust — eemalda mõni märge.",
+  resSuggestFailed: "Soovituste laadimine ebaõnnestus.",
   kindFerry: "praam",
   kindFord: "koolmekoht",
   kindTower: "vaatetorn",
@@ -1676,7 +1730,7 @@ const en: Messages = {
   resSuggestNearby: "Nearby",
   resSuggestLoading: "Looking for places…",
   resAddStop: "Add",
-  resAddStopAria: "Add {place} as a stop and plan the ride again",
+  resAddStopAria: "Add {place} as a sight and plan the ride again",
   resPoiShow: "Map",
   resPoiShowAria: "Show {place} on the map",
   resPoiMore: "More",
@@ -1689,6 +1743,15 @@ const en: Messages = {
   resPoiOsmAria: "Open {place} on OpenStreetMap",
   resPoiNoDetail: "The dataset knows nothing about this place beyond its name and kind.",
   resPoiOnRouteNote: "The ride already passes it.",
+  resSight: "Sight",
+  resPoiSelectAria: "Select {place}",
+  resPoiDeselectAria: "Deselect {place}",
+  resPoiIncluded: "included",
+  resRegenerateOne: "Regenerate with {n} sight",
+  resRegenerateMany: "Regenerate with {n} sights",
+  resSelectionClear: "Clear",
+  resSelectionCapNote: "A ride can hold at most {max} stops — clear a selection.",
+  resSuggestFailed: "Could not load suggestions.",
   kindFerry: "ferry",
   kindFord: "ford",
   kindTower: "lookout tower",

@@ -9,6 +9,7 @@ import { useLocale } from "@/lib/i18n/use-locale";
 import { messages } from "@/lib/i18n/messages";
 import { fi } from "@/lib/i18n/format";
 import type { UiLocale } from "@/lib/i18n/locale";
+import { POI_KIND } from "@/lib/poi/kinds";
 
 // Serve the MapLibre worker from /public — bundler-emitted module workers
 // 404 under the Next.js dev server, leaving the map blank.
@@ -23,7 +24,16 @@ type Props = {
    * POI dataset where the stop is a place it knows — a hillfort's marker then
    * says so, and one the rider typed by hand simply says "Pieturvieta".
    */
-  via?: { lat: number; lon: number; label: string; kind?: string; detail?: string }[];
+  via?: {
+    lat: number; lon: number; label: string; kind?: string; detail?: string;
+    /**
+     * The POI category, when this via came from a suggestion rather than from
+     * the form. It selects the glyph (`POI_KIND`) and the card's wording:
+     * a sight says "Apskates objekts", a typed stop keeps 🅿️ and
+     * "Pieturvieta". Absent on everything the rider typed.
+     */
+    category?: string;
+  }[];
   /**
    * A place the rider asked to *look at* from Ieteikumi — not a stop.
    *
@@ -34,18 +44,32 @@ type Props = {
    * re-flies and re-opens the card rather than doing nothing, and `onClear`
    * fires when the rider clicks the map or presses Escape.
    */
-  focus?: { lat: number; lon: number; label: string; kind?: string; token: number } | null;
+  focus?: {
+    lat: number; lon: number; label: string; kind?: string; token: number;
+    /** Whether this place is currently ticked, so the card can say which. */
+    picked?: boolean;
+  } | null;
   onFocusCleared?: () => void;
   /**
-   * Make the focused place a stop, from the card on the map itself.
+   * Tick or untick the focused place, from the card on the map itself.
    *
    * The rider asked for it in as many words — "kā man šos ērti pievienot
    * maršrutam?" — after browsing suggestions on the map: having flown to a
    * place and decided he wants it, going back to the list to find the row
-   * again is a step that should not exist. Absent only where there is no plan
-   * to re-plan — a share code old enough to carry none.
+   * again is a step that should not exist. It ticks rather than re-plans, so
+   * the map card and the list row mean the same thing. Absent only where there
+   * is no plan to re-plan — a share code old enough to carry none.
    */
-  onFocusAdd?: () => void;
+  onFocusToggle?: () => void;
+  /**
+   * The sights ticked but not yet ridden through.
+   *
+   * Each gets a persistent pill — the kind's glyph, ringed — so the rider can
+   * see what he has chosen spread across the route before spending a
+   * generation on it. Distinct from `focus` (one place, temporary, cleared by
+   * a click on the map) and from `via` (already part of the ride).
+   */
+  selectedPois?: { id: string; name: string; lat: number; lon: number; category: string }[];
   showTet: boolean;
   onToggleTet: (visible: boolean) => void;
 };
@@ -927,7 +951,7 @@ const STOP_ICON = "🅿️";
  * because its emoji is the point rather than an annotation, and z-indexed
  * above them: a hazard on the road under a stop should not hide the stop.
  */
-function stopElement(title: string): HTMLElement {
+function stopElement(title: string, icon: string = STOP_ICON, ringed = false): HTMLElement {
   const el = document.createElement("button");
   el.type = "button";
   el.title = title;
@@ -935,13 +959,20 @@ function stopElement(title: string): HTMLElement {
   el.style.cssText =
     "display:flex;align-items:center;justify-content:center;" +
     "width:28px;height:28px;border-radius:14px;" +
-    "background:rgba(255,255,255,0.95);box-shadow:0 1px 3px rgba(0,0,0,0.28);" +
-    "line-height:0;cursor:pointer;user-select:none;border:0;padding:0;" +
+    "background:rgba(255,255,255,0.95);" +
+    // A sight wears the brand ring, a typed stop the plain shadow: the two are
+    // different claims — "something worth looking at, found for you" against
+    // "a place you asked the ride to pass" — and the glyph alone was not
+    // enough to tell them apart at 28 px among a dozen markers.
+    (ringed
+      ? "border:2px solid #f56300;box-shadow:0 1px 3px rgba(0,0,0,0.28),0 0 0 3px rgba(245,99,0,0.18);"
+      : "box-shadow:0 1px 3px rgba(0,0,0,0.28);border:0;") +
+    "line-height:0;cursor:pointer;user-select:none;padding:0;" +
     // Above the warning badges, below nothing: a stop is a place the rider
     // asked for and must never be covered by a note about the road.
     "z-index:2";
   el.innerHTML =
-    `<span style="font-size:18px;line-height:1;display:inline-block">${STOP_ICON}</span>`;
+    `<span style="font-size:18px;line-height:1;display:inline-block">${icon}</span>`;
   return el;
 }
 
@@ -985,16 +1016,21 @@ function focusElement(): HTMLElement {
  * map. Every value that came from a tag or a translation is escaped; the
  * markup around it is ours.
  */
-function stopInfoHtml(m: Messages, stop: { label: string; kind?: string; detail?: string }): string {
+function stopInfoHtml(m: Messages, stop: { label: string; kind?: string; detail?: string; category?: string }): string {
+  // "Apskates objekts" for a place that came from the suggestions,
+  // "Pieturvieta" for one the rider typed into the form. The rider's own
+  // correction: a sight is not a stop, and calling both by the stop's word
+  // made the list of what the ride passes read as a list of errands.
+  const what = stop.category ? m.resSight : m.mapStop;
   return (
     `<div style="font-size:12px;line-height:1.5;min-width:150px">` +
     `<strong style="display:block;padding-right:24px;margin-bottom:4px">` +
     `${esc(stop.label)}</strong>` +
     (stop.kind
       ? `<div style="display:flex;gap:8px;justify-content:space-between">` +
-        `<span style="color:#6b7280">${esc(m.mapStop)}</span>` +
+        `<span style="color:#6b7280">${esc(what)}</span>` +
         `<span style="text-align:right">${esc(stop.kind)}</span></div>`
-      : `<div style="color:#6b7280">${esc(m.mapStop)}</div>`) +
+      : `<div style="color:#6b7280">${esc(what)}</div>`) +
     (stop.detail
       ? `<div style="margin-top:6px;padding-top:6px;border-top:1px solid #ececf0;color:#6b7280">` +
         `${esc(stop.detail)}</div>`
@@ -1011,7 +1047,7 @@ function stopInfoHtml(m: Messages, stop: { label: string; kind?: string; detail?
  * suggestion the rider is looking at has not joined the ride, and the row's
  * own Pievienot button is what would change that.
  */
-function focusInfoHtml(m: Messages, place: { label: string; kind?: string }, canAdd: boolean): string {
+function focusInfoHtml(m: Messages, place: { label: string; kind?: string; picked?: boolean }, canAdd: boolean): string {
   return (
     `<div style="font-size:12px;line-height:1.5;min-width:150px">` +
     `<strong style="display:block;padding-right:24px;margin-bottom:4px">` +
@@ -1030,9 +1066,13 @@ function focusInfoHtml(m: Messages, place: { label: string; kind?: string }, can
       ? `<button type="button" data-add="1" ` +
         `style="margin-top:8px;width:100%;display:flex;align-items:center;` +
         `justify-content:center;gap:4px;height:30px;border-radius:15px;` +
-        `border:1px solid #f5630040;background:#fff;color:#f56300;` +
+        // Ticked reads as filled, unticked as an outline — the same pair the
+        // list's own checkbox uses, so one glance says which state this is.
+        (place.picked
+          ? `border:1px solid #f56300;background:#f56300;color:#fff;`
+          : `border:1px solid #f5630040;background:#fff;color:#f56300;`) +
         `font-size:12px;font-weight:600;cursor:pointer;padding:0 10px">` +
-        `${esc(m.resAddStop)}</button>`
+        `${esc(place.picked ? `✓ ${m.resSelectionClear}` : m.resAddStop)}</button>`
       : "") +
     `</div>`
   );
@@ -1096,7 +1136,7 @@ const SURFACE_COLOR_EXPR: maplibregl.ExpressionSpecification = [
   SURFACE_COLORS.unknown,
 ];
 
-export function RouteMap({ segments, start, destination, via, focus, onFocusCleared, onFocusAdd, showTet, onToggleTet }: Props) {
+export function RouteMap({ segments, start, destination, via, focus, onFocusCleared, onFocusToggle, selectedPois, showTet, onToggleTet }: Props) {
   const [locale] = useLocale();
   const m = messages(locale);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1141,8 +1181,10 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
   // not mean re-attaching every map listener.
   const onFocusClearedRef = useRef(onFocusCleared);
   useEffect(() => { onFocusClearedRef.current = onFocusCleared; }, [onFocusCleared]);
-  const onFocusAddRef = useRef(onFocusAdd);
-  useEffect(() => { onFocusAddRef.current = onFocusAdd; }, [onFocusAdd]);
+  const onFocusToggleRef = useRef(onFocusToggle);
+  useEffect(() => { onFocusToggleRef.current = onFocusToggle; }, [onFocusToggle]);
+  /** The pills for the ticked sights, replaced whole whenever the set changes. */
+  const selectedMarkersRef = useRef<maplibregl.Marker[]>([]);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -1442,7 +1484,12 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
       // identical circles that said only a label, and read as decoration
       // rather than as the places the rider asked to ride through.
       viaMarkersRef.current = (via ?? []).map(place => {
-        const el = stopElement(place.label);
+        // A sight carries its own kind's glyph in a ringed pill; a typed stop
+        // keeps the 🅿️. `category` is only set where the via came from a
+        // suggestion, and an unknown category (an older share code, a dataset
+        // built after this one) falls back to the 🅿️ rather than to a blank.
+        const entry = place.category ? POI_KIND[place.category as keyof typeof POI_KIND] : undefined;
+        const el = stopElement(place.label, entry?.icon ?? STOP_ICON, Boolean(entry));
         el.addEventListener("click", (event) => {
           // Same reason the badges stop it: otherwise the click reaches the
           // map and opens the segment card underneath this one.
@@ -1513,7 +1560,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
     // `stopInfoHtml` is given no `kind` fallback to fall back to.
     const popup = new maplibregl.Popup({ offset: 20, maxWidth: "260px", closeButton: true })
       .setLngLat([focus.lon, focus.lat])
-      .setHTML(focusInfoHtml(m, focus, Boolean(onFocusAddRef.current)))
+      .setHTML(focusInfoHtml(m, focus, Boolean(onFocusToggleRef.current)))
       .addTo(map);
     infoPopupRef.current = popup;
 
@@ -1525,7 +1572,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
     popup.getElement()?.querySelector<HTMLButtonElement>("[data-add]")
       ?.addEventListener("click", (event) => {
         event.stopPropagation();
-        onFocusAddRef.current?.();
+        onFocusToggleRef.current?.();
       });
     // Closing the card with its own × is the same intent as clicking away, so
     // it goes through the one path that removes the ring and tells the parent.
@@ -1548,6 +1595,37 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
     // `m` is read for the card's words; a language change while a card is open
     // re-renders it, which is right.
   }, [focus, m]);
+
+  /**
+   * The pills for the sights the rider has ticked.
+   *
+   * Its own effect, keyed on the selection alone, so ticking a row does not
+   * disturb the route, the stops or the badges — those are rebuilt by the big
+   * `segments` effect, and folding these in there would redraw the whole map
+   * on every tick. Each is the kind's glyph in a ringed white pill: the same
+   * mark the place will wear as a via once the ride is re-planned, so the
+   * rider sees the answer before paying for it.
+   *
+   * The pill is not tappable — the ring is a statement, not a control, and
+   * the card that would open is the list row's own Vairāk. It is drawn below
+   * the ride's real stops so a ticked place can never hide one.
+   */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    for (const marker of selectedMarkersRef.current) marker.remove();
+    selectedMarkersRef.current = (selectedPois ?? []).map((poi) => {
+      const entry = POI_KIND[poi.category as keyof typeof POI_KIND];
+      const el = stopElement(poi.name, entry?.icon ?? STOP_ICON, true);
+      el.style.pointerEvents = "none";
+      el.style.zIndex = "1";
+      return new maplibregl.Marker({ element: el }).setLngLat([poi.lon, poi.lat]).addTo(map);
+    });
+    return () => {
+      for (const marker of selectedMarkersRef.current) marker.remove();
+      selectedMarkersRef.current = [];
+    };
+  }, [selectedPois]);
 
   /**
    * Pointer behaviour on the route: the badge highlight, the hover readout and

@@ -4,6 +4,7 @@ import { useCallback, useRef, useState, useEffect } from "react";
 import { RouteMap } from "@/components/route-map";
 import { RoutePrompt } from "@/components/route-prompt";
 import { ResultPanel } from "@/components/result-panel";
+import type { SelectedPoi } from "@/components/suggestions-card";
 import { InstallPrompt } from "@/components/install-prompt";
 import { MapPanel } from "@/components/map-panel";
 import { track } from "@/lib/analytics";
@@ -72,6 +73,19 @@ function stopKind(
   return kinds[label] ?? kinds[label.split("·")[0].trim()] ?? kinds[label.split(",")[0].trim()];
 }
 
+/**
+ * The POI category a via was picked with, if it came from a suggestion.
+ *
+ * Matched the way `stopKind` matches, because the router's `label` for a via
+ * is the geocoder's full string ("Gūtmaņa ala, Siguldas novads") while the
+ * picked place carries the bare name the rider ticked. Only places that were
+ * ticked carry a `kind` at all, so a typed stop never matches and keeps 🅿️.
+ */
+function pickedCategory(places: ResolvedPlace[], label: string): string | undefined {
+  const heads = [label, label.split("·")[0].trim(), label.split(",")[0].trim()];
+  return places.find((p) => p.kind && heads.some((h) => h === p.name || h === p.label))?.kind;
+}
+
 export default function Home() {
   const [entryMode, setEntryMode] = useState<"form" | "chat">("form");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -111,9 +125,50 @@ export default function Home() {
    * the same row twice flies back to it after a pan; comparing the place
    * itself would make the second press do nothing.
    */
-  const [focusPoi, setFocusPoi] = useState<{ lat: number; lon: number; label: string; kind?: string; token: number } | null>(null);
+  const [focusPoi, setFocusPoi] = useState<{
+    lat: number; lon: number; label: string; kind?: string; token: number;
+    /** The dataset row behind the ring, so the card's tick selects the same
+     *  place the list's tick does — by id, not by name. */
+    poi?: SelectedPoi;
+    /** Whether that place is currently ticked, so the card can say so. */
+    picked?: boolean;
+  } | null>(null);
   const focusTokenRef = useRef(0);
   const clearFocusPoi = useCallback(() => setFocusPoi(null), []);
+  /**
+   * The sights the rider has ticked but not yet asked for.
+   *
+   * Here rather than in the result panel for two reasons the rider can see.
+   * The map draws a marker for each, so the map's owner must own the list.
+   * And `startFromForm` calls `setResult(null)`, which unmounts the panel for
+   * the length of a generation — a selection kept inside it would be thrown
+   * away by the very press meant to act on it.
+   *
+   * Cleared when the ride it was ticked against is replaced (see
+   * `regenerateWithSelection`): the new ride has its own suggestions, and
+   * marks left over from the previous one would point at places the new
+   * route may not go near.
+   */
+  const [selectedPois, setSelectedPois] = useState<SelectedPoi[]>([]);
+  const toggleSelectPoi = useCallback((poi: SelectedPoi) => {
+    setSelectedPois((current) =>
+      current.some((p) => p.id === poi.id) ? current.filter((p) => p.id !== poi.id) : [...current, poi],
+    );
+  }, []);
+  const clearSelectedPois = useCallback(() => setSelectedPois([]), []);
+  /**
+   * Escape drops the ticks, the way it closes everything else on the page.
+   *
+   * Bound once and guarded on the list being non-empty, so the key keeps its
+   * ordinary meaning (blurring a field, closing the map's card) whenever
+   * there is no selection to clear.
+   */
+  useEffect(() => {
+    if (selectedPois.length === 0) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setSelectedPois([]); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectedPois.length]);
   /**
    * Adding the place the map card is currently showing.
    *
@@ -463,7 +518,7 @@ export default function Home() {
    * the render this press causes, and scrolling before that render leaves the
    * map moving under a rider who is already looking at it.
    */
-  function showPoi(poi: { name: string; lat: number; lon: number; category: string }) {
+  function showPoi(poi: { id: string; name: string; lat: number; lon: number; category: string }) {
     focusTokenRef.current += 1;
     const entry = POI_KIND[poi.category as keyof typeof POI_KIND];
     track("suggestion_shown", { kind: poi.category });
@@ -473,6 +528,8 @@ export default function Home() {
       label: poi.name,
       kind: entry ? ui[entry.key as keyof typeof ui] ?? poi.category : poi.category,
       token: focusTokenRef.current,
+      poi: { id: poi.id, name: poi.name, lat: poi.lat, lon: poi.lon, category: poi.category },
+      picked: selectedPois.some((p) => p.id === poi.id),
     });
     if (desktop) return;
     requestAnimationFrame(() => {
@@ -480,33 +537,69 @@ export default function Home() {
     });
   }
 
-  function addStop(place: { name: string; lat: number; lon: number }) {
-    if (busyRef.current || !plan) return;
-    if (plan.viaPlaces.some((v) => v === place.name)) return;
-    // The plan carries at most six stops (`RidePlanSchema`); past that the
-    // press does nothing rather than producing a plan the schema refuses.
-    if (plan.viaPlaces.length >= 6) return;
-    track("suggestion_added", { via_count: plan.viaPlaces.length + 1 });
-    const next: RidePlan = { ...plan, viaPlaces: [...plan.viaPlaces, place.name] };
+  /**
+   * Every ticked sight becomes a via, and the ride is planned again through
+   * all of them at once.
+   *
+   * This is the rider's own correction to the first version: adding one place
+   * re-planned the whole ride, so three places cost three generations and he
+   * could never see what the three of them did together. Now the ticks are
+   * free and this is the one press that costs a ride.
+   *
+   * Deliberately no new path: it builds the plan the form would have built
+   * with those stops typed into it and hands it to `startFromForm`, so the
+   * summary, the form the rider can go back to, the analytics and the cancel
+   * behaviour are all the ones that already exist. The coordinates travel as
+   * picked places for the same reason the form's do — "Pilskalns" is the name
+   * of dozens of hillforts, and the one meant is the one on the map, not
+   * whatever a geocoder decides — and now carry the POI kind too, so the new
+   * ride's map draws each sight with its own glyph instead of a 🅿️.
+   *
+   * Appended rather than inserted: these places are somewhere the ride already
+   * passes near, so they belong in the order the router finds, and on a
+   * one-way ride the destination stays the destination because
+   * `startFromForm` reads it from `destinationPlace`.
+   */
+  function regenerateWithSelection() {
+    if (busyRef.current || !plan || selectedPois.length === 0) return;
+    // Already-present names are dropped rather than duplicated: the rider may
+    // have ticked something a previous pass put in the ride.
+    const fresh = selectedPois.filter((p) => !plan.viaPlaces.includes(p.name));
+    if (fresh.length === 0) { setSelectedPois([]); return; }
+    // The plan carries at most six stops (`RidePlanSchema`); the card disables
+    // its own button past that, and this is the belt to that brace.
+    if (plan.viaPlaces.length + fresh.length > 6) return;
+    track("suggestion_added", { via_count: plan.viaPlaces.length + fresh.length, batch: fresh.length });
+    const next: RidePlan = { ...plan, viaPlaces: [...plan.viaPlaces, ...fresh.map((p) => p.name)] };
+    const names = new Set(fresh.map((p) => p.name));
     const picked: ResolvedPlace[] = [
-      ...places.filter((p) => p.name !== place.name),
-      { name: place.name, label: place.name, lat: place.lat, lon: place.lon },
+      ...places.filter((p) => !names.has(p.name)),
+      ...fresh.map((p) => ({ name: p.name, label: p.name, lat: p.lat, lon: p.lon, kind: p.category, poiId: p.id })),
     ];
+    // The ticks belong to the ride that is being replaced: the new one comes
+    // with its own suggestions, and these places are about to be vias rather
+    // than offers.
+    setSelectedPois([]);
+    setFocusPoi(null);
     void startFromForm(next, picked);
   }
 
   /**
-   * The Pievienot inside the card the map opens on a focused suggestion.
+   * The tick inside the card the map opens on a focused suggestion.
    *
    * The card is markup MapLibre parses from a string, so it carries no closure
-   * of its own and calls this instead. The ring and the card go first: the ride
-   * is about to be re-planned, and a "look at this" marker left standing over
-   * the new route would claim the place was still only a suggestion.
+   * of its own and calls this instead. It ticks rather than re-plans, because
+   * the map card and the list row are two views of the same offer and must
+   * mean the same thing — the rider who rings a place on the map and ticks it
+   * there should find it ticked in the list, and pay for the ride once.
+   *
+   * The ring stays: the place is now marked, and the marker is the answer to
+   * "did that work?". The card's own label is re-rendered through `picked`.
    */
-  function addFocusedPoi() {
-    if (!focusPoi) return;
-    setFocusPoi(null);
-    addStop({ name: focusPoi.label, lat: focusPoi.lat, lon: focusPoi.lon });
+  function toggleFocusedPoi() {
+    if (!focusPoi?.poi) return;
+    toggleSelectPoi(focusPoi.poi);
+    setFocusPoi((current) => (current ? { ...current, picked: !current.picked } : current));
   }
 
   async function retryLast() {
@@ -605,7 +698,18 @@ export default function Home() {
   // than being a fresh guess at what the names mean.
   const routedPlaces: ResolvedPlace[] | null = result
     ? [result.start, ...(result.via ?? []), ...(result.destination ? [result.destination] : [])]
-        .map((p) => ({ name: p.label, label: p.label, lat: p.lat, lon: p.lon }))
+        .map((p) => {
+          // The POI kind is carried over from the picked place, so a ride
+          // saved or shared reopens with its sights still drawn as sights.
+          // Without this the share code's `pl` rows all come back four
+          // elements long — the coordinates survive the trip and the kind
+          // does not, and a reopened ride shows 🅿️ on a waterfall.
+          const picked = places.find((q) => q.kind && (q.name === p.label || q.label === p.label));
+          return {
+            name: p.label, label: p.label, lat: p.lat, lon: p.lon,
+            ...(picked ? { kind: picked.kind, poiId: picked.poiId } : {}),
+          };
+        })
     : null;
   // One map, two homes. On a desktop it is the sticky right column; on a phone
   // it belongs inside the ride block, under the places it confirms — above the
@@ -634,11 +738,23 @@ export default function Home() {
         // a stop, which is what the old `slice(1)` assumed for both shapes.
         destination={result?.destination ?? (!previewRoundTrip && previewPlaces.length > 1 ? previewPlaces[previewPlaces.length - 1] : null)}
         via={result
-          ? (result.via ?? []).map((v) => ({ ...v, ...((stopInfo.forResult === result ? stopKind(stopInfo.kinds, v.label) : undefined) ?? {}) }))
+          ? (result.via ?? []).map((v) => ({
+              ...v,
+              ...((stopInfo.forResult === result ? stopKind(stopInfo.kinds, v.label) : undefined) ?? {}),
+              // The POI category behind this via, when it came from a
+              // suggestion: the marker then carries the sight's own glyph
+              // instead of the 🅿️ that means "a stop you typed". Read from
+              // the picked places rather than from `stopInfo`, because that
+              // map is keyed by name and holds every place *near* the ride —
+              // a village the route merely passes would otherwise steal a
+              // typed stop's pill.
+              ...(pickedCategory(places, v.label) ? { category: pickedCategory(places, v.label) } : {}),
+            }))
           : previewRoundTrip ? previewPlaces.slice(1) : previewPlaces.slice(1, -1)}
         focus={focusPoi}
         onFocusCleared={clearFocusPoi}
-        onFocusAdd={addFocusedPoi}
+        onFocusToggle={toggleFocusedPoi}
+        selectedPois={selectedPois}
         showTet={showTet} onToggleTet={setShowTet} />
     </MapPanel>
   );
@@ -665,7 +781,7 @@ export default function Home() {
           {entryMode === "form"
             ? <RideComposer key={plan ? planSummary(plan, locale) : "new"} initialPlan={plan} initialPlaces={places} profile={profile} onProfileChange={changeProfile} busy={phase !== "idle"} onGenerate={startFromForm} onUseChat={() => setEntryMode("chat")} onPlacesChange={(p, tripType) => { setPreviewPlaces(p); setPreviewRoundTrip(tripType === "round_trip"); }} map={mapInComposer && mapVisible ? mapPanel : undefined} />
             : result && result.routes.length > 0 && !chatting
-              ? <ResultPanel routes={result.routes} selected={selected} onSelect={setSelected} plan={plan} avoidTowns={result.intent.avoidTowns ?? false} lucky={lucky} remoteLoop={result.remoteLoop} longerSuggestion={result.longerSuggestion} tolerancePercent={result.intent.distanceTolerancePercent} busy={phase !== "idle"} onSend={send} onBackToForm={() => setEntryMode("form")} map={mapInResult && mapVisible ? mapPanel : undefined} resolvedPlaces={routedPlaces} alternatives={result.alternatives} sparsePlaceData={result.sparsePlaceData} assembledFromSegments={result.assembledFromSegments} offset={variantOffset} onOffsetChange={setVariantOffset} onAddStop={addStop} onShowPoi={showPoi} onPoisLoaded={notePois} />
+              ? <ResultPanel routes={result.routes} selected={selected} onSelect={setSelected} plan={plan} avoidTowns={result.intent.avoidTowns ?? false} lucky={lucky} remoteLoop={result.remoteLoop} longerSuggestion={result.longerSuggestion} tolerancePercent={result.intent.distanceTolerancePercent} busy={phase !== "idle"} onSend={send} onBackToForm={() => setEntryMode("form")} map={mapInResult && mapVisible ? mapPanel : undefined} resolvedPlaces={routedPlaces} alternatives={result.alternatives} sparsePlaceData={result.sparsePlaceData} assembledFromSegments={result.assembledFromSegments} offset={variantOffset} onOffsetChange={setVariantOffset} onShowPoi={showPoi} onPoisLoaded={notePois} selectedPois={selectedPois} onToggleSelectPoi={toggleSelectPoi} onClearSelectedPois={clearSelectedPois} onRegenerateWithSelection={regenerateWithSelection} />
               : <RoutePrompt messages={messages} plan={plan} hasRoute={Boolean(route)} phase={phase} quickReplies={quickReplies} lucky={lucky && !route} onSend={send} onBackToForm={() => setEntryMode("form")} originCode={origin?.code ?? null} onAction={(action) => { if (action === "retry") { retryLast(); return; } setChatting(false); setQuickReplies([]); }} onCancel={cancel} />}
           {/* A ride that came from editing another one. Asked once, here,
               because only the rider knows whether the original is still

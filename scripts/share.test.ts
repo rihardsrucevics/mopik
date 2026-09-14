@@ -110,3 +110,39 @@ test("resolved places ride along, so an edited route is not geocoded again", () 
   assert.deepEqual(decodePlanPlaces(encodePlanShare(plan)), []);
   assert.deepEqual(decodePlanPlaces("nonsense"), []);
 });
+
+test("a sight's kind survives the trip, and a typed stop stays typed", () => {
+  const plan = RidePlanSchema.parse({
+    startPlace: "Sigulda", viaPlaces: ["Gūtmaņa ala", "Turaida"], destinationPlace: null, directionPlace: null,
+    returnToStart: true, budget: { mode: "flexible", value: null, constraint: "target", minimumValue: null },
+    difficulty: "adventure", rideStyle: "explore", gravelPreference: 60, trailPreference: "some",
+    accessPolicy: "allow_unverified", preferForest: true, noSand: false, avoidTowns: false,
+    avoidMainRoads: false, includeTet: false, includeSightseeing: true,
+  });
+  const places = [
+    // Typed into the form: no kind, so the map keeps its 🅿️.
+    { name: "Turaida", label: "Turaida", lat: 57.18333, lon: 24.85 },
+    // Ticked in Ieteikumi: carries the POI category and the OSM id.
+    { name: "Gūtmaņa ala", label: "Gūtmaņa ala", lat: 57.1762, lon: 24.84236, kind: "waterfall", poiId: "n249778754" },
+  ];
+  const back = decodePlanPlaces(encodePlanShare(plan, places));
+  assert.equal(back.length, 2);
+
+  const typed = back.find((p) => p.name === "Turaida")!;
+  assert.equal(typed.kind, undefined, "a typed stop carries no kind");
+  assert.equal(typed.poiId, undefined);
+
+  const sight = back.find((p) => p.name === "Gūtmaņa ala")!;
+  assert.equal(sight.kind, "waterfall");
+  assert.equal(sight.poiId, "n249778754");
+  assert.ok(Math.abs(sight.lat - 57.1762) < 1e-5);
+  assert.ok(Math.abs(sight.lon - 24.84236) < 1e-5);
+
+  // The plan still decodes, and both vias are still in it.
+  assert.deepEqual(decodePlanShare(encodePlanShare(plan, places))?.viaPlaces, ["Gūtmaņa ala", "Turaida"]);
+
+  // A code written before sights carried a kind — four elements per row — must
+  // still decode, with every place reading as typed.
+  const legacy = encodePlanShare(plan, places.map(({ name, label, lat, lon }) => ({ name, label, lat, lon })));
+  assert.deepEqual(decodePlanPlaces(legacy).map((p) => p.kind), [undefined, undefined]);
+});

@@ -273,7 +273,16 @@ export function encodePlanShare(plan: RidePlan, places?: ResolvedPlace[] | null)
     pf: plan.preferForest, am: plan.avoidMainRoads, si: plan.includeSightseeing, su: plan.surroundings,
   };
   if (places?.length) {
-    compact.pl = places.map((p) => [p.name, p.label, Number(p.lat.toFixed(5)), Number(p.lon.toFixed(5))]);
+    // Two extra slots, appended, and only when the place has them: a place
+    // that came from a suggestion carries its POI kind and OSM id so the
+    // reopened ride draws the sight's own glyph instead of the 🅿️ every
+    // typed stop gets. A four-element row is a typed stop, which is exactly
+    // what every code written before this decodes to.
+    compact.pl = places.map((p) => {
+      const row: (string | number)[] = [p.name, p.label, Number(p.lat.toFixed(5)), Number(p.lon.toFixed(5))];
+      if (p.kind) row.push(p.kind, p.poiId ?? "");
+      return row;
+    });
   }
   return toBase64Url(JSON.stringify(compact));
 }
@@ -288,9 +297,15 @@ export function decodePlanPlaces(code: string): ResolvedPlace[] {
     const c = JSON.parse(fromBase64Url(code));
     if (!Array.isArray(c.pl)) return [];
     return c.pl
-      .filter((p: unknown): p is [string, string, number, number] =>
+      .filter((p: unknown): p is [string, string, number, number, string?, string?] =>
         Array.isArray(p) && typeof p[0] === "string" && Number.isFinite(p[2]) && Number.isFinite(p[3]))
-      .map(([name, label, lat, lon]: [string, string, number, number]) => ({ name, label: label || name, lat, lon }));
+      .map(([name, label, lat, lon, kind, poiId]: [string, string, number, number, string?, string?]) => ({
+        name, label: label || name, lat, lon,
+        // Absent on every four-element row, which is every code written before
+        // sights carried their kind — and every typed stop since.
+        ...(typeof kind === "string" && kind ? { kind } : {}),
+        ...(typeof poiId === "string" && poiId ? { poiId } : {}),
+      }));
   } catch {
     return [];
   }

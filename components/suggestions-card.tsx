@@ -1,11 +1,22 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, ChevronUp, ExternalLink, Info, MapPin, Plus } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, ExternalLink, Info, MapPin } from "lucide-react";
 import { useLocale } from "@/lib/i18n/use-locale";
 import { messages } from "@/lib/i18n/messages";
 import { fi } from "@/lib/i18n/format";
 import { POI_KIND, osmUrl, type RoutePoi, type RoutePois } from "@/lib/poi/kinds";
+
+/** The plan's own cap (`RidePlanSchema` maxes `viaPlaces` at six). */
+export const MAX_VIAS = 6;
+
+/**
+ * A place the rider has ticked, in the shape the pages need to make it a via.
+ *
+ * `id` is the dataset's OSM id and the identity the card selects on — two
+ * hillforts can share a name, and the rider who ticks both means both.
+ */
+export type SelectedPoi = { id: string; name: string; lat: number; lon: number; category: string };
 
 /**
  * Ieteikumi: its own block under the route card, never inside Detaļas.
@@ -21,34 +32,66 @@ import { POI_KIND, osmUrl, type RoutePoi, type RoutePois } from "@/lib/poi/kinds
  * One component for both the planner and the shared-route page, for the same
  * reason `RouteActionRow` is one: the rider asked for the two pages to look
  * identical here, and two copies of a list drifted apart the moment one was
- * touched. `onAdd` decides whether a row can change the ride, and both pages
- * pass it whenever there is a plan to re-plan — /r/<code> is where the rider's
- * own saved rides open, so "a shared ride is someone else's" was never true of
- * the page he uses. Only a share code old enough to carry no plan leaves it
- * off, and then the rows simply offer Kartē and Vairāk.
+ * touched. `onRegenerate` decides whether a row can change the ride, and both
+ * pages pass it whenever there is a plan to re-plan — /r/<code> is where the
+ * rider's own saved rides open, so "a shared ride is someone else's" was never
+ * true of the page he uses. Only a share code old enough to carry no plan
+ * leaves it off, and then the rows simply offer Kartē and Vairāk.
+ *
+ * ## Ticking, not adding
+ *
+ * The "+" used to re-plan the whole ride on the spot, which the rider called
+ * slow and inconvenient: every place he wanted cost a full generation, and he
+ * could not see what three of them would do together. Now the control is a
+ * checkbox and the regeneration is one button at the bottom — he goes down
+ * the list, ticks what he likes, and asks for the ride once. The selection is
+ * owned by the page (so closing and reopening the card keeps it, and the map
+ * can draw a marker for each), which is why it arrives as props rather than
+ * living here.
  */
-export function SuggestionsCard({ pois, loading, expanded, onToggle, onShow, onAdd, busy }: {
+export function SuggestionsCard({
+  pois, loading, failed = false, expanded, onToggle, onShow,
+  selected = [], onToggleSelect, onClearSelection, onRegenerate, viaCount = 0, includedNames = [], busy,
+}: {
   /** null until the first expand has answered; both lists may be empty. */
   pois: RoutePois | null;
   loading: boolean;
+  /** The lookup answered with an error. Says so, rather than hiding the card. */
+  failed?: boolean;
   expanded: boolean;
   onToggle: () => void;
   /** Fly the map to a place and ring it. Absent where there is no map to fly. */
   onShow?: (poi: RoutePoi) => void;
-  /** Make it a stop and plan the ride again. Nearby rows only. */
-  onAdd?: (place: { name: string; lat: number; lon: number }) => void;
+  /** The ticked places, by dataset id. Owned by the page, not by this card. */
+  selected?: SelectedPoi[];
+  /** Tick or untick one row. Absent where the ride cannot be re-planned. */
+  onToggleSelect?: (poi: SelectedPoi) => void;
+  onClearSelection?: () => void;
+  /** Append every ticked place as a via and plan the ride again. */
+  onRegenerate?: () => void;
+  /** Vias the ride already has, so the cap can be judged before the press. */
+  viaCount?: number;
+  /** Names of places this ride already passes as vias: they show "iekļauts". */
+  includedNames?: string[];
   busy?: boolean;
 }) {
   const [locale] = useLocale();
   const m = messages(locale);
   const count = pois ? pois.onRoute.length + pois.nearby.length : 0;
+  const selectedIds = new Set(selected.map((s) => s.id));
+  const included = new Set(includedNames);
+  // Six is the plan's own ceiling, so the button is judged against what the
+  // ride already carries plus what is ticked — not against the ticks alone.
+  const overCap = viaCount + selected.length > MAX_VIAS;
 
   // Nothing to offer is not a card. Before the first expand there is no answer
   // yet, so the header is shown on the promise that a ride usually has places
   // near it; once the lookup has answered with nothing — which is every ride
   // outside the Baltics until item 8 lands — the block goes away rather than
-  // standing there as a heading with an empty inside.
-  if (pois && count === 0) return null;
+  // standing there as a heading with an empty inside. A *failed* lookup is not
+  // the same statement as an empty one and keeps its card: the rider is told
+  // it did not load, instead of being quietly shown a ride with no sights.
+  if (pois && count === 0 && !failed) return null;
 
   return (
     <div className="rounded-xl border border-stone-200">
@@ -69,22 +112,65 @@ export function SuggestionsCard({ pois, loading, expanded, onToggle, onShow, onA
         </span>
         {expanded ? <ChevronUp className="size-3.5 shrink-0 text-stone-500" /> : <ChevronDown className="size-3.5 shrink-0 text-stone-500" />}
       </button>
+      {expanded && failed && !pois && (
+        <p role="status" className="border-t border-stone-100 px-3 py-2 text-[11px] text-stone-500">{m.resSuggestFailed}</p>
+      )}
       {expanded && pois && (
-        <div className="space-y-2 border-t border-stone-100 px-3 pb-3 pt-2">
-          {pois.onRoute.length > 0 && (
-            <div>
-              <div className="mb-0.5 text-[10px] font-medium uppercase tracking-wider text-stone-400">{m.resSuggestOnRoute}</div>
-              {pois.onRoute.map((p) => (
-                <PoiRow key={p.id} poi={p} m={m} onRoute onShow={onShow} />
-              ))}
-            </div>
-          )}
-          {pois.nearby.length > 0 && (
-            <div>
-              <div className="mb-0.5 text-[10px] font-medium uppercase tracking-wider text-stone-400">{m.resSuggestNearby}</div>
-              {pois.nearby.map((p) => (
-                <PoiRow key={p.id} poi={p} m={m} onShow={onShow} onAdd={onAdd} busy={busy} />
-              ))}
+        /* The list scrolls inside the card on a phone so the action bar below
+           it stays put — the rider ticks something near the bottom of a long
+           list and the button is still there. `max-h` only bites when the list
+           is long enough to need it; on a desktop the column is tall enough
+           that it rarely does. */
+        <div className="border-t border-stone-100">
+          <div className="max-h-[52vh] space-y-2 overflow-y-auto px-3 pb-3 pt-2 md:max-h-none md:overflow-visible">
+            {pois.onRoute.length > 0 && (
+              <div>
+                <div className="mb-0.5 text-[10px] font-medium uppercase tracking-wider text-stone-400">{m.resSuggestOnRoute}</div>
+                {pois.onRoute.map((p) => (
+                  <PoiRow key={p.id} poi={p} m={m} onRoute onShow={onShow} included={included.has(p.name)} />
+                ))}
+              </div>
+            )}
+            {pois.nearby.length > 0 && (
+              <div>
+                <div className="mb-0.5 text-[10px] font-medium uppercase tracking-wider text-stone-400">{m.resSuggestNearby}</div>
+                {pois.nearby.map((p) => (
+                  <PoiRow
+                    key={p.id} poi={p} m={m} onShow={onShow} busy={busy}
+                    included={included.has(p.name)}
+                    selected={selectedIds.has(p.id)}
+                    onToggleSelect={onToggleSelect}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+          {selected.length > 0 && onRegenerate && (
+            /* Sticky so it survives the list's own scroll on a phone. The
+               count is in the label rather than beside it: "Pārģenerēt ar 3
+               objektiem" is the whole sentence, and a bare number next to a
+               verb reads as a badge. */
+            <div className="sticky bottom-0 space-y-1.5 rounded-b-xl border-t border-stone-200 bg-white/95 px-3 py-2 backdrop-blur">
+              {overCap && (
+                <p role="status" className="text-[11px] leading-snug text-stone-500">{fi(m.resSelectionCapNote, { max: MAX_VIAS })}</p>
+              )}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={onRegenerate}
+                  disabled={busy || overCap}
+                  className="flex h-9 flex-1 items-center justify-center rounded-full bg-[#f56300] px-3 text-xs font-semibold text-white transition hover:bg-[#d85600] disabled:opacity-40"
+                >
+                  {fi(selected.length === 1 ? m.resRegenerateOne : m.resRegenerateMany, { n: selected.length })}
+                </button>
+                <button
+                  type="button"
+                  onClick={onClearSelection}
+                  className="h-9 shrink-0 rounded-full px-3 text-xs font-medium text-stone-500 transition hover:bg-stone-100 hover:text-stone-900"
+                >
+                  {m.resSelectionClear}
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -103,7 +189,7 @@ function offFigure(meters: number): string {
 
 /**
  * One suggestion, with the three things the rider asked to be able to do with
- * it: look at it on the map, read what is known about it, add it to the ride.
+ * it: look at it on the map, read what is known about it, put it in the ride.
  *
  * The actions are icons rather than words because there are three of them on
  * a row that already carries a name, a kind and a figure — measured at 390 px,
@@ -111,16 +197,21 @@ function offFigure(meters: number): string {
  * carries an aria-label from the dictionary, so the words are there for a
  * screen reader and in the tooltip.
  *
- * A row in "Trasē" gets no Pievienot: the ride is already going there, and a
- * button that would silently do nothing is worse than no button. Vairāk says
- * so in words when it is opened.
+ * A row in "Trasē" gets no tick: the ride is already going there, and a
+ * control that would silently do nothing is worse than no control. Vairāk says
+ * so in words when it is opened. A row the ride *already stops at* — one the
+ * rider ticked on a previous pass — says "iekļauts" instead, which is the one
+ * thing the list could not say before.
  */
-function PoiRow({ poi, m, onRoute = false, onShow, onAdd, busy }: {
+function PoiRow({ poi, m, onRoute = false, onShow, selected = false, onToggleSelect, included = false, busy }: {
   poi: RoutePoi;
   m: ReturnType<typeof messages>;
   onRoute?: boolean;
   onShow?: (poi: RoutePoi) => void;
-  onAdd?: (place: { name: string; lat: number; lon: number }) => void;
+  selected?: boolean;
+  onToggleSelect?: (poi: SelectedPoi) => void;
+  /** This place is already a via of the current ride. */
+  included?: boolean;
   busy?: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -129,7 +220,7 @@ function PoiRow({ poi, m, onRoute = false, onShow, onAdd, busy }: {
   const figure = onRoute ? `${poi.alongKm} km` : offFigure(poi.distanceMeters);
 
   return (
-    <div className="border-b border-stone-100 py-1 last:border-b-0">
+    <div className={`border-b border-stone-100 py-1 last:border-b-0 ${selected ? "-mx-1 rounded-lg bg-[#fff3ea] px-1" : ""}`}>
       <div className="flex items-center gap-2 text-xs">
         <span aria-hidden="true" className="shrink-0 text-[12px] leading-none">{kind.icon}</span>
         <span className="min-w-0 flex-1 truncate">
@@ -139,6 +230,9 @@ function PoiRow({ poi, m, onRoute = false, onShow, onAdd, busy }: {
         </span>
         <span className="shrink-0 tabular-nums text-[11px] text-stone-500">{figure}</span>
         <div className="flex shrink-0 items-center gap-0.5">
+          {included && (
+            <span className="shrink-0 rounded-full bg-[#fff3ea] px-1.5 py-0.5 text-[10px] font-medium text-[#bd4b00]">{m.resPoiIncluded}</span>
+          )}
           {onShow && (
             <button
               type="button"
@@ -160,16 +254,24 @@ function PoiRow({ poi, m, onRoute = false, onShow, onAdd, busy }: {
           >
             <Info className="size-3.5" />
           </button>
-          {onAdd && (
+          {/* A place the ride already visits offers no tick: ticking it again
+              would ask for a via it already has. Kartē and Vairāk stay. */}
+          {onToggleSelect && !included && (
             <button
               type="button"
-              onClick={() => onAdd({ name: poi.name, lat: poi.lat, lon: poi.lon })}
+              role="checkbox"
+              aria-checked={selected}
+              onClick={() => onToggleSelect({ id: poi.id, name: poi.name, lat: poi.lat, lon: poi.lon, category: poi.category })}
               disabled={busy}
-              aria-label={fi(m.resAddStopAria, { place: poi.name })}
-              title={fi(m.resAddStopAria, { place: poi.name })}
-              className="flex size-7 items-center justify-center rounded-full text-[#f56300] transition hover:bg-[#f5630012] disabled:opacity-40"
+              aria-label={fi(selected ? m.resPoiDeselectAria : m.resPoiSelectAria, { place: poi.name })}
+              title={fi(selected ? m.resPoiDeselectAria : m.resPoiSelectAria, { place: poi.name })}
+              className={`flex size-7 items-center justify-center rounded-full border transition disabled:opacity-40 ${
+                selected
+                  ? "border-[#f56300] bg-[#f56300] text-white"
+                  : "border-stone-300 text-transparent hover:border-[#f56300] hover:text-[#f5630055]"
+              }`}
             >
-              <Plus className="size-3.5" />
+              <Check className="size-3.5" strokeWidth={3} />
             </button>
           )}
         </div>

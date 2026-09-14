@@ -9,7 +9,7 @@ import { ArrowUp, Download } from "lucide-react";
 import { RouteActionRow } from "@/components/action-row";
 import { RouteMap } from "@/components/route-map";
 import { POI_KIND, type RoutePoi, type RoutePois } from "@/lib/poi/kinds";
-import { SuggestionsCard } from "@/components/suggestions-card";
+import { SuggestionsCard, type SelectedPoi } from "@/components/suggestions-card";
 import { MapPanel } from "@/components/map-panel";
 import { SiteHeader } from "@/components/site-header";
 import { track } from "@/lib/analytics";
@@ -64,6 +64,8 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
    */
   const [pois, setPois] = useState<RoutePois | null>(null);
   const [poisLoading, setPoisLoading] = useState(false);
+  /** The lookup errored rather than answering empty — said, not hidden. */
+  const [poisFailed, setPoisFailed] = useState(false);
   // Its own expandable, exactly as on the planner: the route's facts belong to
   // Detaļas and the suggestions are a separate, optional offer. Sharing one
   // toggle would have made opening the numbers fetch a list nobody asked for.
@@ -74,8 +76,24 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
    * the list: the map is what has to move. `token` rises per press so pressing
    * the same row twice flies back to it after a pan.
    */
-  const [focusPoi, setFocusPoi] = useState<{ lat: number; lon: number; label: string; kind?: string; token: number } | null>(null);
+  const [focusPoi, setFocusPoi] = useState<{
+    lat: number; lon: number; label: string; kind?: string; token: number;
+    poi?: SelectedPoi; picked?: boolean;
+  } | null>(null);
   const focusTokenRef = useRef(0);
+  /**
+   * The sights ticked on this page, exactly as on the planner.
+   *
+   * The rider's correction applies here too — /r/<code> is where his own saved
+   * rides open, so "go through the list, tick several, then ask" has to mean
+   * the same thing on both pages.
+   */
+  const [selectedPois, setSelectedPois] = useState<SelectedPoi[]>([]);
+  const toggleSelectPoi = (poi: SelectedPoi) => {
+    setSelectedPois((current) =>
+      current.some((p) => p.id === poi.id) ? current.filter((p) => p.id !== poi.id) : [...current, poi],
+    );
+  };
   const showPoi = (poi: RoutePoi) => {
     focusTokenRef.current += 1;
     const entry = POI_KIND[poi.category];
@@ -84,6 +102,8 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
       lat: poi.lat, lon: poi.lon, label: poi.name,
       kind: entry ? m[entry.key as keyof typeof m] ?? poi.category : poi.category,
       token: focusTokenRef.current,
+      poi: { id: poi.id, name: poi.name, lat: poi.lat, lon: poi.lon, category: poi.category },
+      picked: selectedPois.some((p) => p.id === poi.id),
     });
     // The map is the page's other column on a desktop and the block above the
     // card on a phone, where it can easily be scrolled past by the time the
@@ -142,12 +162,19 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
       body: JSON.stringify({ geometry: { coordinates: share.points }, locale }),
       signal: controller.signal,
     })
-      .then((r) => (r.ok ? r.json() : null))
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
       .then((data: RoutePois | null) => {
-        if (data) setPois({ onRoute: data.onRoute ?? [], nearby: data.nearby ?? [] });
+        if (!data) throw new Error("empty");
+        setPois({ onRoute: data.onRoute ?? [], nearby: data.nearby ?? [] });
       })
-      .catch(() => {})
-      .finally(() => setPoisLoading(false));
+      .catch((err: unknown) => {
+        if (controller.signal.aborted || (err instanceof DOMException && err.name === "AbortError")) return;
+        // Reopening the card asks again, so a failed load is recoverable
+        // without reloading the page.
+        askedRef.current = false;
+        setPoisFailed(true);
+      })
+      .finally(() => { if (!controller.signal.aborted) setPoisLoading(false); });
     return () => controller.abort();
   }, [poisOpen, share.points, locale]);
   const start = { lat: share.points[0][1], lon: share.points[0][0] };
@@ -210,25 +237,28 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
    * somewhere this ride already passes near, so its position belongs to the
    * router, and on a one-way ride the destination stays the destination.
    */
-  const addStop = (place: { name: string; lat: number; lon: number }) => {
+  const regenerateWithSelection = () => {
     // No plan in the code (an old share link) means no button in the first
     // place; this is the belt to that brace.
-    if (!planCode || !share.plan) return;
-    if (share.plan.viaPlaces.includes(place.name)) return;
+    if (!planCode || !share.plan || selectedPois.length === 0) return;
+    const fresh = selectedPois.filter((p) => !share.plan!.viaPlaces.includes(p.name));
+    if (fresh.length === 0) { setSelectedPois([]); return; }
     // `RidePlanSchema` caps the list at six. Past that the press does nothing
     // rather than building a plan the schema would refuse on arrival.
-    if (share.plan.viaPlaces.length >= 6) return;
-    const next = { ...share.plan, viaPlaces: [...share.plan.viaPlaces, place.name] };
+    if (share.plan.viaPlaces.length + fresh.length > 6) return;
+    const next = { ...share.plan, viaPlaces: [...share.plan.viaPlaces, ...fresh.map((p) => p.name)] };
     // The coordinates travel as a picked place for the same reason the form's
     // do: "Pilskalns" names dozens of hillforts and the one meant is the one
     // on this map, not whatever a geocoder picks tomorrow. Any place the code
     // already carried under this name is replaced, so the list never holds two
-    // rows claiming to be the same stop.
+    // rows claiming to be the same stop. The POI kind rides along so the new
+    // ride draws each sight with its own glyph instead of a 🅿️.
+    const names = new Set(fresh.map((p) => p.name));
     const picked = [
-      ...decodePlanPlaces(planCode).filter((p) => p.name !== place.name),
-      { name: place.name, label: place.name, lat: place.lat, lon: place.lon },
+      ...decodePlanPlaces(planCode).filter((p) => !names.has(p.name)),
+      ...fresh.map((p) => ({ name: p.name, label: p.name, lat: p.lat, lon: p.lon, kind: p.category, poiId: p.id })),
     ];
-    track("suggestion_added", { via_count: next.viaPlaces.length, source: "shared" });
+    track("suggestion_added", { via_count: next.viaPlaces.length, source: "shared", batch: fresh.length });
     // `go=1` is what makes the planner generate on arrival instead of showing
     // a filled-in form; `from` keeps this ride as the origin, so the new one
     // knows what it was made from and the rider is asked whether it replaces
@@ -244,10 +274,10 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
    * the ride is about to be re-planned somewhere else, and a "look at this"
    * marker left standing would claim the place is still only a suggestion.
    */
-  const addFocusedPoi = () => {
-    if (!focusPoi) return;
-    setFocusPoi(null);
-    addStop({ name: focusPoi.label, lat: focusPoi.lat, lon: focusPoi.lon });
+  const toggleFocusedPoi = () => {
+    if (!focusPoi?.poi) return;
+    toggleSelectPoi(focusPoi.poi);
+    setFocusPoi((current) => (current ? { ...current, picked: !current.picked } : current));
   };
 
   const downloadGpx = async () => {
@@ -330,10 +360,16 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
             <SuggestionsCard
               pois={pois}
               loading={poisLoading}
+              failed={poisFailed}
               expanded={poisOpen}
               onToggle={() => setPoisOpen(!poisOpen)}
               onShow={showPoi}
-              onAdd={planCode && share.plan ? addStop : undefined}
+              selected={selectedPois}
+              onToggleSelect={planCode && share.plan ? toggleSelectPoi : undefined}
+              onClearSelection={() => setSelectedPois([])}
+              onRegenerate={planCode && share.plan ? regenerateWithSelection : undefined}
+              viaCount={share.plan?.viaPlaces.length ?? 0}
+              includedNames={share.plan?.viaPlaces ?? []}
             />
           </div>
         </section>
@@ -366,7 +402,7 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
           <MapPanel
             className="h-[46dvh] overflow-hidden rounded-2xl border border-stone-200 md:h-[calc(100vh-7rem)]"
             expandedClassName="md:relative md:inset-auto md:z-auto md:h-[calc(100vh-7rem)] md:overflow-hidden md:rounded-2xl md:border md:border-stone-200">
-            <RouteMap segments={segments} start={start} destination={null} focus={focusPoi} onFocusCleared={() => setFocusPoi(null)} onFocusAdd={planCode && share.plan ? addFocusedPoi : undefined} showTet={showTet} onToggleTet={setShowTet} />
+            <RouteMap segments={segments} start={start} destination={null} focus={focusPoi} onFocusCleared={() => setFocusPoi(null)} onFocusToggle={planCode && share.plan ? toggleFocusedPoi : undefined} selectedPois={selectedPois} showTet={showTet} onToggleTet={setShowTet} />
           </MapPanel>
         </div>
       </div>

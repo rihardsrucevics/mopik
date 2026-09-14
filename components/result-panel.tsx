@@ -15,7 +15,7 @@ import { isSaved, removeRide, rideId, saveRide } from "@/lib/share/saved-rides";
 import { gpxFilename } from "@/lib/gpx/filename";
 import { RouteActionRow } from "@/components/action-row";
 import { type RoutePoi, type RoutePois } from "@/lib/poi/kinds";
-import { SuggestionsCard } from "@/components/suggestions-card";
+import { SuggestionsCard, type SelectedPoi } from "@/components/suggestions-card";
 
 /**
  * The left column once routes exist: what was asked, the three versions,
@@ -68,7 +68,7 @@ function Row({ label, value, icon }: { label: string; value: string; icon?: stri
   );
 }
 
-export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, remoteLoop, longerSuggestion, tolerancePercent = 20, busy, onSend, onBackToForm, resolvedPlaces, alternatives, offset, onOffsetChange, map, sparsePlaceData = false, assembledFromSegments = false, onAddStop, onShowPoi, onPoisLoaded }: {
+export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, remoteLoop, longerSuggestion, tolerancePercent = 20, busy, onSend, onBackToForm, resolvedPlaces, alternatives, offset, onOffsetChange, map, sparsePlaceData = false, assembledFromSegments = false, onShowPoi, onPoisLoaded, selectedPois = [], onToggleSelectPoi, onClearSelectedPois, onRegenerateWithSelection }: {
   routes: GeneratedRoute[];
   /** transit → loop → transit split, when the ride was built around a focus area */
   remoteLoop?: GenerateRouteResponse["remoteLoop"];
@@ -117,14 +117,18 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
   sparsePlaceData?: boolean;
   assembledFromSegments?: boolean;
   /**
-   * Make a suggested place a via point and plan the ride again through it.
+   * The sights the rider has ticked, and the controls that change that set.
    *
-   * This is how a stop comes into a ride from the map rather than from the
-   * form: the page adds the name to the plan's `viaPlaces`, adds its
-   * coordinates to the picked places so it is never geocoded into a different
-   * place of the same name, and re-runs the same generation the form does.
+   * Owned by the page rather than by this panel for two reasons the rider can
+   * see: the map draws a marker per ticked place, and the panel is unmounted
+   * and rebuilt on every generation (`setResult(null)` in `startFromForm`), so
+   * a selection kept here would vanish the moment the ride was re-planned.
    */
-  onAddStop?: (place: { name: string; lat: number; lon: number }) => void;
+  selectedPois?: SelectedPoi[];
+  onToggleSelectPoi?: (poi: SelectedPoi) => void;
+  onClearSelectedPois?: () => void;
+  /** Append every ticked sight as a via and plan the ride again. */
+  onRegenerateWithSelection?: () => void;
   /**
    * Fly the map to a suggested place and ring it, without changing the ride.
    *
@@ -169,6 +173,15 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
    */
   const [suggestions, setSuggestions] = useState<RoutePois | null>(null);
   const [suggestLoading, setSuggestLoading] = useState(false);
+  /**
+   * The lookup answered with an error rather than with an empty list.
+   *
+   * These are different statements and used to be the same one: a failed
+   * request left `suggestions` null, the card stayed on "…" forever and the
+   * rider was shown a ride that looked as though it had no sights near it.
+   * Now the card says so in one quiet line and keeps its header.
+   */
+  const [suggestFailed, setSuggestFailed] = useState(false);
   // Ieteikumi is its own expandable now, so it has its own open state. It is
   // no longer tied to Detaļas: the rider asked for the route's facts and the
   // suggestions to be separate things, and sharing one toggle would have made
@@ -201,12 +214,23 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
    * the effect's own guard is `suggestOpen && route`, which is the same condition
    * expressed where React can see it every render.
    */
+  /**
+   * The ride this list belongs to.
+   *
+   * `route.id` is a fresh `crypto.randomUUID()` per generated ride, so it
+   * changes on every regeneration *and* whenever the rider cycles a card to
+   * a runner-up — which is exactly when the suggestions must be asked for
+   * again. Cycling back to a ride already fetched re-asks too; the request is
+   * a few hundred milliseconds against a dataset query, and the alternative
+   * (a cache keyed by id) buys nothing a rider would notice.
+   */
   const routeId = route?.id ?? null;
   useEffect(() => {
     if (!suggestOpen || !routeId || !route) return;
     if (suggestedFor.current === routeId) return;
     suggestedFor.current = routeId;
     setSuggestions(null);
+    setSuggestFailed(false);
     setSuggestLoading(true);
     const controller = new AbortController();
     fetch("/api/route-pois", {
@@ -215,17 +239,26 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
       body: JSON.stringify({ geometry: route.geometry, locale }),
       signal: controller.signal,
     })
-      .then((r) => (r.ok ? r.json() : null))
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
       .then((data: RoutePois | null) => {
-        if (!data) return;
+        if (!data) throw new Error("empty");
         const lists = { onRoute: data.onRoute ?? [], nearby: data.nearby ?? [] };
         setSuggestions(lists);
         onPoisLoadedRef.current?.(lists);
       })
-      // A suggestion list that does not arrive is not worth an error: the
-      // section is absent, exactly as it is outside the Baltics.
-      .catch(() => {})
-      .finally(() => setSuggestLoading(false));
+      // A list that does not arrive is now said out loud rather than shown as
+      // an empty ride. An abort is not a failure — it is this effect tidying
+      // up after itself when the ride changed under it, and the run that
+      // replaced it owns the card's state.
+      .catch((err: unknown) => {
+        if (controller.signal.aborted || (err instanceof DOMException && err.name === "AbortError")) return;
+        // The id is cleared so reopening the card asks again: a failure the
+        // rider can retry by closing and reopening is better than one that
+        // needs a new ride.
+        suggestedFor.current = null;
+        setSuggestFailed(true);
+      })
+      .finally(() => { if (!controller.signal.aborted) setSuggestLoading(false); });
     return () => controller.abort();
     // `route` is read inside but keyed by its id: a re-render that produces an
     // equal-but-new object must not re-ask the server.
@@ -506,10 +539,16 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
         <SuggestionsCard
           pois={suggestions}
           loading={suggestLoading}
+          failed={suggestFailed}
           expanded={suggestOpen}
           onToggle={() => setSuggestOpen(!suggestOpen)}
           onShow={onShowPoi}
-          onAdd={onAddStop}
+          selected={selectedPois}
+          onToggleSelect={onToggleSelectPoi}
+          onClearSelection={onClearSelectedPois}
+          onRegenerate={onRegenerateWithSelection}
+          viaCount={plan?.viaPlaces.length ?? 0}
+          includedNames={plan?.viaPlaces ?? []}
           busy={busy}
         />
 
