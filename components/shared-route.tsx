@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useRouter } from "next/navigation";
 import { useLocale } from "@/lib/i18n/use-locale";
 import { messages } from "@/lib/i18n/messages";
 import { fi } from "@/lib/i18n/format";
-import Link from "next/link";
-import { Bookmark, ChevronDown, ChevronUp, Download, MessageCircle, SlidersHorizontal, Sparkles } from "lucide-react";
+import { ArrowUp, Download } from "lucide-react";
+import { RouteActionRow } from "@/components/action-row";
 import { RouteMap } from "@/components/route-map";
 import { MapPanel } from "@/components/map-panel";
 import { SiteHeader } from "@/components/site-header";
@@ -42,8 +43,12 @@ function duration(minutes: number): string {
 export function SharedRouteView({ share, planCode, code }: { share: SharedRoute; planCode: string | null; code: string }) {
   const [locale] = useLocale();
   const m = messages(locale);
+  const router = useRouter();
   const [showTet, setShowTet] = useState(false);
   const [details, setDetails] = useState(false);
+  const [copied, setCopied] = useState(false);
+  // The correction box below the card, exactly as the result panel has it.
+  const [text, setText] = useState("");
   // Someone else's ride can be kept too: same store as one's own. localStorage
   // is not reactive and is unavailable while rendering on the server, so the
   // flag is read through useSyncExternalStore — no effect, no hydration gap.
@@ -82,6 +87,37 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
     else { saveSharedRide(code, share); track("shared_ride_saved", { km: share.km }); }
   };
 
+  /**
+   * This page's own address, not a freshly encoded one: the rider may have
+   * arrived on a short /r/<id> link, and that is the link worth passing on.
+   * Phone gets the system sheet, desktop the clipboard with a confirmation —
+   * the same rule the result panel follows.
+   */
+  const shareRoute = async () => {
+    const url = window.location.href;
+    const title = `${share.name} · ${share.km} km`;
+    const phone = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.matchMedia("(pointer: coarse)").matches;
+    if (phone && typeof navigator.share === "function") {
+      try { await navigator.share({ title, url }); track("route_shared", { method: "share", km: share.km, variant: share.variant }); return; }
+      catch { /* dismissed: fall through to copy */ }
+    }
+    try { await navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 3500); track("route_shared", { method: "copy", km: share.km, variant: share.variant }); }
+    catch { window.prompt(m.resCopyLink, url); }
+  };
+
+  /**
+   * "Ko mainīt?" on a shared ride: the planner opens with this ride's plan
+   * loaded, the chat as the entry mode and this ride as the origin — the same
+   * destination the old "Pielāgot čatā" button had — and the typed correction
+   * travels in `?ask=`, which app/page.tsx sends as the first chat turn.
+   */
+  const submitCorrection = () => {
+    const ask = text.trim();
+    if (!planCode || !ask) return;
+    track("shared_correction_sent", { length: ask.length, saved });
+    router.push(`/?p=${planCode}&mode=chat&from=${encodeURIComponent(code)}&ask=${encodeURIComponent(ask)}`);
+  };
+
   const downloadGpx = async () => {
     track("shared_gpx_downloaded", { km: share.km, variant: share.variant });
     const res = await fetch("/api/export-gpx", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
@@ -105,6 +141,7 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
           plus's slot and keeps its own wording for a screen reader. */}
       <SiteHeader newRideLabel={m.shMakeYourOwn} />
       <div className="grid items-start gap-5 md:grid-cols-[minmax(340px,460px)_1fr]">
+        <div className="min-w-0">
         <section className="rounded-2xl border border-stone-200 bg-white p-4 md:p-5" aria-label={m.shSharedRoute}>
           <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#bd4b00]">{m.shSharedRoute} · {variantLabel(m, share.variant)}</div>
           <h2 className="mt-1 text-xl font-semibold tracking-tight">{share.name}</h2>
@@ -115,35 +152,11 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
             <div><div className="text-[10px] uppercase tracking-wider text-stone-400">{m.legendGravel}</div><div className="text-lg font-semibold tabular-nums">{share.unpavedPercent} %</div></div>
           </div>
           <p className="mt-2 text-[11px] text-stone-500">{fi(m.shRepeatedNote, { pct: share.repeatedPercent })}</p>
-          <div className="mt-4 flex flex-col gap-2">
-            <button type="button" onClick={downloadGpx} className="flex h-11 items-center justify-center gap-2 rounded-full bg-[#f56300] text-sm font-semibold text-white transition hover:bg-[#d85600]"><Download className="size-4" />{m.resDownloadGpx}</button>
-            {planCode && (
-              <Link href={`/?p=${planCode}`} className="flex h-11 items-center justify-center gap-2 rounded-full border border-stone-900 text-sm font-semibold text-stone-900 transition hover:bg-stone-900 hover:text-white"><Sparkles className="size-4" />{m.shGenerateSimilar}</Link>
-            )}
-            <button type="button" onClick={toggleSave} aria-pressed={saved}
-              className={`flex h-11 items-center justify-center gap-2 rounded-full border text-sm font-semibold transition ${saved ? "border-[#f56300] bg-[#fff3ea] text-[#bd4b00]" : "border-stone-200 text-stone-700 hover:bg-stone-50"}`}>
-              <Bookmark className={`size-4 ${saved ? "fill-current" : ""}`} />{saved ? m.shSavedInMine : m.shSaveForMe}
-            </button>
-            {/* Editing is the form first: the same fields that made the ride,
-                filled in with it, so a rider changes a stop or the time
-                without describing the whole ride again. The chat stays for
-                what a form cannot say. `from` carries this ride's code, so
-                the new one knows what it was made from. */}
-            {planCode && (
-              <Link href={`/?p=${planCode}&from=${encodeURIComponent(code)}`} onClick={() => track("ride_edit_opened", { from: "shared", saved })}
-                className="flex h-11 items-center justify-center gap-2 rounded-full border border-stone-200 text-sm font-semibold text-stone-700 transition hover:bg-stone-50"><SlidersHorizontal className="size-4" />{m.saveEditForm}</Link>
-            )}
-            <div className="flex gap-2">
-              {planCode && (
-                <Link href={`/?p=${planCode}&mode=chat&from=${encodeURIComponent(code)}`} className="flex h-10 flex-1 items-center justify-center gap-1.5 rounded-full border border-stone-200 text-xs font-medium text-stone-700 transition hover:bg-stone-50"><MessageCircle className="size-3.5" />{m.chatAdjust}</Link>
-              )}
-              {d && (
-                <button type="button" onClick={() => setDetails(!details)} aria-expanded={details} className="flex h-10 flex-1 items-center justify-center gap-1 rounded-full border border-stone-200 text-xs font-medium text-stone-700 hover:bg-stone-50">
-                  {m.resDetails}{details ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
-                </button>
-              )}
-            </div>
-          </div>
+          <button type="button" onClick={downloadGpx} className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-full bg-[#f56300] text-sm font-semibold text-white transition hover:bg-[#d85600]"><Download className="size-4" />{m.resDownloadGpx}</button>
+          <RouteActionRow saved={saved} onToggleSave={toggleSave} onShare={shareRoute} copied={copied} details={details} onToggleDetails={() => setDetails(!details)} />
+          {copied && (
+            <p role="status" className="mopik-fade-in mt-2 rounded-lg bg-stone-900 px-3 py-2 text-xs text-white">{m.resLinkCopied}</p>
+          )}
           {details && d && (
             <div className="mt-3 space-y-3 rounded-xl border border-stone-200 p-3">
               <div>
@@ -174,8 +187,32 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
               )}
             </div>
           )}
-          <p className="mt-4 text-[11px] leading-relaxed text-stone-500">{m.shIntro}</p>
         </section>
+        {/* The result panel's correction box, below the card and shaped the
+            same way. It has nowhere to send a correction without the plan, so
+            with an old link that carries none only the paragraph remains. */}
+        <div>
+          {planCode && (
+            <form onSubmit={(e) => { e.preventDefault(); submitCorrection(); }} className="pt-1">
+              <label htmlFor="ride-correction" className="mb-1.5 block px-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-400">{m.resWhatToChange}</label>
+              <div className="flex items-end gap-2 rounded-xl border border-stone-200 bg-white p-2 focus-within:border-[#f56300]">
+                <textarea id="ride-correction" value={text} onChange={(e) => setText(e.target.value)} rows={1} maxLength={6000}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); submitCorrection(); } }}
+                  placeholder={m.resChangePlaceholder}
+                  className="min-w-0 flex-1 resize-none bg-transparent px-2 py-1.5 text-base outline-none placeholder:text-stone-400 md:text-sm" />
+                <button type="submit" disabled={!text.trim()} aria-label={m.resSendCorrection} className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-[#f56300] text-white transition hover:bg-[#d85600] disabled:opacity-35">
+                  <ArrowUp className="size-5" />
+                </button>
+              </div>
+            </form>
+          )}
+          {/* The result panel has no equivalent paragraph, but this page is
+              also where a rider meets Mopik for the first time, so it stays —
+              moved below the box, muted, where it no longer sits between the
+              buttons and the next thing to do. */}
+          <p className="mt-3 px-1 text-[11px] leading-relaxed text-stone-500">{m.shIntro}</p>
+        </div>
+        </div>
         <div className="order-first min-w-0 md:order-none">
           <MapPanel
             className="h-[46dvh] overflow-hidden rounded-2xl border border-stone-200 md:h-[calc(100vh-7rem)]"

@@ -4,7 +4,7 @@ import { useState, type ReactNode } from "react";
 import { useLocale } from "@/lib/i18n/use-locale";
 import { t, messages } from "@/lib/i18n/messages";
 import { fi } from "@/lib/i18n/format";
-import { ArrowLeft, ArrowUp, ChevronDown, ChevronUp, Download, LoaderCircle, RefreshCw, Share2, Bookmark } from "lucide-react";
+import { ArrowLeft, ArrowUp, Download, LoaderCircle, RefreshCw } from "lucide-react";
 import { GeneratedRoute, GenerateRouteResponse } from "@/lib/types";
 import { RidePlan, planSummary } from "@/lib/chat/ride-plan";
 import { BeerPopup } from "@/components/beer-popup";
@@ -13,6 +13,7 @@ import { encodeRouteShare, shareUrl } from "@/lib/share/route-code";
 import type { ResolvedPlace } from "@/lib/chat/places";
 import { isSaved, removeRide, rideId, saveRide } from "@/lib/share/saved-rides";
 import { gpxFilename } from "@/lib/gpx/filename";
+import { RouteActionRow } from "@/components/action-row";
 
 /**
  * The left column once routes exist: what was asked, the three versions,
@@ -400,18 +401,7 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
           {/* GPX is the one thing every rider presses, so it gets its own full
               width: four buttons on one row wrapped its label onto two lines. */}
           <button type="button" onClick={downloadGpx} className="mt-3 flex h-11 w-full items-center justify-center gap-2 rounded-full bg-[#f56300] text-sm font-semibold text-white transition hover:bg-[#d85600]"><Download className="size-4" />{m.resDownloadGpx}</button>
-          <div className="mt-2 grid grid-cols-3 gap-2">
-            <button type="button" onClick={toggleSave} aria-label={saved ? m.resUnsave : m.resSaveLater} aria-pressed={saved}
-              className={`flex h-10 min-w-0 items-center justify-center gap-1 rounded-full border text-xs font-medium transition ${saved ? "border-[#f56300] bg-[#fff3ea] text-[#bd4b00]" : "border-stone-200 text-stone-700 hover:bg-stone-50"}`}>
-              <Bookmark className={`size-3.5 ${saved ? "fill-current" : ""}`} />{saved ? m.resSaved : m.resSave}
-            </button>
-            <button type="button" onClick={shareRoute} aria-label={m.resShareRoute} className="flex h-10 min-w-0 items-center justify-center gap-1 rounded-full border border-stone-200 text-xs font-medium text-stone-700 hover:bg-stone-50">
-              <Share2 className="size-3.5" />{shared === "copied" ? m.resCopied : m.resShare}
-            </button>
-            <button type="button" onClick={() => setDetails(!details)} aria-expanded={details} className="flex h-10 min-w-0 items-center justify-center gap-1 rounded-full border border-stone-200 text-xs font-medium text-stone-700 hover:bg-stone-50">
-              {m.resDetails}{details ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
-            </button>
-          </div>
+          <RouteActionRow saved={saved} onToggleSave={toggleSave} onShare={shareRoute} copied={shared === "copied"} details={details} onToggleDetails={() => setDetails(!details)} />
         </div>
 
 

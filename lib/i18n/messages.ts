@@ -40,7 +40,6 @@ export type MessageKey =
   | "chatEnterHint"
   | "chatQuickReplies"
   | "chatWhatToChange"
-  | "chatAdjust"
   | "kindCity"
   | "kindVillage"
   | "kindHamlet"
@@ -209,7 +208,6 @@ export type MessageKey =
   | "shSharedRoute"
   | "shSaveForMe"
   | "shMakeYourOwn"
-  | "shGenerateSimilar"
   | "shSharedNote"
   | "shIntro"
   | "savTitle"
@@ -364,7 +362,6 @@ const lv: Messages = {
   chatEnterHint: "Enter — nosūtīt · Shift + Enter — jauna rinda",
   chatQuickReplies: "Ātrās atbildes",
   chatWhatToChange: "Ko vēlies mainīt?",
-  chatAdjust: "Pielāgot čatā",
   kindCity: "pilsēta",
   kindVillage: "ciems",
   kindHamlet: "viensēta",
@@ -533,7 +530,6 @@ const lv: Messages = {
   shSharedRoute: "Dalīts maršruts",
   shSaveForMe: "Saglabāt sev",
   shMakeYourOwn: "Uztaisīt savu",
-  shGenerateSimilar: "Ģenerēt līdzīgu sev",
   shSharedNote: "Dalīts maršruts no Mopik (mopik.eu) — vienmēr ievēro ceļa zīmes.",
   shIntro: "Mopik uzzīmē adventure maršrutus pa grants un meža ceļiem no pāris vārdiem: no kurienes, cik ilgi, cik dziļi mežā. GPX der DMD2, OsmAnd, Garmin, Locus. Vienmēr ievēro ceļa zīmes.",
   savTitle: "Saglabātie maršruti",
@@ -687,7 +683,6 @@ const lt: Messages = {
   chatEnterHint: "Enter — siųsti · Shift + Enter — nauja eilutė",
   chatQuickReplies: "Greiti atsakymai",
   chatWhatToChange: "Ką nori pakeisti?",
-  chatAdjust: "Koreguoti pokalbyje",
   kindCity: "miestas",
   kindVillage: "kaimas",
   kindHamlet: "vienkiemis",
@@ -856,7 +851,6 @@ const lt: Messages = {
   shSharedRoute: "Bendrinamas maršrutas",
   shSaveForMe: "Išsaugoti sau",
   shMakeYourOwn: "Sukurti savo",
-  shGenerateSimilar: "Sugeneruoti panašų sau",
   shSharedNote: "Bendrinamas maršrutas iš Mopik (mopik.eu) — visada paisyk kelio ženklų.",
   shIntro: "Mopik nubraižo adventure maršrutus žvyro ir miško keliais iš kelių žodžių: iš kur, kiek laiko, kaip giliai į mišką. GPX tinka DMD2, OsmAnd, Garmin, Locus. Visada paisyk kelio ženklų.",
   savTitle: "Išsaugoti maršrutai",
@@ -1007,7 +1001,6 @@ const et: Messages = {
   chatEnterHint: "Enter — saada · Shift + Enter — uus rida",
   chatQuickReplies: "Kiirvastused",
   chatWhatToChange: "Mida soovid muuta?",
-  chatAdjust: "Kohanda vestluses",
   kindCity: "linn",
   kindVillage: "küla",
   kindHamlet: "talu",
@@ -1176,7 +1169,6 @@ const et: Messages = {
   shSharedRoute: "Jagatud marsruut",
   shSaveForMe: "Salvesta endale",
   shMakeYourOwn: "Tee oma",
-  shGenerateSimilar: "Genereeri sarnane endale",
   shSharedNote: "Jagatud marsruut Mopikust (mopik.eu) — järgi alati liiklusmärke.",
   shIntro: "Mopik joonistab adventure-marsruute kruusa- ja metsateedel paarist sõnast: kust, kui kaua, kui sügavale metsa. GPX sobib DMD2, OsmAnd, Garmin, Locus jaoks. Järgi alati liiklusmärke.",
   savTitle: "Salvestatud marsruudid",
@@ -1327,7 +1319,6 @@ const en: Messages = {
   chatEnterHint: "Enter — send · Shift + Enter — new line",
   chatQuickReplies: "Quick replies",
   chatWhatToChange: "What would you like to change?",
-  chatAdjust: "Adjust in chat",
   kindCity: "town",
   kindVillage: "village",
   kindHamlet: "hamlet",
@@ -1496,7 +1487,6 @@ const en: Messages = {
   shSharedRoute: "Shared route",
   shSaveForMe: "Save it for me",
   shMakeYourOwn: "Make your own",
-  shGenerateSimilar: "Generate a similar one",
   shSharedNote: "A route shared from Mopik (mopik.eu) — always follow the road signs.",
   shIntro: "Mopik draws adventure routes on gravel and forest roads from a few words: where from, how long, how deep into the forest. The GPX works with DMD2, OsmAnd, Garmin, Locus. Always follow the road signs.",
   savTitle: "Saved rides",

@@ -84,7 +84,7 @@ export default function Home() {
 
   /**
    * The ride the rider arrived from, when they came from one: ui.saveEditForm
-   * or ui.chatAdjust on a shared or saved route. It is the way back to that
+   * on a saved ride, or the "Ko mainīt?" box on a shared one. It is the way back to that
    * route until a new one is generated, and it decides what happens to the
    * original afterwards — kept alongside the new ride, or replaced by it.
    */
@@ -92,22 +92,29 @@ export default function Home() {
   // `generate` reads this after an await, by which time its closure's copy of
   // `origin` may be a render behind. The ref is the current answer.
   const originRef = useRef<{ code: string; saved: boolean } | null>(null);
+  /**
+   * The correction typed in the "Ko mainīt?" box on a shared ride's own page,
+   * carried here in `?ask=`. A ref, not state: it is read once, by the render
+   * that first has the plan, and setting it must not cost a render of its own.
+   */
+  const askRef = useRef<string | null>(null);
   // A ride generated from an origin: the rider is asked whether it replaces
   // the one they were editing or is kept as a second ride.
   const [keepChoice, setKeepChoice] = useState<{ code: string; saved: boolean } | null>(null);
-  // ui.shGenerateSimilar / ui.saveEditForm from a shared route: the plan
-  // arrives in ?p= and pre-fills the form; the URL is cleaned so a reload does
-  // not re-apply it.
+  // ui.saveEditForm from a shared route: the plan arrives in ?p= and pre-fills
+  // the form; the URL is cleaned so a reload does not re-apply it.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const p = params.get("p");
     if (!p) return;
     const shared = decodePlanShare(p);
     const mode = params.get("mode") === "chat" ? "chat" : "form";
-    // `from` is the share code of the ride being edited, present only on the
-    // edit paths — ui.shGenerateSimilar deliberately starts a ride of its own
-    // and carries no origin.
+    // `from` is the share code of the ride being edited: every path into the
+    // planner from an existing ride carries it, so the new ride knows what it
+    // was made from.
     const from = params.get("from");
+    // What the rider typed in the shared page's "Ko mainīt?" box, if anything.
+    const ask = params.get("ask")?.trim() || null;
     // No cleanup on purpose: development StrictMode runs the effect twice and
     // a cancelled timer meant the plan never arrived. The URL is cleaned only
     // once the plan is applied.
@@ -121,6 +128,11 @@ export default function Home() {
         const carried = decodePlanPlaces(p);
         if (carried.length) { setPlaces(carried); setPreviewPlaces(carried); }
         if (from) { const o = { code: from, saved: isCodeSaved(from) }; originRef.current = o; setOrigin(o); }
+        // The correction typed on the shared ride's own page. `send` reads the
+        // plan from state, which is a render away, so the decoded plan goes
+        // with it as an argument — the same reason `generate` takes its places
+        // rather than reading them (the Valmiera-in-Rīga bug).
+        if (ask && mode === "chat") askRef.current = ask;
       }
       window.history.replaceState(null, "", window.location.pathname);
     }, 0);
@@ -356,6 +368,20 @@ export default function Home() {
     const family = familyOf(card.variant);
     return family[(variantOffset[card.variant] ?? 0) % Math.max(1, family.length)] ?? card;
   })();
+  /**
+   * The waiting `?ask=` correction, sent on the render that first has the plan
+   * it corrects — `send` reads the plan from state, so it cannot run in the
+   * effect that sets it. The ref is cleared first, so a re-run sends nothing.
+   * The timeout keeps the work out of the effect body itself.
+   */
+  useEffect(() => {
+    if (!askRef.current || !plan) return;
+    const ask = askRef.current;
+    askRef.current = null;
+    const id = setTimeout(() => { void send(ask); }, 0);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `send` is re-created every render; the ref guard is what makes this run once
+  }, [plan]);
   // What the API actually routed through, in riding order. These are the
   // coordinates worth keeping in a share code — they made this route, rather
   // than being a fresh guess at what the names mean.

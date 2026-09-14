@@ -45,6 +45,7 @@ export type AnalyticsEvent =
   | "place_picked"            // a suggestion chosen; props: kind, group — are POIs actually picked?
   | "trip_type_changed"       // props: to (one_way|round_trip) — is the new default right?
   | "ride_edit_opened"        // "Rediģēt formā" on a shared or saved ride; props: from, saved
+  | "shared_correction_sent" // "Ko mainīt?" typed on a shared ride's page; props: length, saved
   | "edited_ride_kept"        // the edit produced a new ride and the original stays
   | "edited_ride_replaced";   // the edit replaced the ride it started from
 

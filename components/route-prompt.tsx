@@ -21,7 +21,7 @@ type Props = {
   onBackToForm: () => void;
   /**
    * The route this conversation is adjusting, when the rider arrived from one
-   * (a shared or saved ride opened with t(locale, "chatAdjust")). Until a new route is
+   * (a shared or saved ride opened for correction). Until a new route is
    * generated there is nothing to go back to in this tab, so the way out is
    * the ride itself rather than an empty form.
    */
