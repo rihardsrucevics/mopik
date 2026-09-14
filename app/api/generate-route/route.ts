@@ -27,6 +27,7 @@ import {
   headlineLeg,
   probeLeg,
   PROBE_BUDGET_MS,
+  snapDistanceM,
 } from "@/lib/routing/fetch-route-probe";
 import { buildMotoProfileOptions } from "@/lib/routing/moto-profile";
 import { buildCostingOptions, profileName } from "@/lib/routing/profiles";
@@ -41,7 +42,7 @@ import { parseIsochrone, type IsoRing } from "@/lib/geo/isochrone";
 import { planLoop, type LoopStop } from "@/lib/routing/loop";
 // Item 11d: via points placed on the coastal side of an A-to-B corridor, and
 // the rule that folds them in without spending time the generation lacks.
-import { seawardBearing, seawardVias, withSeawardCandidates } from "@/lib/routing/seaward";
+import { dropOffshoreVias, seawardBearing, seawardVias, withSeawardCandidates, type ViaProbe } from "@/lib/routing/seaward";
 import { detectLocale, nameLoop, stopLabels } from "@/lib/routing/name-route";
 import {
   GeneratedRoute,
@@ -472,20 +473,95 @@ async function buildCandidates(
     // it becomes a different shape instead: the way out at full offset, the
     // way back at about half, bent at other points.
     const roundTrip = !destination;
+    // Item 11e: what each via candidate would ride through, and the land-side
+    // shape to fall back on when that point turns out to be in the sea.
+    const viaProbes: ViaProbe<string>[] = [];
+    const mirrorRuns = new Map<string, Candidate>();
+    // The via points of a plain (never asymmetric) corridor at any offset — the
+    // shape a substitute takes. Kept out of the scale loop so a substitute can
+    // use an offset that loop never visits.
+    const substituteVias = (s: number, side: number): [number, number][] => {
+      const out: [number, number][] = [];
+      for (let i = 1; i < places.length; i++) {
+        const fractions = intent.rideStyle === "explore" ? [0.3, 0.7] : [0.5];
+        for (const fraction of fractions) out.push(perpendicularVia(places[i-1], places[i], fraction, reach*s*side));
+      }
+      return out;
+    };
+    const makeSubstitute = (s: number, side: number, variant: string): Candidate => ({
+      variant, competing: true, run: async () => {
+        const vias = substituteVias(s, side);
+        const points: [number, number][] = [startPt];
+        let v = 0;
+        for (let i = 1; i < places.length; i++) {
+          const per = intent.rideStyle === "explore" ? 2 : 1;
+          for (let k = 0; k < per; k++) points.push(vias[v++]);
+          points.push([places[i].lon, places[i].lat]);
+        }
+        return { path: await route(points) };
+      },
+    });
     for (const scale of scales) for (const side of (scale === 0 ? [1] : [1,-1])) {
       const asymmetric = roundTrip && side === -1;
-      candidates.push({ variant: `via-${scale}-${asymmetric ? "a" : side}`, competing: true, run: async () => {
+      // The via points this candidate would route through, as a function of
+      // which side it is offset to. Item 11e probes one of these against the
+      // router before the candidate is allowed to cost a leg, and builds the
+      // mirrored candidate from the same function with the side negated — so a
+      // substitute is a shape this builder would have produced anyway, not an
+      // improvised point.
+      const viaPointsFor = (s: number): [number, number][] => {
+        const out: [number, number][] = [];
+        if (!scale) return out;
+        for (let i = 1; i < places.length; i++) {
+          const fractions = asymmetric ? (i === 1 ? [0.3, 0.7] : [0.35, 0.65]) : intent.rideStyle === "explore" ? [0.3,0.7] : [0.5];
+          const legScale = asymmetric && i > 1 ? scale * 0.55 : scale;
+          for (const fraction of fractions) out.push(perpendicularVia(places[i-1], places[i], fraction, reach*legScale*(asymmetric ? 1 : s)));
+        }
+        return out;
+      };
+      const makeVia = (s: number, variant: string): Candidate => ({ variant, competing: true, run: async () => {
+        const vias = viaPointsFor(s);
         const points: [number, number][] = [startPt];
+        let v = 0;
         for (let i = 1; i < places.length; i++) {
           if (scale) {
-            const fractions = asymmetric ? (i === 1 ? [0.3, 0.7] : [0.35, 0.65]) : intent.rideStyle === "explore" ? [0.3,0.7] : [0.5];
-            const legScale = asymmetric && i > 1 ? scale * 0.55 : scale;
-            for (const fraction of fractions) points.push(perpendicularVia(places[i-1], places[i], fraction, reach*legScale*(asymmetric ? 1 : side)));
+            const per = asymmetric ? (i === 1 ? 2 : 2) : intent.rideStyle === "explore" ? 2 : 1;
+            for (let k = 0; k < per; k++) points.push(vias[v++]);
           }
           points.push([places[i].lon, places[i].lat]);
         }
         return { path: await route(points) };
       }});
+      const variant = `via-${scale}-${asymmetric ? "a" : side}`;
+      candidates.push(makeVia(side, variant));
+      if (scale) {
+        // What item 11e probes: the furthest-out via of this candidate, the one
+        // most likely to be in the water.
+        const own = viaPointsFor(side);
+        // What it swaps in when that via is at sea. The plain mirror is NOT a
+        // usable substitute here: `scales` is built symmetrically, so
+        // `via-1.4-1`'s mirror is exactly `via-1.4--1`, which the pool already
+        // has — measured, that routed seven byte-identical pairs. The land side
+        // is instead reached at offsets the pool does NOT already hold, halfway
+        // between the built scales, so a dropped candidate is replaced by a
+        // genuinely different ride rather than by a copy of its neighbour.
+        const index = scales.indexOf(scale);
+        const next = scales[index + 1];
+        const betweens = [
+          ...(next ? [(scale + next) / 2] : [scale * 1.3]),
+          (scale + (scales[index - 1] ?? 0)) / 2,
+        ].filter((s) => s > 0 && !scales.includes(s));
+        const substitutes: { item: string; point: [number, number] }[] = [];
+        for (const s of betweens) {
+          const name = `via-${Math.round(s * 100) / 100}-${-side}s`;
+          if (mirrorRuns.has(name)) continue;
+          const points = substituteVias(s, -side);
+          if (!points.length) continue;
+          substitutes.push({ item: name, point: points[points.length - 1] });
+          mirrorRuns.set(name, makeSubstitute(s, -side, name));
+        }
+        viaProbes.push({ item: variant, point: own[own.length - 1] ?? own[0], substitutes });
+      }
     }
 
     // The surroundings. A ride "to Baldone and back" is, for most riders, a
@@ -598,6 +674,47 @@ async function buildCandidates(
         `seaward: ${seawardCandidates.length} coastal candidates at ` +
           seaward.map((v) => `${v.coastDistanceM} m`).join(", ")
       );
+    }
+
+    // Item 11e. Before any of these costs a leg, ask the router which of their
+    // via points are in the water — measured at ~40 ms each against the 24 s a
+    // single offshore candidate burns on the endpoint-nudge ring and the
+    // segmented retry. An offshore candidate is replaced by the same offset
+    // mirrored to the land side, so a coastal ride keeps a full pool instead of
+    // losing two thirds of its versions.
+    //
+    // `dropOffshoreVias` gates itself on `hasSeaData`, so an inland ride makes
+    // no probe at all and this block returns the pool it was given, unchanged.
+
+    const filtered = await dropOffshoreVias({
+      probes: viaProbes,
+      snap: (point) => snapDistanceM({ point, profileOptions }),
+    });
+    if (filtered.dropped) {
+      console.log(
+        `offshore: ${filtered.dropped} of ${filtered.probed} via points in the water, ` +
+          `${filtered.substituted} mirrored to land (${filtered.ms} ms)`
+      );
+      // Rebuild the pool in build order: the scale-0 direct line and the
+      // shapes that carry no perpendicular via (around-*, zig-*) were never
+      // probed and are kept as they were.
+      const keptVia = new Set(filtered.kept);
+      const rebuilt: Candidate[] = [];
+      const placed = new Set<string>();
+      for (const candidate of candidates) {
+        const probe = viaProbes.find((p) => p.item === candidate.variant);
+        if (!probe) { rebuilt.push(candidate); continue; }
+        if (keptVia.has(candidate.variant)) rebuilt.push(candidate);
+        // A substitute takes the slot of the candidate it replaced, so the pool
+        // keeps its build order — which is what `route.ts` relies on when it
+        // slices a prefix under the time budget.
+        for (const substitute of probe.substitutes) {
+          if (!keptVia.has(substitute.item) || placed.has(substitute.item)) continue;
+          const run = mirrorRuns.get(substitute.item);
+          if (run) { rebuilt.push(run); placed.add(substitute.item); }
+        }
+      }
+      return { candidates: rebuilt, seaward: seawardCandidates };
     }
     return { candidates, seaward: seawardCandidates };
   }

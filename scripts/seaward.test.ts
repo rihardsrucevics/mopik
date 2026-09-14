@@ -33,6 +33,9 @@ import {
   SEAWARD_MAX_M,
   COASTAL_CORRIDOR_M,
   MAX_SEAWARD_CANDIDATES,
+  dropOffshoreVias,
+  OFFSHORE_SNAP_M,
+  type ViaProbe,
 } from "@/lib/routing/seaward";
 
 /** A flat patch of the Kurzeme coast, near where the P111 runs. */
@@ -279,4 +282,233 @@ test("no seaward candidates leaves the pool exactly as it was", () => {
   const pool = [inland("via-0-1"), inland("via-0.35-1"), inland("via-0.7-1")];
   assert.deepEqual(withSeawardCandidates(pool, [], 36), pool);
   assert.deepEqual(withSeawardCandidates(pool, [], 2), pool.slice(0, 2));
+});
+
+// --- item 11e: no vias in the water -----------------------------------------
+//
+// What these hold:
+//
+//  1. **A via in the water is dropped, and one on land is not.** The whole
+//     point: item 11d measured 293 s burned on twelve offshore candidates
+//     against 6.6 s on the eight that routed.
+//  2. **A dropped via is replaced, not merely removed.** Dropping alone takes a
+//     coastal ride's pool from 17 to 5 — the rider would lose two thirds of the
+//     versions on exactly the rides item 11 is about.
+//  3. **An inland ride is untouched and never probed.** The `hasSeaData` gate,
+//     the same guarantee `classify.ts`, `score.ts` and `seawardVias` give.
+//  4. **A probe that fails keeps the via.** A router hiccup read as "this is the
+//     sea" would silently empty the pool.
+
+/**
+ * A snap oracle over the fixture's geometry: on land BRouter finds a road in
+ * metres, in the water it must reach the shore. The fixture's coastline is the
+ * line east = 0, so a negative easting IS the distance to swim.
+ *
+ * Deliberately a stand-in rather than a live call: the real one is measured in
+ * `scripts/measure-seaward.ts` against `brouter.mopik.eu`, and a unit test that
+ * needs a router is a test that does not run.
+ */
+function fixtureSnap(point: [number, number]): Promise<number | null> {
+  const east = eastingM(point);
+  // Inland: a road within a few hundred metres, as measured (2 m – 1186 m).
+  if (east > 0) return Promise.resolve(120);
+  // At sea: BRouter reaches the nearest shore, which is |east| away. Measured
+  // offshore snaps ran 1944 m – 45757 m and tracked the distance to land.
+  return Promise.resolve(Math.abs(east));
+}
+
+/** `item` is all `dropOffshoreVias` reads; the point is what it probes. */
+const probeAt = (name: string, east: number, north: number, mirrorEast?: number): ViaProbe<string> => ({
+  item: name,
+  point: at(east, north),
+  substitutes:
+    mirrorEast === undefined ? [] : [{ item: `${name}m`, point: at(mirrorEast, north) }],
+});
+
+test("a via point in the water is dropped and one on land is kept", async () => {
+  publishFixture(COASTLINE);
+
+  const result = await dropOffshoreVias({
+    probes: [
+      probeAt("via-0.7-1", -8000, 0), // 8 km out in the Baltic
+      probeAt("via-0.7--1", 8000, 0), // 8 km inland
+    ],
+    snap: fixtureSnap,
+  });
+
+  assert.deepEqual(result.kept, ["via-0.7--1"], "only the landward via survives");
+  assert.equal(result.dropped, 1);
+  assert.equal(result.probed, 2);
+});
+
+test("the offshore threshold sits in the measured gap, not on a cliff edge", async () => {
+  publishFixture(COASTLINE);
+
+  // Measured across the four coastal rides: on land 2 m – 1186 m, in the water
+  // 1944 m – 45757 m. Everything either side of the gap must classify the same
+  // way, or the constant is tuned to one ride rather than to the separation.
+  const onLand = [2, 120, 883, 1186];
+  const atSea = [1944, 4136, 24614, 45757];
+
+  for (const snap of onLand) {
+    const r = await dropOffshoreVias({
+      probes: [probeAt("via", 5000, 0)],
+      snap: () => Promise.resolve(snap),
+    });
+    assert.deepEqual(r.kept, ["via"], `a ${snap} m snap is land`);
+  }
+  for (const snap of atSea) {
+    const r = await dropOffshoreVias({
+      probes: [probeAt("via", 5000, 0)],
+      snap: () => Promise.resolve(snap),
+    });
+    assert.deepEqual(r.kept, [], `a ${snap} m snap is water`);
+  }
+  assert.ok(
+    OFFSHORE_SNAP_M > Math.max(...onLand) && OFFSHORE_SNAP_M < Math.min(...atSea),
+    `${OFFSHORE_SNAP_M} m must sit inside the measured gap`
+  );
+});
+
+test("a dropped via is replaced by the same offset mirrored to the land side", async () => {
+  publishFixture(COASTLINE);
+
+  // The corridor runs 4 km inland; the +1 offset of 12 km puts the via 8 km out
+  // to sea and the −1 offset puts it 16 km inland. This is Liepāja → Ventspils
+  // in miniature, and it is the case the whole item exists for.
+  // The direct line is in the pool too, as it always is — and it is what puts
+  // the probes' own bounding box across the coastline, so `hasSeaData` is true.
+  const result = await dropOffshoreVias({
+    probes: [probeAt("via-0-1", 4000, 0), probeAt("via-1-1", -8000, 0, 16000)],
+    snap: fixtureSnap,
+  });
+
+  assert.deepEqual(
+    result.kept,
+    ["via-0-1", "via-1-1m"],
+    "the mirror takes the dropped candidate's slot"
+  );
+  assert.equal(result.dropped, 1);
+  assert.equal(result.substituted, 1, "the pool keeps its size — no hole is left");
+});
+
+test("a substitute already in the pool is not added twice", async () => {
+  publishFixture(COASTLINE);
+
+  // On a ride where BOTH sides are land, `via-1.4-1`'s plain mirror IS
+  // `via-1.4--1`, which the builder produced in its own right. Routing the same
+  // line twice buys nothing and costs a leg.
+  const result = await dropOffshoreVias({
+    probes: [
+      probeAt("via--1", 9000, 0), // kept, and it sits where the mirror would go
+      probeAt("via-1", -5000, 0, 9000), // offshore; its mirror is the point above
+    ],
+    snap: fixtureSnap,
+  });
+
+  assert.deepEqual(result.kept, ["via--1"], "the duplicate mirror is not re-added");
+  assert.equal(result.dropped, 1);
+  assert.equal(result.substituted, 0);
+});
+
+test("a substitute is rejected as duplicate even before its twin is reached", async () => {
+  publishFixture(COASTLINE);
+
+  // The regression that made this rule what it is. Probes run in build order,
+  // so an offshore `via-1` is considered BEFORE the landward `via--1` that its
+  // mirror duplicates. Checking only what had been kept so far let the mirror
+  // through, and the headline ride then routed seven byte-identical pairs —
+  // same kilometres, same rank. The guard must see the whole pool.
+  const result = await dropOffshoreVias({
+    probes: [
+      probeAt("via-1", -5000, 0, 9000), // offshore, considered FIRST
+      probeAt("via--1", 9000, 0), // its mirror, reached only afterwards
+    ],
+    snap: fixtureSnap,
+  });
+
+  assert.deepEqual(result.kept, ["via--1"], "no duplicate, whatever the order");
+  assert.equal(result.substituted, 0);
+});
+
+test("a via whose mirror is also in the water is dropped with no substitute", async () => {
+  publishFixture(COASTLINE);
+
+  // A corridor out at sea on both sides of the offset — a strait or a bay. Better
+  // no candidate than a second one that costs the same minute to fail.
+  const result = await dropOffshoreVias({
+    probes: [probeAt("via-0-1", 4000, 0), probeAt("via-1", -6000, 0, -20000)],
+    snap: fixtureSnap,
+  });
+
+  assert.deepEqual(result.kept, ["via-0-1"], "only the direct line is left");
+  assert.equal(result.dropped, 1);
+  assert.equal(result.substituted, 0, "a substitute in the water is no substitute");
+});
+
+test("an inland ride is untouched and never probed at all", async () => {
+  publishFixture(COASTLINE);
+
+  // Another continent: `hasSeaData` is false over the probes' own bbox, so the
+  // pool comes back exactly as given and not one network call is made. This is
+  // what makes item 11e provably free away from a coast, rather than merely
+  // unaffected in practice.
+  let calls = 0;
+  const result = await dropOffshoreVias({
+    probes: [
+      { item: "via-1", point: [-120.5, 35.0], substitutes: [] },
+      { item: "via--1", point: [-120.4, 35.1], substitutes: [] },
+    ],
+    snap: () => { calls++; return Promise.resolve(50_000); },
+  });
+
+  assert.deepEqual(result.kept, ["via-1", "via--1"], "the pool is byte-identical");
+  assert.equal(calls, 0, "an inland ride makes no probe");
+  assert.equal(result.probed, 0);
+  assert.equal(result.dropped, 0);
+});
+
+test("a probe that fails keeps the via rather than calling it sea", async () => {
+  publishFixture(COASTLINE);
+
+  // A BRouter hiccup must never read as "this point is in the water", or one
+  // bad minute empties the candidate pool and the rider gets one version.
+  const result = await dropOffshoreVias({
+    probes: [probeAt("via-1", -8000, 0, 16000), probeAt("via--1", 8000, 0)],
+    snap: () => Promise.resolve(null),
+  });
+
+  assert.deepEqual(result.kept, ["via-1", "via--1"], "no opinion means keep");
+  assert.equal(result.dropped, 0);
+  assert.equal(result.substituted, 0);
+});
+
+test("the same point is probed once however many candidates offer it", async () => {
+  publishFixture(COASTLINE);
+
+  // A multi-stop ride can offer one mirror as the substitute for two different
+  // offshore vias, and a probe is a network call on a one-vCPU server.
+  let calls = 0;
+  const result = await dropOffshoreVias({
+    probes: [
+      probeAt("direct", 4000, 0),
+      probeAt("a", -8000, 0, 16000),
+      probeAt("b", -8000, 0, 16000),
+    ],
+    snap: (p) => { calls++; return fixtureSnap(p); },
+  });
+
+  assert.equal(calls, 3, "three distinct points, probed once each");
+  assert.equal(result.dropped, 2);
+  // The second mirror lands on the first one's stretch of shore, so it is the
+  // duplicate rule that stops it, not a second probe.
+  assert.deepEqual(result.kept, ["direct", "am"]);
+});
+
+test("an empty probe list yields an empty pool and no work", async () => {
+  publishFixture(COASTLINE);
+  const result = await dropOffshoreVias({ probes: [], snap: fixtureSnap });
+  assert.deepEqual(result.kept, []);
+  assert.equal(result.probed, 0);
+  assert.equal(result.ms, 0);
 });

@@ -349,3 +349,225 @@ export function withSeawardCandidates<T>(pool: T[], seaward: T[], cap: number): 
   const keptInland = pool.slice(0, Math.max(1, cap - keptSeaward.length));
   return [...keptInland, ...keptSeaward].slice(0, cap);
 }
+
+/**
+ * ============================================================================
+ * Item 11e — no vias in the water
+ * ============================================================================
+ *
+ * Item 11d measured the cost of the offshore via points it could not prevent:
+ *
+ * > | | candidates | wall clock |
+ * > |---|---:|---:|
+ * > | routed | 8 | 6.6 s |
+ * > | failed | 12 | **293.4 s** |
+ *
+ * 98 % of the search's time went on candidates that returned nothing, against a
+ * 50 s budget — which is why item 11c saw a generation finish with two
+ * candidates. Item 11d added coastal candidates but deliberately left the
+ * offshore ones in the pool, because removing them changes the pool for *every*
+ * ride and deserved its own measurement. This is that measurement.
+ *
+ * ## The test is the router, not the coastline
+ *
+ * The brief proposed inferring water from `sea.ts`: far from the coast AND the
+ * 16-bearing land probe finds land on one side only. That was tried first and
+ * **it does not work** — the dataset is coastline *vertices*, so nearest-coast
+ * distance is symmetric about the shore and a point 8 km out to sea measures
+ * exactly like one 8 km inland. The full numbers are in `snapDistanceM`, which
+ * carries the alternative the brief also named and which does work: ask BRouter
+ * where the nearest road is. Offshore it answers in kilometres, on land in
+ * metres, and it costs ~40 ms.
+ *
+ * ## What "offshore" means here
+ *
+ * Two conditions, both required, because either alone would be wrong:
+ *
+ *  - **`hasSeaData` covers the via.** An inland ride must be byte-identical, so
+ *    a ride with no coastline file is never probed and never altered. This is
+ *    the same gate `classify.ts`, `score.ts` and `seawardVias` use.
+ *  - **The snap distance exceeds `OFFSHORE_SNAP_M`.** Measured separation is
+ *    883 m (worst inland) against 1944 m (best offshore), so the threshold sits
+ *    in a gap of more than a kilometre rather than on a cliff edge.
+ *
+ * Note the deliberate absence of a coast-distance condition. `via-2.8-1` on
+ * Liepāja → Ventspils is 30 km from the nearest coastline vertex and squarely
+ * in open water; a "must be near the coast" guard would have kept it.
+ */
+
+/**
+ * How far BRouter may move a via point before the via is judged to be in the
+ * water.
+ *
+ * 1500 m, and the gap it sits in is wide. Measured across the four coastal
+ * rides, every via point the perpendicular builder produces:
+ *
+ * | | snap distance |
+ * |---|---|
+ * | on land (48 vias) | 2 m – 1186 m |
+ * | in the water (22 vias) | 1944 m – 45757 m |
+ *
+ * So 1500 m is not a tuned constant — anything between 1.2 km and 1.9 km
+ * classifies identically on every measured ride. It is set at 1500 because a
+ * legitimate via can land on a lake, a bog or a military area and need a
+ * kilometre to reach a road, and losing such a via costs a candidate while
+ * keeping an offshore one costs a minute.
+ */
+export const OFFSHORE_SNAP_M = 1500;
+
+/**
+ * A via point and the land-side alternative to use if it turns out to be in
+ * the water.
+ *
+ * The caller supplies both because only it knows how the point was built:
+ * `perpendicularVia` mirrors by negating the offset, and a mirrored point is a
+ * ride the rider might plausibly have been offered anyway. `seaward.ts` cannot
+ * reconstruct that from a coordinate.
+ */
+export type ViaProbe<T> = {
+  /** the candidate this via belongs to */
+  item: T;
+  /** the point to test */
+  point: Point;
+  /**
+   * Land-side stand-ins, best first. Tried in order; the first that is not
+   * itself in the water replaces the dropped candidate. Empty means the
+   * candidate is simply dropped.
+   */
+  substitutes: { item: T; point: Point }[];
+};
+
+export type OffshoreFilterResult<T> = {
+  /** the pool to route, offshore candidates replaced or removed */
+  kept: T[];
+  /** how many vias were probed at all */
+  probed: number;
+  /** how many were judged to be in the water */
+  dropped: number;
+  /** how many of those were replaced by a land-side stand-in */
+  substituted: number;
+  /** wall clock spent probing, milliseconds */
+  ms: number;
+};
+
+/**
+ * Drop every candidate whose via point is in the water, substituting a
+ * land-side one where the caller offered a mirror.
+ *
+ * ## Why substitute rather than merely drop
+ *
+ * Dropping alone shrinks a coastal ride's pool from 17 to 5 — the rider loses
+ * two thirds of the versions on exactly the rides item 11 is about, and gets a
+ * *worse* choice as the reward for not wasting five minutes. So each offshore
+ * via is offered its mirror across the corridor: the same offset on the land
+ * side, which is a shape `buildCandidates` would have produced for the opposite
+ * `side` value and which the router can actually ride.
+ *
+ * The mirror is only used when it is **not already in the pool** — on a ride
+ * where both sides are land, `via-1.4-1`'s mirror *is* `via-1.4--1`, which the
+ * builder produced in its own right.
+ *
+ * **That check is against the whole pool, not against what has been kept so
+ * far**, and the difference is not academic. Measured on Liepāja → Ventspils
+ * before it was fixed: the probes run in build order, so `via-0.35-1`'s mirror
+ * was considered before `via-0.35--1` had been reached, the "already kept" test
+ * saw nothing there, and the mirror went in. The run then routed seven pairs of
+ * byte-identical candidates — same kilometres, same rank, same everything:
+ *
+ * ```
+ * via-1.8-1m  OK  178.4 km  <1km 15.4  rep 0  rank 5.3
+ * via-1.8--1  OK  178.4 km  <1km 15.4  rep 0  rank 5.3
+ * ```
+ *
+ * Half the pool spent on duplicates is worse than the offshore candidates this
+ * exists to remove, so every probe's own point is seeded into the guard before
+ * the loop starts.
+ *
+ * ## The probes are sequential
+ *
+ * BRouter is one vCPU (CLAUDE.md, and `affordableCandidates` is conservative
+ * for the same reason). Fourteen sequential probes measured 0.56–0.65 s per
+ * ride, which is the whole cost of this feature.
+ *
+ * A probe that fails returns null and the via is **kept**: a router hiccup must
+ * never be read as "this is the sea", or one bad minute would empty the pool.
+ */
+export async function dropOffshoreVias<T>(params: {
+  probes: ViaProbe<T>[];
+  /** measures how far BRouter moves a point; injected so tests need no server */
+  snap: (point: Point) => Promise<number | null>;
+  signal?: AbortSignal;
+}): Promise<OffshoreFilterResult<T>> {
+  const started = Date.now();
+  const empty = { probed: 0, dropped: 0, substituted: 0 };
+  if (!params.probes.length) {
+    return { kept: [], ...empty, ms: 0 };
+  }
+
+  // The gate. One bbox over every via, so an inland ride asks `hasSeaData`
+  // once, gets false, and returns its pool untouched without a single probe —
+  // which is what makes item 11e free away from a coast.
+  const bbox = bboxOf(params.probes.map((p) => p.point));
+  if (!hasSeaData(bbox)) {
+    return { kept: params.probes.map((p) => p.item), ...empty, ms: Date.now() - started };
+  }
+
+  const kept: T[] = [];
+  // Every via the pool already offers, whether or not it has been reached yet —
+  // a substitute must not duplicate a candidate built later in the order. See
+  // the note above: checking only what was kept so far routed seven identical
+  // pairs on the headline ride.
+  const poolPoints: Point[] = params.probes.map((p) => p.point);
+  const keptPoints: Point[] = [];
+  let probed = 0;
+  let dropped = 0;
+  let substituted = 0;
+
+  // Memoised because a multi-stop ride can offer the same mirror as the
+  // substitute for two different offshore vias, and a probe is a network call.
+  const cache = new Map<string, number | null>();
+  const measure = async (point: Point): Promise<number | null> => {
+    const key = `${point[0].toFixed(5)},${point[1].toFixed(5)}`;
+    if (cache.has(key)) return cache.get(key)!;
+    probed++;
+    const value = await params.snap(point);
+    cache.set(key, value);
+    return value;
+  };
+  // A null probe is "no opinion", never "in the water" — see the note above.
+  const inWater = (snap: number | null) => snap !== null && snap > OFFSHORE_SNAP_M;
+
+  for (const probe of params.probes) {
+    if (params.signal?.aborted) {
+      // Cancelled mid-probe: keep what is left rather than returning a pool
+      // thinned by however far the loop happened to get.
+      kept.push(probe.item);
+      continue;
+    }
+
+    if (!inWater(await measure(probe.point))) {
+      kept.push(probe.item);
+      keptPoints.push(probe.point);
+      continue;
+    }
+
+    dropped++;
+    for (const substitute of probe.substitutes) {
+      // Already in the pool — either as a candidate the builder produced in its
+      // own right (checked against every probe's point, not only the ones
+      // reached so far) or as an earlier substitution. Routing the same line
+      // twice buys nothing and costs a leg.
+      const duplicate = [...poolPoints, ...keptPoints].some(
+        (p) => haversineMeters(p, substitute.point) < SEAWARD_MAX_M
+      );
+      if (duplicate) continue;
+      if (inWater(await measure(substitute.point))) continue;
+      kept.push(substitute.item);
+      keptPoints.push(substitute.point);
+      substituted++;
+      break;
+    }
+  }
+
+  return { kept, probed, dropped, substituted, ms: Date.now() - started };
+}

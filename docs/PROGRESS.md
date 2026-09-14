@@ -1,5 +1,207 @@
 # Mopik — progress log
 
+## 2026-09-15 — Item 11e: no vias in the water
+
+Item 11d measured where the generation's time actually goes on a coast-parallel
+A-to-B ride, and left the obvious fix out on purpose:
+
+> | | candidates | wall clock |
+> |---|---:|---:|
+> | routed | 8 | 6.6 s |
+> | failed | 12 | **293.4 s** |
+
+98 % of the search's time on candidates that returned nothing, against a 50 s
+`TIME_BUDGET_MS`. The cause is that `perpendicularVia` offsets the A→B line and
+on a coast-parallel ride **one of those two sides is the sea**; BRouter answers
+`error re-tracking track` for a point in the water and `fetchRoutePath` then
+spends the endpoint-nudge ring (3 radii × 8 bearings) and a segmented retry on
+each. Removing those candidates changes the pool for every ride, so it got its
+own item. This is it.
+
+### 1. The coastline dataset cannot tell water from land — measured
+
+The brief proposed inferring it from `sea.ts`: a via is offshore if its
+nearest-coast distance is large **and** the 16-bearing land probe `seawardVias`
+uses finds land on one side only. That was tried first and **it does not work**,
+for a reason that is structural rather than a tuning problem.
+
+`public/sea/*.json` is a list of coastline **vertices** with no inside/outside,
+so `distanceM` is symmetric about the shore: a point 8 km out to sea and a point
+8 km inland return the same distance, and a ring of probes around either reduces
+that distance on about half its bearings. Measured on Liepāja → Ventspils,
+bearings out of 16 that moved *closer* to the coastline, at four probe radii:
+
+| candidate | where it is | 2 km | 5 km | 10 km | 20 km |
+|---|---|---:|---:|---:|---:|
+| `via-0.35-1` | 4.1 km **offshore** | 8/16 | 9/16 | 6/16 | 2/16 |
+| `via-0.35--1` | 4.0 km inland | 8/16 | 8/16 | 5/16 | 3/16 |
+| `via-0.7-1` | 8.2 km **offshore** | 9/16 | 9/16 | 9/16 | 6/16 |
+| `via-0.7--1` | 7.9 km inland | 9/16 | 8/16 | 8/16 | 5/16 |
+
+Identical. No threshold separates them, because there is no asymmetry in the
+data to find. A polygon dataset would answer this; item 11b already priced
+building one and we do not have it.
+
+### 2. What does work: ask the router where the nearest road is
+
+The brief's alternative — "test whether a tiny BRouter request (nearest-way
+snap) exists that is cheaper than a full leg" — and it is decisive.
+
+BRouter snaps each waypoint to the nearest way the profile may ride. A 200 m leg
+from the point is enough to make it answer, and the first returned coordinate is
+the snapped position. On land that is metres away; in the sea it is however far
+the shore is. Measured on the same fourteen vias:
+
+| | coast distance | **snap distance** |
+|---|---:|---:|
+| side +1 (in the Baltic) | 4.1–30.0 km | **4.1–24.6 km** |
+| side −1 (inland) | 4.0–33.4 km | **13–883 m** |
+
+Three orders of magnitude apart, with nothing in between — and the coast
+distance, the signal the brief proposed, is the same on both sides. Across all
+four coastal rides, every via the builder produces:
+
+| | snap distance |
+|---|---|
+| on land (48 vias) | 2 m – 1186 m |
+| in the water (22 vias) | 1944 m – 45757 m |
+
+So `OFFSHORE_SNAP_M = 1500` is not a tuned constant: anything between 1.2 km and
+1.9 km classifies identically on every measured ride. It is set at 1500 because
+a legitimate via can land on a lake or a bog and need a kilometre to reach a
+road, and losing such a via costs a candidate while keeping an offshore one
+costs a minute.
+
+It also catches a case pure geometry cannot: `via-2.8-1` sits 30 km from the
+nearest coastline vertex — a "must be near the coast" guard would have kept it —
+yet snaps 12 km, because it is in open water with the *other* shore nearest.
+
+**And it is cheap: 37–50 ms per probe, 0.65–1.9 s for a whole ride's set.**
+
+### 3. Substitution: the mirror is a duplicate, and that cost a run
+
+Dropping alone takes a coastal ride's pool from 17 to 5 — the rider would lose
+two thirds of the versions on exactly the rides item 11 is about. So each
+offshore via is replaced.
+
+**The first attempt substituted the plain mirror and was wrong.** `scales` is
+symmetric, so `via-1.4-1`'s mirror *is* `via-1.4--1`, which the builder already
+produced. Worse, the probes run in build order, so the mirror was considered
+before its twin was reached and the "already kept" check saw nothing there. The
+run routed seven byte-identical pairs:
+
+```
+via-1.8-1m  OK  178.4 km  <1km 15.4  rep 0  rank 5.3
+via-1.8--1  OK  178.4 km  <1km 15.4  rep 0  rank 5.3
+```
+
+Half the pool spent on duplicates is worse than the offshore candidates this
+exists to remove. Two fixes: the duplicate guard is seeded with **every** probe's
+point up front, not only what has been kept so far; and the substitute is the
+**next scale on the land side** — offsets halfway between the built scales, which
+the pool does not already hold. `scripts/seaward.test.ts` pins both, the ordering
+one explicitly.
+
+### 4. Before / after, all seven rides
+
+In process against `brouter.mopik.eu`, Adventure preset
+(`npx tsx scripts/measure-seaward.ts`). The BEFORE column is item 11d's own
+published run.
+
+| ride | pool | routed | failed | **fail s** | ok s | probe |
+|---|---|---:|---:|---:|---:|---:|
+| Liepāja → Ventspils | 20 → **15** | 8 → **9** | 12 → **6** | 293.4 → **209.1** | 6.6 → 6.2 | 1.89 s |
+| Ventspils → Kolka | 20 → **16** | 11 → **12** | 9 → **4** | 116 → **111.5** | 7.7 → 4.9 | 0.70 s |
+| Rīga → Ainaži | 20 → **14** | 19 → 14 | 1 → **0** | 21 → **0** | 55.4 → **33.2** | 0.66 s |
+| Pärnu → Haapsalu | 20 → **19** | 20 → 19 | 0 → 0 | 0 → 0 | 14.2 → **7.5** | 0.65 s |
+| *Cēsis → Madona (inland)* | **17 → 17** | 17 | 0 | 0 | 6.4 | **0 s** |
+
+Vias judged to be in the water, and what replaced them:
+
+| ride | probed | in the water | substituted |
+|---|---:|---:|---:|
+| Liepāja → Ventspils | 16 | 7 | 2 |
+| Ventspils → Kolka | 15 | 5 | 1 |
+| Rīga → Ainaži | 16 | 8 | 2 |
+| Pärnu → Haapsalu | 15 | 2 | 1 |
+| *Cēsis → Madona* | **0** | 0 | 0 |
+
+The substituted count is below the dropped count on purpose: the rest were
+rejected as duplicates of candidates the pool already had.
+
+**The inland control probes nothing and is byte-identical.** `hasSeaData` is
+false over the probes' own bbox, so `dropOffshoreVias` returns the pool it was
+given without one network call. Verified directly on three inland rides — Cēsis →
+Madona, Sigulda → Cēsis and Wien → Graz — pool 15 → 15, **zero snap calls**, the
+candidate list identical by `JSON.stringify`. Its pick, coastal kilometres and
+rank are unchanged: `via-0-1`, 0 coastal km, rank 36.83.
+
+The loops are unchanged too: Pāvilosta still reports a seaward bearing of 248°,
+Sigulda still reports none.
+
+### 5. What wins, and the honest answer on the 50 s budget
+
+| ride | best after | km | rep % | coast <1 km | <300 m | rank |
+|---|---|---:|---:|---:|---:|---:|
+| Liepāja → Ventspils | `via-0-1` | 140.5 | 0 | 15.4 | 6.8 | −2.16 |
+| Ventspils → Kolka | **`sea-0.75`** | 111.8 | 0 | **44.5** | 2.9 | 0.93 |
+| Rīga → Ainaži | **`sea-0.25`** | 250.7 | 1 | **13.1** | 0.2 | 10.21 |
+| Pärnu → Haapsalu | `via-2.2-1` | 207.3 | 1 | 14.3 | 1.2 | 23.17 |
+| *Cēsis → Madona* | `via-0-1` | 126.3 | 0 | 0 | 0 | 36.83 |
+
+Item 11d's picks are preserved where they were already best, and two rides now
+win on a seaward candidate — Ventspils → Kolka at 44.5 coastal km and Rīga →
+Ainaži at 13.1, both beating their inland predecessors on rank as well.
+
+**Liepāja → Ventspils does NOT yet fit the 50 s budget, and the reason has
+changed.** The whole pool is 217.3 s sequential: 6.4 s on the nine that route,
+1.9 s on the probe, and **209 s on six that still fail**. Every one of those six
+is on **dry land** — the offshore ones are gone:
+
+| candidate | snap distance | raw A→via→B |
+|---|---:|---|
+| `via-0.35--1` | 369 m | REFUSED |
+| `via-0.7--1` | **13 m** | REFUSED |
+| `via-1--1` | 883 m | REFUSED |
+| `via-1.4--1` | 100 m | REFUSED |
+
+Isolating the 0.7 one (21.421589, 56.921915): `A→via` is refused, **`via→B`
+routes fine**, and `A→B` routes fine. So the via sits on a routable way and the
+leg *from* it works — it is the approach from the south that BRouter refuses,
+and the nudge ring (which exists for mis-snapped *endpoints*) is then spent on an
+intermediate point that snapped at 13 m. That is a separate bug, not something a
+water test can or should fix; with it fixed this ride would finish its full pool
+in **8.3 s**. Logged as the next job.
+
+### 6. Beach kilometres
+
+Item 11e's own new candidates are plain inland corridors and add no shore path —
+worst 3.78 km, which is the direct line's own figure on that ride, and 0.06 km on
+Pärnu → Haapsalu.
+
+**One number to watch, and it is item 11d's, not this one's.** On Rīga → Ainaži
+the winner `sea-0.25` carries **15.69 km** of `highway=path` within 1 km of the
+water. `sea-*` candidates are built by `seawardVias` and are never touched by the
+offshore filter, so this is inherited from item 11d rather than introduced here —
+but it is now the ride that gets shown, which makes it visible for the first
+time. The rider's rule from item 11a is that the thing nearest the Baltic is the
+sand, not a road.
+
+### 7. Where it lives
+
+- `lib/routing/fetch-route-probe.ts` — `snapDistanceM`, the cheap water test,
+  with the measured numbers for why the geometric one was abandoned.
+- `lib/routing/seaward.ts` — `OFFSHORE_SNAP_M`, `dropOffshoreVias`, the
+  substitution and duplicate rules.
+- `app/api/generate-route/route.ts` — `buildCandidates` records each via
+  candidate's probe point and its land-side stand-ins. The via-point generation
+  was refactored into `viaPointsFor(side)` and verified **point-for-point
+  identical** to the previous inline code across every combination of place
+  count, scale, side, asymmetry and ride style.
+- `scripts/seaward.test.ts` — 22 tests, 10 of them item 11e's.
+- `scripts/measure-seaward.ts` — the harness now runs the filter and reports
+  probed / dropped / substituted, failures and the time split.
+
 ## 2026-09-14 — POI: a ride parses only the countries it rides through
 
 `poisForRoute` called `loadPois()`, which parses **every published country on

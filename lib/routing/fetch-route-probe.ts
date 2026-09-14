@@ -284,3 +284,111 @@ export function recallLeg(profileId: string, points: Point[]): RoutePath | undef
 export function forgetLegs(): void {
   legCache.clear();
 }
+
+/**
+ * How far BRouter had to move a point to find a road this profile may ride —
+ * the cheap "is this in the water" test, item 11e.
+ *
+ * ## Why a snap distance and not geometry
+ *
+ * Item 11e's brief proposed inferring water from the coastline dataset: a via
+ * is offshore if it is far from the coast *and* the 16-bearing land probe
+ * `seawardVias` uses finds land on one side only. **That was measured and it
+ * does not work.** `public/sea/*.json` is a list of coastline vertices with no
+ * inside/outside, so `distanceM` is symmetric about the coastline: a point 8 km
+ * out to sea and a point 8 km inland return the same distance, and a ring of
+ * probes around either reduces that distance on about half its bearings.
+ * Measured on Liepāja → Ventspils, bearings out of 16 that moved *closer* to
+ * the coastline, at four probe radii:
+ *
+ * ```
+ * via-0.7-1  (8.2 km OFFSHORE)  2km:9/16  5km:9/16  10km:9/16  20km:6/16
+ * via-0.7--1 (7.9 km INLAND)    2km:9/16  5km:8/16  10km:8/16  20km:5/16
+ * ```
+ *
+ * Identical. No threshold separates them, because there is no asymmetry in the
+ * data to find. A polygon dataset would answer this; we do not have one, and
+ * item 11b already priced building one.
+ *
+ * ## What does work: ask the router where the nearest road is
+ *
+ * BRouter snaps each waypoint to the nearest way the profile may use. On land
+ * that is metres away; in the sea it is however far the shore is. A 200 m leg
+ * from the point is enough to make it answer, and the first returned
+ * coordinate is the snapped position. Measured on the same fourteen vias:
+ *
+ * | | coast distance | snap distance |
+ * |---|---:|---:|
+ * | side +1 (in the Baltic) | 4.1–30.0 km | **4.1–24.6 km** |
+ * | side −1 (inland) | 4.0–33.4 km | **13–883 m** |
+ *
+ * Three orders of magnitude apart, with nothing in between — and the coast
+ * distance, the signal the brief proposed, is the same on both sides. It also
+ * catches a case pure geometry cannot: `via-2.8-1` sits 30 km from the nearest
+ * coastline vertex yet snaps 12 km, because it is in open water with the
+ * *other* shore nearest.
+ *
+ * ## And it is cheap
+ *
+ * Measured against `brouter.mopik.eu`: **37–50 ms per probe**, 0.56–0.65 s for
+ * a ride's full set of fourteen. Against the 293 s that ride's twelve offshore
+ * candidates burned on the endpoint-nudge ring and the segmented retry, the
+ * probe pays for itself roughly five hundred times over. It is one vCPU, so
+ * the probes run sequentially like everything else here.
+ *
+ * Returns null when the probe itself fails — a router error must never be read
+ * as "this point is in the sea", or a BRouter hiccup would silently empty the
+ * candidate pool. The caller treats null as "no opinion" and keeps the via.
+ */
+export async function snapDistanceM(params: {
+  point: Point;
+  profileOptions: MotoProfileOptions;
+  signal?: AbortSignal;
+  budgetMs?: number;
+}): Promise<number | null> {
+  let profileId: string;
+  try {
+    profileId = await uploadProfile(params.profileOptions);
+  } catch {
+    return null;
+  }
+
+  // A one-point request is not a route, so the probe asks for the shortest leg
+  // that still makes BRouter snap: 200 m due east. Direction does not matter —
+  // both endpoints snap, and it is the *first* coordinate we read.
+  const [lon, lat] = params.point;
+  const dlon = 200 / (111320 * Math.max(0.2, Math.cos((lat * Math.PI) / 180)));
+  const lonlats = `${lon},${lat}|${lon + dlon},${lat}`;
+
+  const base = process.env.BROUTER_BASE_URL?.trim()
+    ? process.env.BROUTER_BASE_URL.trim().replace(/\/$/, "")
+    : "https://brouter.de";
+  const token = process.env.BROUTER_TOKEN;
+  const url =
+    `${base}/brouter?lonlats=${encodeURIComponent(lonlats)}` +
+    `&profile=${encodeURIComponent(profileId)}&alternativeidx=0&format=geojson`;
+
+  const deadline = AbortSignal.timeout(params.budgetMs ?? SNAP_PROBE_BUDGET_MS);
+  const signal = params.signal ? AbortSignal.any([deadline, params.signal]) : deadline;
+
+  try {
+    const res = await fetch(url, { headers: token ? { "X-Mopik-Token": token } : {}, signal });
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      features?: { geometry: { coordinates: [number, number, number?][] } }[];
+    };
+    const first = data.features?.[0]?.geometry?.coordinates?.[0];
+    if (!first) return null;
+    return haversineMeters(params.point, [first[0], first[1]]);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * How long one snap probe may take. Measured at 37–50 ms against our own
+ * instance, so three seconds is not a budget — it is a guard against a probe
+ * that has hung, and a hung probe answers "no opinion" rather than holding the
+ * generation it exists to protect.
+ */
+export const SNAP_PROBE_BUDGET_MS = 3_000;
