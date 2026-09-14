@@ -8,7 +8,7 @@ be two jobs, split it here rather than quietly doing the easy half.
 
 ---
 
-## 1. A stop added to a round trip must land before the return leg
+## 1. ~~A stop added to a round trip must land before the return leg~~ — DONE 2026-09-14
 
 Reported 2026-09-14, with the exact steps:
 
@@ -33,6 +33,19 @@ destination* on a one-way ride, and appended on a round trip "having no
 finish". Point 5 says that appending is wrong for a round trip too. Read that
 rule before changing the insert position — it was written to fix a real bug
 (appending on a one-way ride silently threw the destination away).
+
+**Done.** `addStop` now inserts before the places already named on both trip
+types, and the return home is a row rather than a caption.
+
+Point 6 turned out to need no new mechanism: on a round trip the last row
+*already is* the leg before home, and `move` could always reach it. What was
+missing was that the return was a footnote, so the leg it closes was invisible
+and the last row did not read as "before Rīga". Making it a row was the fix;
+giving it a control of its own would have duplicated the last row's arrow.
+
+Verified in the browser on the rider's own steps: Rīga → Baldone, round trip,
+"Pievienot vietu" gives `Rīga, [empty], Baldone, ↩ Atpakaļ uz Rīga`, and the
+empty stop moves into the Baldone → Rīga leg with the ordinary arrow.
 
 ## 2. Let the rider cancel a generation in progress
 

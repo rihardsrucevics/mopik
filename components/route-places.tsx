@@ -40,10 +40,23 @@ export function RoutePlaces({ places, oneWay, busy, onChange, onPick, onUseLocat
 }) {
 
 
+  // A new stop goes *before* the places already named, on both trip types.
+  //
+  // One way: appending made the new empty row the last one — which is the
+  // finish — so adding a stop silently threw the destination away.
+  //
+  // Round trip: appending put the stop after the last place the rider had
+  // named, which reads as "Rīga → Baldone → here". The rider asked for the
+  // opposite (Rīga, [stop], Baldone, ↩ Rīga): a stop added to a planned ride
+  // is far more often something to fit in on the way out than a new furthest
+  // point. Either way it can be moved afterwards, and the return row makes
+  // the last leg reachable.
   const addStop = (list: string[], toDestination: boolean) => {
-    if (!toDestination || list.length < 2) return [...list, ""];
-    // Before the finish, keeping it last.
-    return [...list.slice(0, -1), "", list[list.length - 1]];
+    if (list.length < 2) return [...list, ""];
+    // Keep the start first and, one way, the finish last.
+    return toDestination
+      ? [...list.slice(0, -1), "", list[list.length - 1]]
+      : [list[0], "", ...list.slice(1)];
   };
 
   const move = (from: number, to: number, how: "drag" | "tap" | "keyboard" = "drag") => {
@@ -168,13 +181,22 @@ export function RoutePlaces({ places, oneWay, busy, onChange, onPick, onUseLocat
         </div>
       ))}
 
-      {/* A round trip ends where it began; saying so beats an empty field the
-          rider has to interpret. */}
+      {/* A round trip ends where it began. This is a row, not a footnote,
+          because the ride has a leg between the last stop and home and the
+          rider has to be able to put a place into it — with only a caption
+          there was nothing after the last row to move past. It is deliberately
+          not a `PlaceInput`: the return is wherever the start is, so editing
+          it would mean two fields claiming the same place. */}
       {!oneWay && places.length > 0 && (
-        <p className="flex items-center gap-1.5 pl-3 text-[11px] text-stone-500">
-          <span className="text-stone-400">↩</span>
-          Atpakaļ uz {places[0]?.trim() || "sākumu"}
-        </p>
+        <div className="flex items-center gap-2 rounded-xl border border-dashed border-stone-200 bg-stone-50/60 px-3 py-2">
+          <span className="text-xs text-stone-400">↩</span>
+          <span className="min-w-0 flex-1 truncate text-sm text-stone-500">
+            Atpakaļ uz {places[0]?.trim() || "sākumu"}
+          </span>
+          {/* No control of its own: the last row already *is* the leg before
+              home, so a stop reaches it with the same down-arrow as every
+              other move. What was missing was seeing that the leg exists. */}
+        </div>
       )}
 
       {/* A stop goes between the start and the finish. Appending it made the
