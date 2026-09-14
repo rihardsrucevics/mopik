@@ -34,12 +34,12 @@ export function BeerPopup({ open, onClose }: { open: boolean; onClose: () => voi
     <div role="dialog" aria-modal="true" aria-labelledby="beer-title" onClick={onClose}
       className="mopik-fade-in fixed inset-0 z-50 flex items-center justify-center bg-[#201f25]/95 p-5 text-stone-100 backdrop-blur-sm">
       <div onClick={(e) => e.stopPropagation()} className="relative w-full max-w-sm rounded-3xl border border-white/10 bg-[#201f25] p-7 text-center shadow-2xl">
-        <button type="button" onClick={onClose} aria-label="Aizvērt" className="absolute right-3 top-3 flex size-9 items-center justify-center rounded-full text-stone-400 transition hover:bg-white/10 hover:text-white"><X className="size-4" /></button>
+        <button type="button" onClick={onClose} aria-label={m.close} className="absolute right-3 top-3 flex size-9 items-center justify-center rounded-full text-stone-400 transition hover:bg-white/10 hover:text-white"><X className="size-4" /></button>
         {/* The two-finger wave riders give each other. It thanks without
             selling anything, which a beer glass on a screen shown to someone
             about to ride does not. */}
         <div className="mx-auto flex size-16 items-center justify-center text-5xl" aria-hidden="true">✌️</div>
-        <h2 id="beer-title" className="mt-3 text-2xl font-bold tracking-tight">Lai labi braucas!</h2>
+        <h2 id="beer-title" className="mt-3 text-2xl font-bold tracking-tight">{m.beerRideWell}</h2>
         <a href={BEER_LINK} target="_blank" rel="noopener noreferrer" onClick={onBeer}
           className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[#f56300] text-sm font-semibold text-white transition hover:bg-[#ff7a1f]">
           Uzsaukt @rucijs aliņu 🍺

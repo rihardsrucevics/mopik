@@ -400,7 +400,7 @@ export function ResultPanel({ routes, selected, onSelect, plan, avoidTowns = fal
             </div>
             {(q.forestKm > 0 || q.riversideKm > 0 || q.elevationGainM > 0) && (
               <div>
-                <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-stone-400">Daba un ainava</div>
+                <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-stone-400">{m.resNature}</div>
                 <Row label={m.resForest} value={`${q.forestKm} km`} />
                 <Row label={m.resRiverside} value={`${q.riversideKm} km`} />
                 <Row label={m.resOpenCountry} value={`${q.ruralOpenKm} km`} />

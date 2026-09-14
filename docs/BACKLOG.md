@@ -279,6 +279,19 @@ takes a `UiLocale` now, and the type checker found every caller.
 Measured after: a full Lithuanian generation, from the form to the result
 panel, contains **no Latvian words at all**.
 
+**How strings kept being missed, and the fix.** Every sweep searched for
+Latvian diacritics, so "Vari uzreiz pateikt visu, ko zini." — a whole
+sentence without one — survived three passes until the rider spotted it. The
+scan that actually works looks for *any* hardcoded text between JSX tags and
+in `aria-label` / `title` / `placeholder`, regardless of alphabet:
+
+```
+grep -ohE '>[A-Za-z][^<>{}]{8,}<' components/*.tsx app/*.tsx
+grep -ohE '(aria-label|title|placeholder)="[A-Za-z][^"]{6,}"' components/*.tsx
+```
+
+It should come back empty apart from the OpenGraph images.
+
 **Still Latvian, and deliberately:**
 - **The chat's model-generated replies.** They come from the prompt in
   `app/api/route-chat/route.ts`, so translating them means translating the

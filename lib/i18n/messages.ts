@@ -167,6 +167,16 @@ export type MessageKey =
   | "beerScan"
   | "resGravelPct"
   | "resAnother"
+  | "chatSayAll"
+  | "resNature"
+  | "savNewRide"
+  | "savOtherVersions"
+  | "beerRideWell"
+  | "a11yRideInput"
+  | "a11yChatRegion"
+  | "a11yChatMessages"
+  | "a11yHours"
+  | "a11yHoursOther"
   | "backToHome"
   | "language"
   | "footerDisclaimer"
@@ -396,6 +406,16 @@ const lv: Messages = {
   beerScan: "Noskenē ar telefonu, lai uzsauktu",
   resGravelPct: "grants",
   resAnother: "Cits",
+  chatSayAll: "Vari uzreiz pateikt visu, ko zini.",
+  resNature: "Daba un ainava",
+  savNewRide: "Jauns brauciens",
+  savOtherVersions: "Citas versijas",
+  beerRideWell: "Lai labi braucas!",
+  a11yRideInput: "Brauciena ievade",
+  a11yChatRegion: "Brauciena saruna",
+  a11yChatMessages: "Sarunas ziņas",
+  a11yHours: "Stundas",
+  a11yHoursOther: "Stundas, cits skaitlis",
   backToHome: "Mopik — uz sākumu",
   language: "Valoda",
   footerDisclaimer:
@@ -628,6 +648,16 @@ const lt: Messages = {
   beerScan: "Nuskenuok telefonu, jei nori pavaišinti",
   resGravelPct: "žvyro",
   resAnother: "Kitas",
+  chatSayAll: "Gali iš karto pasakyti viską, ką žinai.",
+  resNature: "Gamta ir kraštovaizdis",
+  savNewRide: "Naujas maršrutas",
+  savOtherVersions: "Kitos versijos",
+  beerRideWell: "Geros kelionės!",
+  a11yRideInput: "Maršruto įvestis",
+  a11yChatRegion: "Maršruto pokalbis",
+  a11yChatMessages: "Pokalbio žinutės",
+  a11yHours: "Valandos",
+  a11yHoursOther: "Valandos, kitas skaičius",
   backToHome: "Mopik — į pradžią",
   language: "Kalba",
   footerDisclaimer:
@@ -860,6 +890,16 @@ const et: Messages = {
   beerScan: "Skaneeri telefoniga, kui tahad välja teha",
   resGravelPct: "kruusa",
   resAnother: "Teine",
+  chatSayAll: "Võid kohe öelda kõik, mida tead.",
+  resNature: "Loodus ja maastik",
+  savNewRide: "Uus sõit",
+  savOtherVersions: "Teised versioonid",
+  beerRideWell: "Head sõitu!",
+  a11yRideInput: "Sõidu sisestus",
+  a11yChatRegion: "Sõidu vestlus",
+  a11yChatMessages: "Vestluse sõnumid",
+  a11yHours: "Tunnid",
+  a11yHoursOther: "Tunnid, muu arv",
   backToHome: "Mopik — avalehele",
   language: "Keel",
   footerDisclaimer:
@@ -1092,6 +1132,16 @@ const en: Messages = {
   beerScan: "Scan with your phone to buy one",
   resGravelPct: "gravel",
   resAnother: "Another",
+  chatSayAll: "You can say everything you know right away.",
+  resNature: "Nature and landscape",
+  savNewRide: "New ride",
+  savOtherVersions: "Other versions",
+  beerRideWell: "Ride safe!",
+  a11yRideInput: "Ride input",
+  a11yChatRegion: "Ride conversation",
+  a11yChatMessages: "Conversation messages",
+  a11yHours: "Hours",
+  a11yHoursOther: "Hours, another number",
   backToHome: "Mopik — home",
   language: "Language",
   footerDisclaimer:

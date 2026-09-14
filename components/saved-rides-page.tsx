@@ -73,7 +73,7 @@ export function SavedRidesPage() {
             className="inline-flex items-center gap-1 text-xs text-stone-500 underline decoration-stone-300 underline-offset-4 hover:text-stone-900">
             <ArrowLeft className="size-3.5" />Atpakaļ
           </button>
-          <Link href="/" className="inline-flex items-center gap-1 text-xs text-stone-500 underline decoration-stone-300 underline-offset-4 hover:text-stone-900"><Plus className="size-3.5" />Jauns brauciens</Link>
+          <Link href="/" className="inline-flex items-center gap-1 text-xs text-stone-500 underline decoration-stone-300 underline-offset-4 hover:text-stone-900"><Plus className="size-3.5" />{m.savNewRide}</Link>
         </div>
       </header>
 
@@ -134,7 +134,7 @@ export function SavedRidesPage() {
                     was saved: switching to the straighter one costs nothing. */}
                 {r.alternatives && r.alternatives.length > 0 && (
                   <div className="mt-2 flex flex-wrap gap-1.5 border-t border-stone-100 pt-2">
-                    <span className="self-center text-[10px] uppercase tracking-wider text-stone-400">Citas versijas</span>
+                    <span className="self-center text-[10px] uppercase tracking-wider text-stone-400">{m.savOtherVersions}</span>
                     {r.alternatives.map((alt) => (
                       <Link key={`${r.id}-${alt.variant}`} href={`/r/${alt.code}`} onClick={() => track("saved_alternative_opened", { variant: alt.variant })}
                         className="rounded-full border border-stone-200 px-2.5 py-1 text-[11px] text-stone-700 transition hover:border-stone-300 hover:bg-stone-50">

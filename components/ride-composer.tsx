@@ -256,7 +256,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   };
 
   return (
-    <section className="flex flex-col overflow-hidden rounded-2xl border border-stone-200 bg-white md:h-[calc(100vh-7rem)]" aria-label="Brauciena ievade">
+    <section className="flex flex-col overflow-hidden rounded-2xl border border-stone-200 bg-white md:h-[calc(100vh-7rem)]" aria-label={t(locale, "a11yRideInput")}>
       <div className="border-b border-stone-200 bg-[#faf9f6] px-4 py-3">
         <div className="mb-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#bd4b00]">{t(locale, "composerEyebrow")}</div>
         <h2 className="text-lg font-semibold tracking-tight">{t(locale, "composerTitle")}</h2>
@@ -293,7 +293,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
 
         <ChoiceRow label={t(locale, "duration")} value={durationMode} onChange={setDurationMode} choices={[{ value: "flexible", label: t(locale, "flexible") }, { value: "hours", label: t(locale, "exact") }]} />
         {durationMode === "hours" && (
-          <div className="flex items-stretch gap-1.5" role="group" aria-label="Stundas">
+          <div className="flex items-stretch gap-1.5" role="group" aria-label={t(locale, "a11yHours")}>
             {/* The usual days as one tap each; the field is for everything else. */}
             {PRESETS.map((h) => {
               const active = !hours.trim() && preset === h;
@@ -306,7 +306,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
             })}
             <label className="flex h-10 w-[5.5rem] shrink-0 items-center gap-1 rounded-xl border border-stone-200 px-2.5 focus-within:border-[#f56300]">
               {/* type=text + inputMode=decimal: iOS opens the number pad, and "2,5" stays typeable. */}
-              <input type="text" inputMode="decimal" pattern="[0-9]*[.,]?[0-9]*" placeholder="cits" aria-label="Stundas, cits skaitlis" value={hours} onChange={(e) => { setHours(e.target.value); if (e.target.value.trim()) setPreset(null); }} className="min-w-0 flex-1 bg-transparent text-right text-base font-semibold outline-none md:text-sm" />
+              <input type="text" inputMode="decimal" pattern="[0-9]*[.,]?[0-9]*" placeholder="cits" aria-label={t(locale, "a11yHoursOther")} value={hours} onChange={(e) => { setHours(e.target.value); if (e.target.value.trim()) setPreset(null); }} className="min-w-0 flex-1 bg-transparent text-right text-base font-semibold outline-none md:text-sm" />
               <span className="text-xs text-stone-400">h</span>
             </label>
           </div>

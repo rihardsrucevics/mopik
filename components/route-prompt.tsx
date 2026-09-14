@@ -65,7 +65,7 @@ export function RoutePrompt({ messages, plan, hasRoute, phase, quickReplies, luc
   };
 
   return (
-    <section className={`flex flex-col overflow-hidden rounded-2xl border border-stone-200 bg-[#faf9f6] md:h-[calc(100vh-7rem)] ${hasRoute ? "h-[max(360px,calc(74dvh-8.5rem))]" : "h-[calc(100dvh-7.5rem)]"}`} aria-label="Brauciena saruna">
+    <section className={`flex flex-col overflow-hidden rounded-2xl border border-stone-200 bg-[#faf9f6] md:h-[calc(100vh-7rem)] ${hasRoute ? "h-[max(360px,calc(74dvh-8.5rem))]" : "h-[calc(100dvh-7.5rem)]"}`} aria-label={t(locale, "a11yChatRegion")}>
       <div className="border-b border-stone-200 px-4 py-3 md:px-5 md:py-4">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -85,10 +85,10 @@ export function RoutePrompt({ messages, plan, hasRoute, phase, quickReplies, luc
         {plan && <p className="mt-2 hidden line-clamp-2 text-[11px] leading-relaxed text-stone-500 md:block">{planSummary(plan, locale)}</p>}
       </div>
 
-      <div ref={logRef} className="relative min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4 md:space-y-5 md:px-5 md:py-5" role="log" aria-label="Sarunas ziņas" aria-live="polite">
+      <div ref={logRef} className="relative min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4 md:space-y-5 md:px-5 md:py-5" role="log" aria-label={t(locale, "a11yChatMessages")} aria-live="polite">
         {messages.length === 0 && (
           <div className="py-5 text-sm leading-7 text-stone-600">
-            <p>Vari uzreiz pateikt visu, ko zini.</p>
+            <p>{t(locale, "chatSayAll")}</p>
             <p className="mt-3 border-l-2 border-[#f56300] pl-4 text-stone-500">{t(locale, "chatExample")}</p>
           </div>
         )}
