@@ -1,6 +1,7 @@
 import { angleDiff, bearingDegrees, haversineMeters } from "@/lib/geo/geometry";
 import { estimateRideSeconds } from "./speed";
 import { isUnverifiedMotorPath } from "./access";
+import { bboxOf, yardLookup, BOTH_SIDES_M, YARD_RADIUS_M, type YardLookup } from "@/lib/geo/yards";
 import {
   OverlapStats,
   RoadClass,
@@ -120,6 +121,179 @@ const STREET_HIGHWAYS = new Set(["residential", "living_street", "service"]);
 const ROUGH_SMOOTHNESS = new Set(["bad", "very_bad", "horrible", "very_horrible", "impassable"]);
 type Landscape = "forest" | "riverside" | "open" | "urban";
 
+/**
+ * The classes a yard measurement applies to.
+ *
+ * `track` and `service` only, and this restriction is the measurement, not a
+ * guess. `docs/private-property-options.md` §1 flagged 187 edges within 25 m of
+ * a building across six rides — 100.4 km — but most of that is `unclassified`:
+ * ordinary Latvian village gravel road, public, with houses along it. Banning
+ * that would delete the country. Restricting to `track`/`service` cuts 187
+ * edges to 60 and 100.4 km to 16.7 km, which is almost exactly the set of
+ * genuinely suspect stretches the rider complained about — one to three per
+ * ride. The investigation's own false-positive example (a Kuldīga
+ * `residential` lane 13 m from detached houses, correctly tagged, a public
+ * road) is excluded by exactly this rule.
+ */
+const YARD_HIGHWAYS = new Set(["track", "service"]);
+
+/**
+ * Kilometres of `track`/`service` that pass **through** a yard, and by which rule.
+ *
+ * The rider drew the line this measurement now respects:
+ *
+ *   "A house near the road does not make the road private. Only a road that
+ *   goes THROUGH the yard does. I do not want the route changed because a
+ *   house is 25 m from the road — private houses stand beside public roads
+ *   all the time."
+ *
+ * So proximity to a building is the *collection* filter in the dataset, never
+ * the verdict. A stretch counts only when one of four things is true, and each
+ * rule's contribution is counted separately so it can be judged:
+ *
+ *  (a) `yard` — the stretch is inside a `landuse=farmyard`, or a
+ *      `landuse=residential` polygon small enough to be one homestead. OSM
+ *      saying outright that this is somebody's yard; the strongest signal
+ *      available, and the one the investigation's examples 2 and 9 turn on.
+ *  (b) `bothSides` — buildings within 20 m on **both** sides of the direction
+ *      of travel. This is the drive between the house and the barn, and it is
+ *      the rule that separates a yard from a village street: a row of houses
+ *      along one side is all one sign, a yard is both. Investigation example 1
+ *      (a track 3 m from a wall) and example 6 (a yard track between
+ *      outbuildings) are this shape.
+ *  (c) `deadEnd` — the route enters and leaves the cluster by the same way. A
+ *      track that goes to a house and stops is a driveway however it is
+ *      tagged; measured as the route retracing its own steps while inside the
+ *      building cluster.
+ *  (d) `gate` — a `barrier=gate|lift_gate|chain|bollard|swing_gate` node sits
+ *      on the stretch. The single explicit statement OSM does make about farm
+ *      access, and the investigation found 38 of them touched across six
+ *      rides. Examples 5 and 7 are this.
+ *
+ * Measured on geometry, because BRouter's message rows carry **no OSM way ids**
+ * (`lib/routing/brouter.ts` says so in a comment) — there is nothing to join on.
+ * That is the approach `measureOverlap` and `tet-coverage.ts` already take.
+ *
+ * Returns zeros where no yard data covers the route: absent data reads as
+ * "not measured", not as "clean". This number changes no route — it is
+ * reported, the way `unverifiedPathKm` is.
+ */
+export type YardRule = "yard" | "bothSides" | "deadEnd" | "gate";
+
+type YardMeasurement = {
+  yardKm: number;
+  yardEdgeCount: number;
+  /** km attributed to each rule; a stretch caught by two counts in both */
+  byRule: Record<YardRule, number>;
+  /** per-coordinate-pair verdict, for the segment flag */
+  flags: boolean[] | null;
+};
+
+const EMPTY_YARDS: YardMeasurement = {
+  yardKm: 0,
+  yardEdgeCount: 0,
+  byRule: { yard: 0, bothSides: 0, deadEnd: 0, gate: 0 },
+  flags: null,
+};
+
+function measureYards(path: RoutePath, lookup: YardLookup | null): YardMeasurement {
+  const coords = path.coordinates;
+  if (!lookup || !lookup.size || coords.length < 2) return EMPTY_YARDS;
+
+  const flags = new Array<boolean>(Math.max(0, coords.length - 1)).fill(false);
+  const byRule: Record<YardRule, number> = { yard: 0, bothSides: 0, deadEnd: 0, gate: 0 };
+
+  // Which coordinate pairs belong to a track/service edge at all. Everything
+  // else is excluded before any rule runs: a `residential` lane past detached
+  // houses is a public road, and it is the investigation's own documented
+  // false positive (example 10, Kuldīga, 13 m).
+  const onYardHighway = new Array<boolean>(coords.length - 1).fill(false);
+  for (const edge of path.edges) {
+    const hw = edge.tags?.highway ?? edge.use ?? "";
+    if (!YARD_HIGHWAYS.has(hw)) continue;
+    const end = Math.min(edge.endShapeIndex, coords.length - 1);
+    for (let i = Math.max(0, edge.beginShapeIndex); i < end; i++) onYardHighway[i] = true;
+  }
+
+  // Rule (c) needs to know which pieces of road the route rides twice — a
+  // track that goes to a house and comes back is a driveway however it is
+  // tagged. Keyed exactly as `measureOverlap` does it, so the two agree.
+  const passes = new Map<string, number>();
+  const pairKey = (i: number) => {
+    const a = `${coords[i][0].toFixed(5)},${coords[i][1].toFixed(5)}`;
+    const b = `${coords[i + 1][0].toFixed(5)},${coords[i + 1][1].toFixed(5)}`;
+    return a < b ? `${a}|${b}` : `${b}|${a}`;
+  };
+  for (let i = 0; i < coords.length - 1; i++) {
+    if (!onYardHighway[i]) continue;
+    const key = pairKey(i);
+    passes.set(key, (passes.get(key) ?? 0) + 1);
+  }
+
+  for (let i = 0; i < coords.length - 1; i++) {
+    if (!onYardHighway[i]) continue;
+    const a = coords[i];
+    const b = coords[i + 1];
+
+    // (a) inside a farmyard polygon — tested at both ends so a step that
+    // crosses the boundary counts as entering it.
+    const inYard = Boolean(lookup.yardAt(a[0], a[1]) ?? lookup.yardAt(b[0], b[1]));
+
+    // (b) buildings on both sides. `signedOffsetM` is positive left of travel.
+    const near = lookup.buildingsAlong(a, b, YARD_RADIUS_M);
+    let left = false;
+    let right = false;
+    for (const { offsetM } of near) {
+      if (Math.abs(offsetM) > BOTH_SIDES_M) continue;
+      if (offsetM > 0) left = true;
+      else right = true;
+    }
+    const bothSides = left && right;
+
+    // (d) a gate on this stretch.
+    const gate = lookup.gatesAlong(a, b, YARD_RADIUS_M).length > 0;
+
+    // (c) a dead end into a building cluster: this piece of road is ridden more
+    // than once AND there is a building beside it. Retracing alone is an
+    // out-and-back leg, which is common and innocent; retracing *into a
+    // homestead* is a driveway.
+    const deadEnd = (passes.get(pairKey(i)) ?? 0) > 1 && near.length > 0;
+
+    if (!inYard && !bothSides && !gate && !deadEnd) continue;
+
+    const meters = haversineMeters(a, b);
+    flags[i] = true;
+    if (inYard) byRule.yard += meters;
+    if (bothSides) byRule.bothSides += meters;
+    if (deadEnd) byRule.deadEnd += meters;
+    if (gate) byRule.gate += meters;
+  }
+
+  // Total metres, and how many separate runs they form — a run being a
+  // contiguous stretch of flagged pairs, which is what "one to three suspect
+  // stretches per ride" counts.
+  let meters = 0;
+  let runs = 0;
+  for (let i = 0; i < flags.length; i++) {
+    if (!flags[i]) continue;
+    meters += haversineMeters(coords[i], coords[i + 1]);
+    if (i === 0 || !flags[i - 1]) runs++;
+  }
+
+  const km = (m: number) => Math.round(m / 100) / 10;
+  // The per-rule split is kept to two decimals where the headline is one:
+  // a ride with 0.1 km spread over four rules rounds every rule to 0.0 at one
+  // decimal and the breakdown reads as "no rule fired", which is worse than
+  // useless — it is the number that says whether to trust the signal.
+  const km2 = (m: number) => Math.round(m / 10) / 100;
+  return {
+    yardKm: km(meters),
+    yardEdgeCount: runs,
+    byRule: { yard: km2(byRule.yard), bothSides: km2(byRule.bothSides), deadEnd: km2(byRule.deadEnd), gate: km2(byRule.gate) },
+    flags,
+  };
+}
+
 function classNumber(value: string | undefined): number {
   const parsed = Number(value ?? 0);
   return Number.isFinite(parsed) ? parsed : 0;
@@ -162,7 +336,7 @@ function measureElevation(path: RoutePath): { gain: number; range: number } {
  * nothing the profile doesn't mention), so a route without edge detail
  * reports zeros rather than guesses.
  */
-function measureQuality(path: RoutePath): RouteQuality & { turns: number } {
+function measureQuality(path: RoutePath, yards: YardMeasurement): RouteQuality & { turns: number } {
   const coords = path.coordinates;
   let rough = 0;
   let sand = 0;
@@ -282,6 +456,9 @@ function measureQuality(path: RoutePath): RouteQuality & { turns: number } {
     elevationGainM: elevation.gain,
     elevationRangeM: elevation.range,
     natureScore,
+    yardKm: yards.yardKm,
+    yardEdgeCount: yards.yardEdgeCount,
+    yardByRule: yards.byRule,
   };
 }
 
@@ -347,6 +524,11 @@ function buildIndexLookup(edges: RouteEdge[], coordCount: number): (RouteEdge | 
 export function classifyRoute(path: RoutePath): ClassifiedRoute {
   const coords = path.coordinates;
   const edgeAt = buildIndexLookup(path.edges, coords.length);
+  // Measured once and reused: the lookup carries the loaded country files and
+  // the route's own metric frame, and rebuilding it per segment is what made
+  // the POI loader slow when it re-derived a country set per call.
+  const lookup = coords.length >= 2 ? yardLookup(bboxOf(coords)) : null;
+  const yards = measureYards(path, lookup);
   const features: GeoJSON.Feature<GeoJSON.LineString, RouteSegmentProperties>[] = [];
 
   const distByRoad: Record<RoadClass, number> = { road: 0, track: 0, trail: 0 };
@@ -362,7 +544,7 @@ export function classifyRoute(path: RoutePath): ClassifiedRoute {
   // stretches the panel already counts in `unverifiedPathKm` — a path with no
   // positive motor access in OSM. Splitting on it too means a run is either
   // wholly unverified or wholly not, never half.
-  let current: { roadClass: RoadClass; surface: SurfaceClass; trackGrade?: string; unverified?: boolean } | null = null;
+  let current: { roadClass: RoadClass; surface: SurfaceClass; trackGrade?: string; unverified?: boolean; yard?: boolean } | null = null;
 
   const flush = (endIndex: number) => {
     if (!current || endIndex <= segStart) return;
@@ -391,22 +573,29 @@ export function classifyRoute(path: RoutePath): ClassifiedRoute {
     const surface = toSurfaceClass(edge?.surface, edge?.unpaved, edge?.use);
     const trackGrade = roadClass === "track" ? edge?.tags?.tracktype : undefined;
     const unverified = isUnverifiedMotorPath(edge?.tags);
+    // Per-segment, exactly like `unverified`: the same stretch the panel counts
+    // in `quality.yardKm`, carried on the geometry so a badge or a map colour
+    // can mark it without re-measuring. Splitting on it keeps a run wholly in a
+    // yard or wholly out, never half. Only `track`/`service` is ever flagged —
+    // see YARD_HIGHWAYS for why a village street at 13 m is not a yard.
+    const yard = yards.flags?.[i] ?? false;
 
     if (
       !current ||
       current.roadClass !== roadClass ||
       current.surface !== surface ||
       current.trackGrade !== trackGrade ||
-      Boolean(current.unverified) !== unverified
+      Boolean(current.unverified) !== unverified ||
+      Boolean(current.yard) !== yard
     ) {
       flush(i);
       segStart = i;
-      current = { roadClass, surface, ...(trackGrade ? { trackGrade } : {}), ...(unverified ? { unverified: true } : {}) };
+      current = { roadClass, surface, ...(trackGrade ? { trackGrade } : {}), ...(unverified ? { unverified: true } : {}), ...(yard ? { yard: true } : {}) };
     }
   }
   flush(coords.length - 1);
 
-  const { turns, ...quality } = measureQuality(path);
+  const { turns, ...quality } = measureQuality(path, yards);
   const total = distByRoad.road + distByRoad.track + distByRoad.trail || 1;
   const pct = (m: number) => Math.round((m / total) * 100);
   const km = (m: number) => Math.round(m / 100) / 10;

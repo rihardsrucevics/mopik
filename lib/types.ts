@@ -139,6 +139,13 @@ export type RouteSegmentProperties = {
    * stretches the rider should check signs on.
    */
   unverified?: boolean;
+  /**
+   * A `track` or `service` stretch running within 25 m of a building — a
+   * farmyard, in the rider's words. Already counted in `quality.yardKm`;
+   * carried per segment so the map and the risk badges can mark exactly the
+   * stretches that earned the number, the way `unverified` already does.
+   */
+  yard?: boolean;
   distanceMeters: number;
 };
 
@@ -183,6 +190,32 @@ export type RouteQuality = {
   elevationRangeM: number;
   /** Internal 0–100 candidate-ranking signal; provisional until rider-labelled. */
   natureScore: number;
+  /**
+   * Kilometres of `track`/`service` running within 25 m of a building — riding
+   * through somebody's farmyard, backlog item 12.
+   *
+   * OSM cannot answer this from tags: across the six rides
+   * `docs/private-property-options.md` measured, the flagged edges carried zero
+   * `access=private` and zero `motor_vehicle=no`, every ridden `service` way
+   * lacked a `service=*` subtag, and `building`/`landuse` are not in BRouter's
+   * vocabulary at all. So it is measured geometrically against a prebuilt
+   * dataset (`lib/geo/yards.ts`), and is 0 where no dataset covers the ride —
+   * "not measured", not "clean".
+   */
+  yardKm: number;
+  /** How many separate stretches make up `yardKm` — one to three per ride, measured. */
+  yardEdgeCount: number;
+  /**
+   * Which rule caught each kilometre, so the signal can be judged rather than
+   * trusted: `yard` a farmyard polygon, `bothSides` buildings left and right,
+   * `deadEnd` a driveway the route backs out of, `gate` a barrier on the line.
+   * A stretch caught by two rules is counted in both, so these sum to at least
+   * `yardKm`. Kept to two decimals where `yardKm` has one: a ride with 0.1 km
+   * spread over four rules rounds every rule to 0.0 at one decimal, and the
+   * breakdown then reads as "no rule fired" — which is the one thing it must
+   * never say when something did.
+   */
+  yardByRule: { yard: number; bothSides: number; deadEnd: number; gate: number };
 };
 
 export type SurfaceMix = {

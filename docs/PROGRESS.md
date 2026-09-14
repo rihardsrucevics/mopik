@@ -1,5 +1,185 @@
 # Mopik — progress log
 
+## 2026-09-14 — Item 12: "through a yard", not "near a house"
+
+Backlog item 12 — routes run through private property. The measured options
+paper is `docs/private-property-options.md`; this is what was built from it,
+and the rider corrected the shape of it halfway through.
+
+### What he said, and why it mattered
+
+The first build followed the paper's recommendation literally: flag every
+`track`/`service` metre within 25 m of a building, and penalise it in
+`score.ts` so such a candidate loses. The rider stopped that:
+
+> "A house near the road does not make the road private. Only a road that goes
+> THROUGH the yard does. I do not want the route changed because a house is
+> 25 m from the road — private houses stand beside public roads all the time."
+
+He is right, and the paper's own numbers say so: 100.4 km of the 601 km
+measured lay within 25 m of a building, and most of it is ordinary Latvian
+village gravel road — public, with houses along it. **Proximity is a necessary
+condition and never a sufficient one.** Two things changed:
+
+1. **No penalty. The routing is untouched.** `score.ts` and the generate-route
+   ranking are back to exactly what they were; the signal is information, and
+   it travels the same path `unverifiedPathKm` already takes — a quality field,
+   a per-segment flag, a share-code field, and a RISKI row to come.
+2. **Four rules replace the radius.** A `track`/`service` stretch is a yard
+   only when at least one is true, and each rule's kilometres are reported
+   separately so the signal can be judged rather than trusted:
+   - `yard` — inside a `landuse=farmyard`, or a `landuse=residential` polygon
+     small enough to be one homestead (≤ 5 buildings, ≤ 400 m across). OSM
+     saying outright that this is somebody's yard.
+   - `bothSides` — buildings within 20 m on **both** sides of the direction of
+     travel. This is the rule that separates a yard from a village street: a
+     row of houses along one side is all one sign; the drive between the house
+     and the barn is both.
+   - `deadEnd` — the route rides a piece of road twice *and* there is a
+     building beside it. Retracing alone is innocent; retracing into a
+     homestead is a driveway.
+   - `gate` — a `barrier=gate|lift_gate|chain|bollard|swing_gate` node on the
+     stretch. The one explicit statement OSM makes about farm access.
+
+`residential` and `unclassified` are excluded before any rule runs, which is
+what disposes of the paper's own documented false positive (example 10, a
+Kuldīga lane 13 m from detached houses, correctly tagged, a public road).
+
+### The ten examples, judged
+
+The paper lists ten flagged stretches with coordinates. Under the strict
+definition, checked against the published Latvian dataset:
+
+| # | ride | class | rules that fire | the paper's note |
+|---|---|---|---|---|
+| 1 | Bauska | track | **clean** | 3 m, "the line runs against the wall" |
+| 2 | Bauska | track | bothSides | 12 m, inside `landuse=farmyard` |
+| 3 | Bauska | track | bothSides | 7 m, farmstead cluster |
+| 4 | Cēsis → Madona | track | bothSides | 10 m, longest single stretch |
+| 5 | Sigulda | service + track | gate | `barrier=gate` on the line |
+| 6 | Tukums → Kandava | track | bothSides | 7 m, yard track between outbuildings |
+| 7 | Tukums → Kandava | service | bothSides | 17 m, gate at 3 m |
+| 8 | Rīga → Baldone | service | bothSides | 4 m, industrial yard |
+| 9 | Sigulda | track | **yard(farmyard)** + bothSides | 19 m, inside `landuse=farmyard` |
+| 10 | Kuldīga | residential | **excluded — not track/service** | the documented false positive |
+
+Eight of ten still flag. **Example 1 now reads clean, and that is the rider's
+rule working**: one building 3 m from a track, nothing on the other side, no
+polygon, no gate — a house beside a track is a house beside a track. Example
+10 is excluded by class, as designed.
+
+Example 2's farmyard polygon (w949187059) is in the dataset and `yardAt` finds
+it — at the polygon's own centroid, 660 m from the coordinate the paper lists,
+which is a different point of the same flagged edge. Nothing is missing.
+
+### The six rides, re-measured
+
+Same six rides, same Adventure plan (hard / Sports / Meži), through the dev
+server. There is no before/after column because **routes do not change** — the
+"old" column is the paper's plain 25 m proximity figure, for comparison.
+
+| ride | km | time | unpaved | paper's ≤25 m km | strict yardKm | stretches | which rule |
+|---|---:|---:|---:|---:|---:|---:|---|
+| Sigulda round trip | 102.1 | 177 min | 73 % | 3.33 | 0.20 | 2 | both 0.15, gate 0.11 |
+| Cēsis → Madona | 175.2 | 296 min | 72 % | 2.18 | 0.10 | 4 | both 0.05, gate 0.02 |
+| Rīga → Baldone | 60.3 | 130 min | 77 % | 1.06 | 1.00 | 8 | gate 0.74, both 0.22 |
+| Tukums → Kandava | 46.9 | 68 min | 64 % | 1.65 | 0.30 | 6 | both 0.30, gate 0.03 |
+| Kuldīga round trip | 132.0 | 189 min | 88 % | 1.38 | 0.40 | 5 | gate 0.26, both 0.10 |
+| Bauska round trip | 125.0 | 182 min | 75 % | 7.12 | 2.80 | 19 | yard 1.41, dead 0.89, both 0.68, gate 0.05 |
+| **Total** | **641.5** | | | **16.72** | **4.80** | | yard 1.41, both 1.50, gate 1.21, dead 0.89 |
+
+(A stretch caught by two rules counts in both, so the rule columns sum to more
+than `yardKm`.)
+
+**16.72 km → 4.80 km, a 71 % cut, and 0.75 % of the distance ridden.** The
+shape is right: Bauska, the pure-farmland loop, keeps the most (2.80 km, and
+it is the only ride where the `yard` polygon rule fires at all); the forest
+rides drop to a few hundred metres. The rides are not the paper's own — these
+were generated fresh and are longer — so the km columns are not comparable
+ride-for-ride, only in total.
+
+### The dataset
+
+`scripts/build_yard_dataset.py`, pyosmium over a Geofabrik extract, two passes:
+pass 1 bins every `highway=track|service` way's geometry into a 0.01° grid
+(sampled every 12 m so a building beside a long straight edge is still found);
+pass 2 tests buildings, barrier nodes and landuse polygons against it.
+`with_areas()` is not optional — the POI build learned that when 24 of
+Estonia's 27 reserves turned out to be multipolygons, and a farmstead's main
+building is frequently one too.
+
+Latvia, measured: **134 MB extract, 750 s, 282,832 features in 9.6 MB.**
+
+| | count |
+|---|---:|
+| buildings near `service` | 224,958 |
+| buildings near `track` | 23,530 |
+| gates near `service` | 12,836 |
+| gates near `track` | 693 |
+| `landuse=farmyard` rings | 6,715 |
+| small `landuse=residential` rings | 14,100 |
+
+**The `service` numbers are the reason the rider's correction was right.**
+248,488 buildings survive a plain 25 m filter — not the "few thousand" the
+paper estimated — and 90 % of them are near a `service` way. 16 % of the whole
+dataset is inside a box around greater Rīga: apartment blocks beside parking
+access roads. A proximity rule would have called those yards.
+
+**Published as packed arrays, not GeoJSON features.** Measured: the same data
+is 42.9 MB as minified GeoJSON and 9.4 MB packed (`[lon, lat, nearHighway]`
+triples plus rings) — the per-feature `type`/`geometry`/`properties`
+scaffolding is most of the file, and `lib/geo/yards.ts` parses this on a cold
+serverless invocation. Ids are dropped with it: the runtime asks "is there a
+building here", never "which one".
+
+### Plumbing
+
+- `lib/geo/yards.ts` — lazy per-country loader over
+  `public/yards/index.json` + `<CC>.geojson`, mirroring the POI loader's
+  0.25°-cell index exactly (the measurements for that cell size are in
+  `scripts/publish-poi.ts`). Synchronous, because `classify.ts` runs inside the
+  candidate loop. Absent data reads as "not measured", never "clean".
+- `lib/routing/classify.ts` — `measureYards` applies the four rules;
+  `quality.yardKm`, `yardEdgeCount`, `yardByRule`, and the per-segment
+  `yard: true` flag, which splits a run the way `unverified` does.
+- `lib/share/route-code.ts` — optional `y` in the meta, written only when
+  non-zero. Codes that predate it decode to 0; the version prefix is not bumped
+  because nothing breaks.
+- `next.config.ts` — `public/yards/` added to the function's traced files, with
+  the same glob as POI so a country published later needs no edit.
+- `scripts/publish-yards.ts` — `data/yards-*.geojson` → `public/yards/`,
+  incremental, one country at a time.
+- 18 tests in `scripts/yards.test.ts`. The load-bearing ones are the negatives:
+  a house beside a track is not a yard, a row of houses along one side is not a
+  yard, a residential lane between houses is not measured at all.
+
+### Running it for other countries
+
+```bash
+SP=<scratchpad>                       # the POI build's venv has pyosmium
+$SP/poi-venv/bin/python scripts/build_yard_dataset.py LT EE PL DE
+npx tsx scripts/publish-yards.ts
+```
+
+The script downloads each extract, builds, and deletes it — disk is the
+constraint, not CPU. `--pbf FILE --country CC` builds from an extract already
+on disk. Latvia took 750 s for 134 MB; Poland's 2 GB extract should be read as
+roughly fifteen times that, and it must not run while the POI build holds the
+same disk.
+
+### Still open
+
+- **The UI row.** `quality.yardKm` and the segment flag are available; the
+  RISKI row ("Iespējams pagalms · N km") and the map badge are the
+  orchestrator's to add, alongside the `sparsePlaceData`-style notice for
+  rides outside the published countries (`hasYardData` answers that).
+- **Only Latvia is built.** Everywhere else reports 0, which means "not
+  measured" and must be said out loud rather than read as clean.
+- `deadEnd` is the weakest of the four rules — it fires on 0.9 km, all of it
+  in Bauska, and it cannot tell a driveway from a legitimate out-and-back spur
+  that happens to pass a barn. Worth revisiting against rider feedback (option
+  (d) in the paper) before trusting it.
+
 ## 2026-09-14 — POI: three rectangles become three countries, and the loader goes per country
 
 Two problems fixed together, because the fix for one is the fix for the other.

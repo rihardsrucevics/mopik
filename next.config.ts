@@ -10,6 +10,11 @@ const nextConfig: NextConfig = {
       "./public/poi/index.json",
       "./public/poi/*.geojson",
       "./public/tet-lv.geojson",
+      // Yard evidence (backlog item 12), read by lib/geo/yards.ts the same way.
+      // Same glob reasoning: a country published later reaches production
+      // without editing this file.
+      "./public/yards/index.json",
+      "./public/yards/*.geojson",
     ],
     // The suggestions endpoint reads the same dataset through route-pois.ts.
     "/api/route-pois": ["./public/poi/index.json", "./public/poi/*.geojson"],

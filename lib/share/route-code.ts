@@ -105,6 +105,16 @@ export type ShareMeta = {
   sf?: [number, number, number, number];
   /** forestKm, riversideKm, ruralOpenKm, elevationGainM, unverifiedPathKm, roughTrackKm, sandKm, streetKm */
   q?: [number, number, number, number, number, number, number, number];
+  /**
+   * yardKm — `track`/`service` km within 25 m of a building (backlog item 12).
+   *
+   * Its own key rather than a ninth slot in `q`, and optional, because **older
+   * codes must keep decoding**: links live in riders' chats forever and the
+   * version prefix is only bumped for a change that breaks them. A code with no
+   * `y` decodes to 0, which reads as "not measured" — the same thing a ride
+   * outside the published yard countries reports.
+   */
+  y?: number;
 };
 export type SharedRoute = {
   name: string; variant: string; km: number; minutes: number; unpavedPercent: number; repeatedPercent: number;
@@ -118,6 +128,8 @@ export type SharedRoute = {
     asphaltPercent: number; gravelPercent: number; dirtPercent: number; unknownPercent: number;
     forestKm: number; riversideKm: number; ruralOpenKm: number; elevationGainM: number;
     unverifiedPathKm: number; roughTrackKm: number; sandKm: number; streetKm: number;
+    /** 0 on codes that predate the field, and on rides with no yard data. */
+    yardKm: number;
   } | null;
 };
 
@@ -172,6 +184,9 @@ export function encodeRouteShare(route: GeneratedRoute, startLabel: string, plan
     q: [r1(route.quality.forestKm), r1(route.quality.riversideKm), r1(route.quality.ruralOpenKm), Math.round(route.quality.elevationGainM ?? 0),
       r1(route.quality.unverifiedPathKm), r1(route.quality.roughTrackKm), r1(route.quality.sandKm), r1(route.quality.streetKm)],
   };
+  // Only when there is something to say: a zero would cost bytes in every link
+  // for a field most rides do not use, and absent already means zero on decode.
+  if (route.quality.yardKm > 0) meta.y = r1(route.quality.yardKm);
   const parts = [SHARE_VERSION, toBase64Url(JSON.stringify(meta)), encodeVarints(deltas), encodeVarints(runs)];
   if (plan) parts.push(encodePlanShare(plan, places));
   return parts.join("~");
@@ -213,6 +228,7 @@ export function decodeRouteShare(code: string): SharedRoute | null {
       asphaltPercent: meta.sf[0], gravelPercent: meta.sf[1], dirtPercent: meta.sf[2], unknownPercent: meta.sf[3],
       forestKm: meta.q[0], riversideKm: meta.q[1], ruralOpenKm: meta.q[2], elevationGainM: meta.q[3],
       unverifiedPathKm: meta.q[4], roughTrackKm: meta.q[5], sandKm: meta.q[6], streetKm: meta.q[7],
+      yardKm: meta.y ?? 0,
     } : null;
     return { name: meta.n, variant: meta.va, km: meta.km, minutes: meta.min, unpavedPercent: meta.up, repeatedPercent: meta.rep, startLabel: meta.s, points, classes, plan, details };
   } catch {
