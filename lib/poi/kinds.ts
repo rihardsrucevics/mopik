@@ -61,3 +61,21 @@ export const POI_KIND: Record<PoiCategory, { key: string; icon: string }> = {
   reserve: { key: "kindReserve", icon: "🌲" },
   village: { key: "kindVillage", icon: "🏘️" },
 };
+
+/**
+ * The place a suggestion's row points at on openstreetmap.org.
+ *
+ * The dataset's `id` is the OSM element with its type folded into the first
+ * character — `n249778754` is node 249778754 — which is exactly what the
+ * site's own URLs want. Checked against the real file: every one of the
+ * 16,410 features carries one, and the only prefixes in it are `n`, `w` and
+ * `r`. An id in any other shape (an older dataset, a future build that keys
+ * places differently) falls back to a marker at the coordinates, which lands
+ * the rider on the same spot without claiming to know which object it is.
+ */
+export function osmUrl(poi: { id: string; lat: number; lon: number }): string {
+  const type = { n: "node", w: "way", r: "relation" }[poi.id[0] ?? ""];
+  const rest = poi.id.slice(1);
+  if (type && /^\d+$/.test(rest)) return `https://www.openstreetmap.org/${type}/${rest}`;
+  return `https://www.openstreetmap.org/?mlat=${poi.lat}&mlon=${poi.lon}#map=16/${poi.lat}/${poi.lon}`;
+}

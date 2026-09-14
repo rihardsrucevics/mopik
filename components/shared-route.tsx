@@ -5,16 +5,18 @@ import { useRouter } from "next/navigation";
 import { useLocale } from "@/lib/i18n/use-locale";
 import { messages } from "@/lib/i18n/messages";
 import { fi } from "@/lib/i18n/format";
-import { ArrowUp, Download, LoaderCircle } from "lucide-react";
+import { ArrowUp, Download } from "lucide-react";
 import { RouteActionRow } from "@/components/action-row";
 import { RouteMap } from "@/components/route-map";
-import { POI_KIND, type RoutePois } from "@/lib/poi/kinds";
+import { POI_KIND, type RoutePoi, type RoutePois } from "@/lib/poi/kinds";
+import { SuggestionsCard } from "@/components/suggestions-card";
 import { MapPanel } from "@/components/map-panel";
 import { SiteHeader } from "@/components/site-header";
 import { track } from "@/lib/analytics";
 import { sharedRouteSegments, type SharedRoute } from "@/lib/share/route-code";
 import { isCodeSaved, removeRide, rideId, saveSharedRide } from "@/lib/share/saved-rides";
 import { gpxFilename } from "@/lib/gpx/filename";
+import { DESKTOP_QUERY } from "@/lib/use-media-query";
 
 // A function of the language, not a constant: these labels are shown in
 // four languages and a module-level object is built before one is known.
@@ -59,6 +61,36 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
    */
   const [pois, setPois] = useState<RoutePois | null>(null);
   const [poisLoading, setPoisLoading] = useState(false);
+  // Its own expandable, exactly as on the planner: the route's facts belong to
+  // Detaļas and the suggestions are a separate, optional offer. Sharing one
+  // toggle would have made opening the numbers fetch a list nobody asked for.
+  const [poisOpen, setPoisOpen] = useState(false);
+  /**
+   * The suggestion the rider pressed "Kartē" on. Same mechanism as the
+   * planner's, and the same reason it lives beside the map rather than inside
+   * the list: the map is what has to move. `token` rises per press so pressing
+   * the same row twice flies back to it after a pan.
+   */
+  const [focusPoi, setFocusPoi] = useState<{ lat: number; lon: number; label: string; kind?: string; token: number } | null>(null);
+  const focusTokenRef = useRef(0);
+  const showPoi = (poi: RoutePoi) => {
+    focusTokenRef.current += 1;
+    const entry = POI_KIND[poi.category];
+    track("suggestion_shown", { kind: poi.category });
+    setFocusPoi({
+      lat: poi.lat, lon: poi.lon, label: poi.name,
+      kind: entry ? m[entry.key as keyof typeof m] ?? poi.category : poi.category,
+      token: focusTokenRef.current,
+    });
+    // The map is the page's other column on a desktop and the block above the
+    // card on a phone, where it can easily be scrolled past by the time the
+    // rider reaches Ieteikumi. Deferred a frame so the flight has been
+    // started by the render this press causes.
+    if (window.matchMedia(DESKTOP_QUERY).matches) return;
+    requestAnimationFrame(() => {
+      document.querySelector("[data-map-slot]")?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  };
   const askedRef = useRef(false);
   const [copied, setCopied] = useState(false);
   // The correction box below the card, exactly as the result panel has it.
@@ -97,7 +129,7 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
   // Asked once, when the rider opens the details — the same lazy rule the
   // result panel follows, for the same reason: most visitors never expand it.
   useEffect(() => {
-    if (!details || askedRef.current || !share.points?.length) return;
+    if (!poisOpen || askedRef.current || !share.points?.length) return;
     askedRef.current = true;
     setPoisLoading(true);
     const controller = new AbortController();
@@ -114,7 +146,7 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
       .catch(() => {})
       .finally(() => setPoisLoading(false));
     return () => controller.abort();
-  }, [details, share.points, locale]);
+  }, [poisOpen, share.points, locale]);
   const start = { lat: share.points[0][1], lon: share.points[0][0] };
   useEffect(() => { track("shared_route_viewed", { km: share.km, variant: share.variant }); }, [share.km, share.variant]);
 
@@ -210,33 +242,6 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
                   <Row label={m.badgeUnverified} value={`${d.unverifiedPathKm} km · ${pct(d.unverifiedPathKm)} %`} icon="⚠️" />
                 </div>
               )}
-              {poisLoading && !pois && (
-                <div className="flex items-center gap-2 text-[11px] text-stone-400">
-                  <LoaderCircle className="size-3 animate-spin" />
-                  {m.resSuggestLoading}
-                </div>
-              )}
-              {pois && (pois.onRoute.length > 0 || pois.nearby.length > 0) && (
-                <div>
-                  <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-stone-400">{m.resSuggestions}</div>
-                  {pois.onRoute.length > 0 && (
-                    <div className="mb-1.5">
-                      <div className="mb-0.5 text-[10px] font-medium text-stone-400">{m.resSuggestOnRoute}</div>
-                      {pois.onRoute.map((p) => (
-                        <Row key={p.id} label={`${p.name} \u00b7 ${m[POI_KIND[p.category].key as keyof typeof m] ?? p.category}`} value={`${p.alongKm} km`} icon={POI_KIND[p.category].icon} />
-                      ))}
-                    </div>
-                  )}
-                  {pois.nearby.length > 0 && (
-                    <div>
-                      <div className="mb-0.5 text-[10px] font-medium text-stone-400">{m.resSuggestNearby}</div>
-                      {pois.nearby.map((p) => (
-                        <Row key={p.id} label={`${p.name} \u00b7 ${m[POI_KIND[p.category].key as keyof typeof m] ?? p.category}`} value={p.distanceMeters < 1000 ? `${p.distanceMeters} m` : `${Math.round(p.distanceMeters / 100) / 10} km`} icon={POI_KIND[p.category].icon} />
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
               <div>
                 <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-stone-400">{m.resSurfaceHeading}</div>
                 <Row label={m.legendAsphalt} value={`${surfaceKm(d.asphaltPercent)} km · ${d.asphaltPercent} %`} /><Row label={m.legendGravel} value={`${surfaceKm(d.gravelPercent)} km · ${d.gravelPercent} %`} /><Row label={m.resDirt} value={`${surfaceKm(d.dirtPercent)} km · ${d.dirtPercent} %`} /><Row label={m.resUnknown} value={`${surfaceKm(d.unknownPercent)} km · ${d.unknownPercent} %`} />
@@ -250,6 +255,20 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
               )}
             </div>
           )}
+          {/* Ieteikumi as its own block, below the route card — the same shape
+              the planner has, because the rider asked for the two pages to be
+              identical here. Read-only: a shared ride has no plan of its own
+              to regenerate, so the rows offer Kartē and Vairāk and the way to
+              make the ride one's own is the button that already says so. */}
+          <div className="mt-3">
+            <SuggestionsCard
+              pois={pois}
+              loading={poisLoading}
+              expanded={poisOpen}
+              onToggle={() => setPoisOpen(!poisOpen)}
+              onShow={showPoi}
+            />
+          </div>
         </section>
         {/* The result panel's correction box, below the card and shaped the
             same way. It has nowhere to send a correction without the plan, so
@@ -280,7 +299,7 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
           <MapPanel
             className="h-[46dvh] overflow-hidden rounded-2xl border border-stone-200 md:h-[calc(100vh-7rem)]"
             expandedClassName="md:relative md:inset-auto md:z-auto md:h-[calc(100vh-7rem)] md:overflow-hidden md:rounded-2xl md:border md:border-stone-200">
-            <RouteMap segments={segments} start={start} destination={null} showTet={showTet} onToggleTet={setShowTet} />
+            <RouteMap segments={segments} start={start} destination={null} focus={focusPoi} onFocusCleared={() => setFocusPoi(null)} showTet={showTet} onToggleTet={setShowTet} />
           </MapPanel>
         </div>
       </div>

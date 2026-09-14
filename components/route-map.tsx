@@ -24,6 +24,28 @@ type Props = {
    * says so, and one the rider typed by hand simply says "Pieturvieta".
    */
   via?: { lat: number; lon: number; label: string; kind?: string; detail?: string }[];
+  /**
+   * A place the rider asked to *look at* from Ieteikumi — not a stop.
+   *
+   * Deliberately its own prop rather than another entry in `via`: a via point
+   * is part of the ride and gets the 🅿️ pill, while this is a place being
+   * considered. It gets a pulsing ring instead, and it is temporary — the
+   * `token` changes on every press so pressing Kartē twice on the same row
+   * re-flies and re-opens the card rather than doing nothing, and `onClear`
+   * fires when the rider clicks the map or presses Escape.
+   */
+  focus?: { lat: number; lon: number; label: string; kind?: string; token: number } | null;
+  onFocusCleared?: () => void;
+  /**
+   * Make the focused place a stop, from the card on the map itself.
+   *
+   * The rider asked for it in as many words — "kā man šos ērti pievienot
+   * maršrutam?" — after browsing suggestions on the map: having flown to a
+   * place and decided he wants it, going back to the list to find the row
+   * again is a step that should not exist. Absent on the shared-route page,
+   * which has no plan of its own to regenerate.
+   */
+  onFocusAdd?: () => void;
   showTet: boolean;
   onToggleTet: (visible: boolean) => void;
 };
@@ -924,6 +946,37 @@ function stopElement(title: string): HTMLElement {
 }
 
 /**
+ * The ring that marks a place the rider is only *looking at*.
+ *
+ * Not a 🅿️: that pill means "this is a stop of your ride", and a suggestion
+ * pressed from Ieteikumi is not one yet — showing it as a stop would say the
+ * ride had changed when it had not. A pulsing orange ring instead, in the
+ * brand colour so it reads as the app pointing at something, and with the
+ * animation defined inline because the map's markers live outside React and
+ * outside Tailwind's tree.
+ *
+ * `pointer-events:none`: the ring must not swallow the map click that is the
+ * documented way of dismissing it.
+ */
+function focusElement(): HTMLElement {
+  const el = document.createElement("div");
+  el.setAttribute("aria-hidden", "true");
+  el.style.cssText =
+    "width:28px;height:28px;border-radius:50%;pointer-events:none;" +
+    "border:2px solid #f56300;background:rgba(245,99,0,0.18);" +
+    "box-shadow:0 0 0 4px rgba(245,99,0,0.18);";
+  // The ring stays, the pulse goes: the marker is the answer to a press and
+  // has to be visible either way, but the repeat is what a rider who asked for
+  // reduced motion is asking not to have. The global stylesheet's
+  // `prefers-reduced-motion` block cannot reach an inline `animation`, so the
+  // choice is made here instead.
+  if (!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+    el.style.animation = "mopik-focus-pulse 1.6s ease-out infinite";
+  }
+  return el;
+}
+
+/**
  * The card a stop's marker opens: its name, what kind of place it is, and
  * whatever the POI dataset knows about it.
  *
@@ -945,6 +998,41 @@ function stopInfoHtml(m: Messages, stop: { label: string; kind?: string; detail?
     (stop.detail
       ? `<div style="margin-top:6px;padding-top:6px;border-top:1px solid #ececf0;color:#6b7280">` +
         `${esc(stop.detail)}</div>`
+      : "") +
+    `</div>`
+  );
+}
+
+/**
+ * The card the focus ring opens: a name and what kind of place it is.
+ *
+ * Almost `stopInfoHtml`, and deliberately not it: that card's second line
+ * says "Pieturvieta", which is exactly the claim this one must not make. A
+ * suggestion the rider is looking at has not joined the ride, and the row's
+ * own Pievienot button is what would change that.
+ */
+function focusInfoHtml(m: Messages, place: { label: string; kind?: string }, canAdd: boolean): string {
+  return (
+    `<div style="font-size:12px;line-height:1.5;min-width:150px">` +
+    `<strong style="display:block;padding-right:24px;margin-bottom:4px">` +
+    `${esc(place.label)}</strong>` +
+    (place.kind
+      ? `<div style="display:flex;gap:8px;justify-content:space-between">` +
+        `<span style="color:#6b7280">${esc(m.resPoiKind)}</span>` +
+        `<span style="text-align:right">${esc(place.kind)}</span></div>`
+      : "") +
+    // The rider's own question — "kā man šos ērti pievienot maršrutam?" — is
+    // answered here rather than only back in the list: having flown to a place
+    // and decided, the next tap should be the one that does it. `data-add` is
+    // how the effect finds this button once MapLibre has parsed the markup;
+    // the popup's DOM is not ours to hold a React ref inside.
+    (canAdd
+      ? `<button type="button" data-add="1" ` +
+        `style="margin-top:8px;width:100%;display:flex;align-items:center;` +
+        `justify-content:center;gap:4px;height:30px;border-radius:15px;` +
+        `border:1px solid #f5630040;background:#fff;color:#f56300;` +
+        `font-size:12px;font-weight:600;cursor:pointer;padding:0 10px">` +
+        `${esc(m.resAddStop)}</button>`
       : "") +
     `</div>`
   );
@@ -1008,7 +1096,7 @@ const SURFACE_COLOR_EXPR: maplibregl.ExpressionSpecification = [
   SURFACE_COLORS.unknown,
 ];
 
-export function RouteMap({ segments, start, destination, via, showTet, onToggleTet }: Props) {
+export function RouteMap({ segments, start, destination, via, focus, onFocusCleared, onFocusAdd, showTet, onToggleTet }: Props) {
   const [locale] = useLocale();
   const m = messages(locale);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1045,6 +1133,16 @@ export function RouteMap({ segments, start, destination, via, showTet, onToggleT
   const openCardRef = useRef<(lngLat: maplibregl.LngLatLike, id: number) => void>(() => {});
   /** The segment popover — one at a time, replaced rather than stacked. */
   const infoPopupRef = useRef<maplibregl.Popup | null>(null);
+  /** The ring on a place being looked at, and the way to take it away again. */
+  const focusMarkerRef = useRef<maplibregl.Marker | null>(null);
+  const clearFocusRef = useRef<() => void>(() => {});
+  // The parent's callback, read from map handlers that outlive the render that
+  // created them. A ref so a parent re-creating the arrow every render does
+  // not mean re-attaching every map listener.
+  const onFocusClearedRef = useRef(onFocusCleared);
+  useEffect(() => { onFocusClearedRef.current = onFocusCleared; }, [onFocusCleared]);
+  const onFocusAddRef = useRef(onFocusAdd);
+  useEffect(() => { onFocusAddRef.current = onFocusAdd; }, [onFocusAdd]);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -1386,6 +1484,72 @@ export function RouteMap({ segments, start, destination, via, showTet, onToggleT
   }, [segments, start, destination, via, showTet, locale]);
 
   /**
+   * "Kartē" on a suggestion: fly there, ring the place, open its card.
+   *
+   * Keyed on `focus.token` rather than on the place itself, so pressing the
+   * same row twice flies back to it — a rider who has panned away and presses
+   * again means "take me there", and comparing coordinates would make the
+   * second press do nothing.
+   *
+   * `easeTo`, not `flyTo`: the target is often a few kilometres off the line
+   * the map is already showing, and flyTo's zoom-out-and-back arc reads as the
+   * map losing the route. Zoom 13 is close enough to see which side of the
+   * road the place is on and wide enough to keep some of the ride on screen.
+   */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (!focus) { clearFocusRef.current(); return; }
+
+    focusMarkerRef.current?.remove();
+    focusMarkerRef.current = new maplibregl.Marker({ element: focusElement() })
+      .setLngLat([focus.lon, focus.lat])
+      .addTo(map);
+
+    infoPopupRef.current?.remove();
+    // The same popup mechanism the 🅿️ markers and the segment card use, so
+    // the rider meets one card style on the map. `mapStop` would be a lie
+    // here — the place is not a stop — so the card carries the kind alone and
+    // `stopInfoHtml` is given no `kind` fallback to fall back to.
+    const popup = new maplibregl.Popup({ offset: 20, maxWidth: "260px", closeButton: true })
+      .setLngLat([focus.lon, focus.lat])
+      .setHTML(focusInfoHtml(m, focus, Boolean(onFocusAddRef.current)))
+      .addTo(map);
+    infoPopupRef.current = popup;
+
+    // The card's own Pievienot. Bound after `addTo`, which is when MapLibre
+    // has parsed the markup and the element exists; the handler goes through a
+    // ref so that a parent re-creating the callback every render — the
+    // ordinary case for an inline arrow — is not a reason to rebuild the card
+    // and lose the rider's place on the map.
+    popup.getElement()?.querySelector<HTMLButtonElement>("[data-add]")
+      ?.addEventListener("click", (event) => {
+        event.stopPropagation();
+        onFocusAddRef.current?.();
+      });
+    // Closing the card with its own × is the same intent as clicking away, so
+    // it goes through the one path that removes the ring and tells the parent.
+    // `clearFocusRef` is what the interaction effect installed; it no-ops once
+    // the marker is already gone, which is what keeps this from recursing when
+    // the close came *from* `clearFocus` removing the popup.
+    popup.on("close", () => clearFocusRef.current());
+
+    map.easeTo({ center: [focus.lon, focus.lat], zoom: 13, duration: 800 });
+
+    // Only the marker and this popup, never `clearFocus`: a cleanup that told
+    // the parent would fire on the re-run that a *new* focus causes and
+    // immediately undo the press.
+    return () => {
+      focusMarkerRef.current?.remove();
+      focusMarkerRef.current = null;
+      popup.remove();
+      if (infoPopupRef.current === popup) infoPopupRef.current = null;
+    };
+    // `m` is read for the card's words; a language change while a card is open
+    // re-renders it, which is right.
+  }, [focus, m]);
+
+  /**
    * Pointer behaviour on the route: the badge highlight, the hover readout and
    * the tap-a-segment card.
    *
@@ -1518,20 +1682,45 @@ export function RouteMap({ segments, start, destination, via, showTet, onToggleT
     };
     openCardRef.current = (lngLat, id) => openCard(lngLat, id);
 
+    /**
+     * Take the "looking at this place" ring away.
+     *
+     * The parent is told as well as the map being cleaned, because the parent
+     * owns the `focus` prop: clearing only the marker would leave the page
+     * still believing a place was focused, and the next press on the *same*
+     * row would then be a no-op change with nothing to re-render. Guarded on
+     * the marker's existence so an ordinary click on empty map does not
+     * announce a clear that clears nothing.
+     */
+    const clearFocus = () => {
+      if (!focusMarkerRef.current) return;
+      focusMarkerRef.current.remove();
+      focusMarkerRef.current = null;
+      infoPopupRef.current?.remove();
+      infoPopupRef.current = null;
+      onFocusClearedRef.current?.();
+    };
+    clearFocusRef.current = clearFocus;
+
     const onClick = (e: maplibregl.MapMouseEvent) => {
       const feature = featureAt(e.point);
       const props = feature?.properties as SegmentProps | undefined;
       const id = props?.[SEGMENT_ID];
       if (!props || typeof id !== "number") {
-        // A click on empty map is how a rider puts the highlight away.
+        // A click on empty map is how a rider puts the highlight — and the
+        // temporary ring on a suggestion — away.
         clearHighlight();
+        clearFocus();
         return;
       }
 
+      // A click that opens a segment card also ends the "look at this place"
+      // gesture: the rider has moved on to asking about the road.
+      clearFocus();
       openCard(e.lngLat, id, props);
     };
 
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") clearHighlight(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { clearHighlight(); clearFocus(); } };
 
     map.on("mousemove", onMouseMove);
     map.on("mouseout", hideHover);

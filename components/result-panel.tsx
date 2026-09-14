@@ -14,7 +14,8 @@ import type { ResolvedPlace } from "@/lib/chat/places";
 import { isSaved, removeRide, rideId, saveRide } from "@/lib/share/saved-rides";
 import { gpxFilename } from "@/lib/gpx/filename";
 import { RouteActionRow } from "@/components/action-row";
-import { POI_KIND, type RoutePoi, type RoutePois } from "@/lib/poi/kinds";
+import { type RoutePoi, type RoutePois } from "@/lib/poi/kinds";
+import { SuggestionsCard } from "@/components/suggestions-card";
 
 /**
  * The left column once routes exist: what was asked, the three versions,
@@ -67,52 +68,7 @@ function Row({ label, value, icon }: { label: string; value: string; icon?: stri
   );
 }
 
-/**
- * One suggested place: its kind's emoji and word, its name, and how far.
- *
- * The same row shape serves both groups — what changes is the figure on the
- * right (km into the ride for something the route passes, metres off the line
- * for something it does not) and the add control, which only a nearby place
- * gets. A place already on the route needs no button: the ride is going there.
- */
-function PoiRow({ poi, m, figure, onAdd, busy }: {
-  poi: RoutePoi;
-  m: ReturnType<typeof messages>;
-  figure: string;
-  onAdd?: () => void;
-  busy?: boolean;
-}) {
-  const kind = POI_KIND[poi.category];
-  const kindLabel = m[kind.key as keyof typeof m] ?? poi.category;
-  // Built here rather than in the JSX: a template literal used as a child is
-  // exactly what `react/jsx-no-literals` bans, and rightly — the "+" is
-  // decoration on a translated word, not a string of its own.
-  const addLabel = `+ ${m.resAddStop}`;
-  return (
-    <div className="flex items-center gap-2 py-0.5 text-xs">
-      <span aria-hidden="true" className="shrink-0 text-[12px] leading-none">{kind.icon}</span>
-      <span className="min-w-0 flex-1 truncate">
-        <span className="text-stone-900">{poi.name}</span>
-        <span className="text-stone-400">{" · "}</span>
-        <span className="text-stone-500">{kindLabel}</span>
-      </span>
-      <span className="shrink-0 tabular-nums text-stone-500">{figure}</span>
-      {onAdd && (
-        <button
-          type="button"
-          onClick={onAdd}
-          disabled={busy}
-          aria-label={fi(m.resAddStopAria, { place: poi.name })}
-          className="shrink-0 rounded-full border border-[#f5630040] px-2 py-0.5 text-[11px] font-semibold text-[#f56300] transition hover:bg-[#f5630010] disabled:opacity-40"
-        >
-          {addLabel}
-        </button>
-      )}
-    </div>
-  );
-}
-
-export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, remoteLoop, longerSuggestion, tolerancePercent = 20, busy, onSend, onBackToForm, resolvedPlaces, alternatives, offset, onOffsetChange, map, sparsePlaceData = false, assembledFromSegments = false, onAddStop, onPoisLoaded }: {
+export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, remoteLoop, longerSuggestion, tolerancePercent = 20, busy, onSend, onBackToForm, resolvedPlaces, alternatives, offset, onOffsetChange, map, sparsePlaceData = false, assembledFromSegments = false, onAddStop, onShowPoi, onPoisLoaded }: {
   routes: GeneratedRoute[];
   /** transit → loop → transit split, when the ride was built around a focus area */
   remoteLoop?: GenerateRouteResponse["remoteLoop"];
@@ -170,6 +126,14 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
    */
   onAddStop?: (place: { name: string; lat: number; lon: number }) => void;
   /**
+   * Fly the map to a suggested place and ring it, without changing the ride.
+   *
+   * The page owns it because the map does — the panel only knows which row was
+   * pressed. Absent when there is no map to fly (the desktop column is always
+   * there, so in practice this is always passed).
+   */
+  onShowPoi?: (poi: RoutePoi) => void;
+  /**
    * The places this ride passes, once they have been looked up.
    *
    * Reported upwards so the map can label a stop's marker with what kind of
@@ -195,8 +159,7 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
     return family[(offset[r.variant] ?? 0) % Math.max(1, family.length)] ?? r;
   };
   /**
-   * The suggestions in Detaļas, fetched when the details are opened and not
-   * before.
+   * The suggestions, fetched when their own block is opened and not before.
    *
    * Lazy on purpose: most generations are never expanded, and the lookup is
    * a server round trip carrying the whole polyline. Keyed by the ride's id
@@ -206,6 +169,11 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
    */
   const [suggestions, setSuggestions] = useState<RoutePois | null>(null);
   const [suggestLoading, setSuggestLoading] = useState(false);
+  // Ieteikumi is its own expandable now, so it has its own open state. It is
+  // no longer tied to Detaļas: the rider asked for the route's facts and the
+  // suggestions to be separate things, and sharing one toggle would have made
+  // opening the numbers also fetch a list he had not asked for.
+  const [suggestOpen, setSuggestOpen] = useState(false);
   const suggestedFor = useRef<string | null>(null);
   // Held in a ref so a parent that re-creates the callback every render — the
   // ordinary case for an inline arrow — cannot become a reason to ask the
@@ -227,15 +195,15 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
   const route = shownFor(routes[Math.min(selected, routes.length - 1)]);
 
   /**
-   * Ask for the suggestions the first time this ride's details are opened.
+   * Ask for the suggestions the first time this ride's Ieteikumi are opened.
    *
    * Above the `if (!route)` below, because a hook cannot run conditionally —
-   * the effect's own guard is `details && route`, which is the same condition
+   * the effect's own guard is `suggestOpen && route`, which is the same condition
    * expressed where React can see it every render.
    */
   const routeId = route?.id ?? null;
   useEffect(() => {
-    if (!details || !routeId || !route) return;
+    if (!suggestOpen || !routeId || !route) return;
     if (suggestedFor.current === routeId) return;
     suggestedFor.current = routeId;
     setSuggestions(null);
@@ -262,7 +230,7 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
     // `route` is read inside but keyed by its id: a re-render that produces an
     // equal-but-new object must not re-ask the server.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [details, routeId, locale]);
+  }, [suggestOpen, routeId, locale]);
 
   if (!route) return null;
   const q = route.quality;
@@ -530,6 +498,21 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
 
 
 
+        {/* Ieteikumi: its own block, below the route card and below Detaļas'
+            own toggle — the rider's correction after seeing the first version.
+            The route's facts stay the most important thing and stay inside
+            Detaļas; what is worth stopping at is a separate, optional offer
+            and now reads as one. */}
+        <SuggestionsCard
+          pois={suggestions}
+          loading={suggestLoading}
+          expanded={suggestOpen}
+          onToggle={() => setSuggestOpen(!suggestOpen)}
+          onShow={onShowPoi}
+          onAdd={onAddStop}
+          busy={busy}
+        />
+
         {details && notices.length > 0 && (
           <ul className="space-y-1 rounded-xl bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-900">
             {notices.map((w) => <li key={w}>{w}</li>)}
@@ -555,49 +538,6 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
               <div>
                 <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-stone-400">{m.resRisksHeading}</div>
                 <Row label={m.badgeUnverified} value={`${q.unverifiedPathKm} km · ${unverifiedPercent} %`} icon="⚠️" />
-              </div>
-            )}
-            {/* Places, between the two blocks that describe the road and the
-                one that describes its surface: what the ride goes past is a
-                different kind of fact from how rough it is, and it is the one
-                a rider can act on. Absent entirely when there is nothing to
-                say — outside the Baltics the dataset knows no names, and an
-                empty heading would be a promise the app cannot keep. */}
-            {suggestLoading && !suggestions && (
-              <div className="flex items-center gap-2 text-[11px] text-stone-400">
-                <LoaderCircle className="size-3 animate-spin" />
-                {m.resSuggestLoading}
-              </div>
-            )}
-            {suggestions && (suggestions.onRoute.length > 0 || suggestions.nearby.length > 0) && (
-              <div>
-                <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-stone-400">{m.resSuggestions}</div>
-                {suggestions.onRoute.length > 0 && (
-                  <div className="mb-1.5">
-                    <div className="mb-0.5 text-[10px] font-medium text-stone-400">{m.resSuggestOnRoute}</div>
-                    {suggestions.onRoute.map((p) => (
-                      <PoiRow key={p.id} poi={p} m={m} figure={`${p.alongKm} km`} />
-                    ))}
-                  </div>
-                )}
-                {suggestions.nearby.length > 0 && (
-                  <div>
-                    <div className="mb-0.5 text-[10px] font-medium text-stone-400">{m.resSuggestNearby}</div>
-                    {suggestions.nearby.map((p) => (
-                      <PoiRow
-                        key={p.id}
-                        poi={p}
-                        m={m}
-                        // Metres for a short detour, one decimal of a
-                        // kilometre past that: "1.2 km off" is easier to judge
-                        // than "1240 m off".
-                        figure={p.distanceMeters < 1000 ? `${p.distanceMeters} m` : `${Math.round(p.distanceMeters / 100) / 10} km`}
-                        busy={busy}
-                        onAdd={onAddStop ? () => onAddStop({ name: p.name, lat: p.lat, lon: p.lon }) : undefined}
-                      />
-                    ))}
-                  </div>
-                )}
               </div>
             )}
             <div>

@@ -243,6 +243,18 @@ export type MessageKey =
   | "resSuggestLoading"
   | "resAddStop"
   | "resAddStopAria"
+  | "resPoiShow"
+  | "resPoiShowAria"
+  | "resPoiMore"
+  | "resPoiMoreAria"
+  | "resPoiLess"
+  | "resPoiKind"
+  | "resPoiAlong"
+  | "resPoiOff"
+  | "resPoiOsm"
+  | "resPoiOsmAria"
+  | "resPoiNoDetail"
+  | "resPoiOnRouteNote"
   | "kindFerry"
   | "kindFord"
   | "kindTower"
@@ -603,6 +615,18 @@ const lv: Messages = {
   resSuggestLoading: "Meklēju vietas…",
   resAddStop: "Pievienot",
   resAddStopAria: "Pievienot {place} kā pieturvietu un pārrēķināt maršrutu",
+  resPoiShow: "Kartē",
+  resPoiShowAria: "Parādīt {place} kartē",
+  resPoiMore: "Vairāk",
+  resPoiMoreAria: "Vairāk par {place}",
+  resPoiLess: "Aizvērt",
+  resPoiKind: "Veids",
+  resPoiAlong: "Maršrutā",
+  resPoiOff: "Attālums no maršruta",
+  resPoiOsm: "OpenStreetMap",
+  resPoiOsmAria: "Atvērt {place} OpenStreetMap kartē",
+  resPoiNoDetail: "Datos par šo vietu vairāk nekā nosaukums un veids nav.",
+  resPoiOnRouteNote: "Maršruts jau iet tam garām.",
   kindFerry: "pārceltuve",
   kindFord: "brasls",
   kindTower: "skatu tornis",
@@ -945,6 +969,18 @@ const lt: Messages = {
   resSuggestLoading: "Ieškau vietų…",
   resAddStop: "Pridėti",
   resAddStopAria: "Pridėti {place} kaip sustojimą ir perskaičiuoti maršrutą",
+  resPoiShow: "Žemėlapyje",
+  resPoiShowAria: "Parodyti {place} žemėlapyje",
+  resPoiMore: "Daugiau",
+  resPoiMoreAria: "Daugiau apie {place}",
+  resPoiLess: "Uždaryti",
+  resPoiKind: "Tipas",
+  resPoiAlong: "Maršrute",
+  resPoiOff: "Atstumas nuo maršruto",
+  resPoiOsm: "OpenStreetMap",
+  resPoiOsmAria: "Atverti {place} OpenStreetMap žemėlapyje",
+  resPoiNoDetail: "Duomenyse apie šią vietą nėra nieko daugiau nei pavadinimas ir tipas.",
+  resPoiOnRouteNote: "Maršrutas jau pro ją eina.",
   kindFerry: "keltas",
   kindFord: "brasta",
   kindTower: "apžvalgos bokštas",
@@ -1287,6 +1323,18 @@ const et: Messages = {
   resSuggestLoading: "Otsin kohti…",
   resAddStop: "Lisa",
   resAddStopAria: "Lisa {place} peatusena ja arvuta marsruut uuesti",
+  resPoiShow: "Kaardil",
+  resPoiShowAria: "Näita {place} kaardil",
+  resPoiMore: "Rohkem",
+  resPoiMoreAria: "Rohkem {place} kohta",
+  resPoiLess: "Sulge",
+  resPoiKind: "Liik",
+  resPoiAlong: "Marsruudil",
+  resPoiOff: "Kaugus marsruudist",
+  resPoiOsm: "OpenStreetMap",
+  resPoiOsmAria: "Ava {place} OpenStreetMapis",
+  resPoiNoDetail: "Andmestik ei tea selle koha kohta rohkem kui nime ja liiki.",
+  resPoiOnRouteNote: "Marsruut läheb sellest juba mööda.",
   kindFerry: "praam",
   kindFord: "koolmekoht",
   kindTower: "vaatetorn",
@@ -1629,6 +1677,18 @@ const en: Messages = {
   resSuggestLoading: "Looking for places…",
   resAddStop: "Add",
   resAddStopAria: "Add {place} as a stop and plan the ride again",
+  resPoiShow: "Map",
+  resPoiShowAria: "Show {place} on the map",
+  resPoiMore: "More",
+  resPoiMoreAria: "More about {place}",
+  resPoiLess: "Close",
+  resPoiKind: "Kind",
+  resPoiAlong: "Along the ride",
+  resPoiOff: "Off the route",
+  resPoiOsm: "OpenStreetMap",
+  resPoiOsmAria: "Open {place} on OpenStreetMap",
+  resPoiNoDetail: "The dataset knows nothing about this place beyond its name and kind.",
+  resPoiOnRouteNote: "The ride already passes it.",
   kindFerry: "ferry",
   kindFord: "ford",
   kindTower: "lookout tower",

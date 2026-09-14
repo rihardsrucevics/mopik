@@ -110,8 +110,18 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   busy: boolean;
   onGenerate: (plan: RidePlan, places: ResolvedPlace[]) => void;
   onUseChat: () => void;
-  /** Picked places, in riding order, so the map can confirm them before a ride exists. */
-  onPlacesChange?: (places: ResolvedPlace[]) => void;
+  /**
+   * Picked places, in riding order, so the map can confirm them before a ride
+   * exists — with the trip type, which is what says whether the last of them
+   * is a finish or a stop.
+   *
+   * The map draws a stop as a 🅿️ pill and the start and finish as their own
+   * pins, and the list alone cannot tell the two apart: on a one-way ride the
+   * last confirmed place is the destination, on a round trip there is no
+   * destination and every place after the start is a stop. Passing the places
+   * without the shape is what put a 🅿️ on Warszawa.
+   */
+  onPlacesChange?: (places: ResolvedPlace[], tripType: "round_trip" | "one_way") => void;
   /**
    * The map, on phones only. It belongs to the places it confirms, so it sits
    * under them inside this block rather than above the whole page — where it
@@ -230,10 +240,13 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   const anchor = confirmed[0] ?? null;
   const confirmedKey = confirmed.map((p) => `${p.lat},${p.lon}`).join("|");
   useEffect(() => {
-    onPlacesChange?.(confirmed);
+    onPlacesChange?.(confirmed, tripType);
     // `confirmed` is rebuilt each render; the key is what actually changes.
+    // `tripType` is in the list too: switching Turp un atpakaļ ↔ Vienā virzienā
+    // moves the same last place between "finish" and "stop", so the map has to
+    // re-draw its marker without a place being re-picked.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [confirmedKey]);
+  }, [confirmedKey, tripType]);
 
   // A plan the chat has modified carries its own profile; otherwise the
   // rider's remembered one applies.

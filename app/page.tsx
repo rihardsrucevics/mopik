@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useEffect } from "react";
+import { useCallback, useRef, useState, useEffect } from "react";
 import { RouteMap } from "@/components/route-map";
 import { RoutePrompt } from "@/components/route-prompt";
 import { ResultPanel } from "@/components/result-panel";
@@ -97,6 +97,37 @@ export default function Home() {
   // Places confirmed in the form but not yet routed: the map shows them so a
   // wrong "Valmiera" is caught before a generation is spent on it.
   const [previewPlaces, setPreviewPlaces] = useState<ResolvedPlace[]>([]);
+  // Whether the last of them is a finish or a stop. The composer reports it
+  // with the places because the list alone cannot say: a 🅿️ means "a stop of
+  // this ride", and on a one-way ride the last place is the destination and
+  // gets the destination's own pin. Without this, Berlin → Warszawa drew a
+  // 🅿️ on Warszawa.
+  const [previewRoundTrip, setPreviewRoundTrip] = useState(false);
+  /**
+   * The suggestion the rider pressed "Kartē" on, if any.
+   *
+   * Lives here rather than in the result panel because the map does — the same
+   * reason `variantOffset` moved up. `token` rises on every press so pressing
+   * the same row twice flies back to it after a pan; comparing the place
+   * itself would make the second press do nothing.
+   */
+  const [focusPoi, setFocusPoi] = useState<{ lat: number; lon: number; label: string; kind?: string; token: number } | null>(null);
+  const focusTokenRef = useRef(0);
+  const clearFocusPoi = useCallback(() => setFocusPoi(null), []);
+  /**
+   * Adding the place the map card is currently showing.
+   *
+   * The card is drawn by MapLibre from a string, so it cannot carry a closure
+   * of its own; it calls this, which reads the focused place from state. The
+   * ring and the card go away first — the ride is about to be re-planned, and
+   * a "look at this" marker left over the new route would claim the place was
+   * still only a suggestion.
+   */
+  // Declared further down, after `plan` and `startFromForm` exist; `addStop` is
+  // an ordinary function of this render, so `addFocusedPoi` can close over it
+  // directly. It does not need to be stable: the map holds it in a ref of its
+  // own and re-reads it per click, so a new function each render costs nothing
+  // and never rebuilds the card the rider is looking at.
 
   /**
    * The ride the rider arrived from, when they came from one: ui.saveEditForm
@@ -400,6 +431,39 @@ export default function Home() {
    * ride the destination stays the destination because `startFromForm` reads
    * it from `destinationPlace`, not from the end of the via list.
    */
+  /**
+   * "Kartē" on a suggestion: put the ring on it and make sure the map is
+   * where the rider can see it.
+   *
+   * On a desktop the map is the sticky right column and is always on screen,
+   * so the flight is the whole answer. On a phone it lives *inside* the result
+   * panel, above the suggestions — which means it may well be scrolled off the
+   * top when the rider reaches the Ieteikumi card, and a map flying somewhere
+   * nobody is looking at is not an answer at all. `scrollIntoView` on the
+   * panel's own map slot is enough; the map is already mounted and visible, so
+   * there is no sheet to open and nothing to wait for.
+   *
+   * The scroll is deferred one frame: the marker and the `easeTo` are set by
+   * the render this press causes, and scrolling before that render leaves the
+   * map moving under a rider who is already looking at it.
+   */
+  function showPoi(poi: { name: string; lat: number; lon: number; category: string }) {
+    focusTokenRef.current += 1;
+    const entry = POI_KIND[poi.category as keyof typeof POI_KIND];
+    track("suggestion_shown", { kind: poi.category });
+    setFocusPoi({
+      lat: poi.lat,
+      lon: poi.lon,
+      label: poi.name,
+      kind: entry ? ui[entry.key as keyof typeof ui] ?? poi.category : poi.category,
+      token: focusTokenRef.current,
+    });
+    if (desktop) return;
+    requestAnimationFrame(() => {
+      document.querySelector("[data-map-slot]")?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  }
+
   function addStop(place: { name: string; lat: number; lon: number }) {
     if (busyRef.current || !plan) return;
     if (plan.viaPlaces.some((v) => v === place.name)) return;
@@ -413,6 +477,20 @@ export default function Home() {
       { name: place.name, label: place.name, lat: place.lat, lon: place.lon },
     ];
     void startFromForm(next, picked);
+  }
+
+  /**
+   * The Pievienot inside the card the map opens on a focused suggestion.
+   *
+   * The card is markup MapLibre parses from a string, so it carries no closure
+   * of its own and calls this instead. The ring and the card go first: the ride
+   * is about to be re-planned, and a "look at this" marker left standing over
+   * the new route would claim the place was still only a suggestion.
+   */
+  function addFocusedPoi() {
+    if (!focusPoi) return;
+    setFocusPoi(null);
+    addStop({ name: focusPoi.label, lat: focusPoi.lat, lon: focusPoi.lon });
   }
 
   async function retryLast() {
@@ -506,8 +584,20 @@ export default function Home() {
       <RouteMap
         segments={route?.segments ?? null}
         start={result?.start ?? previewPlaces[0] ?? null}
-        destination={result?.destination ?? null}
-        via={result ? (result.via ?? []).map((v) => ({ ...v, ...((stopInfo.forResult === result ? stopKind(stopInfo.kinds, v.label) : undefined) ?? {}) })) : previewPlaces.slice(1)}
+        // A 🅿️ is a stop, so the finish must never be one. While a ride is
+        // only being composed the map has to make the same distinction the
+        // result does: on a one-way ride with two or more confirmed places the
+        // last is the destination and takes the red pin, and everything
+        // between it and the start is a stop. A round trip has no destination
+        // at all — it returns to the start — so every place after the first is
+        // a stop, which is what the old `slice(1)` assumed for both shapes.
+        destination={result?.destination ?? (!previewRoundTrip && previewPlaces.length > 1 ? previewPlaces[previewPlaces.length - 1] : null)}
+        via={result
+          ? (result.via ?? []).map((v) => ({ ...v, ...((stopInfo.forResult === result ? stopKind(stopInfo.kinds, v.label) : undefined) ?? {}) }))
+          : previewRoundTrip ? previewPlaces.slice(1) : previewPlaces.slice(1, -1)}
+        focus={focusPoi}
+        onFocusCleared={clearFocusPoi}
+        onFocusAdd={addFocusedPoi}
         showTet={showTet} onToggleTet={setShowTet} />
     </MapPanel>
   );
@@ -532,9 +622,9 @@ export default function Home() {
         <div className="min-w-0 space-y-4">
           <InstallPrompt show={Boolean(result) && !chatting} />
           {entryMode === "form"
-            ? <RideComposer key={plan ? planSummary(plan, locale) : "new"} initialPlan={plan} initialPlaces={places} profile={profile} onProfileChange={changeProfile} busy={phase !== "idle"} onGenerate={startFromForm} onUseChat={() => setEntryMode("chat")} onPlacesChange={setPreviewPlaces} map={mapInComposer && mapVisible ? mapPanel : undefined} />
+            ? <RideComposer key={plan ? planSummary(plan, locale) : "new"} initialPlan={plan} initialPlaces={places} profile={profile} onProfileChange={changeProfile} busy={phase !== "idle"} onGenerate={startFromForm} onUseChat={() => setEntryMode("chat")} onPlacesChange={(p, tripType) => { setPreviewPlaces(p); setPreviewRoundTrip(tripType === "round_trip"); }} map={mapInComposer && mapVisible ? mapPanel : undefined} />
             : result && result.routes.length > 0 && !chatting
-              ? <ResultPanel routes={result.routes} selected={selected} onSelect={setSelected} plan={plan} avoidTowns={result.intent.avoidTowns ?? false} lucky={lucky} remoteLoop={result.remoteLoop} longerSuggestion={result.longerSuggestion} tolerancePercent={result.intent.distanceTolerancePercent} busy={phase !== "idle"} onSend={send} onBackToForm={() => setEntryMode("form")} map={mapInResult && mapVisible ? mapPanel : undefined} resolvedPlaces={routedPlaces} alternatives={result.alternatives} sparsePlaceData={result.sparsePlaceData} assembledFromSegments={result.assembledFromSegments} offset={variantOffset} onOffsetChange={setVariantOffset} onAddStop={addStop} onPoisLoaded={notePois} />
+              ? <ResultPanel routes={result.routes} selected={selected} onSelect={setSelected} plan={plan} avoidTowns={result.intent.avoidTowns ?? false} lucky={lucky} remoteLoop={result.remoteLoop} longerSuggestion={result.longerSuggestion} tolerancePercent={result.intent.distanceTolerancePercent} busy={phase !== "idle"} onSend={send} onBackToForm={() => setEntryMode("form")} map={mapInResult && mapVisible ? mapPanel : undefined} resolvedPlaces={routedPlaces} alternatives={result.alternatives} sparsePlaceData={result.sparsePlaceData} assembledFromSegments={result.assembledFromSegments} offset={variantOffset} onOffsetChange={setVariantOffset} onAddStop={addStop} onShowPoi={showPoi} onPoisLoaded={notePois} />
               : <RoutePrompt messages={messages} plan={plan} hasRoute={Boolean(route)} phase={phase} quickReplies={quickReplies} lucky={lucky && !route} onSend={send} onBackToForm={() => setEntryMode("form")} originCode={origin?.code ?? null} onAction={(action) => { if (action === "retry") { retryLast(); return; } setChatting(false); setQuickReplies([]); }} onCancel={cancel} />}
           {/* A ride that came from editing another one. Asked once, here,
               because only the rider knows whether the original is still

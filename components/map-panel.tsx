@@ -77,7 +77,14 @@ export function MapPanel({ children, className = "", expandedClassName = "" }: {
     // start the legend to the right of the button — but the button is
     // `md:hidden` in both states, so on a wide screen it reserved a gap for a
     // control that is not there and left the legend floating off the corner.
-    <div ref={rootRef} data-map-expanded={expanded ? "true" : undefined}
+    // `data-map-slot` is how anything outside finds the map's box without a
+    // ref threaded through three parents: exactly one MapLibre instance
+    // exists and `useMediaQuery` moves that single node between the composer
+    // slot, the result panel and the desktop column, so a ref held by any one
+    // of them would be null in the other two. The planner's "Kartē" on a
+    // suggestion uses it to scroll the map into view on a phone, where it can
+    // easily be above the fold the rider is reading.
+    <div ref={rootRef} data-map-slot="true" data-map-expanded={expanded ? "true" : undefined}
       className={expanded ? `fixed inset-0 z-40 flex flex-col bg-[#faf9f6] ${expandedClassName}` : `relative ${className}`}>
       {/* The map must fill the fixed layer itself. Inside the composer's flex
           column a plain child of `fixed inset-0` collapsed to zero height,

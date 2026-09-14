@@ -203,6 +203,20 @@ body {
 }
 .mopik-curtain-up { animation: mopik-curtain-up 0.6s cubic-bezier(0.7, 0, 0.3, 1) forwards; }
 
+/* The ring on a place the rider pressed "Kartē" on in Ieteikumi.
+   A keyframe rather than a Tailwind class because the marker is a bare DOM
+   node MapLibre owns, outside React and outside Tailwind's content scan. It
+   pulses so the eye finds it after the map flies — a static ring on an
+   unfamiliar patch of forest is easy to miss. `focusElement` in
+   `route-map.tsx` skips the animation entirely when the rider asks for
+   reduced motion; the ring itself stays, because it is the answer to the
+   press and not decoration. */
+@keyframes mopik-focus-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(245, 99, 0, 0.45); }
+  70%  { box-shadow: 0 0 0 14px rgba(245, 99, 0, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(245, 99, 0, 0); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .mopik-draw, .mopik-draw-mask, .mopik-bike, .mopik-wordmark, .mopik-tagline, .mopik-fade-in,
   .mopik-curtain-up { animation: none; }

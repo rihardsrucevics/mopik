@@ -44,7 +44,8 @@ export type AnalyticsEvent =
   | "form_location_used"      // "Mana vieta" filled the start from the device
   | "places_reordered"        // a stop moved; props: how (drag|tap|keyboard) — is the iOS path used?
   | "place_picked"            // a suggestion chosen; props: kind, group — are POIs actually picked?
-  | "suggestion_added"        // "+ Pievienot" in Ieteikumi: a suggested place became a via point; props: via_count
+  | "suggestion_added"        // "Pievienot" in Ieteikumi: a suggested place became a via point; props: via_count
+  | "suggestion_shown"        // "Kartē" in Ieteikumi: the map flew to a suggestion without changing the ride; props: kind
   | "trip_type_changed"       // props: to (one_way|round_trip) — is the new default right?
   | "ride_edit_opened"        // "Rediģēt formā" on a shared or saved ride; props: from, saved
   | "shared_correction_sent" // "Ko mainīt?" typed on a shared ride's page; props: length, saved
