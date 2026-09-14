@@ -1,5 +1,88 @@
 # Mopik — progress log
 
+## 2026-09-14 — POI: a ride parses only the countries it rides through
+
+`poisForRoute` called `loadPois()`, which parses **every published country on
+every request**. That was the known caveat left by the per-country loader work
+below, and it came due: `public/poi/` now holds LV, LT, EE and PL (45,678
+points, 9.5 MB) and Europe phase 1 adds DE, CH, AT, IT and SI (~150k points,
+~40 MB).
+
+The fix is three lines and no new machinery. `poisForRoute` pads the routed
+polyline's own bounding box by `NEARBY_M` (the 3 km nearby radius) and hands it
+to `poisInBBox`, which already parses only the countries whose occupied cells
+the box touches. `classifyPois` is untouched — it takes an explicit point array
+and is what the on-route/nearby tests pin.
+
+**The two boxes are the same box, deliberately.** `searchBox` was already
+computing the padded rectangle *inside* `classifyPois` to prefilter points; it
+is now also what selects the country files, via a `searchBBox` wrapper, and
+both callers derive `cosLat` from the route's middle through one `cosLatOf`. If
+the loading box were ever narrower than the classifying one the symptom would
+be a missing suggestion rather than a slow one, so they cannot be allowed to
+drift.
+
+### Measured, four published countries
+
+Node 26, this machine, `--expose-gc`. Cold = first call in a fresh process
+(what a cold serverless invocation pays); warm = mean of 20 further calls.
+
+| ride | | cold | heap | warm | countries parsed |
+|---|---|---:|---:|---:|---|
+| Sigulda loop (~30 km, LV) | before | 91.4 ms | 15.6 MB | 1.281 ms | EE LT LV PL |
+| | **after** | **9.2 ms** | **2.1 MB** | **0.514 ms** | **LV** |
+| Bauska round trip (LV+LT) | before | 95.1 ms | 15.6 MB | 2.501 ms | EE LT LV PL |
+| | **after** | **30.4 ms** | **5.6 MB** | **1.160 ms** | **EE LT LV** |
+| München (outside the data) | before | 84.8 ms | 15.6 MB | 1.754 ms | EE LT LV PL |
+| | **after** | **0.8 ms** | **0.3 MB** | **0.013 ms** | **none** |
+
+Same answers in every case — identical `onRoute`/`nearby` counts and the same
+names in the same order. The ranking, dedupe and kind penalties were not
+touched and `route-pois.test.ts` passes unchanged.
+
+**Bauska parses EE, and that is correct, not a leak.** An Estonian
+`route=ferry` centroid sits in the Gulf of Riga at 56.96°N, inside the padded
+box — the same open-water centroid behaviour that made `placeCells` necessary.
+The cell genuinely holds an EE point, so `countriesForBBox` is exact rather
+than over-eager.
+
+**A ride outside every published country now reads no file at all.** Measured
+200 München calls at 0.008 ms each with zero `readFileSync` of a country file:
+the index alone answers. It used to parse 9.5 MB to return two empty lists.
+
+### What phase 1 would have cost
+
+Parse rate is linear and steady across the four files — 7.5 ms/MB (PL, 6.4 MB,
+32,211 pts, 47.7 ms) to 9.1 ms/MB (EE, 0.67 MB). At phase 1's ~40 MB the old
+path would have cost roughly **320 ms and ~65 MB of heap on every cold
+invocation**, for a Latvian ride that needs 1.0 MB of it; `route-pois.test.ts`
+pins a 60 ms budget, so it would have failed rather than merely been slow. The
+new path is flat in the size of the published dataset — a Sigulda loop parses
+LV whether the dataset holds four countries or forty.
+
+Warm memoisation still works per country: six Sigulda calls read `index.json`
+and `LV.geojson` once each, and `loaded` is keyed per country, so widening a
+ride into LT adds LT without re-reading LV.
+
+### Also checked, not changed
+
+- **`app/api/detour/route.ts`** takes its POIs from the request body — the
+  client sends back the rows `/api/route-pois` already returned — so it never
+  loads the dataset. No change needed.
+- **`lib/routing/name-route.ts`** reads `stop.poi` off the loop stops it is
+  handed. No loading of its own.
+- **`lib/routing/loop.ts`** already goes through `poisNear`, which has been
+  bbox-scoped since the per-country work.
+- `loadPois()` itself is left in place — no app caller uses it now, and
+  `poi-index.test.ts` uses it for the empty-dataset case — with its doc comment
+  corrected to say so.
+
+Tests: two added to `scripts/poi-index.test.ts` (a ride parses only the
+countries its box reaches, reusing the parse on a second ride; a ride outside
+coverage reads no file and answers in under 5 ms). Both were confirmed to fail
+against the `loadPois()` version before the switch. `npx tsc --noEmit`,
+`npx eslint lib app/api/route-pois` and all 170 tests pass.
+
 ## 2026-09-14 — Item 11d: seaward candidates
 
 Item 11c shipped a scoring term that prefers the coast and then measured that,

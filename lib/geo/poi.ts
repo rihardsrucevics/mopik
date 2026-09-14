@@ -378,10 +378,13 @@ export function hasPlaceData(point: { lat: number; lon: number }): boolean {
 /**
  * Every POI in every published country.
  *
- * Kept for `route-pois.ts`, which classifies a routed polyline and had no
- * bounding box to offer. Prefer `poisInBBox` where one is available: this
- * loads the whole published dataset, which is fine for the Baltics and will
- * not be once Europe lands.
+ * **No caller in the app uses this any more.** `route-pois.ts` was the last
+ * one; since 2026-09-14 it derives the routed polyline's own padded bounding
+ * box and calls `poisInBBox`, which is what this comment used to say it should
+ * do once Europe landed. Kept as the deliberate escape hatch for a caller that
+ * genuinely has no box to offer, and used by `poi-index.test.ts` to pin the
+ * empty-dataset case — but prefer `poisInBBox` in anything new: this parses
+ * every published country, which is ~40 MB at Europe phase 1.
  */
 export function loadPois(): Poi[] {
   const countries = loadIndex();

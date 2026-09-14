@@ -176,6 +176,54 @@ test("poisNear parses only the countries its search circle reaches", async () =>
   });
 });
 
+test("a routed ride parses only the countries its own bounding box reaches", async () => {
+  await withFixture(async (poi) => {
+    const { poisForRoute } = await import("../lib/poi/route-pois");
+
+    // A short line well inside AA. BB is 1° of empty away — far outside the
+    // 3 km `NEARBY_M` padding — so it must never be opened.
+    const inAA = poisForRoute(
+      { coordinates: [[20.05, 55.05], [20.1, 55.1], [20.15, 55.12]] },
+      { locale: "en" }
+    );
+    assert.deepEqual(inAA.nearby.concat(inAA.onRoute).map((p) => p.id), ["aa-west"]);
+    assert.deepEqual(poi.__loadedCountries(), ["AA"]);
+
+    // A second ride in the same country reuses the parse rather than
+    // re-reading the file: the warm-invocation memoisation.
+    poisForRoute({ coordinates: [[20.8, 55.85], [20.9, 55.9]] }, { locale: "en" });
+    assert.deepEqual(poi.__loadedCountries(), ["AA"]);
+
+    // A ride that reaches into BB loads BB too, and finds its point.
+    const inBB = poisForRoute(
+      { coordinates: [[22.05, 55.05], [22.1, 55.1], [22.15, 55.12]] },
+      { locale: "en" }
+    );
+    assert.deepEqual(inBB.nearby.concat(inBB.onRoute).map((p) => p.id), ["bb-west"]);
+    assert.deepEqual(poi.__loadedCountries(), ["AA", "BB"]);
+  });
+});
+
+test("a ride outside every published country reads no file at all", async () => {
+  await withFixture(async (poi) => {
+    const { poisForRoute } = await import("../lib/poi/route-pois");
+
+    // The gap between AA and BB: published index, no data here. This is the
+    // München case — the whole dataset used to be parsed to answer it.
+    const started = performance.now();
+    const empty = poisForRoute(
+      { coordinates: [[21.4, 55.4], [21.5, 55.45], [21.6, 55.5]] },
+      { locale: "en" }
+    );
+    const ms = performance.now() - started;
+
+    assert.deepEqual(empty, { onRoute: [], nearby: [] });
+    // Nothing was opened — the index alone answered.
+    assert.deepEqual(poi.__loadedCountries(), []);
+    assert.ok(ms < 5, `took ${ms.toFixed(2)} ms — a country file was parsed`);
+  });
+});
+
 test("the file a point lives in decides its country, not the property in the data", async () => {
   await withFixture((poi) => {
     const [found] = poi.poisNear({ lat: 55.1, lon: 22.1 }, 5000);

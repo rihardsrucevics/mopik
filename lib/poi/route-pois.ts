@@ -1,5 +1,5 @@
 import { haversineMeters, type Point } from "@/lib/geo/geometry";
-import { loadPois, poiName, type Poi } from "@/lib/geo/poi";
+import { poisInBBox, poiName, type BBox, type Poi } from "@/lib/geo/poi";
 // The shapes and the kind table live in a file with no `fs` import, so a
 // client component can use them without pulling the dataset reader into the
 // browser bundle. Re-exported here so server callers have one import.
@@ -24,10 +24,26 @@ export type { PoiCategory, RoutePoi, RoutePois };
  *     they are ranked and capped: a list of forty villages is not a
  *     suggestion.
  *
- * Baltics only, because that is what `public/poi-baltics.geojson` covers
- * (backlog item 8 is the Europe build). Outside it both lists come back empty
- * rather than as an error — a München ride is not broken, it is unannotated,
- * and the panel simply shows nothing.
+ * ## Only the countries the ride touches (2026-09-14)
+ *
+ * This used to call `loadPois()`, which parses every published country on
+ * every request. That was affordable at three Baltic files and is not at
+ * Europe phase 1 (LV LT EE PL DE CH AT IT SI, ~150k points, ~40 MB): measured
+ * here, a Sigulda loop paid 91 ms and 15.6 MB to parse LV, LT, EE and PL in
+ * order to use LV, and a München ride paid the same to return nothing.
+ *
+ * `poisForRoute` now pads the route's own bounding box by `NEARBY_M` and hands
+ * it to `poisInBBox`, which parses only the countries whose occupied cells the
+ * box actually touches, cached per country for the life of the instance. The
+ * classifier is unchanged and still filters against the same box, so the
+ * on-route/nearby rule, the ranking and the dedupe all behave exactly as
+ * before — the only difference is how many points were read off disk to get
+ * there.
+ *
+ * Outside every published country both lists come back empty rather than as an
+ * error — a München ride is not broken, it is unannotated, and the panel
+ * simply shows nothing. That answer now costs an index lookup and no file
+ * read at all.
  */
 
 /** Closer than this to the line and the ride already passes it. */
@@ -192,7 +208,25 @@ function buildGrid(line: Point[], cosLat: number): SegmentGrid {
   return { cells, cellDegLon, cellDegLat };
 }
 
-/** The route's bounding box, grown by the search radius. */
+/**
+ * The latitude scale the whole lookup is derived from: the route's own middle,
+ * never a hard-coded constant (the mistake that put `tet-coverage.ts` 26 % out
+ * in Spain).
+ */
+function cosLatOf(line: Point[]): number {
+  return Math.cos((line[Math.floor(line.length / 2)][1] * Math.PI) / 180) || 1;
+}
+
+/**
+ * The route's bounding box, grown by the search radius.
+ *
+ * Used twice, and it must be the *same* box both times: once by
+ * `poisForRoute` to decide which country files to parse, and once inside
+ * `classifyPois` to reject points before they reach the segment grid. If the
+ * loading box were ever narrower than the classifying one, a POI the rider
+ * should see would be missing rather than merely unranked — so both callers go
+ * through this function.
+ */
 function searchBox(line: Point[], cosLat: number) {
   let minLon = Infinity, maxLon = -Infinity, minLat = Infinity, maxLat = -Infinity;
   for (const [lon, lat] of line) {
@@ -209,6 +243,12 @@ function searchBox(line: Point[], cosLat: number) {
     minLat: minLat - padLat,
     maxLat: maxLat + padLat,
   };
+}
+
+/** The same padded box as a `[minLon, minLat, maxLon, maxLat]` tuple, for the loader. */
+function searchBBox(line: Point[]): BBox {
+  const box = searchBox(line, cosLatOf(line));
+  return [box.minLon, box.minLat, box.maxLon, box.maxLat];
 }
 
 /**
@@ -266,7 +306,18 @@ export function poisForRoute(
   geometry: { coordinates: [number, number][] } | null | undefined,
   opts: PoisForRouteOptions = {}
 ): RoutePois {
-  return classifyPois(geometry, loadPois(), opts);
+  const line = (geometry?.coordinates ?? []) as Point[];
+  // Degenerate geometry answers empty without touching the loader at all —
+  // `classifyPois` would reject it anyway, and asking for a bbox of a
+  // zero-length line is meaningless.
+  if (line.length < 2) return { onRoute: [], nearby: [] };
+
+  // Only the countries this ride's own search area reaches. This used to be
+  // `loadPois()`, which parsed every published country per request: fine at
+  // three Baltic files, not fine at the ~150k points of Europe phase 1. The
+  // box is the same padded one the classifier filters against, so nothing
+  // that would have been returned is now missed — see `searchBox`.
+  return classifyPois(geometry, poisInBBox(searchBBox(line)), opts);
 }
 
 /**
@@ -293,9 +344,9 @@ export function classifyPois(
   const maxOnRoute = opts.maxOnRoute ?? MAX_ON_ROUTE;
 
   // Derived from the route, never hard-coded: the same mistake that put
-  // `tet-coverage.ts` 26 % out in Spain.
-  const midLat = line[Math.floor(line.length / 2)][1];
-  const cosLat = Math.cos((midLat * Math.PI) / 180) || 1;
+  // `tet-coverage.ts` 26 % out in Spain. Shared with `poisForRoute`'s loading
+  // box so the two cannot drift apart.
+  const cosLat = cosLatOf(line);
 
   const box = searchBox(line, cosLat);
   const cumMeters = cumulative(line);
@@ -305,8 +356,9 @@ export function classifyPois(
   const nearby: { poi: RoutePoi; rank: number }[] = [];
 
   for (const poi of pois) {
-    // The bbox prefilter is what keeps a 16,410-point dataset off the grid
-    // entirely for all but the few hundred points near this ride.
+    // Still worth doing after the per-country load: `poisInBBox` returns whole
+    // countries, so a Latvian ride gets all 4,624 LV points and only a few
+    // hundred of them are near this ride.
     if (poi.lon < box.minLon || poi.lon > box.maxLon) continue;
     if (poi.lat < box.minLat || poi.lat > box.maxLat) continue;
 
