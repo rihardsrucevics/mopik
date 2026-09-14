@@ -1518,9 +1518,13 @@ export function RouteMap({ segments, start, destination, via, showTet, onToggleT
             with width and language, the button cannot use a fixed offset: it
             is stacked above the legend by MapPanel, which measures the
             legend's real height (see `data-map-legend` below).
-          - Wide: it sits in the bottom row but starts to the right of the
-            button's footprint, and `max-w-max` keeps it well short of the
-            attribution ⓘ in the opposite corner.
+          - Wide: the full-screen button is `md:hidden` — inline AND in full
+            screen, since a desktop map already fills its column — so nothing
+            occupies the corner and the legend takes it, on the same 12 px
+            inset as every other control (`md:left-3`). It is never centred:
+            `md:max-w-max` keeps it exactly as wide as its content, so it hugs
+            the corner instead of floating. The attribution ⓘ is the full
+            width of the map away at this size.
           Text never goes below 12 px in either case.
 
           The max-width is the narrow-screen guard against the attribution ⓘ in
@@ -1535,7 +1539,7 @@ export function RouteMap({ segments, start, destination, via, showTet, onToggleT
           On a phone it appears only in full screen: on the inline 26-42dvh
           strip the legend is a third of the map and covers the route it is
           meant to explain. Desktop always shows it — there is room. */}
-      <div data-map-legend className="absolute bottom-3 left-3 right-3 hidden max-w-[calc(100%-0.75rem-3.25rem)] flex-col gap-1.5 rounded-xl border border-[#ececf0] bg-white/95 px-2.5 py-2 text-xs leading-none shadow-sm backdrop-blur [[data-map-expanded]_&]:flex md:left-[calc(var(--map-btn,3.25rem)+0.75rem)] md:right-12 md:flex md:max-w-max md:px-3 md:py-2.5">
+      <div data-map-legend className="absolute bottom-3 left-3 right-3 hidden max-w-[calc(100%-0.75rem-3.25rem)] flex-col gap-1.5 rounded-xl border border-[#ececf0] bg-white/95 px-2.5 py-2 text-xs leading-none shadow-sm backdrop-blur [[data-map-expanded]_&]:flex md:left-3 md:right-12 md:flex md:max-w-max md:px-3 md:py-2.5">
         {/* Two rows, because the line carries two independent facts and a
             single row could only ever explain one of them. Row 1 is the
             colours — what the surface is; row 2 is the patterns — what kind of

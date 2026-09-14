@@ -456,3 +456,20 @@ primary button carries a Sparkles icon before the label; remove the icon and
 leave the text. Check the same button in the other places it appears (the
 shared-route page's "Ģenerēt līdzīgu sev", the chat's send control) and keep
 them consistent. `components/ride-composer.tsx`.
+
+## 19. Stops on the map, and suggestions in the details
+
+Filed by the rider on 2026-09-14. Two halves:
+
+**Stops drawn as stops.** Every via point / stop of a ride gets a marker on
+the map — start with a 🅿️ icon — and a popup with the place's information
+(name, kind, what is there). Today the via pins are plain dots in the brand
+orange and say nothing.
+
+**Suggestions in Detaļas.** When a ride is generated, the details section
+lists suggestions in two groups: places *on* the route (a stop is worth making
+there) and places *near* the route. A near-route suggestion has an "add"
+control: pressing it makes the place a via point of the ride and regenerates
+the route through it — so suggestions are how stops come into a ride, not only
+the form. Depends on the POI dataset (Baltics today; Europe is item 8), and on
+the loop machinery already planning through anchors.
