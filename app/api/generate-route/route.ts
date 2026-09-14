@@ -39,6 +39,9 @@ import { hasPlaceData } from "@/lib/geo/poi";
 import { pickTetSlice } from "@/lib/routing/tet";
 import { parseIsochrone, type IsoRing } from "@/lib/geo/isochrone";
 import { planLoop, type LoopStop } from "@/lib/routing/loop";
+// Item 11d: via points placed on the coastal side of an A-to-B corridor, and
+// the rule that folds them in without spending time the generation lacks.
+import { seawardBearing, seawardVias, withSeawardCandidates } from "@/lib/routing/seaward";
 import { detectLocale, nameLoop, stopLabels } from "@/lib/routing/name-route";
 import {
   GeneratedRoute,
@@ -400,6 +403,12 @@ type BuiltCandidates = {
   candidates: Candidate[];
   /** loops only: turn further shapes (mutations of good ones) into candidates */
   fromShapes?: (shapes: LoopShape[]) => Candidate[];
+  /**
+   * Item 11d: A-to-B candidates deliberately routed through the coastal strip.
+   * Kept apart from `candidates` because they are merged under the time budget
+   * rather than appended to it — see `withSeawardCandidates`.
+   */
+  seaward?: Candidate[];
 };
 
 async function buildCandidates(
@@ -542,7 +551,55 @@ async function buildCandidates(
         }});
       }
     }
-    return { candidates };
+
+    // The coast, and this is item 11d's whole reason for existing.
+    //
+    // Item 11c shipped a scoring term that ranks a coastal candidate above an
+    // inland one correctly, and then measured that on the rider's own example
+    // there is no coastal candidate to rank: Liepāja → Ventspils returned two
+    // candidates, both on the same inland line. The cause is above —
+    // `perpendicularVia` offsets the A→B line, and on a coast-parallel ride one
+    // of those two sides IS the sea. Measured on that leg (reach 12.45 km) not
+    // one of the fifteen via points lands on the coastal strip: side +1 sits
+    // 4–30 km offshore, side −1 the same distances inland, and the P111 the
+    // rider is asking for runs about 1 km from the water.
+    //
+    // So these candidates are placed against the coastline itself rather than
+    // against the straight line: sampled along the corridor, walked out to the
+    // shore and stepped back onto land at 1–3 km. `seawardVias` opens no file
+    // at all unless `hasSeaData` covers the corridor, so an inland ride builds
+    // exactly the pool it built before.
+    //
+    // Sampled per leg, not once across the whole ride: a via belongs on the
+    // corridor it was measured against, and on a multi-stop ride the leg that
+    // runs along the coast may not be the first one. The rider's own places
+    // stay in their order and only the corridor between two of them bends
+    // towards the water.
+    const seawardByLeg = places.slice(1).map((to, i) =>
+      seawardVias([places[i].lon, places[i].lat], [to.lon, to.lat])
+    );
+    const seawardCandidates: Candidate[] = seawardByLeg.flatMap((vias, leg) =>
+      vias.map((via) => ({
+        variant: places.length > 2 ? `sea${leg + 1}-${via.fraction}` : `sea-${via.fraction}`,
+        competing: true,
+        run: async () => {
+          const points: [number, number][] = [startPt];
+          for (let i = 1; i < places.length; i++) {
+            if (i === leg + 1) points.push(via.point);
+            points.push([places[i].lon, places[i].lat]);
+          }
+          return { path: await route(points) };
+        },
+      }))
+    );
+    const seaward = seawardByLeg.flat();
+    if (seawardCandidates.length) {
+      console.log(
+        `seaward: ${seawardCandidates.length} coastal candidates at ` +
+          seaward.map((v) => `${v.coastDistanceM} m`).join(", ")
+      );
+    }
+    return { candidates, seaward: seawardCandidates };
   }
 
   // Round trip. Valhalla has no round-trip algorithm, so the loop is built
@@ -620,6 +677,12 @@ async function buildCandidates(
     contourIndex: 1,
     sector: { centreDeg, halfWidthDeg: TEARDROP_HALF_WIDTH_DEG },
   });
+  // Which way the sea is from the start, or null when this is an inland ride —
+  // in which case nothing below changes and no coastline file is opened.
+  const seaBearing = seawardBearing(startPt);
+  if (seaBearing !== null) {
+    console.log(`seaward: loop start is coastal, biasing anchors towards ${Math.round(seaBearing)}°`);
+  }
   const shapes: LoopShape[] = [
     { stops: baseStops, bearingOffset: 45, radiusScale: 1, contourIndex: 1 },
     { stops: baseStops, bearingOffset: 90, radiusScale: 1, contourIndex: 1 },
@@ -639,6 +702,26 @@ async function buildCandidates(
       : cityStart
         ? [teardrop(45), teardrop(225)]
         : []),
+    // Item 11d, the loop half. A start within ~15 km of the sea gets one or two
+    // shapes deliberately aimed at the water, so at least some candidates run
+    // along the coast and the item 11c ranking has something coastal to pick.
+    //
+    // A rotation, not a displacement — which is why this is safe where the
+    // A-to-B case needed a coastline-anchored point. A loop's anchors are
+    // placed by bearing around the start and then snapped to an isochrone
+    // direction and a real POI, so aiming a sector at the sea cannot put a via
+    // point in the water the way `perpendicularVia`'s wrong side does.
+    //
+    // **The rest of the shapes are untouched on purpose.** Inland loops stay
+    // available from the same start, and the overlap rule still decides:
+    // "galvenais nebraukt tos pašus ceļus" outranks the view, and a coastal
+    // teardrop that retraces loses to an inland ring exactly as item 11c's
+    // weight of 8 was chosen to guarantee.
+    ...(seaBearing === null
+      ? []
+      : selfHosted
+        ? [teardrop(seaBearing), teardrop((seaBearing + 45) % 360)]
+        : [teardrop(seaBearing)]),
     // The relaxation ladder. Some places cannot loop cleanly at the requested
     // length — the Gauja valley at Turaida, Tukums under ~150 km — and a
     // rider then does what a rider does: goes a bit further out. These
@@ -1136,11 +1219,16 @@ export async function POST(req: NextRequest) {
     // build order, which puts the plain corridors (the ones a rider actually
     // recognises as the ride they asked for) before the ornamental shapes, so
     // taking a prefix keeps the most useful ones.
-    const candidates = built.candidates.slice(0, candidateCap);
-    if (candidates.length < built.candidates.length) {
+    // Item 11d folds the coastal candidates in here rather than in
+    // `buildCandidates`, because this is where the time budget is known: inside
+    // a full pool they replace the widest perpendicular offsets (which on a
+    // coastal ride are the ones that land in the sea) instead of extending it.
+    const planned = built.candidates.length + (built.seaward?.length ?? 0);
+    const candidates = withSeawardCandidates(built.candidates, built.seaward ?? [], candidateCap);
+    if (candidates.length < planned) {
       reducedSearch = {
         tried: candidates.length,
-        planned: built.candidates.length,
+        planned,
         legSeconds: Math.round(probeSeconds * 10) / 10,
       };
       console.warn(

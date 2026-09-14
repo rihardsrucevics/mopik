@@ -1,5 +1,267 @@
 # Mopik — progress log
 
+## 2026-09-14 — Item 11d: seaward candidates
+
+Item 11c shipped a scoring term that prefers the coast and then measured that,
+on the rider's own example, it had nothing to prefer:
+
+> A via ride between two towns produces a handful of shapes — measured on the
+> dev server, an A-to-B generation returned **2 candidates**, both taking the
+> same inland line. A term that ranks cannot choose a road nothing routed.
+
+This finds out why, and gives the search coastal candidates to rank.
+
+**The 2 candidates were not a budget cut, and that was the first surprise.**
+
+### 1. Why an A-to-B ride yielded 2 candidates
+
+Three mechanisms were checked in order; only the third is real.
+
+1. **Not `affordableCandidates`.** The time budget from item 7 caps the pool,
+   but it never ran here: the probe is gated on `PROBE_ABOVE_KM = 250` and
+   Liepāja → Ventspils is 104 km straight line, so `candidateCap` stayed at
+   `MAX_SAFE_INTEGER` and nothing was sliced. (Measured anyway, for the record:
+   that leg routes in 1.5 s, which would have afforded 27.)
+2. **Not the build.** `buildCandidates` builds **17** for this ride — 15
+   `via-<scale>-<side>` corridors at 8 scales × 2 sides, plus 2 `zig-` wiggles.
+   The `around-*` shapes need an intermediate place and this ride has none.
+3. **The candidates are built and then fail.** Twelve of the seventeen do.
+
+**The cause is that `perpendicularVia` offsets the A→B line, and on a
+coast-parallel ride one of those two sides is the sea.** Measured on Liepāja →
+Ventspils (reach 12.45 km), distance from each via point to the coastline:
+
+| scale | side +1 (west) | side −1 (east) |
+|---:|---:|---:|
+| 0.35 | 4.1 km | 4.0 km |
+| 0.7 | 8.2 km | 7.9 km |
+| 1.0 | 10.9 km | 11.2 km |
+| 1.4 | 14.7 km | 15.8 km |
+| 1.8 | 19.1 km | 20.5 km |
+| 2.2 | 23.5 km | 25.3 km |
+| 2.8 | 30.0 km | 33.4 km |
+
+The +1 points sit **4–30 km offshore, in the Baltic**; the −1 points the same
+distances inland. **Not one of the fifteen lands on the coastal strip**, and the
+P111 the rider is asking for runs about 1 km from the water.
+
+An offshore via point does not merely score badly — it is expensive. BRouter
+answers `error re-tracking track`, and `fetchRoutePath` then spends the
+endpoint-nudge ring (3 radii × 8 bearings) and a segmented retry on each before
+giving up. Measured on the headline ride, per candidate:
+
+| | candidates | wall clock |
+|---|---:|---:|
+| routed | 8 | **6.6 s total** |
+| failed | 12 | **293.4 s total** |
+
+so **98 % of the search's time went on candidates that returned nothing**, and
+one via point in the sea was still running after 30 minutes when it was killed
+by hand. Against a 50 s `TIME_BUDGET_MS` the generation stops early — which is
+the "2 candidates" item 11c saw.
+
+### 2. The fix — `lib/routing/seaward.ts`
+
+Via points placed against the **coastline** rather than against the straight
+line: sampled along the corridor at t = 0.25 / 0.5 / 0.75, walked out to the
+shore by descent on a ring of probes, then stepped back onto land to
+**1–3 km** from the water.
+
+Both bounds are load-bearing and neither is a round number picked for looks.
+Nearer than 1 km aims the router at the beach and dune footpaths item 11a spent
+a day making dear, and 1 km is also the band `classify.ts` counts `coastKm` in,
+so a via that hits the window scores in the band the ranking rewards. Further
+than 3 km is the inland line being complained about; the P111 runs ~1 km out
+and swings to 3 km around Jūrkalne.
+
+Which way is dry **cannot be read off the dataset** — `public/sea/*.json` is a
+list of coastline vertices with no inside/outside — so land is found by trying
+sixteen bearings and keeping whichever lands in the window, nearest the corridor.
+BRouter is the final judge: an offshore point does not route and its candidate
+is dropped, which is the pre-existing behaviour for a bad via.
+
+Gated on `hasSeaData` for the corridor's own bbox, so an inland ride opens no
+coastline file and builds exactly the pool it built before. Measured: 2–33 ms
+per ride, and 0 ms on the inland controls.
+
+### 3. The budget — they replace, never extend
+
+`withSeawardCandidates(pool, seaward, cap)`. Inside a full pool the coastal
+candidates displace the **tail** of the inland one, which is where build order
+already puts the least useful shapes — `route.ts` slices a prefix for exactly
+this reason. On a coastal ride that tail is the widest perpendicular offsets:
+the 15–33 km ones measured above, which either fail or cost a minute each. The
+first candidate — the direct line between the rider's own places — is never
+dropped.
+
+### 4. The loop half
+
+A loop start within ~15 km of the sea gets one or two teardrop shapes aimed at
+`seawardBearing(start)`. A **rotation, not a displacement**, which is why this
+is safe where the A-to-B case needed a coastline-anchored point: a loop's
+anchors are placed by bearing and then snapped to an isochrone direction and a
+real POI, so aiming a sector seaward cannot put a via in the water. The other
+shapes are untouched, so inland loops stay available from the same start and
+the overlap rule still decides.
+
+Bearings, verified against the map rather than assumed:
+
+| start | seaward bearing |
+|---|---|
+| Pāvilosta | 248° |
+| Liepāja | 203° |
+| Ventspils | 270° |
+| Rīga | 315° |
+| Jūrmala | 68° |
+| *Sigulda / Cēsis / Madona* | *inland — no bias, no file opened* |
+
+### 5. Liepāja → Ventspils, and the honest answer about the P111
+
+**Yes, a candidate now takes the coast road — and no, on this ride it does not
+win.**
+
+The seaward candidates route and they reach the water. `sea-0.5` nearly doubles
+the coastal kilometres:
+
+| candidate | km | <300 m | **<1 km** | <3 km | shore path | rep % | rank |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `via-0-1` (the old pick) | 140.5 | 6.8 | **15.4** | 31.4 | 3.78 | 0 | **−2.16** |
+| `sea-0.25` | 153.0 | 6.8 | 15.4 | 32.9 | 3.78 | 1 | −0.88 |
+| `sea-0.5` | 173.6 | 8.8 | **28.9** | 55.2 | 4.21 | 10 | 10.50 |
+| `zig-0.7` | 166.9 | 8.0 | 22.6 | 48.9 | 3.78 | 8 | 9.34 |
+
+Sampled every ~5 km, metres from the coastline — the same measurement item 11b
+used to quantify the complaint:
+
+```
+via-0-1   2284 4650 4802 4552 6638 9297 9753 5889 2884 5009 7260 5351 6364 8344
+          8223 7428 10731 8708 5560 5432 2904 170 923 1898 345 604
+sea-0.5   2284 4650 4802 4552 6638 9297 9753 5889 2884 5009 7260 5351 2709 542
+          579 293 2692 5218 6623 8301 8223 7428 10731 8708 5560 5432 2904 170
+          923 1898 345 604
+```
+
+The baseline reproduces item 11b's figures to the metre. `sea-0.5` inserts a run
+of `2709 542 579 293` where the old line read `6364 8344 8223` — **about 20 km
+on the shore road at 300–600 m from the water**, which is the P111. Four samples
+under 1500 m become seven.
+
+**And then it ranks 10.50 against the direct line's −2.16, so it is not the
+pick.** The sea term is doing its job — `sea-0.5` earns the largest sea bonus in
+the pool — but it is outbid:
+
+| candidate | coast % | sea bonus | repeated penalty | net |
+|---|---:|---:|---:|---:|
+| `via-0-1` | 11.0 | −5.30 | 0.0 | **−5.30** |
+| `sea-0.25` | 10.1 | −4.94 | 1.0 | −3.94 |
+| `sea-0.5` | 16.6 | **−7.33** | **10.0** | **+2.67** |
+
+**This is item 11c's design working exactly as specified, not failing.** That
+entry chose the weight of 8 so that "the coast buys at most 10 % more
+retracing", and `sea-0.5` costs precisely 10 % — plus 33 km and 44 minutes
+against a 4-hour request. The rider's first rule outranks the view:
+*"galvenais nebraukt tos pašus ceļus"*.
+
+### 6. Before / after, all seven rides
+
+Routed and classified in process against `brouter.mopik.eu` with the default
+Adventure preset (`scripts/measure-seaward.ts`). "built" counts every candidate
+the search creates; "failed" is the ones BRouter refuses.
+
+| ride | built | routed | failed | fail s | ok s | best BEFORE | best AFTER |
+|---|---:|---:|---:|---:|---:|---|---|
+| Liepāja → Ventspils | 17 → **20** | 8 | 12 | 293 | 6.6 | `via-0-1` 15.4 km, −2.16 | `via-0-1` 15.4 km, −2.16 |
+| Ventspils → Kolka | 17 → **20** | 11 | 9 | 116 | 7.7 | `via-0-1` 44.4 km, 3.46 | **`sea-0.75` 44.5 km, 0.93** |
+| Rīga → Ainaži | 17 → **20** | 19 | 1 | 21 | 55.4 | `via-1.4-1` 12.1 km, 9.84 | `via-1.4-1` 12.1 km, 9.84 |
+| Pärnu → Haapsalu | 17 → **20** | 20 | 0 | 0 | 14.2 | `via-2.2-1` 14.3 km, 23.17 | `via-2.2-1` 14.3 km, 23.17 |
+| *Cēsis → Madona (inland)* | **17 → 17** | 17 | 0 | 0 | 12.3 | `via-0-1` 0 km, 36.83 | `via-0-1` 0 km, 36.83 |
+
+**The inland control builds 17, not 20** — `hasSeaData` is false there, so no
+coastline file is opened and the pool is the one it was before item 11d. Its
+pick, its coastal kilometres and its rank are identical.
+
+How far into the coast the *pool* can now reach, which is the question item 11c
+said the search was failing:
+
+| ride | best inland candidate | best seaward candidate | seaward routed |
+|---|---:|---:|---:|
+| Liepāja → Ventspils | 22.6 km | **28.9 km** | 2 of 3 |
+| Ventspils → Kolka | 44.4 km | **44.5 km** | 2 of 3 |
+| Rīga → Ainaži | 32.5 km | 25.7 km | 3 of 3 |
+| Pärnu → Haapsalu | 15.8 km | 7.8 km | 3 of 3 |
+
+**Honestly: seaward candidates extend the pool's coastal reach on two of the
+four, and on the other two the existing wide offsets already found more.** That
+is the expected shape — Rīga → Ainaži runs up the gulf where the +1 side is land,
+so `perpendicularVia` works there, and Pärnu → Haapsalu barely touches the sea at
+all (item 11c measured 0.8 coastal km on the plain leg). The rides where the
+offsets fall in the water are exactly the rides this helps.
+
+**Beach kilometres stay at zero, as required.** No profile change shipped, so no
+routed leg can move for surface reasons; the shore-path figure is the guard, and
+the seaward candidates do not raise it above what the inland pool already
+produces (Liepāja → Ventspils: `sea-0.5` 4.21 km against `via-0.7-1`'s 8.86 km
+on an *inland* candidate).
+
+**Loops.** `seawardBearing` returns 248° at Pāvilosta, 203° at Liepāja, 270° at
+Ventspils, 315° at Rīga, 68° at Jūrmala — all correct against the map — and
+`none` at Sigulda, Cēsis and Madona, where no file is opened and the shape list
+is unchanged.
+
+**Generation time.** The seaward candidates are cheap: every one that routes
+answers in 0.2–0.7 s, against the 12–54 s each *offshore* `via-*` candidate
+burns before failing. On the headline ride 293 of the 300 seconds went on
+candidates that returned nothing, and none of them was a seaward one.
+
+### Not settled
+
+- **The 10 % retrace on `sea-0.5` is the coast road's own shape, not a
+  placement bug.** The via points sit at along-track t = 0.24 / 0.51 / 0.76 with
+  1.9–3.1 km perpendicular offset, so they do not force a backtrack; the
+  repetition comes from the shore road being a spur in places. Getting the
+  coastal line under 10 % means a better *route* along it, not a better via.
+- **Whether the rider would accept the trade is not known.** He asked for the
+  coast; he also said retracing is what matters most. `sea-0.5` is 10 % repeated
+  and 33 km longer. That is a question for him, not for a constant — and the
+  candidate now exists to show him.
+- **Seaward candidates help on two of the four coastal rides, not all four.**
+  Where `perpendicularVia`'s offsets already land on dry ground — Rīga →
+  Ainaži up the gulf, Pärnu → Haapsalu, which barely reaches the water — the
+  existing wide offsets find more coast than a seaward via does, and the pick
+  does not move. That is not a failure of the placement; it is that those rides
+  did not have the problem. The rides whose offsets fall in the sea are the ones
+  this was built for.
+- **One seaward candidate in three fails** on the two Kurzeme rides
+  (`sea-0.75` on Liepāja → Ventspils, `sea-0.5` on Ventspils → Kolka), with the
+  same `error re-tracking track` the offshore points give. The 1–3 km window is
+  measured against coastline *vertices*, and on a spit or a lagoon edge a point
+  that distance from the nearest vertex can still be on the wrong side of the
+  water. A land test — rather than a distance test — would fix it, and needs a
+  polygon the dataset does not carry.
+- Measured on the Baltic with the committed `public/sea/` dataset. LV/LT/EE only,
+  like everything else in item 11.
+- **The offshore `via-*-+1` candidates are still built and still fail, and this
+  is now the biggest single waste in a coastal generation.** On Liepāja →
+  Ventspils 12 of 20 candidates failed and burned **293 of the 300 seconds**,
+  against 6.6 s for the 8 that routed. `seawardVias` already proves the coastline
+  can be queried in microseconds, so refusing a via point that `sea.ts` puts in
+  the water would hand that budget back — the obvious next cheap win,
+  deliberately not done here because it changes the inland pool for every ride,
+  not just coastal ones, and that deserves its own measurement.
+- The loop half is verified by its bearings and by the inland controls opening
+  no file; whether a coast-biased teardrop actually *wins* a Pāvilosta
+  round trip is not measured here, because a loop generation needs the isochrone
+  and the calibration route that only the API owns. `scripts/measure-sea-pick.ts`
+  is the tool for that, and it needs a dev server that is not mid-edit.
+
+Tests: `npx tsx --test scripts/seaward.test.ts` (12) — placement in the 1–3 km
+window on a synthetic coastline with land on a known side, the inland and
+no-data gates, and the candidate-count budget. Tooling:
+`scripts/measure-seaward.ts`, which routes and classifies **in process** rather
+than through the dev server, because HMR served stale code through a whole
+measurement round here today (`coastKm` read 0 on every candidate of a ride that
+measures 15.4 km from the same source).
+
 ## 2026-09-14 — Item 12: gates reach the rider (UI, and the shim is gone)
 
 The data half of item 12 shipped earlier today (entry below). This is the other
