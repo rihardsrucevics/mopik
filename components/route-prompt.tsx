@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useLocale } from "@/lib/i18n/use-locale";
 import { t } from "@/lib/i18n/messages";
 import Link from "next/link";
-import { ArrowLeft, ArrowUp } from "lucide-react";
+import { ArrowLeft, ArrowUp, X } from "lucide-react";
 import { RouteLoader } from "@/components/route-loader";
 import { track } from "@/lib/analytics";
 import { ChatMessage, ChatQuickReply, RidePlan, planSummary } from "@/lib/chat/ride-plan";
@@ -103,21 +103,40 @@ export function RoutePrompt({ messages, plan, hasRoute, phase, quickReplies, luc
             {quickReplies.map((reply) => <button key={reply.label} type="button" onClick={() => { track("quick_reply_used", { label: reply.label, action: reply.action ?? "message" }); if (reply.action) onAction?.(reply.action); else send(reply.message); }} className="rounded-full border border-[#f56300] bg-white px-3.5 py-2 text-xs font-medium text-[#bd4b00] transition hover:bg-[#fff4ec]">{reply.label}</button>)}
           </div>
         )}
-        {busy && <RouteLoader phase={phase === "thinking" ? "thinking" : lucky ? "lucky" : "routing"} onCancel={onCancel} />}
+        {/* No `onCancel` here on purpose: while a generation runs the cancel
+            lives in the bottom slot, where the input usually is. Exactly one
+            Atcelt exists at a time. */}
+        {busy && <RouteLoader phase={phase === "thinking" ? "thinking" : lucky ? "lucky" : "routing"} />}
         <div ref={endRef} />
       </div>
 
-      <form onSubmit={(event) => { event.preventDefault(); submit(); }} className="border-t border-stone-200 bg-white p-3">
-        <label htmlFor="ride-message" className="sr-only">{t(locale, "chatMessageLabel")}</label>
-        <div className="flex items-end gap-2 rounded-xl border border-stone-200 p-2 focus-within:border-[#f56300]">
-          <textarea id="ride-message" value={text} onChange={(event) => setText(event.target.value)} rows={2} maxLength={6000} disabled={busy}
-            onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); submit(); } }}
-            placeholder={hasRoute ? t(locale, "chatPlaceholder") : messages.length ? t(locale, "chatPlaceholderRefine") : t(locale, "chatPlaceholderDescribe")}
-            className="min-w-0 flex-1 resize-none bg-transparent px-2 py-1 text-base outline-none placeholder:text-stone-400 disabled:opacity-60 md:text-sm" />
-          <button type="submit" disabled={busy || !text.trim()} aria-label={t(locale, "chatSend")} className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-[#f56300] text-white transition hover:bg-[#d85600] disabled:opacity-35"><ArrowUp className="size-5" /></button>
+      {/* The bottom slot is the thumb's place. While a generation runs nothing
+          typed there can be acted on, so the input and its hint give way to
+          "Atcelt" — same handler, same outline style it had in the loader,
+          just where the thumb already rests. Both states share this row's
+          padding, so whatever the input row respects at the bottom of a phone
+          the cancel respects too. */}
+      {busy && onCancel ? (
+        <div className="border-t border-stone-200 bg-white p-3">
+          <button type="button" onClick={onCancel}
+            className="flex h-11 w-full items-center justify-center gap-1.5 rounded-xl border border-stone-200 bg-white text-sm font-medium text-stone-600 transition hover:border-stone-300 hover:text-stone-900 active:bg-stone-50">
+            <X className="size-4" />
+            {t(locale, "cancel")}
+          </button>
         </div>
-        <p className="mt-2 hidden px-1 text-[10px] text-stone-400 md:block">{t(locale, "chatEnterHint")}</p>
-      </form>
+      ) : (
+        <form onSubmit={(event) => { event.preventDefault(); submit(); }} className="border-t border-stone-200 bg-white p-3">
+          <label htmlFor="ride-message" className="sr-only">{t(locale, "chatMessageLabel")}</label>
+          <div className="flex items-end gap-2 rounded-xl border border-stone-200 p-2 focus-within:border-[#f56300]">
+            <textarea id="ride-message" value={text} onChange={(event) => setText(event.target.value)} rows={2} maxLength={6000} disabled={busy}
+              onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); submit(); } }}
+              placeholder={hasRoute ? t(locale, "chatPlaceholder") : messages.length ? t(locale, "chatPlaceholderRefine") : t(locale, "chatPlaceholderDescribe")}
+              className="min-w-0 flex-1 resize-none bg-transparent px-2 py-1 text-base outline-none placeholder:text-stone-400 disabled:opacity-60 md:text-sm" />
+            <button type="submit" disabled={busy || !text.trim()} aria-label={t(locale, "chatSend")} className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-[#f56300] text-white transition hover:bg-[#d85600] disabled:opacity-35"><ArrowUp className="size-5" /></button>
+          </div>
+          <p className="mt-2 hidden px-1 text-[10px] text-stone-400 md:block">{t(locale, "chatEnterHint")}</p>
+        </form>
+      )}
     </section>
   );
 }

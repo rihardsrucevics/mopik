@@ -1,9 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { X } from "lucide-react";
 import { useLocale } from "@/lib/i18n/use-locale";
-import { t, messages, type MessageKey } from "@/lib/i18n/messages";
+import { messages, type MessageKey } from "@/lib/i18n/messages";
 
 /**
  * The "route drawing itself" motif, in two sizes.
@@ -32,11 +31,17 @@ const STATUS: Record<"thinking" | "routing" | "lucky", MessageKey[]> = {
 };
 
 
-export function RouteLoader({ phase, className, onCancel }: {
+/**
+ * Cancelling is deliberately NOT here. It used to be a full-width row under
+ * this card, but a rider looking for the way out looks at the bottom of the
+ * chat column, where his thumb already rests on the input. `RoutePrompt` now
+ * renders "Atcelt" in the input's own slot while a generation runs, so this
+ * card is only the animation and its status line — and there is exactly one
+ * cancel on screen.
+ */
+export function RouteLoader({ phase, className }: {
   phase: "thinking" | "routing" | "lucky";
   className?: string;
-  /** Call the generation off. Absent = no control, for callers with nothing to cancel. */
-  onCancel?: () => void;
 }) {
   const [locale] = useLocale();
   const m = messages(locale);
@@ -58,8 +63,8 @@ export function RouteLoader({ phase, className, onCancel }: {
   }, []);
   const line = lines[index];
 
-  const card = (
-    <div role="status" aria-live="polite" className={`overflow-hidden rounded-2xl border border-stone-200 bg-[#faf9f6] ${onCancel ? "" : (className ?? "")}`}>
+  return (
+    <div role="status" aria-live="polite" className={`overflow-hidden rounded-2xl border border-stone-200 bg-[#faf9f6] ${className ?? ""}`}>
       <div className="relative">
         <RouteScene className="h-28 w-full" />
         {advert && (
@@ -73,23 +78,6 @@ export function RouteLoader({ phase, className, onCancel }: {
         <span className="size-1.5 animate-pulse rounded-full bg-[#f56300]" />
         <span key={line} className="mopik-fade-in min-w-0 flex-1 truncate text-xs font-medium text-stone-700">{m[line]}</span>
       </div>
-    </div>
-  );
-
-  if (!onCancel) return card;
-
-  // Cancelling sits outside the animation, on its own full-width row. Inside
-  // the card it was a small link competing with a moving picture for
-  // attention — the rider asked for something he could actually hit. 44 px
-  // is the thumb target a phone needs.
-  return (
-    <div className={`grid gap-2 ${className ?? ""}`}>
-      {card}
-      <button type="button" onClick={onCancel}
-        className="flex h-11 w-full items-center justify-center gap-1.5 rounded-xl border border-stone-200 bg-white text-sm font-medium text-stone-600 transition hover:border-stone-300 hover:text-stone-900 active:bg-stone-50">
-        <X className="size-4" />
-        {t(locale, "cancel")}
-      </button>
     </div>
   );
 }

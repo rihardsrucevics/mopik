@@ -638,7 +638,7 @@ pilskalns and Gūtmaņa ala route fine with the same plan. Same class as the
 a via added from a suggestion needs the same treatment, and the suggestion
 list could hide places the profile cannot reach at all.
 
-## 21. While generating, the chat input makes no sense
+## 21. ~~While generating, the chat input makes no sense~~ — DONE 2026-09-14
 
 Filed by the rider on 2026-09-14. During a generation the chat still shows
 its text input at the bottom, and the "Atcelt" button sits above it in the
