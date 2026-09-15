@@ -196,6 +196,8 @@ the first thing this project would store server-side.
 
 ## 7. A ride of ~1000 km still does not generate
 
+**Status 2026-09-15:** Step 1 done — a feasibility probe refuses or scales the search before it runs (`lib/routing/fetch-route-probe.ts`). Step 2 designed, not built.
+
 Measured 2026-09-14, after the VPS was in place. Our own server routes
 Como → Budapest fine, but **one such leg takes 75 s** — and a generation tries
 ~36 candidates. The API budget is 50 s (it must stay inside Vercel's
@@ -334,6 +336,8 @@ varu" is honest; quietly returning the motorway is not.
 (a) is done and needs no further work.
 
 ## 8. POI for Europe
+
+**Status 2026-09-15:** In progress. Geofabrik path built and made fast; LV LT EE PL published in `public/poi/`; second pass for PL DE CH AT IT SI died on a memory-starved machine — restart `run-phase2.sh`.
 
 Outside LV/LT/EE loop anchors are geometric, so rides are unnamed and cannot be
 planned *through* a hillfort or a ford. `scripts/build_poi_dataset.py` takes
@@ -486,6 +490,8 @@ saved but not yet looked at (`unseenSavedCount`, marked seen when the list is
 opened). The word itself moved to the footer.
 
 ## 11. Routes still run along the sea
+
+**Status 2026-09-15:** 11a–11e shipped (beach paths refused; sea term; seaward candidates; no vias in the water). Open: may the sea buy more than 10 % retracing; the 209 s dry-land failures on Liepāja → Ventspils; the beach check on the new coastal winners (11f).
 
 Recurring. The sandy beach tracks are already refused (`beach_like_path`), so
 this is about riding *beside* the sea, not on it — measure what the routes
@@ -643,6 +649,8 @@ shared-route page's "Ģenerēt līdzīgu sev", the chat's send control) and keep
 them consistent. `components/ride-composer.tsx`.
 
 ## 19. Stops on the map, and suggestions in the details
+
+**Status 2026-09-15:** Done — suggestions card, sights vs stops, instant detours (out-and-back by default). See items 20 and 22 for what it surfaced.
 
 Filed by the rider on 2026-09-14. Two halves:
 

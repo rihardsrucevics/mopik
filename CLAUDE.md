@@ -43,6 +43,79 @@ before concluding a change did not ship.
 Pull to the scratchpad, never to `.env.local` — that is how the local keys
 were lost on 09-12.
 
+## Where this stands — handover, 2026-09-15 (night)
+
+**Production is `c2af410`.** Three commits after it are local only:
+`6a83190` (Baltic POIs rebuilt, gates for LT/EE), `e3e7c8e` (suggestions
+read only the countries under the ride) and `f39d0bb` (no via points in the
+water). The first two are safe to deploy; **`f39d0bb` waits for a beach
+check** — its new Rīga → Ainaži winner carries 15.7 km of `highway=path`
+within 1 km of the sea, and nobody has yet measured whether that is beach
+or forest (an agent trying to stalled when the machine ran out of memory).
+Method and command are in `docs/PROGRESS.md` "Item 11a"/"11e".
+
+**Deploy from a clean worktree.** The working tree carried other agents'
+half-done files all evening, so every deploy was `vercel --prod --yes` from
+`<scratchpad>/deploy-wt` checked out at the commit, with
+`.vercel/project.json` copied in. `tsc` there reports a false `LayoutProps`
+error (no `.next/types`); run the tests instead. 32 commits shipped this way
+from `9ab3070` to `c2af410`; all verified in a browser on www.mopik.eu.
+
+**What changed, and the rule behind each** (details in PROGRESS and the
+commit messages, which were written to be read):
+- Untranslated text is a lint error (`react/jsx-no-literals` + selectors on
+  text attributes, then extended to conditional branches). Everything but
+  the chat's model replies and the OpenGraph images speaks four languages.
+- Map: colour = surface, pattern = class, legend two rows, badges are ⚠️
+  and 🔥 only, no rough-track icon. Segment card heads itself with the
+  compound ("Grants meža ceļš").
+- Item 7: a 10 s client-side feasibility probe before the search; BRouter's
+  `maxRunningTime` is not honoured. Honest refusal in ~12 s instead of a
+  422 after 50.
+- Item 11: beach/dune *paths* refused (`shore_path_factor`); the coast on
+  real roads is preferred through a bounded sea term fed by a coastline
+  grid (`lib/geo/sea.ts`) and seaward candidate vias; via points in the
+  water are refused by BRouter snap distance. **Open decision:** the sea
+  term buys at most 10 % retracing; Liepāja → Ventspils' shore-road
+  candidate ranks second because of exactly that. The rider has not said
+  whether the sea may buy more. Also pending: six dry-land failures there
+  cost 209 s — a refused approach direction; fixing it makes the ride 8.3 s.
+- Item 12: **we do not guess about private roads.** Only gates on the
+  ridden way (vertex identity, 1.5 m, never a radius) are counted and
+  shown; nothing steers the route. The rider rejected proximity and the
+  strict "through the yard" rules in turn.
+- Item 19: suggestions in their own card with look / read / add; sights
+  are not stops (kind glyph vs 🅿️); ticking splices a background-routed
+  detour instantly, out-and-back by default, loop only if ≥ 15 % better;
+  long detours keep their checkbox with a note. Items 20 and 22 record two
+  routing oddities found on the way.
+- Item 8: Google Places is disallowed by its terms for this use; Geofabrik
+  + pyosmium is the path, with a KeyFilter before area assembly (LV 130 s →
+  21 s). LV LT EE PL are published. **The second pass for PL DE CH AT IT SI
+  died** — `data/poi-build-2.log` stops at "[PL] POIs"; the machine has
+  8 GB RAM and swap was 9/10 GB full with many agents. `<scratchpad>/
+  pbf2/PL.osm.pbf` is still on disk. Restart `<scratchpad>/run-phase2.sh`
+  on a quiet machine, then `npx tsx scripts/publish-poi.ts` and
+  `scripts/publish-gates.ts`, then delete `public/poi-baltics.geojson`
+  after one deploy confirms nothing reads it.
+
+**Traps learned tonight:** the dev server on :3000 does not reload server
+code (it served 14:30 routing all evening — restart it before any
+browser-based measurement); Node `fetch` to overpass.private.coffee needs a
+User-Agent or gets an instant 429; a `multiply` after `switch highway=path`
+in the BRouter profile is dead code and backticks in profile comments break
+the template (both pinned by tests); Lucide's `color` prop sets stroke only;
+module-level `renderToStaticMarkup` crashes on the server; MapLibre's
+`line-dasharray` takes `step` only with `["literal", …]` and `zoom` only at
+the top level; MapLibre's own CSS overrides ours unless the selector is
+doubled; Next 16 refuses a second dev server in one directory.
+
+**How the rider worked tonight:** every change through an Opus subagent
+with explicit file ownership, several in parallel, him testing the live
+site and correcting mid-flight. He reverses decisions quickly (the trail
+icon went Footprints → Flame → Heart → 🔥 in one evening); restate the
+rule, redirect the agent, do not argue.
+
 ## Where this stands — handover, 2026-09-14 (evening)
 
 Everything below is committed, pushed and **live on www.mopik.eu** at
