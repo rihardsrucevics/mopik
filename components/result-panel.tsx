@@ -17,6 +17,7 @@ import { RouteActionRow } from "@/components/action-row";
 import { type RoutePoi, type RoutePois } from "@/lib/poi/kinds";
 import { SuggestionsCard, type DetourFocusNote, type SelectedPoi } from "@/components/suggestions-card";
 import { useDetourAnalytics, useDetourPrefetch, useSplicedRoute } from "@/lib/routing/use-detours";
+import { type DetourResult } from "@/lib/routing/detour";
 import type { SplicedRoute } from "@/lib/routing/detour";
 
 /**
@@ -92,7 +93,7 @@ function Row({ label, value, icon }: { label: string; value: string; icon?: stri
   );
 }
 
-export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, remoteLoop, longerSuggestion, tolerancePercent = 20, busy, onSend, onBackToForm, resolvedPlaces, alternatives, offset, onOffsetChange, map, sparsePlaceData = false, assembledFromSegments = false, onShowPoi, onPoisLoaded, selectedPois = [], onToggleSelectPoi, onClearSelectedPois, onRegenerateWithSelection, onSplicedChange }: {
+export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, remoteLoop, longerSuggestion, tolerancePercent = 20, busy, onSend, onBackToForm, resolvedPlaces, alternatives, offset, onOffsetChange, map, sparsePlaceData = false, assembledFromSegments = false, onShowPoi, pois = null, poisLoading = false, poisFailed = false, onDetoursChange, selectedPois = [], onToggleSelectPoi, onClearSelectedPois, onRegenerateWithSelection, onSplicedChange }: {
   routes: GeneratedRoute[];
   /** transit → loop → transit split, when the ride was built around a focus area */
   remoteLoop?: GenerateRouteResponse["remoteLoop"];
@@ -164,13 +165,29 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
    *  about the detour, so the map's card can state the same figures. */
   onShowPoi?: (poi: RoutePoi, detour?: DetourFocusNote | null) => void;
   /**
-   * The places this ride passes, once they have been looked up.
+   * The sights near this ride, as the page's lookup answered.
    *
-   * Reported upwards so the map can label a stop's marker with what kind of
-   * place it is without a second request: the panel is the only thing that
-   * asks, and it asks once per ride.
+   * Down rather than up, which is the reversal this change is: the panel used
+   * to ask for them when its card was opened and report them upwards, and the
+   * map could therefore draw nothing until the rider opened a card. The page
+   * now asks as soon as a ride is shown — the map needs them either way — and
+   * both the map and this card read the one answer.
    */
-  onPoisLoaded?: (pois: RoutePois) => void;
+  pois?: RoutePois | null;
+  poisLoading?: boolean;
+  /** The lookup errored rather than answering empty. Said, not hidden. */
+  poisFailed?: boolean;
+  /**
+   * The routed detours, as the prefetch answers, reported upwards.
+   *
+   * The map can now open a sight's card by itself — the rider clicks a marker
+   * rather than a row — and that card must not say less than the row does. The
+   * row derives its "+4,2 km · garš apbrauciens" from these; handing the same
+   * record to the page lets a marker's click derive exactly the same line
+   * through exactly the same function. The prefetch stays here, where the list
+   * it is keyed to lives.
+   */
+  onDetoursChange?: (detours: Record<string, DetourResult>) => void;
   /**
    * The ride as it is currently drawn, once ticked sights have been spliced
    * into it — or null when nothing is ticked and the API's own line stands.
@@ -200,39 +217,18 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
     return family[(offset[r.variant] ?? 0) % Math.max(1, family.length)] ?? r;
   };
   /**
-   * The suggestions, fetched when their own block is opened and not before.
+   * The card's own open state, and nothing else about the suggestions.
    *
-   * Lazy on purpose: most generations are never expanded, and the lookup is
-   * a server round trip carrying the whole polyline. Keyed by the ride's id
-   * so cycling a card re-asks for that ride's places rather than showing the
-   * previous one's. A failure is silence — the section simply does not appear,
-   * which is the same thing that happens outside the Baltics.
-   */
-  const [suggestions, setSuggestions] = useState<RoutePois | null>(null);
-  const [suggestLoading, setSuggestLoading] = useState(false);
-  /**
-   * The lookup answered with an error rather than with an empty list.
+   * The list itself used to be fetched here, the first time this block was
+   * opened. It is now fetched by the page as soon as a ride is shown and
+   * arrives as `pois` — because the map draws the on-route places whether or
+   * not this card is ever opened, and a fetch keyed on `suggestOpen` could not
+   * answer a map the rider has not touched. The card is now a pure view of the
+   * page's state, which is also why opening it is instant.
    *
-   * These are different statements and used to be the same one: a failed
-   * request left `suggestions` null, the card stayed on "…" forever and the
-   * rider was shown a ride that looked as though it had no sights near it.
-   * Now the card says so in one quiet line and keeps its header.
+   * The open state stays local: it is about this card, not about the ride.
    */
-  const [suggestFailed, setSuggestFailed] = useState(false);
-  // Ieteikumi is its own expandable now, so it has its own open state. It is
-  // no longer tied to Detaļas: the rider asked for the route's facts and the
-  // suggestions to be separate things, and sharing one toggle would have made
-  // opening the numbers also fetch a list he had not asked for.
   const [suggestOpen, setSuggestOpen] = useState(false);
-  const suggestedFor = useRef<string | null>(null);
-  // Held in a ref so a parent that re-creates the callback every render — the
-  // ordinary case for an inline arrow — cannot become a reason to ask the
-  // server again.
-  const onPoisLoadedRef = useRef(onPoisLoaded);
-  // Kept current in an effect rather than during render: a ref written while
-  // rendering is exactly what `react-hooks/refs` bans, and the value is only
-  // ever read from the fetch's callback, which runs well after commit.
-  useEffect(() => { onPoisLoadedRef.current = onPoisLoaded; }, [onPoisLoaded]);
 
   const [beer, setBeer] = useState(false);
   const [shared, setShared] = useState<"idle" | "copied">("idle");
@@ -245,62 +241,15 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
   const route = shownFor(routes[Math.min(selected, routes.length - 1)]);
 
   /**
-   * Ask for the suggestions the first time this ride's Ieteikumi are opened.
-   *
-   * Above the `if (!route)` below, because a hook cannot run conditionally —
-   * the effect's own guard is `suggestOpen && route`, which is the same condition
-   * expressed where React can see it every render.
-   */
-  /**
-   * The ride this list belongs to.
+   * The ride this panel is showing, as the page's POI lookup keys it.
    *
    * `route.id` is a fresh `crypto.randomUUID()` per generated ride, so it
-   * changes on every regeneration *and* whenever the rider cycles a card to
-   * a runner-up — which is exactly when the suggestions must be asked for
-   * again. Cycling back to a ride already fetched re-asks too; the request is
-   * a few hundred milliseconds against a dataset query, and the alternative
-   * (a cache keyed by id) buys nothing a rider would notice.
+   * changes on every regeneration *and* whenever the rider cycles a card to a
+   * runner-up — which is exactly when the sights must be asked for again. The
+   * asking now happens in the page (see `lib/poi/use-route-pois.ts`); this is
+   * only the key the detour prefetch shares with it.
    */
   const routeId = route?.id ?? null;
-  useEffect(() => {
-    if (!suggestOpen || !routeId || !route) return;
-    if (suggestedFor.current === routeId) return;
-    suggestedFor.current = routeId;
-    setSuggestions(null);
-    setSuggestFailed(false);
-    setSuggestLoading(true);
-    const controller = new AbortController();
-    fetch("/api/route-pois", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ geometry: route.geometry, locale }),
-      signal: controller.signal,
-    })
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-      .then((data: RoutePois | null) => {
-        if (!data) throw new Error("empty");
-        const lists = { onRoute: data.onRoute ?? [], nearby: data.nearby ?? [] };
-        setSuggestions(lists);
-        onPoisLoadedRef.current?.(lists);
-      })
-      // A list that does not arrive is now said out loud rather than shown as
-      // an empty ride. An abort is not a failure — it is this effect tidying
-      // up after itself when the ride changed under it, and the run that
-      // replaced it owns the card's state.
-      .catch((err: unknown) => {
-        if (controller.signal.aborted || (err instanceof DOMException && err.name === "AbortError")) return;
-        // The id is cleared so reopening the card asks again: a failure the
-        // rider can retry by closing and reopening is better than one that
-        // needs a new ride.
-        suggestedFor.current = null;
-        setSuggestFailed(true);
-      })
-      .finally(() => { if (!controller.signal.aborted) setSuggestLoading(false); });
-    return () => controller.abort();
-    // `route` is read inside but keyed by its id: a re-render that produces an
-    // equal-but-new object must not re-ask the server.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [suggestOpen, routeId, locale]);
 
   /**
    * The detours, routed in the background the moment the suggestions arrive.
@@ -315,7 +264,7 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
     geometry: route?.geometry ?? null,
     durationSeconds: route?.durationSeconds ?? null,
     plan,
-    nearby: suggestions?.nearby ?? null,
+    nearby: pois?.nearby ?? null,
   });
 
   /**
@@ -337,6 +286,12 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
   const onSplicedChangeRef = useRef(onSplicedChange);
   useEffect(() => { onSplicedChangeRef.current = onSplicedChange; }, [onSplicedChange]);
   useEffect(() => { onSplicedChangeRef.current?.(spliced); }, [spliced]);
+  // The same shape, for the same reason: a parent state write belongs in an
+  // effect, and the callback goes through a ref so an inline arrow is not a
+  // reason to publish again.
+  const onDetoursChangeRef = useRef(onDetoursChange);
+  useEffect(() => { onDetoursChangeRef.current = onDetoursChange; }, [onDetoursChange]);
+  useEffect(() => { onDetoursChangeRef.current?.(detours); }, [detours]);
 
   if (!route) return null;
   /**
@@ -663,9 +618,9 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
             Detaļas; what is worth stopping at is a separate, optional offer
             and now reads as one. */}
         <SuggestionsCard
-          pois={suggestions}
-          loading={suggestLoading}
-          failed={suggestFailed}
+          pois={pois}
+          loading={poisLoading}
+          failed={poisFailed}
           expanded={suggestOpen}
           onToggle={() => setSuggestOpen(!suggestOpen)}
           onShow={onShowPoi}

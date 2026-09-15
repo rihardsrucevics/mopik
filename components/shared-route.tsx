@@ -11,7 +11,7 @@ import { RouteMap } from "@/components/route-map";
 // The gate glyph is defined once, next to the panel row that first used it —
 // see the note there for why a door and not a roadworks barrier.
 import { GATE_ICON } from "@/components/result-panel";
-import { POI_KIND, type RoutePoi, type RoutePois } from "@/lib/poi/kinds";
+import { POI_KIND, type RoutePoi } from "@/lib/poi/kinds";
 import { SuggestionsCard, type DetourFocusNote, type SelectedPoi } from "@/components/suggestions-card";
 import { MapPanel } from "@/components/map-panel";
 import { SiteHeader } from "@/components/site-header";
@@ -20,7 +20,9 @@ import { decodePlanPlaces, encodePlanShare, sharedRouteSegments, type SharedRout
 import { isCodeSaved, removeRide, rideId, saveSharedRide } from "@/lib/share/saved-rides";
 import { gpxFilename } from "@/lib/gpx/filename";
 import { DESKTOP_QUERY } from "@/lib/use-media-query";
-import { useDetourAnalytics, useDetourPrefetch, useSplicedRoute } from "@/lib/routing/use-detours";
+import { useDetourAnalytics, useDetourPrefetch, useSplicedRoute, describeDetourForFocus } from "@/lib/routing/use-detours";
+import { useRoutePois } from "@/lib/poi/use-route-pois";
+import { useMapLayer } from "@/lib/map/layer-prefs";
 
 // A function of the language, not a constant: these labels are shown in
 // four languages and a module-level object is built before one is known.
@@ -51,7 +53,10 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
   const [locale] = useLocale();
   const m = messages(locale);
   const router = useRouter();
-  const [showTet, setShowTet] = useState(false);
+  // Remembered on the device, the same store the planner uses — one answer per
+  // rider, not one per page. See `lib/map/layer-prefs`.
+  const [showTet, setShowTet] = useMapLayer("tet");
+  const [showSights, setShowSights] = useMapLayer("sights");
   const [details, setDetails] = useState(false);
   /**
    * The places this ride passes, loaded when the details are opened.
@@ -66,13 +71,18 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
    * Both groups are listed with their figures; nothing shows when the lookup
    * finds nothing, which is also what happens outside the Baltics.
    */
-  const [pois, setPois] = useState<RoutePois | null>(null);
-  const [poisLoading, setPoisLoading] = useState(false);
-  /** The lookup errored rather than answering empty — said, not hidden. */
-  const [poisFailed, setPoisFailed] = useState(false);
+  // Asked as soon as the ride is on screen rather than when this card is
+  // opened: the map draws the places already on the route without the rider
+  // opening anything, so the fetch cannot wait for a card. Same hook as the
+  // planner's, so the two pages behave identically — which is the rule this
+  // component exists to keep.
+  const { pois, loading: poisLoading, failed: poisFailed } = useRoutePois({
+    rideId: code,
+    coordinates: share.points,
+    locale,
+  });
   // Its own expandable, exactly as on the planner: the route's facts belong to
-  // Detaļas and the suggestions are a separate, optional offer. Sharing one
-  // toggle would have made opening the numbers fetch a list nobody asked for.
+  // Detaļas and the suggestions are a separate, optional offer.
   const [poisOpen, setPoisOpen] = useState(false);
   /**
    * The suggestion the rider pressed "Kartē" on. Same mechanism as the
@@ -123,7 +133,6 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
       document.querySelector("[data-map-slot]")?.scrollIntoView({ behavior: "smooth", block: "center" });
     });
   };
-  const askedRef = useRef(false);
   const [copied, setCopied] = useState(false);
   // The correction box below the card, exactly as the result panel has it.
   const [text, setText] = useState("");
@@ -184,6 +193,22 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
     detours,
   });
   useDetourAnalytics(spliced);
+  /**
+   * A click on a sight's mark on the map, on this page's terms.
+   *
+   * The planner's own `showPoiFromMap`, for the same reason: one card per
+   * place, reachable from the list or from the map, stating the same cost
+   * either way. The detours are already prefetched here — this page runs the
+   * same `useDetourPrefetch` the planner's panel does — so the note is derived
+   * through the same function the row uses.
+   */
+  const showPoiFromMap = (poi: RoutePoi) => {
+    showPoi(poi, describeDetourForFocus({
+      detour: detours[poi.id],
+      offRouteMeters: poi.distanceMeters,
+      m,
+    }));
+  };
   // The figures on screen: the spliced ride when sights are ticked, this
   // ride's own otherwise.
   const shownKm = spliced ? Math.round(spliced.distanceMeters / 1000) : share.km;
@@ -192,34 +217,6 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
     ? spliced.surfaces.gravelPercent + spliced.surfaces.dirtPercent
     : share.unpavedPercent;
 
-  // Asked once, when the rider opens the details — the same lazy rule the
-  // result panel follows, for the same reason: most visitors never expand it.
-  useEffect(() => {
-    if (!poisOpen || askedRef.current || !share.points?.length) return;
-    askedRef.current = true;
-    setPoisLoading(true);
-    const controller = new AbortController();
-    fetch("/api/route-pois", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ geometry: { coordinates: share.points }, locale }),
-      signal: controller.signal,
-    })
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-      .then((data: RoutePois | null) => {
-        if (!data) throw new Error("empty");
-        setPois({ onRoute: data.onRoute ?? [], nearby: data.nearby ?? [] });
-      })
-      .catch((err: unknown) => {
-        if (controller.signal.aborted || (err instanceof DOMException && err.name === "AbortError")) return;
-        // Reopening the card asks again, so a failed load is recoverable
-        // without reloading the page.
-        askedRef.current = false;
-        setPoisFailed(true);
-      })
-      .finally(() => { if (!controller.signal.aborted) setPoisLoading(false); });
-    return () => controller.abort();
-  }, [poisOpen, share.points, locale]);
   const start = { lat: share.points[0][1], lon: share.points[0][0] };
   useEffect(() => { track("shared_route_viewed", { km: share.km, variant: share.variant }); }, [share.km, share.variant]);
 
@@ -477,7 +474,12 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
           <MapPanel
             className="h-[46dvh] overflow-hidden rounded-2xl border border-stone-200 md:h-[calc(100vh-7rem)]"
             expandedClassName="md:relative md:inset-auto md:z-auto md:h-[calc(100vh-7rem)] md:overflow-hidden md:rounded-2xl md:border md:border-stone-200">
-            <RouteMap segments={spliced?.segments ?? segments} start={start} destination={null} focus={focusPoi} onFocusCleared={() => setFocusPoi(null)} onFocusToggle={planCode && share.plan ? toggleFocusedPoi : undefined} selectedPois={selectedPois} showTet={showTet} onToggleTet={setShowTet} />
+            <RouteMap segments={spliced?.segments ?? segments} start={start} destination={null} focus={focusPoi} onFocusCleared={() => setFocusPoi(null)} onFocusToggle={planCode && share.plan ? toggleFocusedPoi : undefined} selectedPois={selectedPois}
+              // Same two things as the planner: the sights drawn without the
+              // card being opened, and the switch that governs them.
+              routePois={pois} onShowPoi={showPoiFromMap}
+              showTet={showTet} onToggleTet={setShowTet}
+              showSights={showSights} onToggleSights={setShowSights} />
           </MapPanel>
         </div>
       </div>

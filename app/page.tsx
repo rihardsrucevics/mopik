@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState, useEffect } from "react";
+import { useCallback, useMemo, useRef, useState, useEffect } from "react";
 import { RouteMap } from "@/components/route-map";
 import { RoutePrompt } from "@/components/route-prompt";
 import { ResultPanel } from "@/components/result-panel";
@@ -23,7 +23,11 @@ import type { ResolvedPlace } from "@/lib/chat/places";
 import { useRideProfile } from "@/lib/chat/use-ride-profile";
 import { DESKTOP_QUERY, useMediaQuery } from "@/lib/use-media-query";
 import { GenerateRouteResponse } from "@/lib/types";
-import { POI_KIND } from "@/lib/poi/kinds";
+import { POI_KIND, type RoutePoi } from "@/lib/poi/kinds";
+import { describeDetourForFocus } from "@/lib/routing/use-detours";
+import { type DetourResult } from "@/lib/routing/detour";
+import { useRoutePois } from "@/lib/poi/use-route-pois";
+import { useMapLayer } from "@/lib/map/layer-prefs";
 import type { SplicedRoute } from "@/lib/routing/detour";
 
 type Retry = { stage: "chat"; messages: ChatMessage[]; plan: RidePlan | null } | { stage: "route"; messages: ChatMessage[]; plan: RidePlan };
@@ -95,7 +99,12 @@ export default function Home() {
   const [phase, setPhase] = useState<"idle" | "thinking" | "routing">("idle");
   const [error, setError] = useState<string | null>(null);
   const [retry, setRetry] = useState<Retry | null>(null);
-  const [showTet, setShowTet] = useState(false);
+  // Both map layers are remembered on the device now. TET was a plain
+  // `useState(false)` and forgot the rider's answer on every visit; the rider
+  // asked for the new sights switch to persist "like the TET toggle does", so
+  // the honest reading was to give them one store — see `lib/map/layer-prefs`.
+  const [showTet, setShowTet] = useMapLayer("tet");
+  const [showSights, setShowSights] = useMapLayer("sights");
   const [quickReplies, setQuickReplies] = useState<ChatQuickReply[]>([]);
   // Which of the three versions (direct / balanced / complex) is on the map.
   const [selected, setSelected] = useState(0);
@@ -182,6 +191,14 @@ export default function Home() {
     (next: SplicedRoute | null) => setSplicedFor({ result, spliced: next }),
     [result],
   );
+  /**
+   * The routed detours the result panel prefetched, so a marker's card can
+   * state the same cost the list's row does. Empty until the prefetch answers,
+   * and on the shared page's terms: it is only ever read through
+   * `describeDetourForFocus`, which returns null for a place it has no entry
+   * for.
+   */
+  const [detoursForMap, setDetoursForMap] = useState<Record<string, DetourResult>>({});
   const toggleSelectPoi = useCallback((poi: SelectedPoi) => {
     setSelectedPois((current) =>
       current.some((p) => p.id === poi.id) ? current.filter((p) => p.id !== poi.id) : [...current, poi],
@@ -577,6 +594,31 @@ export default function Home() {
   }
 
   /**
+   * A click on a sight's mark on the map: the same card a row's "Kartē" opens.
+   *
+   * The rider asked for exactly one card for a place, reachable from either
+   * side, and for a nearby mark's card to carry its tick. Both come out of
+   * reusing `showPoi`: `focus.poi` is what `toggleFocusedPoi` selects on, so
+   * the card's control is the row's control.
+   *
+   * The detour note is derived here rather than left off. The card and the row
+   * are two views of one offer and must not disagree — a rider who reads
+   * "+17,0 km · garš apbrauciens" in the list and finds a bare Pievienot on the
+   * map has been told less on the map than in the list, and the number is the
+   * whole basis of the decision. `detoursForMap` is the panel's own prefetch,
+   * reported upwards, passed through the same function the row uses; a place
+   * whose detour has not been routed yet (or an on-route place, which has no
+   * detour to route) gets null and the card says what it always said.
+   */
+  function showPoiFromMap(poi: RoutePoi) {
+    showPoi(poi, describeDetourForFocus({
+      detour: detoursForMap[poi.id],
+      offRouteMeters: poi.distanceMeters,
+      m: ui,
+    }));
+  }
+
+  /**
    * Every ticked sight becomes a via, and the ride is planned again through
    * all of them at once.
    *
@@ -663,6 +705,23 @@ export default function Home() {
     return family[(variantOffset[card.variant] ?? 0) % Math.max(1, family.length)] ?? card;
   })();
   /**
+   * The sights near the ride on screen, asked for as soon as there is one.
+   *
+   * The rider asked for the places already on his route to be marked on the
+   * map "as soon as the list has loaded", without him opening the card. That
+   * makes the map a consumer of this list, so the page has to own it: the
+   * result panel used to fetch it lazily when its own card was opened, which
+   * a map drawn before any card is touched could never wait for. The card now
+   * reads the same state through props, so the two cannot disagree, and the
+   * endpoint answers a pre-baked dataset in single-digit milliseconds.
+   */
+  const { pois: routePois, loading: poisLoading, failed: poisFailed } = useRoutePois({
+    rideId: route?.id ?? null,
+    coordinates: route?.geometry?.coordinates ?? null,
+    locale,
+  });
+
+  /**
    * The waiting `?ask=` correction, sent on the render that first has the plan
    * it corrects — `send` reads the plan from state, so it cannot run in the
    * effect that sets it. The ref is cleared first, so a re-run sends nothing.
@@ -704,33 +763,28 @@ export default function Home() {
   /**
    * What the POI dataset knows about the ride's stops, by name.
    *
-   * Filled by the result panel when it loads its suggestions — the same
-   * request, so a stop's marker costs nothing extra — and read by the map to
-   * put a kind ("pilskalns") in a stop's card instead of only its name. A stop
-   * the dataset does not know keeps the plain "Pieturvieta" card, which is
-   * also what every ride outside the Baltics gets.
-   */
-  const [stopInfo, setStopInfo] = useState<{
-    /** the ride these kinds describe, so a stale set is never applied to a new one */
-    forResult: GenerateRouteResponse | null;
-    kinds: Record<string, { kind: string }>;
-  }>({ forResult: null, kinds: {} });
-
-  /**
-   * Keep what the lookup learned about places this ride passes, keyed by name.
+   * Derived from the page's own POI lookup — the same request the card and the
+   * map's marks read, so a stop's marker costs nothing extra — and read to put
+   * a kind ("pilskalns") in a stop's card instead of only its name. A stop the
+   * dataset does not know keeps the plain "Pieturvieta" card, which is also
+   * what every ride outside the Baltics gets.
    *
-   * Only the stops are of interest here — the map labels those — but the whole
-   * list is cheap to index and a stop added from Ieteikumi arrives in the
-   * nearby list under exactly the name it will carry into the plan.
+   * Derived rather than held in state, which is what it used to be. The panel
+   * reported this list asynchronously and the set therefore had to carry the
+   * ride it described, so a set arriving after a new ride was not applied to
+   * it. The page now owns the lookup and `useRoutePois` nulls the list the
+   * moment the ride changes, so "which ride is this about" is no longer a
+   * question that can be answered wrongly — and the setState-in-an-effect that
+   * used to answer it is gone with it.
    */
-  function notePois(pois: { onRoute: { name: string; category: string }[]; nearby: { name: string; category: string }[] }) {
+  const stopKinds = useMemo(() => {
     const kinds: Record<string, { kind: string }> = {};
-    for (const p of [...pois.onRoute, ...pois.nearby]) {
+    for (const p of [...(routePois?.onRoute ?? []), ...(routePois?.nearby ?? [])]) {
       const entry = POI_KIND[p.category as keyof typeof POI_KIND];
       if (entry) kinds[p.name] = { kind: ui[entry.key as keyof typeof ui] ?? p.category };
     }
-    setStopInfo({ forResult: result, kinds });
-  }
+    return kinds;
+  }, [routePois, ui]);
 
   // What the API actually routed through, in riding order. These are the
   // coordinates worth keeping in a share code — they made this route, rather
@@ -782,11 +836,11 @@ export default function Home() {
         via={result
           ? (result.via ?? []).map((v) => ({
               ...v,
-              ...((stopInfo.forResult === result ? stopKind(stopInfo.kinds, v.label) : undefined) ?? {}),
+              ...(stopKind(stopKinds, v.label) ?? {}),
               // The POI category behind this via, when it came from a
               // suggestion: the marker then carries the sight's own glyph
               // instead of the 🅿️ that means "a stop you typed". Read from
-              // the picked places rather than from `stopInfo`, because that
+              // the picked places rather than from `stopKinds`, because that
               // map is keyed by name and holds every place *near* the ride —
               // a village the route merely passes would otherwise steal a
               // typed stop's pill.
@@ -797,7 +851,13 @@ export default function Home() {
         onFocusCleared={clearFocusPoi}
         onFocusToggle={toggleFocusedPoi}
         selectedPois={selectedPois}
-        showTet={showTet} onToggleTet={setShowTet} />
+        // The sights the ride passes and the ones it runs near. The map draws
+        // the first group as soon as this arrives — the rider does not have to
+        // open anything — and both groups follow the "Apskates vietas" switch.
+        routePois={routePois}
+        onShowPoi={showPoiFromMap}
+        showTet={showTet} onToggleTet={setShowTet}
+        showSights={showSights} onToggleSights={setShowSights} />
     </MapPanel>
   );
   // Where the map lives depends only on the viewport and the view — never on
@@ -823,7 +883,7 @@ export default function Home() {
           {entryMode === "form"
             ? <RideComposer key={plan ? planSummary(plan, locale) : "new"} initialPlan={plan} initialPlaces={places} profile={profile} onProfileChange={changeProfile} busy={phase !== "idle"} onGenerate={startFromForm} onUseChat={() => setEntryMode("chat")} onPlacesChange={(p, tripType) => { setPreviewPlaces(p); setPreviewRoundTrip(tripType === "round_trip"); }} map={mapInComposer && mapVisible ? mapPanel : undefined} />
             : result && result.routes.length > 0 && !chatting
-              ? <ResultPanel routes={result.routes} selected={selected} onSelect={setSelected} plan={plan} avoidTowns={result.intent.avoidTowns ?? false} lucky={lucky} remoteLoop={result.remoteLoop} longerSuggestion={result.longerSuggestion} tolerancePercent={result.intent.distanceTolerancePercent} busy={phase !== "idle"} onSend={send} onBackToForm={() => setEntryMode("form")} map={mapInResult && mapVisible ? mapPanel : undefined} resolvedPlaces={routedPlaces} alternatives={result.alternatives} sparsePlaceData={result.sparsePlaceData} assembledFromSegments={result.assembledFromSegments} offset={variantOffset} onOffsetChange={setVariantOffset} onShowPoi={showPoi} onPoisLoaded={notePois} selectedPois={selectedPois} onToggleSelectPoi={toggleSelectPoi} onClearSelectedPois={clearSelectedPois} onRegenerateWithSelection={regenerateWithSelection} onSplicedChange={handleSplicedChange} />
+              ? <ResultPanel routes={result.routes} selected={selected} onSelect={setSelected} plan={plan} avoidTowns={result.intent.avoidTowns ?? false} lucky={lucky} remoteLoop={result.remoteLoop} longerSuggestion={result.longerSuggestion} tolerancePercent={result.intent.distanceTolerancePercent} busy={phase !== "idle"} onSend={send} onBackToForm={() => setEntryMode("form")} map={mapInResult && mapVisible ? mapPanel : undefined} resolvedPlaces={routedPlaces} alternatives={result.alternatives} sparsePlaceData={result.sparsePlaceData} assembledFromSegments={result.assembledFromSegments} offset={variantOffset} onOffsetChange={setVariantOffset} onShowPoi={showPoi} pois={routePois} poisLoading={poisLoading} poisFailed={poisFailed} onDetoursChange={setDetoursForMap} selectedPois={selectedPois} onToggleSelectPoi={toggleSelectPoi} onClearSelectedPois={clearSelectedPois} onRegenerateWithSelection={regenerateWithSelection} onSplicedChange={handleSplicedChange} />
               : <RoutePrompt messages={messages} plan={plan} hasRoute={Boolean(route)} phase={phase} quickReplies={quickReplies} lucky={lucky && !route} onSend={send} onBackToForm={() => setEntryMode("form")} originCode={origin?.code ?? null} onAction={(action) => { if (action === "retry") { retryLast(); return; } setChatting(false); setQuickReplies([]); }} onCancel={cancel} />}
           {/* A ride that came from editing another one. Asked once, here,
               because only the rider knows whether the original is still

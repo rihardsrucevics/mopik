@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import * as maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { RouteSegmentProperties } from "@/lib/types";
@@ -9,7 +9,7 @@ import { useLocale } from "@/lib/i18n/use-locale";
 import { messages } from "@/lib/i18n/messages";
 import { fi } from "@/lib/i18n/format";
 import type { UiLocale } from "@/lib/i18n/locale";
-import { POI_KIND } from "@/lib/poi/kinds";
+import { POI_KIND, type RoutePoi, type RoutePois } from "@/lib/poi/kinds";
 
 // Serve the MapLibre worker from /public — bundler-emitted module workers
 // 404 under the Next.js dev server, leaving the map blank.
@@ -85,8 +85,44 @@ type Props = {
    * a click on the map) and from `via` (already part of the ride).
    */
   selectedPois?: { id: string; name: string; lat: number; lon: number; category: string }[];
+  /**
+   * The sights this ride passes or runs near, as the lookup returned them.
+   *
+   * Three states now exist on the map and they are three different claims, so
+   * they are three different marks:
+   *
+   * - `via` — the rider asked the ride to go there. Ringed pill, always drawn,
+   *   governed by nothing.
+   * - `selectedPois` — ticked, not yet re-planned. Ringed pill, always drawn.
+   * - these, in `onRoute` — the route already passes them and the rider chose
+   *   nothing. A plain white pill, no ring: "on your way", not "you chose
+   *   this". Drawn without the card ever being opened, which is what the rider
+   *   asked for, and which is why the fetch moved up to the pages.
+   * - these, in `nearby` — near the route and not in it. Lighter still and
+   *   smaller, because the map must not read as though the ride visits them.
+   *
+   * A place that is already a via or already ticked is not drawn from here:
+   * the ride's own mark wins, and two pills on one point read as two places.
+   */
+  routePois?: RoutePois | null;
   showTet: boolean;
   onToggleTet: (visible: boolean) => void;
+  /**
+   * The sights layer's switch: every sight marker on the map, of all four
+   * kinds — on-route, nearby, ticked (`selectedPois`) and the ones already
+   * added to the ride as vias.
+   *
+   * The rider settled this after seeing the first version: "Apskates vietas"
+   * off must mean no sights on the map, and a sight he added is still a sight.
+   * The things it does NOT govern are the ones that are not sights at all —
+   * the 🅿️ stops he typed into the form, the start and finish pins, the
+   * warning badges and the gate pills. The drawn line never changes either
+   * way: hiding a marker is not un-planning the detour under it.
+   */
+  showSights: boolean;
+  onToggleSights: (visible: boolean) => void;
+  /** Open the row's card for a sight the rider clicked on the map. */
+  onShowPoi?: (poi: RoutePoi) => void;
 };
 
 const EMPTY: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
@@ -1105,6 +1141,69 @@ function stopElement(title: string, icon: string = STOP_ICON, ringed = false): H
 }
 
 /**
+ * A sight the ride passes or runs near, drawn without the rider asking.
+ *
+ * The rider's distinction, in his own words: "on your way" must read
+ * differently from "you chose this". A chosen place (`via`, `selectedPois`)
+ * wears the brand ring on a 28 px pill; these wear none. Within them the two
+ * groups are ranked again, because the map must not imply the ride visits a
+ * place it merely passes within a kilometre of:
+ *
+ * - `onRoute` — a 22 px white pill with a stone border and the kind's glyph at
+ *   14 px. Lighter than a chosen sight, still plainly a place.
+ * - `nearby` — a 16 px muted dot with the glyph shrunk inside it, at reduced
+ *   opacity. Visible when scanned for, invisible when not.
+ *
+ * Both sit at z-index 0 — the rider asked for them below the warning badges
+ * (1), because a hazard on the road outranks a sight beside it — and `nearby`
+ * goes below the gate pills too, which are the same "expect this" register.
+ */
+function sightElement(title: string, icon: string, group: "onRoute" | "nearby"): HTMLElement {
+  const el = document.createElement("button");
+  el.type = "button";
+  el.title = title;
+  el.setAttribute("aria-label", title);
+  const onRoute = group === "onRoute";
+  const size = onRoute ? 22 : 16;
+  el.style.cssText =
+    "display:flex;align-items:center;justify-content:center;" +
+    `width:${size}px;height:${size}px;border-radius:${size / 2}px;` +
+    (onRoute
+      ? "background:rgba(255,255,255,0.95);border:1px solid #d6d3d1;" +
+        "box-shadow:0 1px 2px rgba(0,0,0,0.16);z-index:0;"
+      : // Muted rather than merely small: a dozen of these around a ride is a
+        // lot of ink, and at full strength they compete with the line itself.
+        "background:rgba(255,255,255,0.85);border:1px solid #e7e5e4;" +
+        "box-shadow:0 1px 1px rgba(0,0,0,0.10);opacity:0.75;z-index:0;") +
+    "line-height:0;cursor:pointer;user-select:none;padding:0";
+  el.innerHTML =
+    `<span aria-hidden="true" style="display:inline-flex;align-items:center;` +
+    `justify-content:center;font-size:${onRoute ? 14 : 10}px;line-height:1">${icon}</span>`;
+  return el;
+}
+
+/**
+ * Below this zoom the nearby group is not drawn at all.
+ *
+ * The rider's own instruction, and the reason is visible at z8: a ride across
+ * three countries carries dozens of nearby sights, and at that scale they
+ * merge into a band of dots along the line and hide the route. The on-route
+ * group stays at every zoom — it is a fact about the ride rather than an offer,
+ * and there are far fewer of them.
+ */
+const SIGHT_NEARBY_MIN_ZOOM = 10;
+
+/**
+ * The glyph inside the sights switch's swatch.
+ *
+ * The viewpoint's own eye from `POI_KIND`, because a switch that governs
+ * thirteen kinds cannot show all of them and the eye is the one a rider reads
+ * as "something to look at" rather than as a specific kind of thing. It is a
+ * bare symbol, not text, so it needs no dictionary entry.
+ */
+const SIGHTS_SWATCH_ICON = POI_KIND.viewpoint.icon;
+
+/**
  * The ring that marks a place the rider is only *looking at*.
  *
  * Not a 🅿️: that pill means "this is a stop of your ride", and a suggestion
@@ -1290,7 +1389,7 @@ const SURFACE_COLOR_EXPR: maplibregl.ExpressionSpecification = [
   SURFACE_COLORS.unknown,
 ];
 
-export function RouteMap({ segments, start, destination, via, focus, onFocusCleared, onFocusToggle, selectedPois, showTet, onToggleTet }: Props) {
+export function RouteMap({ segments, start, destination, via, focus, onFocusCleared, onFocusToggle, selectedPois, routePois, showTet, onToggleTet, showSights, onToggleSights, onShowPoi }: Props) {
   const [locale] = useLocale();
   const m = messages(locale);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1340,6 +1439,36 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
   useEffect(() => { onFocusToggleRef.current = onFocusToggle; }, [onFocusToggle]);
   /** The pills for the ticked sights, replaced whole whenever the set changes. */
   const selectedMarkersRef = useRef<maplibregl.Marker[]>([]);
+  /** The marks for the sights this ride passes or runs near. */
+  const sightMarkersRef = useRef<maplibregl.Marker[]>([]);
+  /**
+   * Clicking a sight's mark opens the row's card, and the card is the page's —
+   * so the handler goes through a ref, for the reason `onFocusToggle` does: a
+   * parent that re-creates the callback every render (the ordinary case for an
+   * inline arrow) must not be a reason to rebuild every marker on the map.
+   */
+  const onShowPoiRef = useRef(onShowPoi);
+  useEffect(() => { onShowPoiRef.current = onShowPoi; }, [onShowPoi]);
+  /**
+   * The gesture that just pressed a sight's mark, so the map's own click can
+   * let that one through.
+   *
+   * MapLibre listens for the pointer on the canvas *container*, which is the
+   * marker's parent, and synthesises its `click` from `mousedown`/`mouseup` —
+   * so `event.stopPropagation()` on the marker's own DOM `click` does not stop
+   * it. The map's handler therefore ran straight after the marker's and called
+   * `clearFocus()`, tearing down the card the marker had just asked for: a
+   * click on a sight opened nothing, every time.
+   *
+   * The 🅿️ stops never showed this because they open `infoPopupRef` directly
+   * and `clearFocus` no-ops when there is no focus marker to remove. A sight
+   * goes through the page's `focus` prop, which is exactly what `clearFocus`
+   * clears, so it was the first mark to hit it.
+   *
+   * A timestamp rather than a flag: a flag left set by a press that somehow
+   * produced no map click would swallow the rider's next click on the map.
+   */
+  const sightClickAtRef = useRef(0);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -1664,6 +1793,14 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
         // built after this one) falls back to the 🅿️ rather than to a blank.
         const entry = place.category ? POI_KIND[place.category as keyof typeof POI_KIND] : undefined;
         const el = stopElement(place.label, entry?.icon ?? STOP_ICON, Boolean(entry));
+        // A via that came from a suggestion is a *sight* the rider added, and
+        // the rider's ruling is that "Apskates vietas" off means no sights on
+        // the map — added ones included. Marked here and hidden by the small
+        // visibility effect below rather than filtered out of this list: the
+        // toggle must not be a reason to rebuild the route, the badges and the
+        // gates, which is what putting `showSights` in this effect's deps
+        // would cost. A typed stop carries no mark and is never hidden.
+        if (entry) el.dataset.sight = "1";
         el.addEventListener("click", (event) => {
           // Same reason the badges stop it: otherwise the click reaches the
           // map and opens the segment card underneath this one.
@@ -1793,6 +1930,8 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
       const el = stopElement(poi.name, entry?.icon ?? STOP_ICON, true);
       el.style.pointerEvents = "none";
       el.style.zIndex = "1";
+      // A ticked place is a sight, so the layer switch governs it too.
+      el.dataset.sight = "1";
       return new maplibregl.Marker({ element: el }).setLngLat([poi.lon, poi.lat]).addTo(map);
     });
     return () => {
@@ -1800,6 +1939,134 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
       selectedMarkersRef.current = [];
     };
   }, [selectedPois]);
+
+  /**
+   * The places the ride already claims — its vias and the rider's ticks —
+   * flattened to one string so the marks below are rebuilt when that set
+   * actually changes and not merely when the parent re-renders.
+   *
+   * By id *and* by name: a via that arrived through a share code carries the
+   * rider's label rather than the dataset's id, so matching on id alone would
+   * draw a second, lighter pill on a place the ride already visits.
+   */
+  const takenKey = useMemo(
+    () => [
+      ...(selectedPois ?? []).flatMap((p) => [p.id, p.name]),
+      ...(via ?? []).map((v) => v.label),
+    ].join("\u0000"),
+    [selectedPois, via],
+  );
+
+  /**
+   * The sights the ride passes and the ones it runs near, drawn as soon as the
+   * lookup answers.
+   *
+   * This is the change the rider asked for in part 2: a place already on his
+   * route should be on the map the moment the list has loaded, without him
+   * opening the card. The fetch therefore happens when the ride is shown (see
+   * `lib/poi/use-route-pois.ts`) and the card reads the same state, so the two
+   * views can never disagree about what is near this ride.
+   *
+   * A place the ride already carries — as a via, or as a tick — is skipped
+   * here by id and by name: those have their own ringed pill from the effects
+   * above, and two marks on one point read as two places. Name as well as id
+   * because a via that arrived through a share code carries the rider's label
+   * rather than the dataset's id.
+   *
+   * Its own effect, keyed on the lists, so a new list does not disturb the
+   * route, the badges or the gates.
+   */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    for (const marker of sightMarkersRef.current) marker.remove();
+    sightMarkersRef.current = [];
+    if (!routePois) return;
+
+    const taken = new Set<string>(takenKey.split("\u0000").filter(Boolean));
+    const draw = (poi: RoutePoi, group: "onRoute" | "nearby") => {
+      if (taken.has(poi.id) || taken.has(poi.name)) return null;
+      const entry = POI_KIND[poi.category];
+      const el = sightElement(
+        fi(group === "onRoute" ? m.resSightOnRouteAria : m.resSightNearbyAria, { place: poi.name }),
+        entry?.icon ?? STOP_ICON,
+        group,
+      );
+      // The same card a row's "Kartē" opens, for the same place: the rider
+      // asked for one card, reachable from either side. The page owns it, so
+      // this only reports the press — `focus` comes back down as a prop and
+      // the focus effect draws the ring and the popup with its tick.
+      el.addEventListener("click", (event) => {
+        // Otherwise the click reaches the map and opens the segment card
+        // underneath this one, exactly as it would on a badge.
+        event.stopPropagation();
+        // And this is what keeps the map's own click from immediately
+        // clearing the card the next line asks for — see `sightClickAtRef`.
+        sightClickAtRef.current = event.timeStamp;
+        onShowPoiRef.current?.(poi);
+      });
+      // `data-sight-group` is what the low-zoom rule below reads: the nearby
+      // group goes away under z10, the on-route group never does.
+      el.dataset.sight = "1";
+      el.dataset.sightGroup = group;
+      return new maplibregl.Marker({ element: el }).setLngLat([poi.lon, poi.lat]).addTo(map);
+    };
+    sightMarkersRef.current = [
+      ...routePois.onRoute.map((p) => draw(p, "onRoute")),
+      ...routePois.nearby.map((p) => draw(p, "nearby")),
+    ].filter((mk): mk is maplibregl.Marker => mk !== null);
+
+    return () => {
+      for (const marker of sightMarkersRef.current) marker.remove();
+      sightMarkersRef.current = [];
+    };
+    // `via` and `selectedPois` are read for the skip list but keyed by
+    // `takenKey`: both props are rebuilt by their parent on every render — the
+    // planner composes `via` inline in the JSX — and depending on the arrays
+    // themselves would tear down and rebuild every mark on the map on every
+    // keystroke elsewhere on the page. `m` is read for the labels, so a
+    // language switch re-labels them.
+  }, [routePois, takenKey, m]);
+
+  /**
+   * What "Apskates vietas" actually does, and the low-zoom rule.
+   *
+   * Visibility rather than existence, and its own effect rather than a
+   * dependency of the effects that build the markers: flipping the switch must
+   * not rebuild the route, the badges, the gates or the popups — and a rider
+   * who flips it twice must get the same map back, not a redrawn one.
+   *
+   * Every sight marker on the map is marked `data-sight` by whichever effect
+   * built it — the ride's added sights, the ticked ones, the on-route ones and
+   * the nearby ones — so one rule reaches all four, which is what the rider
+   * asked for: off means no sights, added ones included. The 🅿️ stops he
+   * typed carry no mark and are never touched, and neither is the drawn line.
+   *
+   * The zoom rule is bound to the map's own `zoom` event rather than to React
+   * state: a pinch fires it continuously and a setState per frame would
+   * re-render the map's whole subtree.
+   */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const apply = () => {
+      const nearbyVisible = showSights && map.getZoom() >= SIGHT_NEARBY_MIN_ZOOM;
+      for (const marker of [...sightMarkersRef.current, ...selectedMarkersRef.current, ...viaMarkersRef.current]) {
+        const el = marker.getElement();
+        if (!el.dataset.sight) continue;
+        const show = el.dataset.sightGroup === "nearby" ? nearbyVisible : showSights;
+        el.style.display = show ? "flex" : "none";
+      }
+    };
+    apply();
+    map.on("zoomend", apply);
+    // The big `segments` effect replaces the via markers wholesale, and the
+    // sights effect replaces its own: a rule applied only on the switch's own
+    // change would leave a freshly built pill visible under a switch that is
+    // off. `routePois`, `via` and `selectedPois` are in the deps so the rule
+    // is re-applied after every rebuild.
+    return () => { map.off("zoomend", apply); };
+  }, [showSights, routePois, takenKey, segments]);
 
   /**
    * Pointer behaviour on the route: the badge highlight, the hover readout and
@@ -1955,6 +2222,12 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
     clearFocusRef.current = clearFocus;
 
     const onClick = (e: maplibregl.MapMouseEvent) => {
+      // The same gesture that pressed a sight's mark a moment ago. It is not a
+      // click on the map and must not clear the card that press just opened;
+      // MapLibre's click comes from the canvas container, so the marker's own
+      // `stopPropagation` cannot reach it. Compared on the browser's own
+      // timestamps, which are the same clock for both events.
+      if (e.originalEvent.timeStamp - sightClickAtRef.current < 50) return;
       const feature = featureAt(e.point);
       const props = feature?.properties as SegmentProps | undefined;
       const id = props?.[SEGMENT_ID];
@@ -2020,10 +2293,16 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
         className="pointer-events-none absolute left-0 top-0 z-10 grid items-center justify-items-start gap-x-2 gap-y-1 whitespace-nowrap rounded-md bg-white/95 px-2 py-1 text-[11px] font-medium leading-none text-foreground shadow-sm backdrop-blur"
       />
 
+      {/* The map's two layer switches, in one row at the top-left.
+          `flex-wrap` because "Vaatamisväärsused" beside TET is wider than a
+          375 px phone: the second switch drops onto its own line rather than
+          running under the zoom controls on the right. `right-14` keeps them
+          clear of those controls at every width. */}
+      <div className="absolute left-3 right-14 top-3 flex flex-wrap items-center gap-2">
       <button
         type="button"
         onClick={() => onToggleTet(!showTet)}
-        className="absolute left-3 top-3 flex items-center gap-2 rounded-full border border-[#ececf0] bg-white/95 px-3 py-1.5 text-xs font-medium text-foreground shadow-sm backdrop-blur transition-colors hover:bg-white"
+        className="flex items-center gap-2 rounded-full border border-[#ececf0] bg-white/95 px-3 py-1.5 text-xs font-medium text-foreground shadow-sm backdrop-blur transition-colors hover:bg-white"
       >
         <span
           className="inline-block h-[3px] w-4 rounded-full"
@@ -2038,6 +2317,37 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
           <span className="h-3 w-3 rounded-full bg-white shadow-sm" />
         </span>
       </button>
+      {/* The sights switch: the same pill, the same row, the same colours —
+          the rider asked for one control style on the map, and two switches
+          that looked different would read as two different kinds of thing.
+          Its swatch is a miniature of the mark it governs (a white pill with
+          a stone border) rather than a colour sample, because what it turns on
+          is a shape, not a line colour. */}
+      <button
+        type="button"
+        onClick={() => onToggleSights(!showSights)}
+        aria-pressed={showSights}
+        aria-label={showSights ? m.resSightsLayerHide : m.resSightsLayerShow}
+        title={showSights ? m.resSightsLayerHide : m.resSightsLayerShow}
+        className="flex items-center gap-2 rounded-full border border-[#ececf0] bg-white/95 px-3 py-1.5 text-xs font-medium text-foreground shadow-sm backdrop-blur transition-colors hover:bg-white"
+      >
+        <span
+          aria-hidden="true"
+          className="inline-flex size-4 items-center justify-center rounded-full border border-stone-300 bg-white text-[9px] leading-none"
+          style={{ opacity: showSights ? 1 : 0.35 }}
+        >
+          {SIGHTS_SWATCH_ICON}
+        </span>
+        {m.resSightsLayer}
+        <span
+          className={`flex h-4 w-7 items-center rounded-full p-0.5 transition-colors ${
+            showSights ? "justify-end bg-[#f56300]" : "justify-start bg-[#e9e9eb]"
+          }`}
+        >
+          <span className="h-3 w-3 rounded-full bg-white shadow-sm" />
+        </span>
+      </button>
+      </div>
       {/* Bottom of the map, clear of the full-screen button in the corner.
           At the top-left it covered the corner the route is usually framed
           into. Down here it sits over the edge of the frame, clear of the TET

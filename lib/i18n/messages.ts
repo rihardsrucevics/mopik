@@ -275,6 +275,13 @@ export type MessageKey =
   | "resSelectionClear"
   | "resSelectionCapNote"
   | "resSuggestFailed"
+  /* The sights layer: the map's own switch for what the card lists, and the
+     labels its two kinds of marker carry for a screen reader. */
+  | "resSightsLayer"
+  | "resSightsLayerShow"
+  | "resSightsLayerHide"
+  | "resSightOnRouteAria"
+  | "resSightNearbyAria"
   /* Detours: a ticked sight is spliced into the drawn line at once, and
      "Pārģenerēt" becomes the optional full search. */
   | "resOptimize"
@@ -653,7 +660,7 @@ const lv: Messages = {
   chatSayAll: "Vari uzreiz pateikt visu, ko zini.",
   resNature: "Daba un ainava",
   mapStop: "Pieturvieta",
-  resSuggestions: "Ieteikumi",
+  resSuggestions: "Apskates vietas",
   resSuggestOnRoute: "Trasē",
   resSuggestNearby: "Tuvumā",
   resSuggestLoading: "Meklēju vietas…",
@@ -693,7 +700,19 @@ const lv: Messages = {
   resRegenerateMany: "Pārģenerēt ar {n} objektiem",
   resSelectionClear: "Notīrīt",
   resSelectionCapNote: "Maršrutā var būt ne vairāk kā {max} pieturas — noņem kādu atzīmi.",
-  resSuggestFailed: "Neizdevās ielādēt ieteikumus.",
+  resSuggestFailed: "Neizdevās ielādēt apskates vietas.",
+  /**
+   * The map's own switch for the sights, beside TET and in the same style.
+   *
+   * The same words as the card's header on purpose: the switch governs
+   * exactly what that card lists, and a second name for one thing is how a
+   * rider ends up believing they are two.
+   */
+  resSightsLayer: "Apskates vietas",
+  resSightsLayerShow: "Rādīt apskates vietas kartē",
+  resSightsLayerHide: "Slēpt apskates vietas kartē",
+  resSightOnRouteAria: "{place} — maršruts iet garām",
+  resSightNearbyAria: "{place} — maršruta tuvumā",
   /**
    * The bar's button was "Pārģenerēt ar {n} objektiem" and is now this.
    *
@@ -1062,7 +1081,7 @@ const lt: Messages = {
   chatSayAll: "Gali iš karto pasakyti viską, ką žinai.",
   resNature: "Gamta ir kraštovaizdis",
   mapStop: "Sustojimas",
-  resSuggestions: "Pasiūlymai",
+  resSuggestions: "Lankytinos vietos",
   resSuggestOnRoute: "Trasoje",
   resSuggestNearby: "Netoliese",
   resSuggestLoading: "Ieškau vietų…",
@@ -1090,7 +1109,12 @@ const lt: Messages = {
   resRegenerateMany: "Perskaičiuoti su {n} vietomis",
   resSelectionClear: "Išvalyti",
   resSelectionCapNote: "Maršrute gali būti ne daugiau kaip {max} sustojimai — nuimk kurią nors žymę.",
-  resSuggestFailed: "Nepavyko įkelti pasiūlymų.",
+  resSuggestFailed: "Nepavyko įkelti lankytinų vietų.",
+  resSightsLayer: "Lankytinos vietos",
+  resSightsLayerShow: "Rodyti lankytinas vietas žemėlapyje",
+  resSightsLayerHide: "Slėpti lankytinas vietas žemėlapyje",
+  resSightOnRouteAria: "{place} — maršrutas pro šalį",
+  resSightNearbyAria: "{place} — netoli maršruto",
   resOptimize: "Optimizuoti maršrutą",
   resOptimizeHint: "Iš naujo suplanuoja visą maršrutą pro pažymėtas vietas.",
   resDetourDelta: "+{km} km · +{min} min",
@@ -1444,7 +1468,7 @@ const et: Messages = {
   chatSayAll: "Võid kohe öelda kõik, mida tead.",
   resNature: "Loodus ja maastik",
   mapStop: "Peatus",
-  resSuggestions: "Soovitused",
+  resSuggestions: "Vaatamisväärsused",
   resSuggestOnRoute: "Teel",
   resSuggestNearby: "Lähedal",
   resSuggestLoading: "Otsin kohti…",
@@ -1472,7 +1496,12 @@ const et: Messages = {
   resRegenerateMany: "Arvuta uuesti {n} kohaga",
   resSelectionClear: "Tühjenda",
   resSelectionCapNote: "Marsruudil võib olla kuni {max} peatust — eemalda mõni märge.",
-  resSuggestFailed: "Soovituste laadimine ebaõnnestus.",
+  resSuggestFailed: "Vaatamisväärsuste laadimine ebaõnnestus.",
+  resSightsLayer: "Vaatamisväärsused",
+  resSightsLayerShow: "Näita vaatamisväärsusi kaardil",
+  resSightsLayerHide: "Peida vaatamisväärsused kaardilt",
+  resSightOnRouteAria: "{place} — marsruut möödub sellest",
+  resSightNearbyAria: "{place} — marsruudi lähedal",
   resOptimize: "Optimeeri marsruut",
   resOptimizeHint: "Planeerib kogu sõidu uuesti läbi märgitud kohtade.",
   resDetourDelta: "+{km} km · +{min} min",
@@ -1826,7 +1855,7 @@ const en: Messages = {
   chatSayAll: "You can say everything you know right away.",
   resNature: "Nature and landscape",
   mapStop: "Stop",
-  resSuggestions: "Suggestions",
+  resSuggestions: "Sights",
   resSuggestOnRoute: "On the route",
   resSuggestNearby: "Nearby",
   resSuggestLoading: "Looking for places…",
@@ -1852,7 +1881,12 @@ const en: Messages = {
   resRegenerateMany: "Regenerate with {n} sights",
   resSelectionClear: "Clear",
   resSelectionCapNote: "A ride can hold at most {max} stops — clear a selection.",
-  resSuggestFailed: "Could not load suggestions.",
+  resSuggestFailed: "Could not load sights.",
+  resSightsLayer: "Sights",
+  resSightsLayerShow: "Show sights on the map",
+  resSightsLayerHide: "Hide sights on the map",
+  resSightOnRouteAria: "{place} — on your route",
+  resSightNearbyAria: "{place} — near the route",
   resOptimize: "Optimise the route",
   resOptimizeHint: "Plans the whole ride again through the ticked sights.",
   resDetourDelta: "+{km} km · +{min} min",
