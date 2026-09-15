@@ -98,8 +98,18 @@ const SAMPLE_FRACTIONS = [0.25, 0.5, 0.75] as const;
  * ride has. The brief asks for 2–4; each leg of a coastal ride yields three, so
  * a multi-stop ride needs a ceiling or the coast starts buying slots from the
  * corridors the rider actually asked for.
+ *
+ * Item 11f raised it from 4 to 6. There are now two families competing for
+ * these slots — the along-the-coast corridor candidates and the older to-the-
+ * coast single-via ones — and the caller orders corridors first, so a cap of 4
+ * would have spent every slot on corridors and silently retired the single-via
+ * shape. That shape still wins on two measured rides (Rīga → Ainaži's
+ * `sea-0.25` and Liepāja → Ventspils' at 1 % repeats), so both families have to
+ * fit. Six is what the four coastal rides actually need: the most any of them
+ * offers after the dedupe rules is four corridors and three single vias, and
+ * the tail of that list is the one the cap should be cutting.
  */
-export const MAX_SEAWARD_CANDIDATES = 4;
+export const MAX_SEAWARD_CANDIDATES = 6;
 
 /** Bearings tried when stepping back inland from a coastline point. */
 const INLAND_BEARINGS = 16;
@@ -177,6 +187,56 @@ function stepInland(near: Point, lookup: SeaLookup, reference: Point): Point | n
 }
 
 /**
+ * Move a point onto the shore band — `SEAWARD_MIN_M`–`SEAWARD_MAX_M` from the
+ * coastline, on land — or return null when this stretch has no such point.
+ *
+ * Extracted from `seawardVias` in item 11f so that the corridor builder can
+ * anchor *several* points the same way. That matters more than it looks: the
+ * failures item 11f measured when it first tried straddling a shore via came
+ * from offsetting an already-anchored point blindly along the corridor, which
+ * walks straight into the Baltic on a coast that bends. Anchoring each point
+ * independently keeps every one of them in the band the router can ride.
+ */
+function anchorOnShore(sample: Point, lookup: SeaLookup): Point | null {
+  const distance = lookup.distanceM(sample[0], sample[1]);
+  if (!Number.isFinite(distance)) return null;
+
+  // Walk from the sample towards the water in steps, so the search starts
+  // from a point that is genuinely near the coastline rather than from a
+  // guessed bearing. The first probe that lands inside the window is used
+  // directly; otherwise the nearest approach found is stepped back inland.
+  let near = sample;
+  if (distance > SEAWARD_MAX_M) {
+    // The lookup gives a distance, not a direction, so the way to the water
+    // is found by descent: try bearings at 60 % of the current distance and
+    // keep whichever reduces it most. Four steps of 0.6 cover 15 km down to
+    // under 2 km, which is the whole corridor this module accepts.
+    for (let step = 0; step < 4; step++) {
+      const here = lookup.distanceM(near[0], near[1]);
+      if (here <= SEAWARD_MAX_M) break;
+      const reach = Math.max(SEAWARD_TARGET_M, here * 0.6);
+      let bestPoint = near;
+      let bestDistance = here;
+      for (let i = 0; i < INLAND_BEARINGS; i++) {
+        const probe = offset(near, (360 / INLAND_BEARINGS) * i, reach);
+        const probed = lookup.distanceM(probe[0], probe[1]);
+        if (probed < bestDistance) {
+          bestDistance = probed;
+          bestPoint = probe;
+        }
+      }
+      if (bestPoint === near) break;
+      near = bestPoint;
+    }
+  }
+
+  const here = lookup.distanceM(near[0], near[1]);
+  return here >= SEAWARD_MIN_M && here <= SEAWARD_MAX_M
+    ? near
+    : stepInland(near, lookup, sample);
+}
+
+/**
  * Via points on the coastal side of the A→B corridor, nearest-first along the
  * ride.
  *
@@ -205,41 +265,7 @@ export function seawardVias(a: Point, b: Point, limit = SAMPLE_FRACTIONS.length)
   for (const fraction of SAMPLE_FRACTIONS) {
     if (vias.length >= limit) break;
     const sample = along(a, b, fraction);
-    const distance = lookup.distanceM(sample[0], sample[1]);
-    if (!Number.isFinite(distance)) continue;
-
-    // Walk from the sample towards the water in steps, so the search starts
-    // from a point that is genuinely near the coastline rather than from a
-    // guessed bearing. The first probe that lands inside the window is used
-    // directly; otherwise the nearest approach found is stepped back inland.
-    let near = sample;
-    if (distance > SEAWARD_MAX_M) {
-      // The lookup gives a distance, not a direction, so the way to the water
-      // is found by descent: try bearings at 60 % of the current distance and
-      // keep whichever reduces it most. Four steps of 0.6 cover 15 km down to
-      // under 2 km, which is the whole corridor this module accepts.
-      for (let step = 0; step < 4; step++) {
-        const here = lookup.distanceM(near[0], near[1]);
-        if (here <= SEAWARD_MAX_M) break;
-        const reach = Math.max(SEAWARD_TARGET_M, here * 0.6);
-        let bestPoint = near;
-        let bestDistance = here;
-        for (let i = 0; i < INLAND_BEARINGS; i++) {
-          const probe = offset(near, (360 / INLAND_BEARINGS) * i, reach);
-          const probed = lookup.distanceM(probe[0], probe[1]);
-          if (probed < bestDistance) {
-            bestDistance = probed;
-            bestPoint = probe;
-          }
-        }
-        if (bestPoint === near) break;
-        near = bestPoint;
-      }
-    }
-
-    const here = lookup.distanceM(near[0], near[1]);
-    const point =
-      here >= SEAWARD_MIN_M && here <= SEAWARD_MAX_M ? near : stepInland(near, lookup, sample);
+    const point = anchorOnShore(sample, lookup);
     if (!point) continue;
 
     // Two samples that resolve to the same stretch of shore are one candidate,
@@ -253,6 +279,154 @@ export function seawardVias(a: Point, b: Point, limit = SAMPLE_FRACTIONS.length)
     });
   }
   return vias;
+}
+
+/**
+ * ============================================================================
+ * Item 11f — the coastal candidate must not retrace either
+ * ============================================================================
+ *
+ * The rider, on item 11d's finding that the shore candidate costs 10 % repeated
+ * roads: *"jūras skata maksa nedrīkst būt 10 % pieaugums atkārtotos ceļos —
+ * tad tur jāmeklē uzreiz kāda taciņa, pa kuru izbraukt, lai nav atkārtoti
+ * ceļi."* The sea term's bound does not move up; the coastal candidate is built
+ * without retracing instead.
+ *
+ * ## What the 10 % actually was
+ *
+ * Not a shared connector at the margin, and not the P111 joined and left by the
+ * same road in the vague sense — measured on Liepāja → Ventspils, `sea-0.5`'s
+ * repeat is **one 16.50 km run**, and the turn-around point is the via itself:
+ *
+ * ```
+ * 16.50 km  second pass at 82.2–98.7 km, first pass at 65.7–82.2 km
+ * via nearest route point at 82.2 km of 173.2 km  →  turn-around −0.0 km from the via
+ * ```
+ *
+ * The coast distances mirror exactly about it — 6097 5066 4064 3158 2088 m on
+ * the way out, 2088 2692 3158 4387 5027 m on the way back. **A single via is a
+ * dead end**: the route leaves the inland corridor, rides down one
+ * `unclassified` connector to the shore, touches the P111, and comes back up
+ * the identical road. One via cannot express "along the coast"; it can only
+ * express "to the coast".
+ *
+ * ## Why more of the same vias does not fix it
+ *
+ * Measured first, because it is the obvious move: routing through two or three
+ * of `seawardVias`' own points left Liepāja → Ventspils at **10–12 %**. They
+ * are all found by walking perpendicular from the corridor to the shore, so two
+ * of them can still hang off the same dead-end connector — adding the second
+ * lengthens the spur rather than opening a way through.
+ *
+ * ## What does work: entry and exit anchored separately
+ *
+ * The shore stretch has to be *entered at one place and left at another*, far
+ * enough apart along the shore to have their own connectors. So a corridor
+ * candidate samples two fractions of the A→B line, **anchors each onto the
+ * shore band independently** (`anchorOnShore`), and routes A → entry → exit → B.
+ *
+ * The independent anchoring is the load-bearing part. Offsetting one anchored
+ * via along the corridor direction was tried and fails on a bending coast: of
+ * the twelve straddles measured that way on Liepāja → Ventspils, seven landed
+ * in the Baltic and were refused outright. Re-anchoring each point costs
+ * nothing — the lookup is already open — and keeps both on land.
+ */
+
+/**
+ * How far apart, along the corridor, a coastal candidate's entry and exit are
+ * sampled.
+ *
+ * These are fractions of the A→B line, and the spread is what buys the separate
+ * connectors. Measured on the three coastal rides, repeated % for a pair
+ * straddling the best shore via at ±4/8/12/16 km along the corridor: the narrow
+ * straddles still share a connector (Rīga → Ainaži ±4 km kept 6 %), and the
+ * wide ones open a second one (±12 km fell to 1 %, ±16 km to 0 %). Below about
+ * a fifth of the corridor the two points resolve to the same stretch of shore
+ * and `seawardVias`' own dedupe rule — `SEAWARD_MAX_M` apart — would reject
+ * them as one candidate anyway.
+ *
+ * Four pairs rather than one, because which stretch of coast a ride can reach
+ * without retracing is a property of the road network there, not of the
+ * geometry: Liepāja → Ventspils opens up late, Ventspils → Kolka in the middle,
+ * Rīga → Ainaži early.
+ *
+ * The fourth, widest pair is there for a reason that is not geometric at all.
+ * The approach-direction bug PROGRESS §11e.5 logged as "the next job" — BRouter
+ * refusing `A→via` while `via→B` and `A→B` both route — lands on whole *entry*
+ * points regardless of where the exit is. Measured on Liepāja → Ventspils, the
+ * 0.35 entry snaps at **0 m**, is squarely on a road, and is refused with every
+ * exit tried; the 0.25 entry routes with several. A ride therefore needs more
+ * than one entry offered to it, or one router bug costs it its whole coastal
+ * pool. This is a workaround for that bug and should be revisited when it is
+ * fixed.
+ */
+const CORRIDOR_PAIRS = [
+  [0.2, 0.55],
+  [0.35, 0.75],
+  [0.45, 0.9],
+  [0.25, 0.85],
+] as const;
+
+export type SeawardCorridor = {
+  /** entry and exit, in riding order along the corridor */
+  points: [Point, Point];
+  /** the fractions they were sampled at, for the candidate's name */
+  fractions: [number, number];
+  /** each point's own distance to the coastline, metres */
+  coastDistanceM: [number, number];
+};
+
+/**
+ * Coastal candidates that run ALONG the shore: two vias per candidate, entry
+ * and exit at different places, each anchored onto the 1–3 km band in its own
+ * right.
+ *
+ * Same gates as `seawardVias` — no coastline file is opened unless `hasSeaData`
+ * covers the corridor and the corridor comes within `COASTAL_CORRIDOR_M` of the
+ * water — so an inland ride is untouched and pays nothing.
+ *
+ * Returns an empty array when no pair can be anchored, which every caller must
+ * treat as the ordinary case.
+ */
+export function seawardCorridors(a: Point, b: Point): SeawardCorridor[] {
+  const bbox = corridorBBox(a, b);
+  if (!hasSeaData(bbox)) return [];
+  const lookup = seaLookup(bbox);
+  if (!lookup.size) return [];
+
+  const ends: Point[] = [a, along(a, b, 0.5), b];
+  const nearest = Math.min(...ends.map((p) => lookup.distanceM(p[0], p[1])));
+  if (!(nearest <= COASTAL_CORRIDOR_M)) return [];
+
+  const corridors: SeawardCorridor[] = [];
+  const seen: Point[][] = [];
+  for (const [entryFraction, exitFraction] of CORRIDOR_PAIRS) {
+    const entry = anchorOnShore(along(a, b, entryFraction), lookup);
+    const exit = anchorOnShore(along(a, b, exitFraction), lookup);
+    if (!entry || !exit) continue;
+    // Two points that resolved to the same stretch of shore are a dead end
+    // again, not a corridor — which is the whole failure this replaces.
+    if (haversineMeters(entry, exit) < SEAWARD_MAX_M) continue;
+    // A pair whose both ends match an earlier pair's would route the same line.
+    if (
+      seen.some(
+        ([e, x]) =>
+          haversineMeters(e, entry) < SEAWARD_MAX_M && haversineMeters(x, exit) < SEAWARD_MAX_M
+      )
+    ) {
+      continue;
+    }
+    seen.push([entry, exit]);
+    corridors.push({
+      points: [entry, exit],
+      fractions: [entryFraction, exitFraction],
+      coastDistanceM: [
+        Math.round(lookup.distanceM(entry[0], entry[1])),
+        Math.round(lookup.distanceM(exit[0], exit[1])),
+      ],
+    });
+  }
+  return corridors;
 }
 
 /**

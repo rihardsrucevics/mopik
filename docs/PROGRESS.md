@@ -1,5 +1,184 @@
 # Mopik — progress log
 
+## 2026-09-15 — Item 11f: the coastal candidate must not retrace either
+
+The rider, on item 11d's finding that the shore road costs 10 % repeated roads:
+
+> *"jūras skata maksa nedrīkst būt 10 % pieaugums atkārtotos ceļos — tad tur
+> jāmeklē uzreiz kāda taciņa, pa kuru izbraukt, lai nav atkārtoti ceļi."*
+
+So the sea term's bound does **not** move up. `SEA_WEIGHT` is untouched at 8
+and `score.ts` has no diff at all. The coastal candidate is built without
+retracing instead.
+
+### Part A — the 10 % was one via acting as a dead end
+
+Not a shared connector at the margin, and not "the P111 joined and left by the
+same road" in the loose sense. Measured on Liepāja → Ventspils, `sea-0.5`'s
+repeat is **a single 16.50 km run**, and the turn-around point *is* the via:
+
+```
+16.50 km  second pass at 82.2–98.7 km, first pass at 65.7–82.2 km
+via nearest route point at 82.2 km of 173.2 km  →  turn-around −0.0 km from the via
+```
+
+The coast distances mirror exactly about it — 6097 5066 4064 3158 2088 m out,
+2088 2692 3158 4387 5027 m back — and the classes under the two passes are the
+same `unclassified` connector. **One via can only express "to the coast", never
+"along it":** the route leaves the inland corridor, rides one connector down to
+the P111, touches it, and comes back up the identical road.
+
+**Adding more of the same vias does not fix it**, which was measured first
+because it is the obvious move. Routing through two or three of `seawardVias`'
+own points left the ride at **10–12 %**: they are all found by walking
+perpendicular from the corridor to the shore, so two of them can still hang off
+the same dead-end connector — the second lengthens the spur rather than opening
+a way through.
+
+#### What works: entry and exit anchored separately
+
+`seawardCorridors` samples two fractions of the A→B line and **anchors each onto
+the 1–3 km shore band in its own right**, then routes A → entry → exit → B. The
+independent anchoring is load-bearing: offsetting one already-anchored via along
+the corridor was tried and fails on a bending coast — of twelve straddles
+measured that way on Liepāja → Ventspils, seven landed in the Baltic and were
+refused outright. Re-anchoring costs nothing, the lookup is already open.
+
+`anchorOnShore` is the existing placement logic from `seawardVias`, extracted
+unchanged so both builders place points the same way.
+
+#### Before / after, the coastal candidates
+
+Routed in process against `brouter.mopik.eu`, Adventure preset
+(`npx tsx scripts/measure-seaward-corridor.ts`). "best coastal" is the
+best-ranked candidate that reaches the sea; the rider's bar is that its repeats
+are comparable to the inland winner's.
+
+| ride | | candidate | km | **rep %** | coast <1 km | rank |
+|---|---|---|---:|---:|---:|---:|
+| Liepāja → Ventspils | before | `sea-0.5` | 173.6 | **10** | 28.9 | 10.50 |
+| | **after** | `seaCorridor-0.25-0.85` | 159.2 | **3** | 15.4 | 1.66 |
+| Ventspils → Kolka | before | `sea-0.75` | 111.8 | 0 | 44.5 | 0.93 |
+| | **after** | `seaCorridor-0.2-0.55` | 105.9 | 2 | **51.0** | **0.53** |
+| | | `seaCorridor-0.25-0.85` | 108.2 | **0** | **53.6** | 12.20 |
+| Rīga → Ainaži | before | `sea-0.5` | 192.3 | 2 | 25.7 | 19.75 |
+| | **after** | `seaCorridor-0.25-0.85` | 274.8 | 3 | 25.2 | 11.97 |
+| Jūrmala → Kolka | before | `sea-0.5` | 237.4 | 1 | 26.9 | 7.50 |
+| | **after** | `seaCorridor-0.2-0.55` | 211.7 | 2 | **48.8** | **4.66** |
+
+**No coastal candidate costs 10 % any more.** The worst is 3 %, against inland
+winners that run 0 %. Two rides now win outright on a corridor candidate:
+
+| ride | winner | km | rep % | coast <1 km | rank |
+|---|---|---:|---:|---:|---:|
+| Liepāja → Ventspils | `via-0-1` (inland) | 140.5 | 0 | 15.4 | −2.16 |
+| Ventspils → Kolka | **`seaCorridor-0.2-0.55`** | 105.9 | 2 | **51.0** | 0.53 |
+| Rīga → Ainaži | `sea-0.25` | 250.7 | 1 | 13.1 | 10.21 |
+| Jūrmala → Kolka | **`seaCorridor-0.2-0.55`** | 211.7 | 2 | **48.8** | 4.66 |
+
+Ventspils → Kolka gains 6.5 coastal km over item 11e's pick and Jūrmala → Kolka
+**41.5 km** over its inland line, both for 2 % retracing.
+
+#### Liepāja → Ventspils is still limited, and not by placement
+
+Its coastal candidate improved 10 % → 3 % but its coastal kilometres did not,
+and the reason is the approach-direction bug item 11e logged as the next job.
+The 0.35 entry point **snaps at 0 m** — squarely on a road — and is still
+refused, with every exit tried:
+
+```
+A → via       REFUSED
+via → B       OK 99.4 km
+A → B         OK 140.5 km
+```
+
+Exactly the signature §11e.5 recorded for `via-0.7--1`. The refusals track the
+*entry* point, not the pair: every combination using that entry fails, while the
+0.25 entry routes with several. That is why `CORRIDOR_PAIRS` carries a fourth,
+wider pair — a ride needs more than one entry offered to it or one router bug
+costs it the whole coastal pool. **It is a workaround and should be revisited
+when the approach bug is fixed**, which on this ride is worth 13 coastal km.
+
+### Part B — the beach check item 11e left pending
+
+Item 11e flagged one number and could not measure it: Rīga → Ainaži's winner
+`sea-0.25` carries 15.69 km of `highway=path` within 1 km of the water, and
+nobody had checked whether that is beach or forest. `highway=path` near the sea
+is a *proxy*; item 11a's rule is about the sand, and its test is the
+`natural=beach|sand|dune|shingle` polygons.
+
+Scored against those polygons with `measure-coast.ts`'s own method — the same
+ray-cast test, 0.02° grid and midpoint rule — on the candidates a rider is
+actually shown (`scripts/measure-beach-picks.ts`, Overpass extracts read from
+disk, nothing re-fetched):
+
+| ride | candidate | **beach km** | shore-path km | coastal km | rep % |
+|---|---|---:|---:|---:|---:|
+| Rīga → Ainaži | `sea-0.25` (the pick) | **0.84** | 15.71 | 28.8 | 1 |
+| Ventspils → Kolka | `seaCorridor-0.2-0.55` (the pick) | **0.00** | 1.72 | 52.7 | 2 |
+| Liepāja → Ventspils | `via-0-1` (the pick) | **0.00** | 3.77 | 19.4 | 0 |
+| Jūrmala → Kolka | `seaCorridor-0.2-0.55` (the pick) | **0.73** | 23.93 | 72.9 | 2 |
+
+**The 15.69 km reproduces exactly (15.71) and is overwhelmingly NOT beach.**
+Only 0.84 km of it sits inside a beach or dune polygon; the rest is inland
+forest path. The ways carrying it are all short and unnamed:
+
+```
+0.359 km  (unnamed) [track/?]      on dune
+0.225 km  (unnamed) [path/?]       on dune
+0.137 km  (unnamed) [path/?]       on beach
+0.093 km  (unnamed) [path/ground]  on dune
+0.030 km  (unnamed) [path/wood]    on beach
+```
+
+**Against item 11a's 0.72 km across six legs, this is not a rise.** 11a's figure
+is a total over direct legs; the comparable per-ride figures here are 0.00 /
+0.00 / 0.73 / 0.84 km, i.e. the same order of magnitude on a *longer, more
+coastal* set of rides — Jūrmala → Kolka now rides 72.9 coastal km against the
+16.7 that 11a measured, and its beach kilometres went 0.72 → 0.73. The coast
+roughly quadrupled and the sand did not move.
+
+**So no fix was applied, deliberately.** The brief offered two — raise the 1 km
+lower bound of the seaward band, or require the seaward via to snap onto a road
+class ≠ path. Both would be tuning against a number that has not regressed, and
+item 11a already measured what the second costs: refusing beach-like paths
+outright bought a 20.6 km detour on this very ride to avoid 1.8 km. The
+`shore_path_factor` that prices them is doing its job; 0.84 km of dune track
+across a 250 km ride is the dear-not-forbidden behaviour that entry chose.
+
+### Inland controls unchanged
+
+`seawardCorridors` shares every gate `seawardVias` has, so an inland ride opens
+no coastline file and builds the pool it built before:
+
+| control | corridors | vias | result |
+|---|---|---|---|
+| Cēsis → Madona | `[]` | `[]` | 126.3 km, 0 % repeated, 0 coastal km, **rank 36.83** |
+| Sigulda → Cēsis | `[]` | `[]` | 59.6 km, 0 % repeated, 0 coastal km |
+| Wien → Graz | `[]` | `[]` | no coastline file opened |
+
+Cēsis → Madona's rank is identical to item 11e's published 36.83. The loop
+bearings are untouched: Pāvilosta still 247.5°, Sigulda still none.
+
+### Where it lives
+
+- `lib/routing/seaward.ts` — `anchorOnShore` (extracted from `seawardVias`,
+  unchanged), `seawardCorridors`, `CORRIDOR_PAIRS`, and
+  `MAX_SEAWARD_CANDIDATES` raised 4 → 6 so the two coastal families do not
+  starve each other.
+- `app/api/generate-route/route.ts` — `buildCandidates` builds
+  `seaCorridor-*` per leg and orders them ahead of the single-via `sea-*`.
+- `lib/routing/score.ts` — **no diff.** The bound did not move.
+- `scripts/seaward.test.ts` — 29 tests, 7 of them item 11f's (both points on
+  land in the window, entry and exit far enough apart to have their own
+  connectors, entry before exit, no duplicate pairs, the inland gates).
+- `scripts/measure-seaward-corridor.ts` — the before/after table above.
+- `scripts/measure-beach-picks.ts` — part B, beach polygons per shown candidate.
+
+`npx tsc --noEmit` clean, `npx eslint lib scripts` clean but for twelve
+pre-existing `no-explicit-any` errors in the shelved `scripts/lvm/`, and all
+**184** tests pass.
+
 ## 2026-09-15 — Item 11e: no vias in the water
 
 Item 11d measured where the generation's time actually goes on a coast-parallel

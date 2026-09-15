@@ -28,6 +28,7 @@ import path from "path";
 import { resetSeaCache, seaLookup, bboxOf } from "@/lib/geo/sea";
 import {
   seawardVias,
+  seawardCorridors,
   withSeawardCandidates,
   SEAWARD_MIN_M,
   SEAWARD_MAX_M,
@@ -208,6 +209,105 @@ test("a corridor that only touches the sea at one end still qualifies", () => {
   // asks for "within ~15 km at either end or midpoint", so one end is enough.
   const vias = seawardVias(at(2000, 0), at(COASTAL_CORRIDOR_M + 25000, 20000));
   assert.ok(vias.length >= 1, "a corridor starting on the coast is a coastal corridor");
+});
+
+// --- item 11f: along the coast, not to it -----------------------------------
+
+test("a coastal corridor gets entry/exit pairs, both on land in the window", () => {
+  publishFixture(COASTLINE);
+
+  const corridors = seawardCorridors(at(8000, -30000), at(8000, 30000));
+  assert.ok(corridors.length >= 2, `expected at least 2 corridors, got ${corridors.length}`);
+  for (const corridor of corridors) {
+    for (const point of corridor.points) {
+      const east = eastingM(point);
+      assert.ok(east > 0, `a corridor point must be on land (easting ${east.toFixed(0)} m)`);
+      assert.ok(
+        east >= SEAWARD_MIN_M - 250 && east <= SEAWARD_MAX_M + 250,
+        `a corridor point must sit in the ${SEAWARD_MIN_M}-${SEAWARD_MAX_M} m window, not ${east.toFixed(0)} m`
+      );
+    }
+  }
+});
+
+test("entry and exit are far enough apart to have their own connectors", () => {
+  publishFixture(COASTLINE);
+
+  // This is the whole point of item 11f. Measured on Liepāja → Ventspils, a
+  // single via made the route ride 16.5 km down one connector and back up the
+  // same one — 10 % repeated, the cost the rider refused. Two points on the
+  // same stretch of shore would do exactly that again.
+  const north = (p: [number, number]) => (p[1] - LAT) * M_PER_DEG_LAT;
+  for (const corridor of seawardCorridors(at(8000, -30000), at(8000, 30000))) {
+    const [entry, exit] = corridor.points;
+    assert.ok(
+      Math.abs(north(exit) - north(entry)) > SEAWARD_MAX_M,
+      "entry and exit on one stretch of shore is a dead end, not a corridor"
+    );
+  }
+});
+
+test("entry comes before exit along the ride", () => {
+  publishFixture(COASTLINE);
+
+  // The corridor is ridden in order, so a pair whose exit is behind its entry
+  // would route the shore stretch backwards and retrace to recover.
+  for (const corridor of seawardCorridors(at(8000, -30000), at(8000, 30000))) {
+    assert.ok(
+      corridor.fractions[0] < corridor.fractions[1],
+      `entry fraction ${corridor.fractions[0]} must precede exit ${corridor.fractions[1]}`
+    );
+    const north = (p: [number, number]) => (p[1] - LAT) * M_PER_DEG_LAT;
+    assert.ok(
+      north(corridor.points[1]) > north(corridor.points[0]),
+      "the exit must lie further along the corridor than the entry"
+    );
+  }
+});
+
+test("two pairs that resolve to the same stretch of shore are one candidate", () => {
+  publishFixture(COASTLINE);
+
+  const corridors = seawardCorridors(at(8000, -30000), at(8000, 30000));
+  const north = (p: [number, number]) => (p[1] - LAT) * M_PER_DEG_LAT;
+  for (let i = 0; i < corridors.length; i++) {
+    for (let j = i + 1; j < corridors.length; j++) {
+      const sameEntry =
+        Math.abs(north(corridors[i].points[0]) - north(corridors[j].points[0])) < SEAWARD_MAX_M;
+      const sameExit =
+        Math.abs(north(corridors[i].points[1]) - north(corridors[j].points[1])) < SEAWARD_MAX_M;
+      assert.ok(!(sameEntry && sameExit), "two identical pairs would route the same line twice");
+    }
+  }
+});
+
+test("an inland corridor gets no coastal corridors and opens no coastline file", () => {
+  publishFixture(COASTLINE);
+
+  // The same gate every other part of item 11 uses: an inland ride must be
+  // byte-identical to what it was before.
+  const far = COASTAL_CORRIDOR_M + 20000;
+  assert.deepEqual(seawardCorridors(at(far, -20000), at(far, 20000)), []);
+});
+
+test("a corridor with no published coastline at all gets no pairs", () => {
+  publishFixture(COASTLINE);
+
+  assert.deepEqual(seawardCorridors([-120.5, 35.0], [-120.4, 35.8]), []);
+});
+
+test("each corridor point reports its own distance to the coastline", () => {
+  publishFixture(COASTLINE);
+
+  for (const corridor of seawardCorridors(at(8000, -30000), at(8000, 30000))) {
+    for (let i = 0; i < 2; i++) {
+      const east = eastingM(corridor.points[i]);
+      assert.ok(
+        Math.abs(corridor.coastDistanceM[i] - east) < 400,
+        `reported ${corridor.coastDistanceM[i]} m against a measured ${east.toFixed(0)} m`
+      );
+    }
+  }
 });
 
 // --- the budget -------------------------------------------------------------

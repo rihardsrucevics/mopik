@@ -42,7 +42,7 @@ import { parseIsochrone, type IsoRing } from "@/lib/geo/isochrone";
 import { planLoop, type LoopStop } from "@/lib/routing/loop";
 // Item 11d: via points placed on the coastal side of an A-to-B corridor, and
 // the rule that folds them in without spending time the generation lacks.
-import { dropOffshoreVias, seawardBearing, seawardVias, withSeawardCandidates, type ViaProbe } from "@/lib/routing/seaward";
+import { dropOffshoreVias, seawardBearing, seawardCorridors, seawardVias, withSeawardCandidates, type ViaProbe } from "@/lib/routing/seaward";
 import { detectLocale, nameLoop, stopLabels } from "@/lib/routing/name-route";
 import {
   GeneratedRoute,
@@ -668,10 +668,50 @@ async function buildCandidates(
         },
       }))
     );
+    // Item 11f. The one-via candidates above go TO the coast; these go ALONG
+    // it. The rider's ruling is that the view may not be bought with retraced
+    // roads — *"jūras skata maksa nedrīkst būt 10 % pieaugums atkārtotos
+    // ceļos"* — and item 11d's `sea-0.5` cost exactly that. Measured, its 10 %
+    // is a single 16.5 km out-and-back whose turn-around point IS the via: one
+    // via can only express "to the coast", so the route rides down one
+    // connector to the shore and back up the same one.
+    //
+    // A corridor candidate carries two vias instead, entry and exit, each
+    // anchored onto the 1–3 km band in its own right, so the shore stretch runs
+    // between them and the approach and return use different roads. Measured:
+    // Liepāja → Ventspils 10 % → 3 %, Ventspils → Kolka a 0 % candidate at
+    // 53.6 coastal km, Jūrmala → Kolka 48.8 coastal km at 2 %.
+    //
+    // Same gate as `seawardVias`, so an inland ride opens no coastline file.
+    const corridorsByLeg = places.slice(1).map((to, i) =>
+      seawardCorridors([places[i].lon, places[i].lat], [to.lon, to.lat])
+    );
+    const corridorCandidates: Candidate[] = corridorsByLeg.flatMap((corridors, leg) =>
+      corridors.map((corridor) => ({
+        variant:
+          places.length > 2
+            ? `seaCorridor${leg + 1}-${corridor.fractions[0]}-${corridor.fractions[1]}`
+            : `seaCorridor-${corridor.fractions[0]}-${corridor.fractions[1]}`,
+        competing: true,
+        run: async () => {
+          const points: [number, number][] = [startPt];
+          for (let i = 1; i < places.length; i++) {
+            if (i === leg + 1) points.push(...corridor.points);
+            points.push([places[i].lon, places[i].lat]);
+          }
+          return { path: await route(points) };
+        },
+      }))
+    );
+
     const seaward = seawardByLeg.flat();
-    if (seawardCandidates.length) {
+    // Along-the-coast candidates go first: they are the ones that satisfy the
+    // rider's rule, and `withSeawardCandidates` keeps a prefix under the cap.
+    const allSeaward = [...corridorCandidates, ...seawardCandidates];
+    if (allSeaward.length) {
       console.log(
-        `seaward: ${seawardCandidates.length} coastal candidates at ` +
+        `seaward: ${corridorCandidates.length} corridor + ${seawardCandidates.length} single-via ` +
+          `coastal candidates at ` +
           seaward.map((v) => `${v.coastDistanceM} m`).join(", ")
       );
     }
@@ -714,9 +754,9 @@ async function buildCandidates(
           if (run) { rebuilt.push(run); placed.add(substitute.item); }
         }
       }
-      return { candidates: rebuilt, seaward: seawardCandidates };
+      return { candidates: rebuilt, seaward: allSeaward };
     }
-    return { candidates, seaward: seawardCandidates };
+    return { candidates, seaward: allSeaward };
   }
 
   // Round trip. Valhalla has no round-trip algorithm, so the loop is built
