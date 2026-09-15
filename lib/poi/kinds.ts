@@ -56,7 +56,7 @@ export type RoutePois = { onRoute: RoutePoi[]; nearby: RoutePoi[] };
  * of sharing this key set — Gūtmaņa ala reads "ala" wherever it is met.
  */
 export const POI_KIND: Record<PoiCategory, { key: string; icon: string }> = {
-  viewpoint: { key: "kindViewpoint", icon: "👁️" },
+  viewpoint: { key: "kindViewpoint", icon: "📷" },
   hillfort: { key: "kindHillfort", icon: "⛰️" },
   waterfall: { key: "kindWaterfall", icon: "💦" },
   // 🕳️ is the literal "hole" emoji and the obvious pick, but at the 14px the

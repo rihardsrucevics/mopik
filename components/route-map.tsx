@@ -1196,10 +1196,10 @@ const SIGHT_NEARBY_MIN_ZOOM = 10;
 /**
  * The glyph inside the sights switch's swatch.
  *
- * The viewpoint's own eye from `POI_KIND`, because a switch that governs
- * thirteen kinds cannot show all of them and the eye is the one a rider reads
- * as "something to look at" rather than as a specific kind of thing. It is a
- * bare symbol, not text, so it needs no dictionary entry.
+ * The viewpoint's own camera from `POI_KIND`, because a switch that governs
+ * thirteen kinds cannot show all of them and the camera is the one a rider
+ * reads as "something to look at" rather than as a specific kind of thing. It
+ * is a bare symbol, not text, so it needs no dictionary entry.
  */
 const SIGHTS_SWATCH_ICON = POI_KIND.viewpoint.icon;
 
