@@ -45,14 +45,24 @@ were lost on 09-12.
 
 ## Where this stands — handover, 2026-09-15 (night)
 
-**Production is `c2af410`.** Three commits after it are local only:
-`6a83190` (Baltic POIs rebuilt, gates for LT/EE), `e3e7c8e` (suggestions
-read only the countries under the ride) and `f39d0bb` (no via points in the
-water). The first two are safe to deploy; **`f39d0bb` waits for a beach
-check** — its new Rīga → Ainaži winner carries 15.7 km of `highway=path`
-within 1 km of the sea, and nobody has yet measured whether that is beach
-or forest (an agent trying to stalled when the machine ran out of memory).
-Method and command are in `docs/PROGRESS.md` "Item 11a"/"11e".
+**Production is `1edb55e`, and the working tree is clean** (morning of
+2026-09-15, paused by the rider). Everything below plus the morning's work
+is live: corridor coastal candidates (11f, no coastal candidate above 3 %
+retracing; the sea term's bound did not move — the rider ruled the sea may
+not buy retracing), no vias in the water (11e), the quarter-second-refusal
+fix (11g: Liepāja → Ventspils 136 → 22 s) and item 20 (a suggested place
+BRouter calls a "target island" now routes), the chat's "vienalga" (item
+23, 16/16 golden cases on production), the chat panel height fix, sights
+named "Apskates vietas" with on-route markers, a map toggle that hides all
+sight markers, camera glyph for viewpoints, and the compact segment card.
+
+**Next when the machine is quiet: the POI second pass.** It was paused
+twice because this Mac has 8 GB RAM and the 2 GB Poland extract makes it
+swap; `<scratchpad>/pbf2/PL.osm.pbf` is still on disk. Run
+`<scratchpad>/run-phase2b.sh` (PL DE CH AT IT SI, reuses the extract),
+then `npx tsx scripts/publish-poi.ts` and `npx tsx scripts/publish-gates.ts`,
+then commit `public/poi public/gates` and deploy. Then delete
+`public/poi-baltics.geojson` after one deploy confirms nothing reads it.
 
 **Deploy from a clean worktree.** The working tree carried other agents'
 half-done files all evening, so every deploy was `vercel --prod --yes` from
