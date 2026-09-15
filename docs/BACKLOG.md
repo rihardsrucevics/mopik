@@ -752,6 +752,21 @@ when a question was pending.
 does not read as one with no finish at all (`chatAnyDestination`, four
 languages).
 
+**Follow-up 2026-09-15, from the production golden run at `e0a03a9`
+(15/16):** the only remaining failure was `startPlace: got "Komo ezers",
+want "Como"` — the model kept the rider's Latvian exonym. **Measured: the
+exonym does not geocode, and fails silently.** Through the app's own
+`lookupPlace`, "Komo ezers" resolves to *Ezera iela, Kombuļu pagasts* in
+Latgale (55.978, 27.172) — a street ~800 km from Italy — because Photon
+returns five Latvian lakes for it and the distance bias around Rīga then
+*prefers* them. Raw Photon for "Komo ezers" has no Italian hit at all;
+"Como" resolves correctly first try (45.812, 9.083). So a translated place
+name is not a cosmetic issue: it plans the ride in the wrong country with
+no error anywhere. Fixed in the prompt — place names must be the place's own
+name as OSM knows it, never a translation or exonym ("Komo ezers" → "Como",
+"Minhene" → "München"), while Latvian places keep their Latvian names
+because that is their own name. The golden's `"Como"` expectation stands.
+
 **Verified locally:** `npx tsc --noEmit`, `npx eslint app/api/route-chat
 lib/chat scripts/chat-plan.test.ts scripts/chat-golden.ts` and
 `npx tsx --test scripts/chat-plan.test.ts scripts/*.test.ts` (177 pass) are
