@@ -98,8 +98,10 @@ type Props = {
    *   nothing. A plain white pill, no ring: "on your way", not "you chose
    *   this". Drawn without the card ever being opened, which is what the rider
    *   asked for, and which is why the fetch moved up to the pages.
-   * - these, in `nearby` — near the route and not in it. Lighter still and
-   *   smaller, because the map must not read as though the ride visits them.
+   * - these, in `nearby` — near the route and not in it. The same pill at the
+   *   same size, one step lighter, because the map must not read as though the
+   *   ride visits them — but must still show them, which the old small dot
+   *   did not.
    *
    * A place that is already a via or already ticked is not drawn from here:
    * the ride's own mark wins, and two pills on one point read as two places.
@@ -1151,12 +1153,21 @@ function stopElement(title: string, icon: string = STOP_ICON, ringed = false): H
  *
  * - `onRoute` — a 22 px white pill with a stone border and the kind's glyph at
  *   14 px. Lighter than a chosen sight, still plainly a place.
- * - `nearby` — a 16 px muted dot with the glyph shrunk inside it, at reduced
- *   opacity. Visible when scanned for, invisible when not.
+ * - `nearby` — the *same* 22 px pill and the same 14 px glyph, separated only
+ *   by a lighter border and 85 % opacity.
+ *
+ * The nearby group used to be a 16 px muted dot with a 10 px glyph, and the
+ * rider's verdict from the live site was that it "cannot be noticed on the map
+ * at all — only at close zoom, and even then the icon is tiny". So size is no
+ * longer the axis that separates the two groups: a suggestion the rider cannot
+ * see is not an offer. Rank now reads only from weight — #e7e5e4 against
+ * #d6d3d1, 0.85 against 1 — and the loudness the old design was spending on
+ * restraint is spent instead on the switch, which is exactly what the rider
+ * said the toggle is for: "that is why we have the toggle that can switch
+ * these POIs off".
  *
  * Both sit at z-index 0 — the rider asked for them below the warning badges
- * (1), because a hazard on the road outranks a sight beside it — and `nearby`
- * goes below the gate pills too, which are the same "expect this" register.
+ * (1), because a hazard on the road outranks a sight beside it.
  */
 function sightElement(title: string, icon: string, group: "onRoute" | "nearby"): HTMLElement {
   const el = document.createElement("button");
@@ -1164,34 +1175,46 @@ function sightElement(title: string, icon: string, group: "onRoute" | "nearby"):
   el.title = title;
   el.setAttribute("aria-label", title);
   const onRoute = group === "onRoute";
-  const size = onRoute ? 22 : 16;
   el.style.cssText =
     "display:flex;align-items:center;justify-content:center;" +
-    `width:${size}px;height:${size}px;border-radius:${size / 2}px;` +
+    "width:22px;height:22px;border-radius:11px;" +
     (onRoute
       ? "background:rgba(255,255,255,0.95);border:1px solid #d6d3d1;" +
         "box-shadow:0 1px 2px rgba(0,0,0,0.16);z-index:0;"
-      : // Muted rather than merely small: a dozen of these around a ride is a
-        // lot of ink, and at full strength they compete with the line itself.
-        "background:rgba(255,255,255,0.85);border:1px solid #e7e5e4;" +
-        "box-shadow:0 1px 1px rgba(0,0,0,0.10);opacity:0.75;z-index:0;") +
+      : // Same pill, one step lighter: enough to rank them when the two sit
+        // side by side, not enough to make one of them disappear.
+        "background:rgba(255,255,255,0.95);border:1px solid #e7e5e4;" +
+        "box-shadow:0 1px 2px rgba(0,0,0,0.12);opacity:0.85;z-index:0;") +
     "line-height:0;cursor:pointer;user-select:none;padding:0";
   el.innerHTML =
     `<span aria-hidden="true" style="display:inline-flex;align-items:center;` +
-    `justify-content:center;font-size:${onRoute ? 14 : 10}px;line-height:1">${icon}</span>`;
+    `justify-content:center;font-size:14px;line-height:1">${icon}</span>`;
   return el;
 }
 
 /**
  * Below this zoom the nearby group is not drawn at all.
  *
- * The rider's own instruction, and the reason is visible at z8: a ride across
- * three countries carries dozens of nearby sights, and at that scale they
- * merge into a band of dots along the line and hide the route. The on-route
- * group stays at every zoom — it is a fact about the ride rather than an offer,
- * and there are far fewer of them.
+ * Was z10, which is what the rider was complaining about: a 100 km ride frames
+ * at roughly z9–10, so the suggestions were absent or half-absent exactly at
+ * the zoom he looks at the ride from. At z8 a ride of any length a rider
+ * actually plans is on screen, so this is effectively "always at ride scale";
+ * the crowding that z10 was guarding against is handled by the collision rule
+ * below instead, which drops pills rather than shrinking them.
  */
-const SIGHT_NEARBY_MIN_ZOOM = 10;
+const SIGHT_NEARBY_MIN_ZOOM = 8;
+
+/**
+ * How close, in screen pixels, two sight pills may sit before the nearby one
+ * is skipped.
+ *
+ * A pill is 22 px, so 18 px of centre-to-centre distance still leaves the two
+ * overlapping slightly — deliberately: forbidding all overlap at low zoom
+ * thins the suggestions far more than the map needs, and a pill half-tucked
+ * behind another still reads as two places. Below this they merge into one
+ * blob and the lower one is simply lost, which is worse than not drawing it.
+ */
+const SIGHT_COLLIDE_PX = 18;
 
 /**
  * The glyph inside the sights switch's swatch.
@@ -2006,7 +2029,8 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
         onShowPoiRef.current?.(poi);
       });
       // `data-sight-group` is what the low-zoom rule below reads: the nearby
-      // group goes away under z10, the on-route group never does.
+      // group goes away under z8 and yields to a pill already placed within
+      // ~18 px of it, the on-route group does neither.
       el.dataset.sight = "1";
       el.dataset.sightGroup = group;
       return new maplibregl.Marker({ element: el }).setLngLat([poi.lon, poi.lat]).addTo(map);
@@ -2045,17 +2069,48 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
    * The zoom rule is bound to the map's own `zoom` event rather than to React
    * state: a pinch fires it continuously and a setState per frame would
    * re-render the map's whole subtree.
+   *
+   * Since the nearby pills became full-size and start at z8, the same rule
+   * also does the collision pass the rider's feedback implied: a place he can
+   * see is the point, so when two pills would land on top of each other the
+   * answer is to drop one, never to shrink it. Everything that is not a nearby
+   * pill — the added sights, the ticked ones, the on-route ones — is placed
+   * first and unconditionally, so a suggestion can only ever lose to a place
+   * the ride actually carries, and nearby pills are placed in the lookup's own
+   * order so the same pills survive from one `zoomend` to the next.
    */
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
     const apply = () => {
       const nearbyVisible = showSights && map.getZoom() >= SIGHT_NEARBY_MIN_ZOOM;
+      // Screen positions of everything already on the map, for the collision
+      // pass. `project` is the map's own lng/lat → pixel, so this is measured
+      // in what the rider actually sees rather than in degrees, which is what
+      // makes one threshold work at every zoom.
+      const placed: { x: number; y: number }[] = [];
+      const nearby: { el: HTMLElement; marker: maplibregl.Marker }[] = [];
       for (const marker of [...sightMarkersRef.current, ...selectedMarkersRef.current, ...viaMarkersRef.current]) {
         const el = marker.getElement();
         if (!el.dataset.sight) continue;
-        const show = el.dataset.sightGroup === "nearby" ? nearbyVisible : showSights;
-        el.style.display = show ? "flex" : "none";
+        if (el.dataset.sightGroup === "nearby") {
+          nearby.push({ el, marker });
+          continue;
+        }
+        el.style.display = showSights ? "flex" : "none";
+        if (showSights) placed.push(map.project(marker.getLngLat()));
+      }
+      for (const { el, marker } of nearby) {
+        if (!nearbyVisible) {
+          el.style.display = "none";
+          continue;
+        }
+        const at = map.project(marker.getLngLat());
+        const clash = placed.some(
+          (p) => Math.abs(p.x - at.x) < SIGHT_COLLIDE_PX && Math.abs(p.y - at.y) < SIGHT_COLLIDE_PX,
+        );
+        el.style.display = clash ? "none" : "flex";
+        if (!clash) placed.push(at);
       }
     };
     apply();
