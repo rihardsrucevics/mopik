@@ -696,3 +696,19 @@ it. Gūtmaņa ala (170 m away, 10.4 km on every motor profile) is the honest
 case for comparison. Worth finding which way the profile refuses there and
 why (access tag? surface? a `path` that is in fact a lane?) — the same
 rule may be pushing other rides off short connectors. `lib/routing/moto-profile.ts`.
+
+## 23. The chat does not understand "vienalga" as an answer
+
+Reported by the rider on 2026-09-15 with screenshots. One-way ride, ~100 km
+along the Italian TET from Lake Como. The chat asks "Kur vēlies beigt šo
+vienvirziena braucienu?", the rider answers "Vienalga", and the chat asks
+the same question again — it has no way to accept "any destination". The
+form already has that answer ("Nav obligāts — man vienalga"): a one-way ride
+with no destination is planned from the start, the distance and the
+direction hints. The chat must map "vienalga" / "jebkur" / "nav svarīgi" /
+"kur sanāk" (and lt/et/en equivalents) to destination = none and go on,
+instead of re-asking. Same class of bug: any answer the chat cannot place
+must not produce the same question twice — the second time it should offer
+the choices it can take ("Nosauc vietu, vai saki 'vienalga' un es izvēlēšos
+pa TET ~100 km no Komo"). `app/api/route-chat/route.ts`,
+`lib/chat/ride-plan.ts` (`normalizePlan`), `scripts/chat-golden.ts`.
