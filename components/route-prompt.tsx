@@ -65,7 +65,29 @@ export function RoutePrompt({ messages, plan, hasRoute, phase, quickReplies, luc
   };
 
   return (
-    <section className={`flex flex-col overflow-hidden rounded-2xl border border-stone-200 bg-[#faf9f6] md:h-[calc(100vh-7rem)] ${hasRoute ? "h-[max(360px,calc(74dvh-8.5rem))]" : "h-[calc(100dvh-7.5rem)]"}`} aria-label={t(locale, "a11yChatRegion")}>
+    // On a phone the panel is as tall as what it holds, up to a ceiling — a
+    // `max-h`, never an `h`. It used to be a fixed `h-[calc(100dvh-7.5rem)]`
+    // whenever there was no route yet, which is exactly the first generation
+    // from the form: the panel claimed a whole screen for a transcript of one
+    // bubble and a loader, so the bottom row (the "Atcelt" of a generation in
+    // flight) sat a full screen below the last thing on screen. Measured at
+    // 375x812 with the 26dvh map stacked above: the row's top landed 204 px
+    // past the fold and the rider had to scroll to call a generation off.
+    //
+    // The ceiling subtracts what is above the panel on a phone. `74dvh` is the
+    // viewport minus the 26dvh map strip that is on screen while a generation
+    // runs, and the 7.5rem covers the header, the page padding and the grid
+    // gap (~93 px + 20 px measured at 375x812, which leaves the pinned row
+    // 7 px inside the fold). It is written as a share of the viewport rather
+    // than a fixed rem so it holds on a shorter phone too: the map above is
+    // itself a share, so a constant would only ever be right at one height.
+    //
+    // Short transcripts now end where their content ends and the row follows
+    // the last message with the row's own padding; long ones hit the ceiling
+    // and the log scrolls inside the panel with the row pinned, which is what
+    // `min-h-0 flex-1` on the log already does. Desktop keeps its fixed
+    // column height.
+    <section className={`flex flex-col overflow-hidden rounded-2xl border border-stone-200 bg-[#faf9f6] md:h-[calc(100vh-7rem)] md:max-h-none ${hasRoute ? "max-h-[max(360px,calc(74dvh-8.5rem))]" : "max-h-[calc(74dvh-7.5rem)]"}`} aria-label={t(locale, "a11yChatRegion")}>
       <div className="border-b border-stone-200 px-4 py-3 md:px-5 md:py-4">
         <div className="flex items-start justify-between gap-3">
           <div>
