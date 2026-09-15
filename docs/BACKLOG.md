@@ -491,7 +491,7 @@ opened). The word itself moved to the footer.
 
 ## 11. Routes still run along the sea
 
-**Status 2026-09-15:** 11a–11e shipped (beach paths refused; sea term; seaward candidates; no vias in the water). Open: may the sea buy more than 10 % retracing; the 209 s dry-land failures on Liepāja → Ventspils; the beach check on the new coastal winners (11f).
+**Status 2026-09-15:** 11a–11e shipped (beach paths refused; sea term; seaward candidates; no vias in the water). Decided: the sea may NOT buy retracing; 11f built corridor candidates instead (no coastal candidate above 3 %), and the beach check passed (0.84 km). Still open: the 209 s dry-land failures on Liepāja → Ventspils — a refused approach direction (fix measured at 8.3 s).
 
 Recurring. The sandy beach tracks are already refused (`beach_like_path`), so
 this is about riding *beside* the sea, not on it — measure what the routes
@@ -648,7 +648,7 @@ leave the text. Check the same button in the other places it appears (the
 shared-route page's "Ģenerēt līdzīgu sev", the chat's send control) and keep
 them consistent. `components/ride-composer.tsx`.
 
-## 19. Stops on the map, and suggestions in the details
+## 19. ~~Stops on the map, and suggestions in the details~~ — DONE 2026-09-15
 
 **Status 2026-09-15:** Done — suggestions card, sights vs stops, instant detours (out-and-back by default). See items 20 and 22 for what it surfaced.
 
@@ -697,7 +697,7 @@ case for comparison. Worth finding which way the profile refuses there and
 why (access tag? surface? a `path` that is in fact a lane?) — the same
 rule may be pushing other rides off short connectors. `lib/routing/moto-profile.ts`.
 
-## 23. The chat does not understand "vienalga" as an answer
+## 23. ~~The chat does not understand "vienalga" as an answer~~ — DONE 2026-09-15
 
 Reported by the rider on 2026-09-15 with screenshots. One-way ride, ~100 km
 along the Italian TET from Lake Como. The chat asks "Kur vēlies beigt šo
