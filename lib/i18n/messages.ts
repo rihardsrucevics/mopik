@@ -175,6 +175,8 @@ export type MessageKey =
   | "chatErrAnswer"
   | "chatErrNoMatch"
   | "chatErrTimeout"
+  /** One-way ride the rider left open: "man vienalga, kur beidzas". */
+  | "chatAnyDestination"
   | "chatFewerVersions"
   | "chatTooLong"
   | "chatRetry"
@@ -576,6 +578,7 @@ const lv: Messages = {
   chatErrAnswer: "Neizdevās saņemt atbildi.",
   chatErrNoMatch: "Neizdevās atrast prasībām atbilstošu maršrutu.",
   chatErrTimeout: "Serveris pārtrauca ģenerēšanu, jo tā aizņēma pārāk ilgi (limits ~60 s). Garš brauciens pa meža ceļiem var neietilpt. Mēģini vēlreiz vai īsāku ilgumu.",
+  chatAnyDestination: "galamērķis brīvs",
   chatFewerVersions: "Šis apvidus meklējas lēni, tāpēc paspēju izmēģināt {tried} versijas {planned} vietā.",
   chatTooLong: "Saruna sasniegusi šīs versijas garuma robežu. Sāc jaunu braucienu.",
   chatRetry: "Mēģināt vēlreiz",
@@ -984,6 +987,7 @@ const lt: Messages = {
   chatErrAnswer: "Nepavyko gauti atsakymo.",
   chatErrNoMatch: "Nepavyko rasti reikalavimus atitinkančio maršruto.",
   chatErrTimeout: "Serveris nutraukė generavimą, nes jis užtruko per ilgai (limitas ~60 s). Ilgas maršrutas miško keliais gali netilpti. Bandyk dar kartą arba trumpesnę trukmę.",
+  chatAnyDestination: "tikslas laisvas",
   chatFewerVersions: "Ši vietovė ieškoma lėtai, todėl spėjau išbandyti {tried} versijas vietoj {planned}.",
   chatTooLong: "Pokalbis pasiekė šios versijos ilgio ribą. Pradėk naują maršrutą.",
   chatRetry: "Bandyti dar kartą",
@@ -1365,6 +1369,7 @@ const et: Messages = {
   chatErrAnswer: "Vastuse saamine ebaõnnestus.",
   chatErrNoMatch: "Nõuetele vastavat marsruuti ei leitud.",
   chatErrTimeout: "Server katkestas koostamise, sest see võttis liiga kaua (piir ~60 s). Pikk metsateede sõit ei pruugi mahtuda. Proovi uuesti või lühemat kestust.",
+  chatAnyDestination: "sihtkoht vaba",
   chatFewerVersions: "Selles piirkonnas on otsing aeglane, seega jõudsin proovida {tried} versiooni {planned} asemel.",
   chatTooLong: "Vestlus jõudis selle versiooni pikkuse piirini. Alusta uut sõitu.",
   chatRetry: "Proovi uuesti",
@@ -1746,6 +1751,7 @@ const en: Messages = {
   chatErrAnswer: "Could not get an answer.",
   chatErrNoMatch: "Could not find a route matching the requirements.",
   chatErrTimeout: "The server stopped generating because it took too long (the limit is ~60 s). A long ride on forest roads may not fit. Try again or a shorter duration.",
+  chatAnyDestination: "any finish",
   chatFewerVersions: "Searching is slow in this terrain, so I managed to try {tried} versions instead of {planned}.",
   chatTooLong: "This conversation has reached the length limit of this version. Start a new ride.",
   chatRetry: "Try again",

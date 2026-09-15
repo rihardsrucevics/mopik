@@ -3,16 +3,26 @@
 //   npx tsx scripts/chat-golden.ts [http://localhost:3000]
 // Each case is one first message from a fresh chat unless `plan` seeds a
 // previous plan. `expect` is a subset match; `messageMatch` checks the reply.
-import { RidePlanSchema, type RidePlan } from "../lib/chat/ride-plan";
+// A case with `turns` replays a whole conversation instead, feeding each
+// answer's plan back in the way the app does, and checks the LAST reply —
+// that is the only way to catch a chat that asks the same question twice.
+import { RidePlanSchema, type ChatMessage, type RidePlan } from "../lib/chat/ride-plan";
 
 const BASE = process.argv[2] ?? "http://localhost:3000";
 
 type Case = {
   name: string;
-  message: string;
+  /** One rider message from a fresh chat. Use `turns` for a conversation. */
+  message?: string;
+  /** A whole conversation, rider turn by rider turn; the last reply is checked. */
+  turns?: string[];
   plan?: Partial<RidePlan>;
   expect: Record<string, unknown>;
   messageMatch?: RegExp;
+  /** Every earlier reply must match this too — e.g. a question asked once. */
+  everyMessageMatch?: RegExp;
+  /** No two assistant replies may ask the same question. */
+  noRepeatedQuestion?: boolean;
   ready?: boolean;
 };
 
@@ -102,6 +112,38 @@ const CASES: Case[] = [
     message: "2h no Ķekavas, mazāk pārklāšanās, atpakaļ pa citiem ceļiem",
     expect: { startPlace: "Ķekava", prioritizeLowOverlap: true, returnToStart: true },
   },
+  {
+    // Backlog item 23, the rider's own three turns, from his screenshots of
+    // 2026-09-15. The chat asked where the one-way ride should finish, he
+    // answered "Vienalga", and it asked the identical question again. The
+    // answer must instead mean "no fixed destination": a one-way ride of the
+    // asked length from the start, along the TET near Como.
+    name: "“vienalga” ends the destination question instead of repeating it",
+    turns: [
+      "100 km pa Itālijas TET sākot tuvāk Como ezeram",
+      "Vienvirziena brauciens.",
+      "Vienalga",
+    ],
+    expect: {
+      startPlace: "Como", destinationPlace: null, destinationAny: true, returnToStart: false,
+      includeTet: true, budget: { mode: "distance", value: 100, constraint: "target", minimumValue: null },
+    },
+    noRepeatedQuestion: true,
+    ready: true,
+  },
+  {
+    // The same answer one turn earlier, with the question already pending:
+    // the deterministic layer alone has to place it, whatever the model does.
+    name: "“vienalga” placed against a seeded destination question",
+    message: "Vienalga",
+    plan: {
+      startPlace: "Como", viaPlaces: [], returnToStart: false, destinationPlace: null,
+      includeTet: true, difficulty: "adventure", rideStyle: "explore", ...MEZI,
+      budget: { mode: "distance", value: 100, constraint: "target", minimumValue: null },
+    } as Partial<RidePlan>,
+    expect: { startPlace: "Como", destinationPlace: null, destinationAny: true, returnToStart: false },
+    ready: true,
+  },
 ];
 
 const base: RidePlan = RidePlanSchema.parse({
@@ -120,20 +162,47 @@ function subset(actual: unknown, expected: unknown): boolean {
   return actual === expected;
 }
 
+/** A question the chat asked, normalised so punctuation cannot hide a repeat. */
+function questionKey(message: string): string | null {
+  const line = message.split("\n").map((l) => l.trim()).filter((l) => l.includes("?")).pop();
+  return line ? line.toLocaleLowerCase("lv").replace(/[^\p{L}\p{N}]+/gu, " ").trim() : null;
+}
+
 async function run() {
   let failed = 0;
   for (const c of CASES) {
-    const plan = c.plan ? RidePlanSchema.parse({ ...base, ...c.plan }) : null;
-    const res = await fetch(`${BASE}/api/route-chat`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages: [{ role: "user", content: c.message }], plan }),
-    });
-    const data = await res.json();
+    let plan = c.plan ? RidePlanSchema.parse({ ...base, ...c.plan }) : null;
     const problems: string[] = [];
+    // The conversation as the app sends it: every rider turn plus every reply
+    // so far, and the plan the previous reply returned.
+    const conversation: ChatMessage[] = [];
+    const replies: string[] = [];
+    let res!: Response;
+    let data: { plan: RidePlan; message: string; ready: boolean; error?: string } = { plan: base, message: "", ready: false };
+    for (const turn of c.turns ?? [c.message!]) {
+      conversation.push({ role: "user", content: turn });
+      res = await fetch(`${BASE}/api/route-chat`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: conversation, plan }),
+      });
+      data = await res.json();
+      if (!res.ok) break;
+      conversation.push({ role: "assistant", content: data.message });
+      replies.push(data.message);
+      plan = data.plan;
+    }
     if (!res.ok) problems.push(`HTTP ${res.status}: ${data.error}`);
     else {
-      for (const [k, v] of Object.entries(c.expect)) if (!subset(data.plan[k], v)) problems.push(`${k}: got ${JSON.stringify(data.plan[k])}, want ${JSON.stringify(v)}`);
+      for (const [k, v] of Object.entries(c.expect)) if (!subset((data.plan as Record<string, unknown>)[k], v)) problems.push(`${k}: got ${JSON.stringify((data.plan as Record<string, unknown>)[k])}, want ${JSON.stringify(v)}`);
       if (c.messageMatch && !c.messageMatch.test(data.message)) problems.push(`message: ${JSON.stringify(data.message)}`);
+      if (c.everyMessageMatch) for (const m of replies) if (!c.everyMessageMatch.test(m)) problems.push(`message: ${JSON.stringify(m)}`);
+      // Item 23's second half: an answer the chat cannot place must never
+      // produce the same question twice.
+      if (c.noRepeatedQuestion) {
+        const asked = replies.map(questionKey).filter(Boolean) as string[];
+        const repeat = asked.find((q, i) => asked.indexOf(q) !== i);
+        if (repeat) problems.push(`asked twice: ${JSON.stringify(repeat)}`);
+      }
       if (c.ready !== undefined && data.ready !== c.ready) problems.push(`ready: ${data.ready}, want ${c.ready}`);
     }
     const ok = problems.length === 0;

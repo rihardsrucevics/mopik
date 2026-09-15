@@ -712,3 +712,53 @@ must not produce the same question twice — the second time it should offer
 the choices it can take ("Nosauc vietu, vai saki 'vienalga' un es izvēlēšos
 pa TET ~100 km no Komo"). `app/api/route-chat/route.ts`,
 `lib/chat/ride-plan.ts` (`normalizePlan`), `scripts/chat-golden.ts`.
+
+**Status 2026-09-15 — fixed deterministically, prompt half unverified.**
+Two layers, because the model must not be the only thing standing between
+the rider and a repeated question:
+
+1. **Before the model.** `ANY_ANSWERS` in `lib/chat/ride-plan.ts` is the
+   vocabulary (lv "vienalga", "jebkur", "nav svarīgi", "kur sanāk",
+   "izvēlies pats"; lt "nesvarbu", "bet kur"; et "ükskõik", "pole tähtis";
+   en "anywhere", "don't care", "you choose", "whatever" — 38 phrases, each
+   pinned by a test). `isAnyAnswer` matches case-insensitively and
+   punctuation-tolerantly, but only when the phrase is the *whole* reply:
+   "vienalga, tikai ne uz Jūrmalu" is a constraint and still goes to the
+   model. `pendingQuestion(previousPlan)` says which question the rider is
+   answering — inferred from the previous plan through `nextPlanPrompt`
+   rather than tracked in a field, so there is no second copy of the
+   ordering to keep in step — and `applyAnyAnswer` resolves it:
+   destination → `destinationAny: true` (the same shape the form's "Nav
+   obligāts — man vienalga" row builds: `returnToStart` false,
+   `destinationPlace` null), return → `returnToStart: true` (the planner's
+   default is a loop home), budget → flexible. Difficulty, surface and style
+   are deliberately left out — they have visible defaults already.
+   `destinationAny` is a new plan field; `nextPlanPrompt` skips the
+   destination question when it is set, so the question cannot come back,
+   and the question itself now carries a "Man vienalga" tap.
+2. **In the prompt.** Two sentences added to `SYSTEM`: that these words are
+   valid answers meaning no fixed destination, and that the same question
+   must never be asked twice. Backed by a **generic server-side guard**
+   (`withoutRepeat` + `lastAssistantQuestion`): a question identical to the
+   previous assistant turn's, ignoring case and punctuation, is sent with
+   the concrete choices appended instead — "Nosauc vietu, vai saki
+   'vienalga' — tad izvēlēšos pats pa TET ~100 km no Como".
+
+Also fixed: `insists()` read a bare "vienalga" as "ride it anyway" and would
+have waved the feasibility check through; it now ignores an "any" answer
+when a question was pending.
+
+`planSummary` says `galamērķis brīvs` / `any finish` so an open one-way ride
+does not read as one with no finish at all (`chatAnyDestination`, four
+languages).
+
+**Verified locally:** `npx tsc --noEmit`, `npx eslint app/api/route-chat
+lib/chat scripts/chat-plan.test.ts scripts/chat-golden.ts` and
+`npx tsx --test scripts/chat-plan.test.ts scripts/*.test.ts` (177 pass) are
+clean, and the rider's three turns resolve with the model contributing
+nothing. **Only verifiable in production** (there is no `ANTHROPIC_API_KEY`
+locally): whether the prompt change alone makes the model set
+`destinationAny` and stop re-asking. Two golden cases cover it —
+`npx tsx scripts/chat-golden.ts [http://localhost:3000]`, the case
+"“vienalga” ends the destination question instead of repeating it" replays
+the rider's exact three turns and fails if any question is asked twice.

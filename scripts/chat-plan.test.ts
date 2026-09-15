@@ -122,3 +122,117 @@ test("a via ride that cannot fit the time is said plainly, with the ways out as 
   assert.deepEqual(oneWay.quickReplies.map((r) => r.label), ["Kopā 3.5 h"]);
   assert.match(oneWay.message, /^Rīga → Jelgava pa asfaltu 2 h ietvaros nesanāk: taisnākais ceļš ir ~\d+ km/);
 });
+
+import { ANY_ANSWERS, applyAnyAnswer, isAnyAnswer, lastAssistantQuestion, pendingQuestion, planSummary as summary, withoutRepeat } from "../lib/chat/ride-plan";
+
+/**
+ * Backlog item 23, the rider's own case: a one-way ride, ~100 km along the
+ * Italian TET from Lake Como. The chat asked where it should finish, he said
+ * "Vienalga", and it asked again. These pin every layer of the fix that does
+ * not need the model.
+ */
+const oneWayNoEnd = RidePlanSchema.parse({
+  ...complete, startPlace: "Como", viaPlaces: [], returnToStart: false, destinationPlace: null,
+  includeTet: true, budget: { mode: "distance", value: 100, constraint: "target", minimumValue: null },
+});
+
+test("every phrase in the any-answer list is recognised, punctuation and case aside", () => {
+  for (const phrase of ANY_ANSWERS) {
+    assert.equal(isAnyAnswer(phrase), true, phrase);
+    assert.equal(isAnyAnswer(`${phrase.toUpperCase()}!`), true, phrase);
+    assert.equal(isAnyAnswer(`  ${phrase}.  `), true, phrase);
+  }
+  // The rider's exact screenshot answer, and the polite lead-ins around it.
+  assert.equal(isAnyAnswer("Vienalga"), true);
+  assert.equal(isAnyAnswer("Nu vienalga"), true);
+  assert.equal(isAnyAnswer("Ok, whatever."), true);
+  // Not an "any" answer: a constraint, a place, a refusal.
+  assert.equal(isAnyAnswer("vienalga, tikai ne uz Jūrmalu"), false);
+  assert.equal(isAnyAnswer("man vienalga patīk Cēsis"), false);
+  assert.equal(isAnyAnswer("Cēsis"), false);
+  assert.equal(isAnyAnswer("nē"), false);
+  assert.equal(isAnyAnswer(""), false);
+});
+
+test("the pending question is read off the previous plan, in the order the chat asks", () => {
+  assert.equal(pendingQuestion(null), null);
+  assert.equal(pendingQuestion({ ...complete, startPlace: null }), "start");
+  assert.equal(pendingQuestion({ ...complete, returnToStart: null }), "return");
+  assert.equal(pendingQuestion(oneWayNoEnd), "destination");
+  assert.equal(pendingQuestion({ ...complete, budget: { ...complete.budget, mode: "unknown", value: null } }), "budget");
+  assert.equal(pendingQuestion({ ...complete, difficulty: "unknown" }), "difficulty");
+  assert.equal(pendingQuestion({ ...complete, gravelPreference: null }), "surface");
+  assert.equal(pendingQuestion({ ...complete, rideStyle: "unknown" }), "style");
+  assert.equal(pendingQuestion(complete), null);
+});
+
+test("“vienalga” to the destination question means no fixed destination, and is never asked again", () => {
+  assert.match(nextPlanQuestion(oneWayNoEnd, true)!, /Kur vēlies beigt/);
+  const answered = applyAnyAnswer(oneWayNoEnd, "destination", "Vienalga");
+  assert.equal(answered.destinationAny, true);
+  assert.equal(answered.destinationPlace, null, "the same shape the form's “Nav obligāts — man vienalga” row builds");
+  assert.equal(answered.returnToStart, false, "still a one-way ride");
+  // The ride is now complete: no question, and it can be planned.
+  assert.equal(nextPlanQuestion(answered, true), null);
+  const intent = planToIntent(answered);
+  assert.equal(intent.routeType, "point_to_point");
+  assert.equal(intent.distanceKm, 100);
+  // And the rider sees that the finish is open rather than missing.
+  assert.match(summary(answered, "lv"), /Como → galamērķis brīvs/);
+  assert.match(summary(answered, "en"), /Como → any finish/);
+});
+
+test("the destination question carries the “man vienalga” tap the form has always had", () => {
+  const prompt = nextPlanPrompt(oneWayNoEnd, true)!;
+  assert.equal(prompt.question, "destination");
+  assert.deepEqual(prompt.quickReplies.map((r) => r.label), ["Man vienalga"]);
+  assert.equal(isAnyAnswer(prompt.quickReplies[0].message), false, "the chip says more than the bare word");
+  // …so the chip is placed by the model, and the bare word by the fallback.
+  assert.equal(applyAnyAnswer(oneWayNoEnd, "destination", "vienalga").destinationAny, true);
+});
+
+test("the parallel questions answer to “vienalga” with the planner's own default", () => {
+  // Return: a ride that ends nowhere in particular is a loop home.
+  assert.equal(applyAnyAnswer({ ...complete, returnToStart: null }, "return", "vienalga").returnToStart, true);
+  // Budget: flexible, which is what the chat already did for the bare word.
+  const free = applyAnyAnswer({ ...complete, budget: { ...complete.budget, mode: "unknown", value: null } }, "budget", "nesvarbu");
+  assert.equal(free.budget.mode, "flexible");
+  // Difficulty, surface and style have visible defaults and are left alone.
+  assert.equal(applyAnyAnswer({ ...complete, difficulty: "unknown" }, "difficulty", "vienalga").difficulty, "unknown");
+  // A real answer is never touched.
+  assert.equal(applyAnyAnswer(oneWayNoEnd, "destination", "Milāna").destinationAny, false);
+  assert.equal(applyAnyAnswer(oneWayNoEnd, null, "vienalga").destinationAny, false);
+});
+
+test("the same question is never asked twice — the second turn offers the choices", () => {
+  const prompt = nextPlanPrompt(oneWayNoEnd, true)!;
+  // Nothing was asked before, or something else was: the question stands.
+  assert.equal(withoutRepeat(prompt, null, oneWayNoEnd, true).message, prompt.message);
+  assert.equal(withoutRepeat(prompt, "Cik daudz laika atvēlam?", oneWayNoEnd, true).message, prompt.message);
+  // The same question, word for word — and with the punctuation moved.
+  for (const asked of ["Kur vēlies beigt šo vienvirziena braucienu?", "kur vēlies beigt šo vienvirziena braucienu"]) {
+    const second = withoutRepeat(prompt, asked, oneWayNoEnd, true);
+    assert.notEqual(second.message, prompt.message, asked);
+    assert.match(second.message, /Nosauc vietu, vai saki “vienalga”/);
+    // The offer is the ride's own terms, not a shrug: TET, 100 km, from Como.
+    assert.match(second.message, /pa TET ~100 km no Como/);
+    assert.equal(second.question, "destination", "still the same question underneath");
+  }
+  // Generic: it guards every question, not only the destination one.
+  const style = nextPlanPrompt({ ...complete, rideStyle: "unknown" }, true)!;
+  assert.match(withoutRepeat(style, style.message, complete, true).message, /vai saki “vienalga”/);
+});
+
+test("the question the rider is answering is the last one the chat asked", () => {
+  assert.equal(lastAssistantQuestion([]), null);
+  assert.equal(lastAssistantQuestion([{ role: "user", content: "Vienalga" }]), null);
+  assert.equal(
+    lastAssistantQuestion([
+      { role: "assistant", content: "Sapratu: vienvirziena brauciens no Komo.\n\nKur vēlies beigt šo vienvirziena braucienu?" },
+      { role: "user", content: "Vienalga" },
+    ]),
+    "Kur vēlies beigt šo vienvirziena braucienu?",
+  );
+  // A reply with no question at all offers nothing to repeat.
+  assert.equal(lastAssistantQuestion([{ role: "assistant", content: "Gatavs — maršruts kartē." }]), null);
+});

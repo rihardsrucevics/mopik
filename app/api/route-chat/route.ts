@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
 import { NextResponse } from "next/server";
-import { ChatMessageSchema, RidePlanSchema, nextPlanPrompt, planSummary, planToIntent, type ChatQuickReply, type RidePlan } from "@/lib/chat/ride-plan";
+import { ChatMessageSchema, RidePlanSchema, applyAnyAnswer, isAnyAnswer, lastAssistantQuestion, nextPlanPrompt, pendingQuestion, planSummary, planToIntent, withoutRepeat, type ChatQuickReply, type RidePlan } from "@/lib/chat/ride-plan";
 import { estimateTransit, lookupPlace } from "@/lib/chat/photon";
 import { describeInfeasible, estimateLegs, exceedsBudget } from "@/lib/chat/feasibility";
 import { plannedAvgSpeedKmh } from "@/lib/routing/speed";
@@ -35,6 +35,8 @@ Budget: duration values are HOURS; distance values are KM. "Up to / no more than
 Difficulty: "vidējs" means adventure. rideStyle: direct means reaching places without exploration detours; explore means spending time exploring winding forest roads; balanced means a moderate mix. "visu laiku virzīties uz to pusi", "nekur lieki nebraukāt", "bez liekiem līkumiem" and "taisnāk" mean direct. "as much forest as possible" sets preferForest true and gravelPreference 100 but does not alone decide rideStyle. "krustu šķērsu / explore the woods / vairāk izpētīt" sets explore. "easy gravel" resolves difficulty and surface. Gravel mostly -> 85, mixed -> 50, asphalt only -> 0. trailPreference: none/some/lots only for trail requests; unknown otherwise. "dotted trails as much as possible" -> lots.
 Visible choices have exact semantics: Viegli (also "Atpūta") -> easy; Vidēji (also "Piedzīvojums") -> adventure; Grūti / hardcore -> hard. Tūrisms -> direct + includeSightseeing; Sports (also "Braukšana") -> explore + no sightseeing; a legacy "Mix" -> balanced + includeSightseeing. Tikai asfalts -> gravel 0, no trails, verified access; Der arī grants -> gravel 55, some trails, verified access; Meži -> gravel 100, lots of trails, preferForest, avoidMainRoads, allow_unverified. Apply these choices exactly.
 Avoiding repeated roads and returning by other trails is supported as an optimization preference; do not classify it as unsupported segment editing or add a disclaimer. "Less overlap / mazāk pārklāšanās" sets prioritizeLowOverlap true. Explicit "below 10% / zem 10%" sets maxRepeatedPercent 9.9; "at most 10%" sets 10. This is a supported constraint, preserve it on later turns until the user changes/removes it. Default maxRepeatedPercent null and prioritizeLowOverlap false. accessPolicy verified excludes OSM paths without positive motor access; allow_unverified permits unverified forest paths, never explicit prohibitions. "Atļaut nezināmas/nepārbaudītas takas" sets allow_unverified. Unmentioned avoidTowns, noSand, avoidMainRoads, includeTet, includeSightseeing are false in a NEW plan; preserve prior values otherwise. Tourist places and TET are optional unless named as required viaPlaces. Never claim a route exists, reaches a stop, or meets a time limit before routing.
+"VIENALGA" IS AN ANSWER, NOT A SILENCE. "vienalga", "man vienalga", "jebkur", "nav svarīgi", "kur sanāk", "izvēlies pats" (lv), "nesvarbu", "bet kur" (lt), "ükskõik", "pole tähtis" (et), "anywhere", "don't care", "you choose", "whatever" (en) are valid answers. Asked where a one-way ride should finish, they mean NO FIXED DESTINATION: keep returnToStart false, destinationPlace null, set destinationAny true, and plan a one-way ride of the asked length from the start, following the direction hints (directionPlace, TET, the region named). Asked whether to return, they mean the default — returnToStart true. Asked how long, they mean budget flexible. Never answer them with the same question again.
+NEVER ASK THE SAME QUESTION TWICE. If an answer cannot be placed, the next turn must not repeat the sentence: offer the concrete choices instead — "Nosauc vietu, vai saki “vienalga” — tad izvēlēšos pa TET ~100 km no Komo" / "Name a place, or say “anywhere” — then I will choose, ~100 km along the TET from Como".
 If user asks to exclude a specific road/area or edit a precise map segment, this version cannot enforce that: retain other facts and use clarification to explain and ask for a representable alternative. Never silently drop such a request. Do not answer unrelated questions; keep conversation on the ride. language follows the user's language (lv or en).`;
 
 function normalizePlan(extracted: RidePlan, previous: RidePlan | null, latest: string): RidePlan {
@@ -92,7 +94,15 @@ function normalizePlan(extracted: RidePlan, previous: RidePlan | null, latest: s
   if (plan.returnToStart === false && plan.destinationPlace && plan.budget.mode === "unknown") {
     plan.budget = { mode: "flexible", value: null, constraint: "target", minimumValue: null };
   }
-  return RidePlanSchema.parse(plan);
+  // "Vienalga" is an answer. The question it answers is the one the previous
+  // plan was still missing, and the answer is applied here rather than left
+  // to the model, which read the word as no information at all and asked the
+  // same question again (backlog item 23). `destinationAny` survives a turn
+  // where the rider says something else, so the question does not come back.
+  if (previous?.destinationAny && !plan.destinationPlace) plan.destinationAny = true;
+  // A place named later replaces "vienalga": the rider changed their mind.
+  if (plan.destinationPlace) plan.destinationAny = false;
+  return RidePlanSchema.parse(applyAnyAnswer(RidePlanSchema.parse(plan), pendingQuestion(previous), latest));
 }
 
 /**
@@ -100,9 +110,9 @@ function normalizePlan(extracted: RidePlan, previous: RidePlan | null, latest: s
  * leaves half an hour for the forest. Say so before drawing, with the two
  * honest ways out as tap targets. Asked once per budget, not every turn.
  */
-async function transitCheck(plan: RidePlan, previous: RidePlan | null, lv: boolean, latest = ""): Promise<{ message: string; quickReplies: ChatQuickReply[] } | null> {
+async function transitCheck(plan: RidePlan, previous: RidePlan | null, lv: boolean, latest = "", pending: ReturnType<typeof pendingQuestion> = null): Promise<{ message: string; quickReplies: ChatQuickReply[] } | null> {
   if (!plan.focusArea || !plan.startPlace || !plan.returnToStart) return null;
-  if (insists(latest)) return null;
+  if (insists(latest, pending)) return null;
   if (plan.budget.mode !== "duration" || !plan.budget.value || plan.budgetScope !== "total") return null;
   const sameAsk = previous && previous.focusArea === plan.focusArea && previous.startPlace === plan.startPlace &&
     JSON.stringify(previous.budget) === JSON.stringify(plan.budget) && previous.budgetScope === plan.budgetScope;
@@ -138,14 +148,23 @@ async function transitCheck(plan: RidePlan, previous: RidePlan | null, lv: boole
  * router's own verdict (`infeasible` in the response) covers a rider who
  * insists, and the composer, which never passes through here.
  */
-/** The rider has heard the arithmetic and wants the ride anyway. */
-function insists(latest: string): boolean {
+/**
+ * The rider has heard the arithmetic and wants the ride anyway.
+ *
+ * "Vienalga" is in the list and is also the word that answers "kur vēlies
+ * beigt?" — the same word, two meanings, told apart by what was asked. When
+ * the chat had a question pending, a bare "vienalga" is the answer to it
+ * (backlog item 23) and must not silently wave the feasibility check through;
+ * only a "vienalga" said to a *statement* means "ride it anyway".
+ */
+function insists(latest: string, pending: ReturnType<typeof pendingQuestion> = null): boolean {
+  if (pending && isAnyAnswer(latest)) return false;
   return /\btomēr\b|\bvienalga\b|\bmēģini\b|\bmēģinām\b|\banyway\b|\btry (?:it|anyway)\b|\binsist/i.test(latest);
 }
 
-async function viaBudgetCheck(plan: RidePlan, previous: RidePlan | null, lv: boolean, latest: string): Promise<{ message: string; quickReplies: ChatQuickReply[] } | null> {
+async function viaBudgetCheck(plan: RidePlan, previous: RidePlan | null, lv: boolean, latest: string, pending: ReturnType<typeof pendingQuestion> = null): Promise<{ message: string; quickReplies: ChatQuickReply[] } | null> {
   if (!plan.startPlace || plan.focusArea || plan.returnToStart === null) return null;
-  if (insists(latest)) return null;
+  if (insists(latest, pending)) return null;
   if (!plan.viaPlaces.length && !plan.destinationPlace) return null;
   if ((plan.budget.mode !== "duration" && plan.budget.mode !== "distance") || !plan.budget.value) return null;
   // Asked once per places-and-hours; "~2 h" after "līdz 2 h" is the same ask.
@@ -196,7 +215,15 @@ export async function POST(req: Request) {
     const previous = body.data.plan ?? null;
     const plan = normalizePlan(result.parsed_output.plan, previous, body.data.messages.at(-1)!.content);
     const latest = body.data.messages.at(-1)!.content;
-    const next = nextPlanPrompt(plan, lv) ?? (await transitCheck(plan, previous, lv, latest)) ?? (await viaBudgetCheck(plan, previous, lv, latest));
+    // What the chat asked last turn — the question this message is answering.
+    const pending = pendingQuestion(previous);
+    // Never the same question twice: if the answer could not be placed, the
+    // second turn spells out the choices instead of repeating the sentence.
+    const asked = lastAssistantQuestion(body.data.messages);
+    const missing = nextPlanPrompt(plan, lv);
+    const next = (missing && withoutRepeat(missing, asked, plan, lv))
+      ?? (await transitCheck(plan, previous, lv, latest, pending))
+      ?? (await viaBudgetCheck(plan, previous, lv, latest, pending));
     const clarificationText = next ? null : clarification?.trim();
     // The shape of the ride is restated whenever it is new or changed; small
     // corrections get the field-level acknowledgement instead.
