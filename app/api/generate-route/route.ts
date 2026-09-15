@@ -430,8 +430,28 @@ async function buildCandidates(
   const deepOptions = intent.gravelPreference > 10
     ? buildMotoProfileOptions({ ...intent, gravelPreference: 100, preferForest: true })
     : profileOptions;
+  /**
+   * Route one candidate's waypoint list.
+   *
+   * Item 11g: every point this builder invented is declared as generated, so
+   * a leg BRouter refuses is rescued cheaply (shift the via along the
+   * corridor, else drop it) instead of spending the endpoint-nudge ring on a
+   * guess. The rider's own places are never in that list — they keep the ring.
+   * The named points are `startPt`, each `requiredVia` and the destination,
+   * which is exactly what `namedPoints` below collects; anything else in the
+   * list was put there by the shapes above.
+   */
+  const namedPoints = new Set(
+    [start, ...requiredVia, ...(destination ? [destination] : [])].map((p) => `${p.lon},${p.lat}`)
+  );
   const route = async (points: [number, number][], options = profileOptions) => {
-    const path = await fetchRoutePath({ points, profileOptions: options });
+    const generatedViaIndices = points
+      .map((point, index) => ({ point, index }))
+      .filter(({ point, index }) =>
+        index > 0 && index < points.length - 1 && !namedPoints.has(`${point[0]},${point[1]}`)
+      )
+      .map(({ index }) => index);
+    const path = await fetchRoutePath({ points, profileOptions: options, generatedViaIndices });
     const stops = [...requiredVia, ...(destination ? [destination] : [])].map(p => [p.lon, p.lat] as [number, number]);
     // A place the profile cannot route to at all (a centre mapped onto a
     // footway) is reached as closely as the network allows; `fetchRoutePath`

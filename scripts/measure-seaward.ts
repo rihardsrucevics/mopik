@@ -188,8 +188,17 @@ async function coastBands(path: RoutePath): Promise<{ km300: number; shorePathKm
   };
 }
 
-/** Route one candidate under a deadline and classify it. */
+/**
+ * Route one candidate under a deadline and classify it.
+ *
+ * Item 11g: every intermediate point in this harness is one the *builder*
+ * invented — these rides are plain A-to-B with computed vias, and the only
+ * rider-named places are the two ends. Declaring them as generated is
+ * therefore exact, and it is what makes the measurement compare the shipped
+ * behaviour rather than the endpoint-nudge path no candidate should take.
+ */
 async function runCandidate(variant: string, points: [number, number][]): Promise<Outcome> {
+  const generatedViaIndices = points.map((_, i) => i).filter((i) => i > 0 && i < points.length - 1);
   const t0 = Date.now();
   const empty = {
     variant, km: 0, coastKm: 0, coastNearKm: 0, coast300Km: 0, shorePathKm: 0,
@@ -197,7 +206,7 @@ async function runCandidate(variant: string, points: [number, number][]): Promis
   };
   try {
     const path = await Promise.race([
-      fetchRoutePath({ points, profileOptions: OPTIONS }),
+      fetchRoutePath({ points, profileOptions: OPTIONS, generatedViaIndices }),
       new Promise<never>((_, reject) =>
         setTimeout(() => reject(new Error(`deadline ${CANDIDATE_DEADLINE_MS / 1000}s`)), CANDIDATE_DEADLINE_MS)
       ),

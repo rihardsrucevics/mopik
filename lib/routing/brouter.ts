@@ -244,6 +244,24 @@ export function edgesFromMessages(
 export async function fetchRoutePath(params: {
   points: Point[];
   profileOptions: MotoProfileOptions;
+  /**
+   * Which intermediate points this caller invented, by index into `points`.
+   *
+   * Item 11g. A refused leg is rescued differently depending on whose point
+   * is at fault. The rider's own places — a start, a destination, a stop
+   * typed into the form or added from a suggestion — are *what the ride is*,
+   * so they get the full endpoint-nudge ring: 3 radii x 8 bearings, up to 24
+   * requests, because moving them is the only alternative to telling the
+   * rider their ride is impossible. A via this code generated (a seaward
+   * anchor, a perpendicular corridor offset) is a *guess at a nice shape*,
+   * and spending 24 requests defending a guess is what cost Liepāja →
+   * Ventspils 209 s of a 50 s budget across six candidates.
+   *
+   * So generated vias listed here get `GENERATED_VIA_BUDGET_MS` of cheap
+   * alternatives instead, and are dropped rather than defended. Omitted or
+   * empty means every point is the rider's, which is the old behaviour.
+   */
+  generatedViaIndices?: number[];
 }): Promise<RoutePath> {
   if (params.points.length < 2) throw new Error("A route needs at least 2 points");
   if (params.points.length > MAX_LOCATIONS) {
@@ -274,7 +292,29 @@ export async function fetchRoutePath(params: {
   // intermediate points are dropped and the route retried. Start and end are
   // never dropped: they are what the rider asked for.
   let points = params.points;
-  const maxDrops = Math.max(0, points.length - 3);
+  /**
+   * How many intermediate points may be dropped before the leg is a straight
+   * A-to-B and there is nothing left to drop.
+   *
+   * `length - 2` rather than `length - 3`: a 3-point list is start, one via,
+   * end, and dropping that via leaves a perfectly good two-point route. The
+   * old figure was zero there, so a via on a routing island was never dropped
+   * on the commonest shape of all — one stop between two places — and the
+   * candidate failed instead. (Item 11g; found by the test below, not in the
+   * wild, because the shapes that hit it most were A-to-B candidates whose
+   * refusal looked like the 209 s problem rather than this one.)
+   */
+  const maxDrops = Math.max(0, points.length - 2);
+
+  // Item 11g. Which of these points this code invented rather than the rider.
+  // Tracked as a Set of the point *values* rather than of indices, because
+  // the island-drop above rewrites `points` and every index after a dropped
+  // one shifts; the coordinates themselves do not move.
+  const generated = new Set(
+    (params.generatedViaIndices ?? [])
+      .filter((i) => i > 0 && i < params.points.length - 1)
+      .map((i) => pointKey(params.points[i]))
+  );
 
   for (let drop = 0; ; drop++) {
     const lonlats = points.map(([lon, lat]) => `${lon},${lat}`).join("|");
@@ -297,7 +337,20 @@ export async function fetchRoutePath(params: {
       // NUDGE_RADII_M), so a single blind offset is a coin flip — the ring is
       // searched, nearest first.
       if (/re-tracking track/.test(message)) {
-        const nudged = await routeWithNudgedEndpoints(points, profileId);
+        // Item 11g. Before the expensive ring, try the cheap thing: if one of
+        // OUR OWN generated vias is what the router cannot reach, give it two
+        // bounded attempts and then let it go. The ring below exists for the
+        // rider's named places and costs up to 24 requests; spending that on a
+        // guessed corridor anchor is what burned 209 s on Liepāja → Ventspils.
+        // `MOPIK_NO_VIA_RESCUE=1` restores the pre-item-11g behaviour — every
+        // point defended by the endpoint-nudge ring — so the measurement
+        // harness can produce a BEFORE column from the same checkout as the
+        // AFTER one. Nothing in the app reads it.
+        if (generated.size && process.env.MOPIK_NO_VIA_RESCUE !== "1") {
+          const rescued = await rescueGeneratedVias(points, generated, profileId);
+          if (rescued) return rescued;
+        }
+        const nudged = await routeWithNudgedEndpoints(points, profileId, generated);
         if (nudged) return nudged;
         // The same error also means "this leg is too long for the public
         // instance" — see `routeInSegments`. Nudging cannot help there, so
@@ -311,7 +364,7 @@ export async function fetchRoutePath(params: {
       }
 
       const island = /island detected for section (\d+)/.exec(message);
-      if (!island || drop >= maxDrops) throw err;
+      if (!island) throw err;
 
       // Sections are 0-based: section N runs from point N to point N+1, and
       // the unreachable end is point N+1. (Reading them as 1-based meant
@@ -319,9 +372,230 @@ export async function fetchRoutePath(params: {
       // failed anyway.)
       const index = Number(island[1]) + 1;
       if (index <= 0 || index >= points.length - 1) throw err;
+
+      // Backlog item 20. An island is where a *named* via and a generated one
+      // part company. Satezeles pilskalns (24.8707, 57.17161) snaps onto a
+      // fragment with no routable link on this profile, and BRouter answers
+      // "target island detected" rather than "re-tracking track" — so the
+      // rescue above never saw it and this line quietly deleted the rider's
+      // stop. Dropping a stop the rider pressed "Pievienot" on is worse than
+      // failing: the ride comes back not going where they asked, and nothing
+      // says so. A named island via gets the same bounded ring a mis-snapped
+      // destination gets; only if that finds nothing does the request fail,
+      // honestly. Generated vias are still dropped on sight — that is the
+      // cheap behaviour item 11g wants and this loop has always given them.
+      if (!generated.has(pointKey(points[index])) && process.env.MOPIK_NO_VIA_RESCUE !== "1") {
+        // Note this is checked BEFORE `maxDrops`: that counter bounds how many
+        // points may be *deleted*, and a 3-point round trip (start, stop,
+        // start) allows zero — which is exactly the item 20 shape, so the old
+        // `drop >= maxDrops` guard threw before a named via could be rescued.
+        const nudged = await routeWithNudgedEndpoints(points, profileId, generated);
+        if (nudged) return nudged;
+        throw err;
+      }
+      if (drop >= maxDrops) throw err;
       points = [...points.slice(0, index), ...points.slice(index + 1)];
     }
   }
+}
+
+/**
+ * How long the whole rescue of a generated via may take, per failing leg.
+ *
+ * Measured, item 11g: one request to `brouter.mopik.eu` for a refused pair
+ * answers in 60-370 ms, and one that routes in 43-200 ms. Two alternatives
+ * plus their verification is therefore comfortably inside two seconds on our
+ * own instance, and the budget is what stops the public one — where a refusal
+ * costs a 1.5 s backoff — from turning the same two attempts into a minute.
+ *
+ * The budget is deliberately checked *between* attempts rather than enforced
+ * with an AbortController: an attempt already in flight is nearly free to
+ * finish and its answer may be the rescue, while starting a third one is not.
+ */
+export const GENERATED_VIA_BUDGET_MS = 2_000;
+
+/**
+ * How far a generated via is moved along the corridor before being given up.
+ *
+ * Item 11g's refusals are not local: the via at 21.421589,56.921915 is refused
+ * from A and from every point within 600 m of it in all eight bearings, while
+ * a point 10 km back along the same corridor routes fine. So a small nudge is
+ * measurably useless here — the useful move is a corridor-scale one, which is
+ * why this is 300-600 m *along the line*, not a ring around the point.
+ */
+const GENERATED_VIA_SHIFT_M = [300, 600];
+
+/**
+ * Time held back from the shift attempts so the drop always gets its turn.
+ *
+ * One request against our own instance answers in 60-370 ms refused and
+ * 43-200 ms routed, so 700 ms buys the drop its single request with room for
+ * a slow one. Without this reserve a candidate carrying two generated vias
+ * spent the whole budget failing to shift them and then paid the 24-request
+ * ring anyway — which is the cost item 11g exists to remove.
+ */
+const DROP_RESERVE_MS = 700;
+
+/** Identity of a point, for the generated-via set. */
+const pointKey = ([lon, lat]: Point) => `${lon},${lat}`;
+
+/**
+ * Rescue a leg that BRouter refused because one of OUR generated vias cannot
+ * be reached from the point before it — cheaply, and with a hard time bound.
+ *
+ * ## What is actually wrong, measured (item 11g)
+ *
+ * Item 11e read this signature as a refused *approach direction* — "the way it
+ * snaps onto cannot be entered from A's side (one-way? a `motor_forbidden`
+ * class on the last metres?)". Measured, it is none of those:
+ *
+ * ```
+ * A → via        REFUSED  error re-tracking track   (370 ms)
+ * via → B        OK 79.4 km                         (187 ms)
+ * A → B          OK 140.5 km                        (195 ms)
+ * via → probe 200 m at 0/90/180/270°   all OK, snap 13 m every time
+ * probe → via    at 0/90/180/270°      all OK
+ * ```
+ *
+ * The via snaps 13 m onto a `highway=track tracktype=grade4` (an abandoned
+ * railway, `Vecais dzelzceļš`) and is routable **in and out, in every
+ * direction**. There is no one-way and no forbidden class on the last metres.
+ * Nor is it an island: `via → ring point` routes at 1, 3, 5, 8, 11, 15 and
+ * 20 km on all four bearings.
+ *
+ * What it really is: **BRouter's own search is asymmetric, and it is the
+ * distance that breaks it, not the direction.** The same pair, reversed,
+ * routes:
+ *
+ * ```
+ * A  → P7   REFUSED        P7 → A   OK
+ * B  → P7   REFUSED        P7 → B   OK
+ * A  → P6   OK 66.5 km     (P6 and P7 are 400 m apart on one secondary road)
+ * A  → P6 → P7  OK         (the identical journey, with one point inserted)
+ * ```
+ *
+ * `A → via` fails at 53 km and succeeds at 11 km; every point within 600 m of
+ * the via fails from A, and a point 10 km back along the corridor routes. It
+ * is deterministic (five for five), unaffected by `alternativeidx`, `timeout`
+ * and `maxRunningTime`, and **it does not happen on BRouter's stock profiles**
+ * — `trekking`, `car-fast` and `shortest` all route `A → via` — nor is it any
+ * single option of ours (bisected across offRoad, difficulty, trails,
+ * avoidMainRoads, avoidMotorways, noSand, avoidTowns, preferForest: all
+ * refuse). It is the interaction of our cost magnitudes with BRouter's
+ * bidirectional search over a long, expensive leg: `A → P6` rides 66.5 km for
+ * a 42.5 km crow flight, and when the forward and backward searches meet, the
+ * re-tracking step cannot rebuild the track and answers 400.
+ *
+ * The fast failure is the tell. These refusals come back in 60-370 ms — this
+ * is not a search that ran out of anything, it is one that tried and gave up
+ * at once. The 209 s was never BRouter's: it was `fetchRoutePath` answering a
+ * 250 ms refusal with a 24-request nudge ring and then a segmented retry.
+ *
+ * ## So the rescue is a shift, not a ring
+ *
+ * Two attempts, in this order, and then the via goes:
+ *
+ * 1. **Move it 300 m, then 600 m, along the corridor** (towards the point
+ *    before it — the direction the refused approach came from). This is the
+ *    move with a reason behind it: the failure varies with position along the
+ *    line and not with bearing around the point, so a ring is the wrong shape
+ *    of search. Each shifted point is checked for a decent snap before it
+ *    costs a full leg, so a shift into a lake is not paid for twice.
+ * 2. **Drop the via and route the rest.** A corridor candidate with only its
+ *    exit via is still a coastal candidate, and a ride the rider can see beats
+ *    a slot spent proving that a guess was unroutable.
+ *
+ * Returns null when the budget runs out or nothing works, so the caller falls
+ * through to the nudge ring — which is right when the *rider's* endpoint is
+ * the unroutable one and our generated via was an innocent bystander.
+ */
+async function rescueGeneratedVias(
+  points: Point[],
+  generated: Set<string>,
+  profileId: string
+): Promise<RoutePath | null> {
+  const startedAt = Date.now();
+  const spent = () => Date.now() - startedAt;
+  const request = async (candidate: Point[]): Promise<RoutePath | null> => {
+    const lonlats = candidate.map(([lon, lat]) => `${lon},${lat}`).join("|");
+    try {
+      return await requestPath(
+        `${baseUrl()}/brouter?lonlats=${encodeURIComponent(lonlats)}` +
+          `&profile=${encodeURIComponent(profileId)}&alternativeidx=0&format=geojson`
+      );
+    } catch {
+      return null;
+    }
+  };
+
+  const indices = points
+    .map((point, index) => ({ point, index }))
+    .filter(({ point, index }) => index > 0 && index < points.length - 1 && generated.has(pointKey(point)))
+    .map(({ index }) => index);
+  if (!indices.length) return null;
+
+  // 1. Shift each generated via back along the corridor. The direction is
+  // towards the previous point because that is the approach the router
+  // refused; a via pulled back towards where the ride is coming from is also
+  // the one that keeps the candidate's shape.
+  //
+  // The budget is reserved for the drop below rather than spent to the last
+  // millisecond here. Measured on Liepāja → Ventspils' corridor candidates,
+  // which carry TWO generated vias: four refusals at ~600 ms each used the
+  // whole 2 s and the drop — the step that actually rescues them — never ran,
+  // so the candidate fell through to the nudge ring and cost 27 s. The shift
+  // is the nice-to-have (it keeps the candidate's shape); the drop is the one
+  // that always works, so the drop gets the guaranteed slot.
+  shifts: for (const meters of GENERATED_VIA_SHIFT_M) {
+    for (const index of indices) {
+      if (spent() > GENERATED_VIA_BUDGET_MS - DROP_RESERVE_MS) break shifts;
+      const via = points[index];
+      const towards = points[index - 1];
+      const shifted = shiftTowards(via, towards, meters);
+      const candidate = [...points];
+      candidate[index] = shifted;
+      const path = await request(candidate);
+      if (path) {
+        console.warn(
+          `brouter: generated via ${via.join(",")} could not be reached; ` +
+            `moved it ${meters} m along the corridor`
+        );
+        return path;
+      }
+    }
+  }
+
+  // 2. Drop them. Every generated via at once rather than one at a time: the
+  // budget does not stretch to a subset search, and the remaining named
+  // places still describe the ride the rider asked for.
+  const kept = points.filter((point, index) =>
+    index === 0 || index === points.length - 1 || !generated.has(pointKey(point))
+  );
+  if (kept.length >= 2 && kept.length < points.length) {
+    const path = await request(kept);
+    if (path) {
+      console.warn(
+        `brouter: dropped ${points.length - kept.length} unreachable generated via point(s); ` +
+          `routed the candidate without them`
+      );
+      return path;
+    }
+  }
+  return null;
+}
+
+/** A point moved `meters` from `from` towards `to`, along the straight line. */
+function shiftTowards(from: Point, to: Point, meters: number): Point {
+  const lonScale = 111320 * Math.cos((from[1] * Math.PI) / 180);
+  const dx = (to[0] - from[0]) * lonScale;
+  const dy = (to[1] - from[1]) * 111320;
+  const len = Math.hypot(dx, dy);
+  if (!len) return from;
+  const t = Math.min(1, meters / len);
+  return [
+    Number((from[0] + (to[0] - from[0]) * t).toFixed(7)),
+    Number((from[1] + (to[1] - from[1]) * t).toFixed(7)),
+  ];
 }
 
 /**
@@ -368,7 +642,8 @@ function offsetPoint([lon, lat]: Point, bearingDeg: number, meters: number): Poi
  */
 async function routeWithNudgedEndpoints(
   points: Point[],
-  profileId: string
+  profileId: string,
+  generated: Set<string> = new Set()
 ): Promise<RoutePath | null> {
   const last = points.length - 1;
   const request = async (candidate: Point[]) => {
@@ -408,7 +683,20 @@ async function routeWithNudgedEndpoints(
   // position or a previous ride), and interleaving the two doubles the cost
   // of the common case. Only one bearing in eight tends to work, so the
   // ordering is what keeps this affordable on the throttled public instance.
-  for (const [index, label] of [[last, "end"], [0, "start"]] as const) {
+  // Backlog item 20. A place the RIDER named is nudged wherever it sits in the
+  // list, not only at the ends. Pressing "Pievienot" on Satezeles pilskalns
+  // (24.8707, 57.17161) put it in the middle of a Sigulda round trip and the
+  // whole request 422'd, because this ring only ever moved index 0 and index
+  // `last` — the same Ērgļi footway case as a destination, and the rider
+  // cannot tell the difference between "my stop is on a footway" and "the app
+  // is broken". Generated vias are excluded: they had their own cheap rescue
+  // above and must never buy 24 requests here.
+  const namedMiddle = points
+    .map((point, index) => ({ point, index }))
+    .filter(({ point, index }) => index > 0 && index < last && !generated.has(pointKey(point)))
+    .map(({ index }) => [index, `via ${index}`] as const);
+
+  for (const [index, label] of [[last, "end"] as const, [0, "start"] as const, ...namedMiddle]) {
     for (const meters of NUDGE_RADII_M) {
       for (const bearing of NUDGE_BEARINGS_DEG) {
         const moved = offsetPoint(points[index], bearing, meters);

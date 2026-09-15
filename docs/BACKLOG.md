@@ -667,7 +667,33 @@ the route through it — so suggestions are how stops come into a ride, not only
 the form. Depends on the POI dataset (Baltics today; Europe is item 8), and on
 the loop machinery already planning through anchors.
 
-## 20. A suggested place that cannot be routed to
+## 20. ~~A suggested place that cannot be routed to~~ — DONE 2026-09-15
+
+**Status, 2026-09-15 (item 11g):** fixed and measured in process. Satezeles
+pilskalns now routes on a Sigulda round trip — 36.6 km in 3.4 s, the stop
+moved **400 m** to routable ground — and Ķeizarskats, Lojas pilskalns and
+Gūtmaņa ala are unchanged at 0.1 s each. Two separate bugs were in the way:
+
+- BRouter answers **`target island detected`** for this point, not
+  `re-tracking track`, so it took the island branch and that branch *deleted*
+  the via. A named stop is now nudged there instead, and the request fails
+  honestly if nothing within the ring routes — coming back with a ride that
+  silently skips the place the rider pressed "Pievienot" on is worse than a
+  refusal.
+- `maxDrops` was `points.length - 3`, which is zero for a round trip of
+  start + one stop + start — so the old code threw before it could do
+  anything at all. It is `- 2` now: dropping the only via of a 3-point list
+  leaves a valid 2-point route.
+
+**The bound, as asked:** a rider-named via gets the existing ring and nothing
+new — `NUDGE_RADII_M` (400/700/1200 m) x 8 bearings, stopping at the first
+hit, and 1200 m is still the point at which Mopik would rather say no than
+move the rider's place. The item-7 budget holds because the ring is only ever
+run for a *named* point: generated vias take item 11g's bounded fallback
+(~2 s, no ring), which is what made the ring affordable here in the first
+place. Worst case for a named via is unchanged from what shipped for
+destinations on 2026-09-14.
+
 
 Found 2026-09-14 while wiring "Pievienot" on the saved-ride page. Pressing
 it on Satezeles pilskalns (24.8707, 57.17161) gives a 422 from

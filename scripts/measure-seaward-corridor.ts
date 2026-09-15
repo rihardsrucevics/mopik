@@ -32,7 +32,11 @@ type Row = { variant: string; km: number; rep: number; coastKm: number; rank: nu
 
 async function measure(variant: string, points: [number, number][]): Promise<Row | null> {
   try {
-    const path = await fetchRoutePath({ points, profileOptions: OPTIONS });
+    // Item 11g: every intermediate point here is a corridor anchor this code
+    // computed, never a place the rider named, so they take the bounded
+    // fallback rather than the endpoint-nudge ring.
+    const generatedViaIndices = points.map((_, i) => i).filter((i) => i > 0 && i < points.length - 1);
+    const path = await fetchRoutePath({ points, profileOptions: OPTIONS, generatedViaIndices });
     const c = classifyRoute(path);
     const km = path.distanceMeters / 1000;
     const rank = loopRank(INTENT, {

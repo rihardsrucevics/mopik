@@ -1,5 +1,229 @@
 # Mopik — progress log
 
+## 2026-09-15 — Item 11g: a refused leg must not be defended like a rider's own place
+
+Item 11e left this as the next job and named a cost: six candidates on
+Liepāja → Ventspils failing on **dry land** and burning 209 s of a 50 s budget.
+It also left a diagnosis, and **the diagnosis was wrong**. Both are below,
+because the wrong one is the more useful lesson.
+
+### 1. What 11e thought, and what is actually happening
+
+11e's reading was an approach direction: "the via snaps to a road (0–13 m) but
+the way it snaps onto cannot be approached from A's side (one-way? a
+`motor_forbidden` class on the last metres? a way that is fine to leave but not
+to enter)". Measured on the very via it names — `via-0.7--1`, 21.421589,
+56.921915 — none of that is true:
+
+```
+A → via                              REFUSED  error re-tracking track  (370 ms)
+via → B                              OK 79.4 km                        (187 ms)
+A → B                                OK 140.5 km                       (195 ms)
+via → probe 200 m at 0/90/180/270°   all OK, snapping 13 m every time
+probe → via at 0/90/180/270°         all OK
+```
+
+It snaps 13 m onto a `highway=track tracktype=grade4` — an abandoned railway,
+`Vecais dzelzceļš` — and it is routable **in and out, in every direction**.
+There is no one-way and no forbidden class on the last metres. It is not a
+routing island either: `via → ring point` routes at 1, 3, 5, 8, 11, 15 and
+20 km on all four bearings.
+
+**What it really is: BRouter's own search is asymmetric, and it is the
+distance that breaks it, not the direction.** The same pairs, reversed, route:
+
+```
+A → P7   REFUSED          P7 → A   OK
+B → P7   REFUSED          P7 → B   OK
+A → P6   OK 66.5 km       (P6 and P7 are 400 m apart on one secondary road)
+A → P6 → P7   OK          (the identical journey, one point inserted)
+```
+
+`A → via` fails at 53 km and succeeds from 11 km. Every point within 600 m of
+the via fails from A, in all eight bearings, at 300 m and 600 m — so a *ring*
+around the point is the wrong shape of search entirely, while a point 10 km
+back along the corridor routes fine.
+
+It is deterministic (five requests out of five), unaffected by
+`alternativeidx`, `timeout` and `maxRunningTime`, and:
+
+- **it does not happen on BRouter's stock profiles** — `trekking` (66.5 km),
+  `car-fast` (75.3 km) and `shortest` (59.7 km) all route `A → via`;
+- **it is not any single option of ours** — bisected across `offRoad`,
+  `difficulty`, `trails`, `avoidMainRoads`, `avoidMotorways`, `noSand`,
+  `avoidTowns` and `preferForest`: every one of them still refuses.
+
+So it is the interaction of our cost magnitudes with BRouter's bidirectional
+search over a long, expensive leg. `A → P6` rides 66.5 km for a 42.5 km crow
+flight; when the forward and backward searches meet, the re-tracking step
+cannot rebuild the track and answers 400.
+
+**The fast failure is the tell, and it is the whole point.** These refusals come
+back in **60–370 ms**. This was never a slow search — it was `fetchRoutePath`
+answering a quarter-second refusal with a 24-request endpoint-nudge ring and
+then a segmented retry. The 209 s was ours, not BRouter's.
+
+### 2. The fix: whose point is it?
+
+A refused leg is now rescued differently depending on **who put the point
+there**, which is a distinction the code did not previously draw.
+
+- **The rider's own places** — start, destination, a stop typed into the form
+  or added from a suggestion — keep the full ring. Moving them is the only
+  alternative to telling the rider their ride is impossible, so 24 requests is
+  a fair price. Unchanged from what shipped on 2026-09-14.
+- **A via this code generated** — a seaward anchor, a perpendicular corridor
+  offset — is a *guess at a nice shape*, and gets `GENERATED_VIA_BUDGET_MS`
+  (2 s) of cheap alternatives instead:
+  1. **shift it 300 m, then 600 m along the corridor** towards the point
+     before it. Along the line, never a ring around the point — that is what
+     the bisection above says the failure varies with;
+  2. **drop it and route the rest.** A corridor candidate with only its exit
+     via is still a coastal candidate.
+
+`fetchRoutePath` takes a `generatedViaIndices` argument; omitting it means
+every point is the rider's, which is the old behaviour. `buildCandidates`
+derives it by elimination — anything that is not `start`, a `requiredVia` or
+the destination was put there by the shapes.
+
+**`DROP_RESERVE_MS` (700 ms) is not a tuning knob, it is a bug fix found by
+measuring.** Liepāja → Ventspils' corridor candidates carry *two* generated
+vias, so the shift attempts are 2 x 2 = 4 requests; at ~600 ms a refusal they
+ate the entire 2 s and the drop — the step that actually rescues them — never
+ran. The candidate fell through to the ring and cost **27.8 s**. With the
+reserve it costs **2.5 s**. The shift is the nice-to-have; the drop always
+works, so the drop gets the guaranteed slot.
+
+### 3. Before / after
+
+In process against `brouter.mopik.eu`, Adventure preset, sequentially
+(`npx tsx scripts/measure-seaward.ts`). BEFORE is the same checkout with
+`MOPIK_NO_VIA_RESCUE=1`, so the two columns differ only in this change.
+
+| ride | | pool | routed | failed | **fail s** | ok s | **total s** |
+|---|---|---:|---:|---:|---:|---:|---:|
+| **Liepāja → Ventspils** | before | 12 | 9 | **6** | **130.9** | 3.2 | **136.2** |
+| | **after** | 12 | **15** | **0** | **0** | 20.0 | **21.9** |
+| Ventspils → Kolka | before | 13 | 12 | 4 | 49.8 | 2.8 | 53.2 |
+| | **after** | 13 | **16** | **0** | **0** | 11.7 | **12.4** |
+| Rīga → Ainaži | before | 11 | 14 | 0 | 0 | 46.4 | 47.1 |
+| | **after** | 11 | 14 | 0 | 0 | 41.9 | **42.6** |
+| *Cēsis → Madona (inland)* | before | 17 | 17 | 0 | 0 | 10.0 | 10.0 |
+| | **after** | **17** | **17** | **0** | **0** | 10.4 | 10.4 |
+
+**Liepāja → Ventspils fits the budget: 136.2 s → 21.9 s with a full pool and
+not one failure.** 11e predicted 8.3 s; the difference is that the six rescued
+candidates now *route* (15 routed against 9) and their legs are real work, not
+that anything is being wasted. Zero seconds are spent on failures anywhere.
+
+**The winner and the best coastal candidate are unchanged on every ride:**
+
+| ride | winner | km | rep % | coast <1 km | rank |
+|---|---|---:|---:|---:|---:|
+| Liepāja → Ventspils | `via-0-1` | 140.5 | 0 | 15.4 | −2.16 |
+| Ventspils → Kolka | `sea-0.75` | 111.8 | 0 | 44.5 | 0.93 |
+| Rīga → Ainaži | `sea-0.25` | 250.7 | 1 | 13.1 | 10.21 |
+| *Cēsis → Madona* | `via-0-1` | 126.3 | 0 | 0 | 36.83 |
+
+Identical to 11e's and 11f's published picks, to the decimal. The best coastal
+candidate per ride is likewise unchanged (`sea-0.5` 28.9 km, `sea-0.75` 44.5,
+`zig-1.2` 32.5). **This change buys time and costs nothing.**
+
+**The inland control is byte-identical**, outcome for outcome: Cēsis → Madona's
+17 candidates compare equal under `JSON.stringify` ignoring wall-clock, and its
+pick is still `via-0-1`, 0 coastal km, rank 36.83.
+
+One route did change, and it changed for the better. Rīga → Ainaži's `zig-0.7`
+used to be rescued by the *segmented retry*, which stitches arbitrary pieces:
+
+| | km | rep % | coast <1 km | **shore path km** | minutes | seconds |
+|---|---:|---:|---:|---:|---:|---:|
+| before | 287.6 | **10** | 31.0 | **14.02** | 613 | 27.8 |
+| **after** | **208.1** | **0** | 11.2 | **3.66** | 422 | **8.6** |
+
+Three generated vias are dropped and the leg is searched properly instead of
+assembled. 79 km shorter, 10 % → 0 % repeated, and 14.0 → 3.7 km of shore path
+— the number item 11a spent a day on. It ranks 16.77 → 15.86 and is still not
+the pick.
+
+### 4. The 11f workaround stays, and here is the measurement
+
+Item 11f added a fourth, wider `CORRIDOR_PAIRS` entry `[0.25, 0.85]` as an
+explicit workaround for this bug, to be revisited once it was fixed. **It is
+still needed.** The fix makes the bad entries *cheap*, not *routable* — on
+Liepāja → Ventspils the 0.35 and 0.45 entries are still refused and now
+collapse to the inland line in ~2.5 s instead of costing 27.8 s:
+
+| candidate | km | rep % | coast <1 km | rank | |
+|---|---:|---:|---:|---:|---|
+| `seaCorridor-0.2-0.55` | 171.5 | 8 | 21.3 | 13.95 | both vias kept |
+| `seaCorridor-0.35-0.75` | 140.5 | 0 | 15.4 | −2.16 | **both vias dropped** |
+| `seaCorridor-0.45-0.9` | 140.5 | 0 | 15.4 | −2.16 | **both vias dropped** |
+| `seaCorridor-0.25-0.85` | **159.2** | **3** | 15.4 | **1.66** | both vias kept |
+
+`[0.25, 0.85]` is the only pair besides `0.2-0.55` that survives intact on this
+ride, and it is the one 11f measured at 3 % repeats. Removing it would leave
+the ride one corridor candidate. The 13 coastal km 11f hoped to recover are
+**not** recovered: that needed the entries themselves to route, and they do not.
+
+### 5. Backlog item 20, fixed on the way (it is the same split)
+
+A suggestion added as a via could 422 the whole request — Satezeles pilskalns
+(24.8707, 57.17161) on a Sigulda round trip, while Ķeizarskats, Lojas pilskalns
+and Gūtmaņa ala routed fine. It is the *named* half of the same distinction,
+and two separate bugs were in the way:
+
+- **BRouter answers `target island detected` for this point, not
+  `re-tracking track`**, so it took the island branch — and that branch
+  *deleted* the via. A named stop is now nudged there instead, and the request
+  fails honestly if nothing in the ring routes. Returning a ride that silently
+  skips the place the rider pressed "Pievienot" on is worse than a refusal.
+- **`maxDrops` was `points.length - 3`**, which is **zero** for a round trip of
+  start + one stop + start — the exact shape of this bug — so the old code
+  threw before it could do anything at all. It is `- 2` now: dropping the only
+  via of a 3-point list leaves a valid 2-point route. Found by a test, not in
+  the wild.
+
+Measured in process (`npx tsx scripts/verify-11g.ts`):
+
+| via | before | after |
+|---|---|---|
+| **Satezeles pilskalns** | **422** | **OK 36.6 km in 3.4 s, stop moved 400 m** |
+| Ķeizarskats | OK 7.5 km | OK 7.5 km in 0.1 s |
+| Lojas pilskalns | OK 5.5 km | OK 5.5 km in 0.1 s |
+| Gūtmaņa ala | OK 9.4 km | OK 9.4 km in 0.1 s |
+
+**The bound on a named via's ring** is the existing `NUDGE_RADII_M`
+(400/700/1200 m) x 8 bearings, first hit wins — nothing new, and 1200 m is
+still where Mopik would rather say no than move the rider's place somewhere
+they did not ask for. The item-7 budget holds because the ring now runs *only*
+for named points: generated vias take the 2 s fallback, which is what made the
+ring affordable at all. A named via's worst case is unchanged from what shipped
+for destinations on 2026-09-14.
+
+### 6. Where it lives
+
+- `lib/routing/brouter.ts` — `generatedViaIndices` on `fetchRoutePath`,
+  `rescueGeneratedVias`, `GENERATED_VIA_BUDGET_MS`, `GENERATED_VIA_SHIFT_M`,
+  `DROP_RESERVE_MS`, the named-via extension of the nudge ring, and the
+  `maxDrops` off-by-one. `MOPIK_NO_VIA_RESCUE=1` restores the old behaviour so
+  the harness can produce a BEFORE column from the same checkout; nothing in
+  the app reads it.
+- `app/api/generate-route/route.ts` — `buildCandidates`' `route()` declares
+  which points it invented, by elimination against the rider's own places.
+- `lib/routing/seaward.ts` — **no diff.** `CORRIDOR_PAIRS` keeps its fourth
+  entry, for the reason measured in §4.
+- `scripts/via-rescue.test.ts` — 6 tests, BRouter stubbed: what is being
+  pinned is *which requests we make*, which a live server cannot show.
+- `scripts/probe-approach.ts` — the §1 diagnosis, reproducible.
+- `scripts/verify-11g.ts` — the §5 table.
+- `scripts/measure-seaward.ts`, `scripts/measure-seaward-corridor.ts` — both
+  now declare their generated vias, so they measure what ships.
+
+`npx tsc --noEmit` clean, `npx eslint lib scripts` clean but for the twelve
+pre-existing `no-explicit-any` errors in the shelved `scripts/lvm/`, and all
+**190** tests pass.
+
 ## 2026-09-15 — Item 11f: the coastal candidate must not retrace either
 
 The rider, on item 11d's finding that the shore road costs 10 % repeated roads:
