@@ -249,16 +249,21 @@ body {
   border-radius: 16px;
   border: 1px solid #e7e5e4;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
-  padding: 12px 14px;
-  font-size: 12px;
-  line-height: 1.5;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.4;
   color: #44403c;
   max-width: 260px;
 }
+/* The headline. `margin-bottom` is gone on purpose: the cards lay their rows
+   out with `gap`, and a margin here added a second, unequal space under the
+   first line only — visible as soon as the card shrank to a headline plus one
+   warning. The 2026-09-15 compaction: the segment card is a headline ("Grants
+   meža ceļš · 5,7 km") and then only what that line does not already say, so
+   the vertical rhythm has to be one value rather than two. */
 .maplibregl-popup-content strong {
   display: block;
-  margin-bottom: 4px;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 600;
   color: #1c1917;
 }

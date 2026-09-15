@@ -425,9 +425,22 @@ export type MessageKey =
   // compound at all — it is named by its surface alone ("Asfalts").
   | "segClassTrack"
   | "segClassTrail"
-  | "segGrade"
   | "segOnTet"
   | "segRough"
+  // The card's headline: "{name} · {km}" and, for a rough track, the
+  // adjective in front of it. The raw OSM `tracktype` ("grade2") is never
+  // shown — it means nothing to a rider. grade1–2 say nothing extra, grade3
+  // adds `segGradeMixed` as a small second line, grade4–5 put `segRoughAdjM`
+  // / `segRoughAdjF` at the head of the compound (Latvian and Lithuanian
+  // inflect it for the class noun's gender, exactly as the surface modifiers
+  // above do). `segGradeWhy*` is the one muted line of explanation the card
+  // keeps for grade3–5.
+  | "segHeadline"
+  | "segRoughAdjM"
+  | "segRoughAdjF"
+  | "segGradeMixed"
+  | "segGradeWhyMixed"
+  | "segGradeWhyRough"
   /** The gate row inside the map's segment card. `{n}` is the count on that
    *  stretch — what it means for the riding, which the panel's number cannot
    *  say: the gate may have to be opened, or it may turn the ride back. */
@@ -850,7 +863,12 @@ const lv: Messages = {
   segSurfaceUnknown: "Nezināms segums ·",
   segClassTrack: "meža ceļš",
   segClassTrail: "taciņa",
-  segGrade: "Grūtība",
+  segHeadline: "{name} · {km} km",
+  segRoughAdjM: "Grūts",
+  segRoughAdjF: "Grūta",
+  segGradeMixed: "Jaukts segums",
+  segGradeWhyMixed: "Cietas un mīkstas vietas mijas.",
+  segGradeWhyRough: "Pārsvarā mīksts segums: zeme, zāle vai smiltis.",
   segOnTet: "Pa TET",
   segRough: "Grūts meža ceļš",
   segGates: "{n} vārti šajā posmā — var būt jāatver vai jāgriežas.",
@@ -1237,7 +1255,16 @@ const lt: Messages = {
   segSurfaceUnknown: "Nežinoma danga ·",
   segClassTrack: "miško kelias",
   segClassTrail: "takelis",
-  segGrade: "Sudėtingumas",
+  segHeadline: "{name} · {km} km",
+  segRoughAdjM: "Sunkus",
+  // "takelis" is masculine in Lithuanian even though Latvian's "taciņa" is
+  // feminine, so the F key carries the masculine form — the same thing
+  // `segSurfaceAsphaltF` already does here. The gender belongs to each
+  // language's own noun, not to the class.
+  segRoughAdjF: "Sunkus",
+  segGradeMixed: "Mišri danga",
+  segGradeWhyMixed: "Kietos ir minkštos atkarpos kaitaliojasi.",
+  segGradeWhyRough: "Daugiausia minkšta danga: žemė, žolė ar smėlis.",
   segOnTet: "TET keliu",
   segRough: "Sunkus miško kelias",
   segGates: "{n} vartai šioje atkarpoje — gali tekti atidaryti arba suktis atgal.",
@@ -1624,7 +1651,12 @@ const et: Messages = {
   segSurfaceUnknown: "Teadmata kate ·",
   segClassTrack: "metsatee",
   segClassTrail: "rada",
-  segGrade: "Raskus",
+  segHeadline: "{name} · {km} km",
+  segRoughAdjM: "Raske",
+  segRoughAdjF: "Raske",
+  segGradeMixed: "Segu kate",
+  segGradeWhyMixed: "Kõva ja pehme kate vahelduvad.",
+  segGradeWhyRough: "Valdavalt pehme kate: muld, rohi või liiv.",
   segOnTet: "TET-i mööda",
   segRough: "Raske metsatee",
   segGates: "{n} väravat sellel lõigul — võib olla vaja avada või tagasi pöörata.",
@@ -2009,7 +2041,12 @@ const en: Messages = {
   segSurfaceUnknown: "Unknown surface ·",
   segClassTrack: "forest track",
   segClassTrail: "trail",
-  segGrade: "Difficulty",
+  segHeadline: "{name} · {km} km",
+  segRoughAdjM: "Rough",
+  segRoughAdjF: "Rough",
+  segGradeMixed: "Mixed surface",
+  segGradeWhyMixed: "Hard and soft stretches alternate.",
+  segGradeWhyRough: "Mostly soft surface: earth, grass or sand.",
   segOnTet: "On the TET",
   segRough: "Rough forest track",
   segGates: "{n} gates on this stretch — you may have to open one or turn back.",

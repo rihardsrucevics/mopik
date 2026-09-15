@@ -564,6 +564,17 @@ const WARNING_ICON_PX = 18;
 const WARNING_EMOJI_FONT_PX = 15;
 
 /**
+ * The space between one line of a map card and the next.
+ *
+ * One value, applied as a `gap` on the card's own column rather than as a
+ * margin per row — the rider asked for the cards to be "much more compact",
+ * and a card built from margins gains a different space wherever a row is
+ * dropped. 4 px against the old 6–8 px of margins: at 13 px type the rows
+ * still read as separate lines, and a two-line card is 12 px shorter.
+ */
+const CARD_ROW_GAP_PX = 4;
+
+/**
  * One icon as an HTML string, or "" for a kind that has no icon.
  *
  * Emoji are text, so this is only a sized span — but it still goes through one
@@ -973,6 +984,71 @@ const segmentHeading = (m: Messages, roadClass?: string, surface?: string): stri
   return fi(m.segCompound, { surface: mod, class: cls });
 };
 
+/**
+ * `tracktype` in words, or nothing.
+ *
+ * OSM's five grades describe how much of the surface is bound: grade1 solid,
+ * grade2 mostly solid, grade3 an even mix, grade4 mostly soft, grade5
+ * unimproved earth or grass. A rider needs two of those distinctions and not
+ * five — a normal track, one that alternates, and one that is mostly soft —
+ * so the scale collapses to three buckets and the raw "grade2" is never
+ * shown. It said nothing to the rider it was written for, which is what
+ * started this rework.
+ */
+type GradeBucket = "normal" | "mixed" | "rough";
+
+const gradeBucket = (trackGrade?: string): GradeBucket =>
+  trackGrade === "grade4" || trackGrade === "grade5" ? "rough"
+  : trackGrade === "grade3" ? "mixed"
+  : "normal";
+
+/**
+ * A distance in the rider's own notation: "5,7 km" in lv/lt/et, "5.7 km" in
+ * English.
+ *
+ * `toLocaleString` with the UI locale rather than a hand-rolled comma swap —
+ * the locale is already the browser's own tag, and one decimal is what the
+ * panel shows for a figure this size (`Math.round(m / 100) / 10`), kept here
+ * as the same arithmetic so the card and the panel cannot disagree by a
+ * rounding step. `minimumFractionDigits` is not set: a round 6 km reads "6",
+ * not "6,0".
+ */
+const kmLabel = (locale: UiLocale, meters: number): string =>
+  (Math.round(meters / 100) / 10).toLocaleString(locale, { maximumFractionDigits: 1 });
+
+/**
+ * The whole first line of the segment card: what the stretch is, and how long.
+ *
+ * The rider's correction, with his own screenshot in hand: the card said
+ * "Grants meža ceļš", then repeated the surface in a SEGUMS row, then offered
+ * "grade2" under GRŪTĪBA. Three rows for one fact and one of them unreadable.
+ * Now the compound and the distance are one headline and the rows are gone —
+ * an asphalt stretch with no warnings is a single line, "Asfalts · 2,5 km".
+ *
+ * Roughness is folded in rather than listed: grade4–5 makes it "Grūts grants
+ * meža ceļš", which is the panel's own wording for `roughTrackKm`, and the
+ * adjective agrees with the class noun the same way the surface modifier
+ * does. grade1–2 change nothing — a track that rides like a track needs no
+ * adjective — and grade3 gets a second line instead, because "jaukts segums"
+ * qualifies the stretch rather than renaming it.
+ */
+const segmentHeadline = (
+  m: Messages,
+  locale: UiLocale,
+  props: SegmentProps,
+  meters: number
+): string => {
+  const name = segmentHeading(m, props.roadClass, props.surface);
+  const rough = gradeBucket(props.trackGrade) === "rough";
+  // Only a named class can take the adjective: "Grūts asfalts" is not a thing
+  // a rider would say, and a plain road never carries a tracktype anyway.
+  const named = props.roadClass === "track" || props.roadClass === "trail";
+  const full = rough && named
+    ? `${props.roadClass === "trail" ? m.segRoughAdjF : m.segRoughAdjM} ${name.charAt(0).toLowerCase()}${name.slice(1)}`
+    : name;
+  return fi(m.segHeadline, { name: full, km: kmLabel(locale, meters) });
+};
+
 /** Metres along a line, for the length of a run the API did not measure. */
 function lineMeters(coordinates: number[][]): number {
   let total = 0;
@@ -993,54 +1069,54 @@ const esc = (value: string): string =>
 /**
  * What one stretch of road is, as a small card.
  *
- * The rider asked to be able to tap a segment and see its facts. Everything
- * here is already known per feature — the class, the surface, the grade, the
- * length and the two warning flags — and the panel's own vocabulary is reused
- * so the card and the numbers above the map agree on what a "Meža ceļš" is.
+ * The rider asked to be able to tap a segment and see its facts; then, with
+ * the card in front of him, he asked for it to stop saying the same fact
+ * three times. It used to head itself with the compound and then list
+ * Distance, Segums (the compound's own first word again) and Grūtība with the
+ * raw OSM "grade2" in it. Now the first line carries the compound *and* the
+ * distance, roughness is in the words of that line rather than in a row, and
+ * everything below it is something the line does not already say: the
+ * warnings, the gates, the TET.
+ *
+ * So an ordinary asphalt stretch is one line and a rough unverified trail is
+ * four — the card is as long as the stretch is interesting, which is what a
+ * rider tapping a line wants to find out.
  */
 function segmentInfoHtml(
   m: Messages,
+  locale: UiLocale,
   props: SegmentProps,
   meters: number
 ): string {
-  const rows: string[] = [];
-  const row = (label: string, value: string) =>
-    rows.push(
-      `<div style="display:flex;gap:8px;justify-content:space-between">` +
-      `<span style="color:#6b7280">${esc(label)}</span>` +
-      `<span style="text-align:right">${esc(value)}</span></div>`
-    );
+  const grade = gradeBucket(props.trackGrade);
 
-  row(m.resDistance, `${Math.round(meters / 100) / 10} km`);
-  row(m.resSurfaceHeading, surfaceLabel(m, props.surface));
-  // The raw OSM value only when it says something the label above does not.
-  if (props.trackGrade) row(m.segGrade, props.trackGrade);
-
-  // The same list the badges are built from — including the kinds the map
-  // does not badge (`BADGE_KINDS`), because a card is a list and can say
-  // everything the run carries. The icon markup is ours; only the words that
-  // come from a tag or a translation are escaped.
+  // The same list the badges are built from, minus `rough`: the headline
+  // already says "Grūts …" for grade4–5, and a row repeating it is exactly
+  // the duplication this card was rebuilt to remove. `warningsFor` keeps the
+  // entry because the hover label and the result panel still list it.
   //
-  // This card is now the ONLY thing a badge opens, so it also carries the
+  // The icon markup is ours; only the words that come from a tag or a
+  // translation are escaped.
+  //
+  // This card is the ONLY thing a badge opens, so it also carries the
   // explanation the badge's own popup used to show. A warning with a detail
   // paragraph becomes a `<details>`: one line by default, the full text on
   // tap. `<details>` rather than a click handler because the popup's HTML is
   // set as a string and has no React or listeners of its own.
-  const flags = warningsFor(m, props).map((w) => {
-    // Rough track has no icon (see `WARNING_EMOJI`) — its row is words only.
-    // The text still starts at the icon column's edge so the rows line up:
-    // an empty 18 px cell, not a missing one.
-    const icon = warningIcon(w.kind);
-    const head = `${icon || `<span style="display:inline-block;width:${WARNING_ICON_PX}px;flex:none"></span>`}<span>${esc(w.title)}</span>`;
-    if (!w.detail) return `<div style="display:flex;align-items:center;gap:6px">${head}</div>`;
-    return (
-      `<details class="mopik-warn" style="margin:0">` +
-      `<summary style="display:flex;align-items:center;gap:6px;cursor:pointer;list-style:none">` +
-      `${head}</summary>` +
-      `<div style="margin:2px 0 0 24px;color:#6b7280">${esc(w.detail)}</div>` +
-      `</details>`
-    );
-  });
+  const flags = warningsFor(m, props)
+    .filter((w) => w.kind !== "rough")
+    .map((w) => {
+      const icon = warningIcon(w.kind);
+      const head = `${icon || `<span style="display:inline-block;width:${WARNING_ICON_PX}px;flex:none"></span>`}<span>${esc(w.title)}</span>`;
+      if (!w.detail) return `<div style="display:flex;align-items:center;gap:6px">${head}</div>`;
+      return (
+        `<details class="mopik-warn" style="margin:0">` +
+        `<summary style="display:flex;align-items:center;gap:6px;cursor:pointer;list-style:none">` +
+        `${head}</summary>` +
+        `<div style="margin:2px 0 0 24px;color:#6b7280">${esc(w.detail)}</div>` +
+        `</details>`
+      );
+    });
   // Gates: a row of its own rather than a `warningsFor` entry, because it is
   // not a warning about the stretch — it is a count of points on it, and the
   // line says what that means for the riding, which the panel's bare number
@@ -1065,18 +1141,31 @@ function segmentInfoHtml(
   }
 
   return (
-    `<div style="font-size:12px;line-height:1.5;min-width:170px">` +
+    `<div style="font-size:13px;line-height:1.4;min-width:150px;` +
+    `display:flex;flex-direction:column;gap:${CARD_ROW_GAP_PX}px">` +
     // Safari keeps its own disclosure triangle on a `<summary>` unless the
     // `-webkit-details-marker` pseudo-element is hidden, and a pseudo-element
     // cannot be set from an inline style. The rider is on an iPhone, so the
     // rule ships with the card rather than in the global sheet, where a popup
     // this file builds as a string would be the only thing using it.
     `<style>.mopik-warn>summary::-webkit-details-marker{display:none}</style>` +
-    `<strong style="display:block;padding-right:24px;margin-bottom:4px">` +
-    `${esc(segmentHeading(m, props.roadClass, props.surface))}</strong>` +
-    rows.join("") +
+    `<strong style="display:block;padding-right:24px;font-size:15px;font-weight:600">` +
+    `${esc(segmentHeadline(m, locale, props, meters))}</strong>` +
+    // grade3 only: "an even mix of hard and soft" is not a name for the
+    // stretch, so it sits under the headline instead of inside it.
+    (grade === "mixed"
+      ? `<div style="color:#6b7280">${esc(m.segGradeMixed)}</div>`
+      : "") +
+    // One muted sentence saying what the grade means on the ground — kept for
+    // grade3–5, where the rider has something to decide, and absent for a
+    // normal track, where it would only be noise.
+    (grade !== "normal"
+      ? `<div style="color:#9ca3af;font-size:12px">` +
+        `${esc(grade === "rough" ? m.segGradeWhyRough : m.segGradeWhyMixed)}</div>`
+      : "") +
     (flags.length
-      ? `<div style="margin-top:6px;padding-top:6px;border-top:1px solid #ececf0">` +
+      ? `<div style="margin-top:2px;padding-top:6px;border-top:1px solid #ececf0;` +
+        `display:flex;flex-direction:column;gap:${CARD_ROW_GAP_PX}px">` +
         // Each row already carries its own wrapper (a plain div, or a
         // `<details>` when the warning has an explanation to expand).
         flags.join("") +
@@ -1272,17 +1361,19 @@ function stopInfoHtml(m: Messages, stop: { label: string; kind?: string; detail?
   // correction: a sight is not a stop, and calling both by the stop's word
   // made the list of what the ride passes read as a list of errands.
   const what = stop.category ? m.resSight : m.mapStop;
+  // The kind goes on a muted line of its own rather than in a labelled row.
+  // "Apskates objekts   pilsdrupas" was a label and a value that say the same
+  // kind of thing twice; "Apskates objekts · pilsdrupas" is one line, and the
+  // segment card's compaction would otherwise stop at the segment card.
+  const line = stop.kind ? `${what} · ${stop.kind}` : what;
   return (
-    `<div style="font-size:12px;line-height:1.5;min-width:150px">` +
-    `<strong style="display:block;padding-right:24px;margin-bottom:4px">` +
+    `<div style="font-size:13px;line-height:1.4;min-width:150px;` +
+    `display:flex;flex-direction:column;gap:${CARD_ROW_GAP_PX}px">` +
+    `<strong style="display:block;padding-right:24px;font-size:15px;font-weight:600">` +
     `${esc(stop.label)}</strong>` +
-    (stop.kind
-      ? `<div style="display:flex;gap:8px;justify-content:space-between">` +
-        `<span style="color:#6b7280">${esc(what)}</span>` +
-        `<span style="text-align:right">${esc(stop.kind)}</span></div>`
-      : `<div style="color:#6b7280">${esc(what)}</div>`) +
+    `<div style="color:#6b7280;font-size:12px">${esc(line)}</div>` +
     (stop.detail
-      ? `<div style="margin-top:6px;padding-top:6px;border-top:1px solid #ececf0;color:#6b7280">` +
+      ? `<div style="margin-top:2px;padding-top:6px;border-top:1px solid #ececf0;color:#6b7280">` +
         `${esc(stop.detail)}</div>`
       : "") +
     `</div>`
@@ -1307,13 +1398,15 @@ function focusInfoHtml(
 ): string {
   const detour = place.detour ?? null;
   return (
-    `<div style="font-size:12px;line-height:1.5;min-width:150px">` +
-    `<strong style="display:block;padding-right:24px;margin-bottom:4px">` +
+    `<div style="font-size:13px;line-height:1.4;min-width:150px;` +
+    `display:flex;flex-direction:column;gap:${CARD_ROW_GAP_PX}px">` +
+    `<strong style="display:block;padding-right:24px;font-size:15px;font-weight:600">` +
     `${esc(place.label)}</strong>` +
+    // The kind as a muted line, not a "Veids ——— pilsdrupas" row: the label
+    // says nothing the word beside it does not, and the stop card next to it
+    // was compacted the same way.
     (place.kind
-      ? `<div style="display:flex;gap:8px;justify-content:space-between">` +
-        `<span style="color:#6b7280">${esc(m.resPoiKind)}</span>` +
-        `<span style="text-align:right">${esc(place.kind)}</span></div>`
+      ? `<div style="color:#6b7280;font-size:12px">${esc(place.kind)}</div>`
       : "") +
     // The same delta the row shows, in the same plain colour: the map card is
     // a second view of one offer, not a shorter one.
@@ -1324,11 +1417,11 @@ function focusInfoHtml(
         `${esc(detour.delta)}${detour.note ? ` <span style="color:#6b7280">${esc(detour.note)}</span>` : ""}` +
         `</span></div>`
       : detour?.note
-        ? `<div style="color:#6b7280;margin-top:2px">${esc(detour.note)}</div>`
+        ? `<div style="color:#6b7280">${esc(detour.note)}</div>`
         : "") +
     // The row's Vairāk sentence. The card has no expansion of its own, so the
     // words that make "205 m" and "+17,0 km" agree have to be on it.
-    (detour?.why ? `<div style="color:#6b7280;margin-top:4px">${esc(detour.why)}</div>` : "") +
+    (detour?.why ? `<div style="color:#6b7280;font-size:12px">${esc(detour.why)}</div>` : "") +
     // The rider's own question — "kā man šos ērti pievienot maršrutam?" — is
     // answered here rather than only back in the list: having flown to a place
     // and decided, the next tap should be the one that does it. `data-add` is
@@ -1340,7 +1433,7 @@ function focusInfoHtml(
     // exactly as it is in the list.
     (canAdd && detour?.canPick !== false
       ? `<button type="button" data-add="1" ` +
-        `style="margin-top:8px;width:100%;display:flex;align-items:center;` +
+        `style="margin-top:4px;width:100%;display:flex;align-items:center;` +
         `justify-content:center;gap:4px;height:30px;border-radius:15px;` +
         // Ticked reads as filled, unticked as an outline — the same pair the
         // list's own checkbox uses, so one glance says which state this is.
@@ -2244,7 +2337,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
       infoPopupRef.current?.remove();
       infoPopupRef.current = new maplibregl.Popup({ offset: 12, maxWidth: "260px", closeButton: true })
         .setLngLat(lngLat)
-        .setHTML(segmentInfoHtml(m, props, meters))
+        .setHTML(segmentInfoHtml(m, locale, props, meters))
         .addTo(map);
       // The card and the highlight are one gesture: the rider should see which
       // line the numbers belong to. Keyed on the segment so tapping the same
@@ -2318,8 +2411,9 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
     // `segments` is a dependency so that the handlers are re-attached once the
     // map exists: on the very first commit `mapRef` can still be empty, and
     // without a second run the badge callbacks would keep calling the no-op
-    // refs they were created with.
-  }, [m, segments]);
+    // refs they were created with. `locale` moves with `m` — the segment card
+    // formats its kilometres with it — and is listed so the rule can see it.
+  }, [m, locale, segments]);
 
   // The container changes size on the phone (smaller while the chat has
   // something to say, full screen on request); MapLibre only notices when told.
