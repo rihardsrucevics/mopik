@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { InstagramLink } from "@/components/instagram-link";
 import { useLocale } from "@/lib/i18n/use-locale";
 import { t } from "@/lib/i18n/messages";
@@ -8,10 +7,10 @@ import { t } from "@/lib/i18n/messages";
 /**
  * The footer.
  *
- * It exists mostly to empty the header. "Sazinies" and the saved rides were
- * competing there with the one thing a rider comes for — planning a ride —
- * and the header had no room left for the language picker. Everything that is
- * read once and then never again lives down here instead.
+ * It exists mostly to empty the header. "Sazinies" was competing there with
+ * the one thing a rider comes for — planning a ride — and the header had no
+ * room left for the language picker. Everything that is read once and then
+ * never again lives down here instead.
  *
  * Deliberately quiet: small type, muted colour, a hairline above it. A footer
  * that draws the eye is a footer taking attention from the map.
@@ -30,12 +29,11 @@ export function SiteFooter() {
           <p>{t(locale, "tagline")}</p>
         </div>
 
+        {/* Saved rides are not here: the header carries them with an unread
+            count, and a second link to the same page in a quieter place only
+            asks the rider which one to trust. Feedback is a DM, not a form —
+            see `instagram-link.tsx`. */}
         <nav className="flex flex-wrap items-center gap-x-5 gap-y-2" aria-label={t(locale, "footerNav")}>
-          <Link href="/saglabatie" className="hover:text-stone-900">
-            {t(locale, "savedRidesLong")}
-          </Link>
-          {/* Feedback is a DM, not a form — see `instagram-link.tsx`. This is
-              the same link the header carried, in the place it belongs. */}
           <InstagramLink from="footer" label={t(locale, "contact")} />
         </nav>
       </div>

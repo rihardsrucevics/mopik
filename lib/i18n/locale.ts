@@ -54,6 +54,32 @@ export function localeFromBrowser(languages: readonly string[]): UiLocale {
   return "en";
 }
 
+/**
+ * Where the rider is, in the rider's own words: a Latvian IP gets Latvian, an
+ * Estonian one Estonian, a Lithuanian one Lithuanian, everyone else English.
+ *
+ * The code is Vercel's `x-vercel-ip-country` — ISO 3166-1 alpha-2, so `LV`,
+ * `EE`, `LT`. It is missing in local development and on any host that is not
+ * behind Vercel's edge, which is why `null` is a real answer rather than a
+ * default: the caller then falls through to the browser's language list, which
+ * is a better guess than pretending the rider is in Latvia.
+ *
+ * Note this returns `en` for a country we do have a language for but do not
+ * speak — a German IP is English, not German — matching `localeFromBrowser`.
+ */
+const COUNTRY_LOCALES: Record<string, UiLocale> = {
+  LV: "lv",
+  EE: "et",
+  LT: "lt",
+};
+
+export function localeFromCountry(code: string | null | undefined): UiLocale | null {
+  if (typeof code !== "string") return null;
+  const key = code.trim().toUpperCase();
+  if (key.length !== 2) return null;
+  return COUNTRY_LOCALES[key] ?? "en";
+}
+
 const STORAGE_KEY = "mopik.locale.v1";
 
 export function loadStoredLocale(): UiLocale | null {
