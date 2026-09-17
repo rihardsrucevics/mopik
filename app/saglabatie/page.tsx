@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import { SavedRidesPage } from "@/components/saved-rides-page";
 
 export const metadata: Metadata = {
-  title: "Saglabātie maršruti",
-  description: "Tavi saglabātie Mopik maršruti šajā ierīcē.",
+  title: "Saved routes",
+  description: "Your saved Mopik routes on this device.",
   robots: { index: false, follow: false },
 };
 

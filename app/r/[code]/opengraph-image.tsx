@@ -2,7 +2,7 @@ import { ImageResponse } from "next/og";
 import { resolveShare } from "@/lib/share/resolve";
 
 /** The share card: the actual route line, coloured by surface, with the numbers. */
-export const alt = "Mopik maršruts";
+export const alt = "Mopik route";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -47,13 +47,13 @@ export default async function Image({ params }: { params: Promise<{ code: string
           {paths.map((p, k) => <path key={k} d={p.d} fill="none" stroke={p.color} strokeWidth="7" strokeLinecap="round" strokeLinejoin="round" />)}
         </svg>
         <div style={{ position: "absolute", left: MAP_W, top: 0, width: W - MAP_W, height: H, display: "flex", flexDirection: "column", justifyContent: "space-between", padding: "56px 56px 48px 24px" }}>
-          <div style={{ display: "flex", fontSize: 22, letterSpacing: 5, color: "#bd4b00", fontWeight: 700 }}>DALĪTS MARŠRUTS</div>
+          <div style={{ display: "flex", fontSize: 22, letterSpacing: 5, color: "#bd4b00", fontWeight: 700 }}>SHARED ROUTE</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            <div style={{ display: "flex", fontSize: 46, fontWeight: 800, lineHeight: 1.05, letterSpacing: -1 }}>{share?.name ?? "Mopik maršruts"}</div>
+            <div style={{ display: "flex", fontSize: 46, fontWeight: 800, lineHeight: 1.05, letterSpacing: -1 }}>{share?.name ?? "Mopik route"}</div>
             <div style={{ display: "flex", gap: 28, marginTop: 8 }}>
               <div style={{ display: "flex", flexDirection: "column" }}><span style={{ fontSize: 18, color: "#78716c", letterSpacing: 2 }}>KM</span><span style={{ fontSize: 44, fontWeight: 700 }}>{share?.km ?? "—"}</span></div>
-              <div style={{ display: "flex", flexDirection: "column" }}><span style={{ fontSize: 18, color: "#78716c", letterSpacing: 2 }}>LAIKS</span><span style={{ fontSize: 44, fontWeight: 700 }}>{dur}</span></div>
-              <div style={{ display: "flex", flexDirection: "column" }}><span style={{ fontSize: 18, color: "#78716c", letterSpacing: 2 }}>GRANTS</span><span style={{ fontSize: 44, fontWeight: 700 }}>{share?.unpavedPercent ?? "—"} %</span></div>
+              <div style={{ display: "flex", flexDirection: "column" }}><span style={{ fontSize: 18, color: "#78716c", letterSpacing: 2 }}>TIME</span><span style={{ fontSize: 44, fontWeight: 700 }}>{dur}</span></div>
+              <div style={{ display: "flex", flexDirection: "column" }}><span style={{ fontSize: 18, color: "#78716c", letterSpacing: 2 }}>GRAVEL</span><span style={{ fontSize: 44, fontWeight: 700 }}>{share?.unpavedPercent ?? "—"} %</span></div>
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>

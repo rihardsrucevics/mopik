@@ -19,10 +19,14 @@ function minutesLabel(m: number): string {
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { code } = await params;
   const resolved = await resolveShare(code);
-  if (!resolved) return { title: "Maršruts nav atrasts" };
+  if (!resolved) return { title: "Route not found" };
   const { share } = resolved;
+  // The route's own name stays as the rider wrote it — it is a place, not a
+  // sentence to translate. Everything the app adds around it is English, the
+  // same as the rest of the metadata: a shared link is unfurled once and
+  // cached, so it cannot follow whoever opens it.
   const title = `${share.name} · ${share.km} km · ${minutesLabel(share.minutes)}`;
-  const description = `${share.unpavedPercent} % grants un meža ceļu, ${share.repeatedPercent} % atkārtoti. Adventure maršruts no Mopik — lejupielādē GPX vai uztaisi līdzīgu.`;
+  const description = `${share.unpavedPercent} % gravel and forest roads, ${share.repeatedPercent} % retraced. An adventure route from Mopik — download the GPX or plan a similar one.`;
   return {
     title,
     description,

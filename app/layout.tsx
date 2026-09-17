@@ -9,22 +9,30 @@ import "./globals.css";
 
 const SITE_URL = "https://www.mopik.eu";
 const GA_ID = "G-M01X58GWMC";
-const TITLE = "Mopik — adventure moto maršruti Latvijā";
+/**
+ * The metadata is English, deliberately, and does not follow the IP language.
+ *
+ * It is read by crawlers and link unfurlers, not by the rider: a share card
+ * is rendered once and cached by whoever unfurls it, so a per-country title
+ * would mean whichever country's crawler asked first wins for everybody. One
+ * language that every audience can read beats a lottery between four.
+ */
+const TITLE = "Mopik — adventure motorcycle routes in Latvia";
 const DESCRIPTION =
-  "Mazāk plānošanas. Vairāk braukšanas. Mopik uzzīmē adventure un enduro maršrutus pa grants un meža ceļiem — no ieceres līdz GPX dažās sekundēs.";
+  "Less planning. More riding. Mopik draws adventure and enduro routes along gravel and forest roads — from idea to GPX in seconds.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: { default: TITLE, template: "%s · Mopik" },
   description: DESCRIPTION,
   applicationName: "Mopik",
-  keywords: ["adventure moto", "enduro maršruti", "grants ceļi", "meža ceļi", "GPX", "Latvija", "Baltija", "motocikls"],
+  keywords: ["adventure motorcycle", "enduro routes", "gravel roads", "forest roads", "GPX", "Latvia", "Baltics", "motorcycle"],
   alternates: { canonical: "/" },
   openGraph: {
     type: "website",
     url: SITE_URL,
     siteName: "Mopik",
-    locale: "lv_LV",
+    locale: "en",
     title: TITLE,
     description: DESCRIPTION,
   },
