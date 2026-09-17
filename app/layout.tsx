@@ -7,9 +7,9 @@ import { SiteFooter } from "@/components/site-footer";
 import { DEFAULT_LOCALE, localeFromCountry } from "@/lib/i18n/locale";
 import { t } from "@/lib/i18n/messages";
 import { DEFAULT_METADATA_LOCALE } from "@/lib/i18n/metadata-locale";
+import { SITE_URL } from "@/lib/site";
 import "./globals.css";
 
-const SITE_URL = "https://www.mopik.eu";
 const GA_ID = "G-M01X58GWMC";
 /**
  * The site-wide defaults. The home page overrides the title and description
@@ -35,6 +35,10 @@ export async function generateMetadata(): Promise<Metadata> {
     // dataset — dropping them would cost the searches that actually convert.
     keywords: ["adventure motorcycle", "enduro routes", "gravel roads", "forest roads", "GPX", "Europe", "Baltics", "Latvia", "motorcycle"],
     alternates: { canonical: "/" },
+    // The card is a route (`app/card`), not the `opengraph-image` file
+    // convention: the convention renders one image with no access to the
+    // request, so the picture stayed English beside an Estonian title. Pages
+    // that can read `?lang=` pass it on; this default is for the rest.
     openGraph: {
       type: "website",
       url: SITE_URL,
@@ -42,11 +46,13 @@ export async function generateMetadata(): Promise<Metadata> {
       locale,
       title,
       description,
+      images: [{ url: `/card?lang=${locale}`, width: 1200, height: 630, alt: title }],
     },
     twitter: {
       card: "summary_large_image",
       title,
       description,
+      images: [{ url: `/card?lang=${locale}`, alt: title }],
     },
     robots: { index: true, follow: true },
   };

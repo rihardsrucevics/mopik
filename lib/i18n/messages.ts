@@ -45,6 +45,7 @@ export type MessageKey =
   | "kindHamlet"
   | "placeConfirmed"
   | "metaTitle"
+  | "metaCardLine"
   | "metaDescription"
   | "shareCardNotFound"
   | "shareCardDescription"
@@ -485,6 +486,7 @@ const lv: Messages = {
   kindHamlet: "viensēta",
   placeConfirmed: "atrasta vieta",
   metaTitle: "Mopik — adventure moto maršrutu plānotājs Eiropā",
+  metaCardLine: "Saplāno grants un meža ceļu braucienus visā Eiropā — no ieceres līdz GPX dažās sekundēs.",
   metaDescription: "Mazāk plānošanas. Vairāk braukšanas. Mopik saplāno adventure un enduro maršrutus pa grants un meža ceļiem visā Eiropā — no ieceres līdz GPX dažās sekundēs.",
   shareCardNotFound: "Maršruts nav atrasts",
   shareCardDescription: "{unpaved} % grants un meža ceļu, {repeated} % atkārtoti. Adventure maršruts no Mopik — lejupielādē GPX vai uztaisi līdzīgu.",
@@ -920,6 +922,7 @@ const lt: Messages = {
   kindHamlet: "vienkiemis",
   placeConfirmed: "rasta vieta",
   metaTitle: "Mopik — adventure motociklų maršrutų planuoklis Europoje",
+  metaCardLine: "Suplanuoja žvyro ir miško kelių važiavimus visoje Europoje — nuo sumanymo iki GPX per kelias sekundes.",
   metaDescription: "Mažiau planavimo. Daugiau važiavimo. Mopik suplanuoja adventure ir enduro maršrutus žvyro ir miško keliais visoje Europoje — nuo sumanymo iki GPX per kelias sekundes.",
   shareCardNotFound: "Maršrutas nerastas",
   shareCardDescription: "{unpaved} % žvyro ir miško kelių, {repeated} % kartojasi. Adventure maršrutas iš Mopik — atsisiųsk GPX arba susikurk panašų.",
@@ -1325,6 +1328,7 @@ const et: Messages = {
   kindHamlet: "talu",
   placeConfirmed: "leitud koht",
   metaTitle: "Mopik — adventure mootorratta marsruudiplaneerija Euroopas",
+  metaCardLine: "Planeerib kruusa- ja metsateede sõite üle Euroopa — ideest GPX-ini mõne sekundiga.",
   metaDescription: "Vähem planeerimist. Rohkem sõitmist. Mopik planeerib adventure ja enduro marsruute kruusa- ja metsateedel üle Euroopa — ideest GPX-ini mõne sekundiga.",
   shareCardNotFound: "Marsruuti ei leitud",
   shareCardDescription: "{unpaved} % kruusa- ja metsateid, {repeated} % korduv. Adventure marsruut Mopikust — laadi alla GPX või tee sarnane.",
@@ -1726,6 +1730,7 @@ const en: Messages = {
   kindHamlet: "hamlet",
   placeConfirmed: "place found",
   metaTitle: "Mopik — adventure motorcycle route planner for Europe",
+  metaCardLine: "Plans gravel and forest road rides across Europe — from idea to GPX in seconds.",
   metaDescription: "Less planning. More riding. Mopik plans adventure and enduro routes along gravel and forest roads across Europe — from idea to GPX in seconds.",
   shareCardNotFound: "Route not found",
   shareCardDescription: "{unpaved} % gravel and forest roads, {repeated} % retraced. An adventure route from Mopik — download the GPX or plan a similar one.",

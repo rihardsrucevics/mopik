@@ -1,18 +1,26 @@
 import { ImageResponse } from "next/og";
+import { isUiLocale } from "@/lib/i18n/locale";
+import { t } from "@/lib/i18n/messages";
+import { DEFAULT_METADATA_LOCALE } from "@/lib/i18n/metadata-locale";
 
 /**
  * The share card: the same "route drawing itself over the hills" motif as
- * the intro, frozen mid-stroke, with the wordmark and tagline. Rendered by
- * Next at build time and served at /opengraph-image.
+ * the intro, frozen mid-stroke, with the wordmark and tagline.
+ *
+ * A route handler rather than the `opengraph-image` file convention, because
+ * that convention renders one image with no access to the request — so the
+ * picture stayed English while the title beside it was Estonian. Here the
+ * language rides in as `?lang=`, the same parameter the page itself uses, and
+ * the caption is drawn in it.
  */
-export const alt = "Mopik — adventure motorcycle route planner for Europe";
-export const size = { width: 1200, height: 630 };
-export const contentType = "image/png";
+const size = { width: 1200, height: 630 };
 
 const ROUTE_D =
   "M 12 108 C 40 96, 52 70, 82 74 S 128 110, 158 92 C 184 76, 176 40, 206 38 S 250 68, 272 54 C 292 42, 300 28, 314 22";
 
-export default function Image() {
+export function GET(req: Request) {
+  const asked = new URL(req.url).searchParams.get("lang");
+  const locale = isUiLocale(asked) ? asked : DEFAULT_METADATA_LOCALE;
   return new ImageResponse(
     (
       <div
@@ -48,16 +56,18 @@ export default function Image() {
         </svg>
 
         <div style={{ display: "flex", alignItems: "center", gap: 14, fontSize: 26, letterSpacing: 6, color: "#bd4b00", fontWeight: 700 }}>
-          ADVENTURE · ENDURO · GPX
+          {/* The product's own vocabulary, identical in lv, lt, et and en. */}
+          {/* eslint-disable-next-line react/jsx-no-literals -- not prose; the same three words in every language */}
+          {"ADVENTURE · ENDURO · GPX"}
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
           <div style={{ display: "flex", fontSize: 148, fontWeight: 800, letterSpacing: -6, lineHeight: 1 }}>
             Mopik<span style={{ color: "#f56300" }}>.</span>
           </div>
-          <div style={{ display: "flex", fontSize: 44, color: "#57534e" }}>Less planning. More riding.</div>
+          <div style={{ display: "flex", fontSize: 44, color: "#57534e" }}>{t(locale, "tagline")}</div>
           <div style={{ display: "flex", fontSize: 28, color: "#78716c", marginTop: 6 }}>
-            Plans gravel and forest road rides across Europe — from idea to GPX in seconds.
+            {t(locale, "metaCardLine")}
           </div>
         </div>
       </div>
