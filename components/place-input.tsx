@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { Check } from "lucide-react";
 import { useLocale } from "@/lib/i18n/use-locale";
 import { recentPlacesStore, refreshRecentPlaces, rememberPlace } from "@/lib/chat/recent-places";
 import { messages, type MessageKey } from "@/lib/i18n/messages";
@@ -62,7 +63,7 @@ const KIND_KEY = {
  * not whatever a geocoder guesses later. Typing without picking still works —
  * the API then geocodes the name.
  */
-export function PlaceInput({ value, onChange, onPick, placeholder, icon, label, className, trailing, near }: {
+export function PlaceInput({ value, onChange, onPick, placeholder, icon, label, className, trailing, near, confirmed }: {
   value: string;
   onChange: (value: string) => void;
   onPick: (place: ResolvedPlace | null) => void;
@@ -84,6 +85,13 @@ export function PlaceInput({ value, onChange, onPick, placeholder, icon, label, 
    * thing that must not be truncated.
    */
   trailing?: ReactNode;
+  /**
+   * The place this field is actually resolved to, when one was picked. Shown
+   * as its region under the name: typed text and a confirmed place were the
+   * same black word, so a rider could not tell whether the ride knew where
+   * "Cēsis" was until the route came back somewhere else.
+   */
+  confirmed?: ResolvedPlace | null;
 }) {
   const [locale] = useLocale();
   const m = messages(locale);
@@ -150,6 +158,27 @@ export function PlaceInput({ value, onChange, onPick, placeholder, icon, label, 
     const key = KIND_KEY[kind as keyof typeof KIND_KEY];
     return key ? m[key] : "";
   };
+  /**
+   * Is this field showing a place the ride has actually resolved?
+   *
+   * Typing clears `onPick`, so a confirmed place whose name still matches what
+   * is in the field is a real pick and not a stale tick under edited text.
+   */
+  const isConfirmed =
+    !!confirmed && confirmed.name.trim().toLowerCase() === value.trim().toLowerCase();
+  /**
+   * The part of the label the name does not already say — "Cēsis · Cēsu
+   * novads" leaves "Cēsu novads". Empty for a city whose label is just its
+   * name, which is most of them; the tick alone then carries the confirmation.
+   */
+  const meta = isConfirmed
+    ? confirmed!.label.startsWith(confirmed!.name)
+      ? confirmed!.label.slice(confirmed!.name.length).replace(/^[\s·,]+/, "")
+      : confirmed!.label === confirmed!.name
+        ? ""
+        : confirmed!.label
+    : "";
+
   const show = open && listed.length > 0;
 
   return (
@@ -176,6 +205,17 @@ export function PlaceInput({ value, onChange, onPick, placeholder, icon, label, 
           className="mt-1 w-full bg-transparent text-base font-medium outline-none md:text-sm"
           placeholder={placeholder}
         />
+        {/* Only the part of the label the name does not already say: "Cēsis ·
+            Cēsu novads" becomes "Cēsu novads". A picked place that adds
+            nothing (a city whose label is just its name) shows a plain tick
+            instead, so the confirmed state always looks different from typed
+            text — which is the whole point. */}
+        {isConfirmed && (
+          <span className="mt-0.5 flex items-center gap-1 text-[11px] text-stone-500">
+            <Check className="size-3 shrink-0 text-[#16a34a]" />
+            {meta ? <span className="truncate">{meta}</span> : <span className="truncate">{m.placeConfirmed}</span>}
+          </span>
+        )}
         </span>
         {trailing}
       </label>

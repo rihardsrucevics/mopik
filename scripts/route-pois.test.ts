@@ -73,22 +73,36 @@ test("along-route position is measured in riding order, not as the crow flies", 
   );
 });
 
-test("nearby is capped and ranks what a rider stops for above villages", () => {
+test("villages are never suggested, however many there are", () => {
   const points: Poi[] = [];
-  // Twenty villages, all a comfortable detour away.
+  // Twenty villages, all a comfortable detour away and scoring high.
   for (let i = 0; i < 20; i++) {
     points.push(poi(`village${i}`, 24.0 + i * 0.005, 57.0 + latOffset(600), "village", 9));
   }
   // One viewpoint, further out and with a lower dataset score.
-  points.push(poi("viewpoint", 24.09, 57.0 + latOffset(1200), "viewpoint", 6));
+  points.push(poi("viewpoint", 24.09, 57.0 + latOffset(900), "viewpoint", 6));
+  // And one village right on the line: `onRoute` ignores appeal below its cap,
+  // so damping alone never kept these out.
+  points.push(poi("onLineVillage", 24.05, 57.0 + latOffset(40), "village", 9));
+
+  const { nearby, onRoute } = classifyPois({ coordinates: LINE }, points);
+
+  // Villages plan and name rides; they are not sights to suggest.
+  assert.deepEqual(nearby.filter((p) => p.category === "village"), []);
+  assert.deepEqual(onRoute.filter((p) => p.category === "village"), []);
+  assert.deepEqual(nearby.map((p) => p.id), ["viewpoint"]);
+});
+
+test("a stop past the detour bound is a different ride", () => {
+  // 1200 m is the bound: a rider reads a pin much further off the line as not
+  // being on the route at all.
+  const points = [
+    poi("just-inside", 24.05, 57.0 + latOffset(1100), "waterfall"),
+    poi("just-outside", 24.06, 57.0 + latOffset(1400), "waterfall"),
+  ];
 
   const { nearby } = classifyPois({ coordinates: LINE }, points);
-
-  assert.equal(nearby.length, MAX_NEARBY);
-  assert.ok(
-    nearby.some((p) => p.id === "viewpoint"),
-    "a viewpoint must outrank villages even from further out"
-  );
+  assert.deepEqual(nearby.map((p) => p.id), ["just-inside"]);
 });
 
 test("an empty or degenerate geometry answers with empty lists, never an error", () => {

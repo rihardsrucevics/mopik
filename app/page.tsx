@@ -520,6 +520,14 @@ export default function Home() {
   async function startFromForm(current: RidePlan, picked: ResolvedPlace[]) {
     if (busyRef.current) return;
     busyRef.current = true; setError(null); setRetry(null); setQuickReplies([]); setPlan(current); setPlaces(picked); setEntryMode("chat");
+    // Back to the top. "Create route" sits near the bottom of a tall composer,
+    // so `scrollY` is large when it is pressed — and this swap removes the
+    // composer, shrinks the map 42dvh → 26dvh and leaves a chat panel only as
+    // tall as its one bubble. The document can lose more than a viewport in a
+    // single frame, and the browser clamps the kept `scrollY` to the new
+    // bottom: the rider landed on the footer and had to scroll up to see the
+    // map. After paint, so the clamp has already happened.
+    requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: "smooth" }));
     // Only the first attempt, with no route yet, sends a cancel back to the
     // form. A re-generation from the result panel leaves a route on screen to
     // return to, so it cancels the way a chat correction does.

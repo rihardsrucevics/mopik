@@ -154,7 +154,6 @@ async function loadTet(map: maplibregl.Map) {
       .map(([country]) => country);
 
     const missing = visible.filter((c) => !tetLoaded.has(c));
-    if (!missing.length) return;
     await Promise.all(missing.map(async (country) => {
       // Mark it taken first: panning fires this faster than a fetch returns,
       // and the same country must not be downloaded twice.
@@ -165,8 +164,17 @@ async function loadTet(map: maplibregl.Map) {
       tetLoaded.set(country, fc.features);
     }));
 
+    // Always push, even when nothing was missing. This used to return early on
+    // `!missing.length`, which made the cache poison itself: `markTet` runs on
+    // every route and is deliberately not gated on the toggle, so it filled
+    // `tetLoaded` before `map.on("load")` had created the source. `setData` on
+    // an undefined source is a silent no-op through the optional chain, the
+    // countries stayed marked loaded, and every later call — the toggle, a
+    // pan — returned at the early exit without ever reaching here. Toggle on,
+    // no line, no error. Only panning into a *new* country recovered it.
     const source = map.getSource("tet") as maplibregl.GeoJSONSource | undefined;
-    source?.setData({ type: "FeatureCollection", features: [...tetLoaded.values()].flat() });
+    if (!source) return;
+    source.setData({ type: "FeatureCollection", features: [...tetLoaded.values()].flat() });
   } catch {
     // An optional overlay must never break the map.
   }

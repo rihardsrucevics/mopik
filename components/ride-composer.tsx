@@ -296,7 +296,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
             shape of the ride is asking the rider to guess. */}
         <ChoiceRow label={t(locale, "tripType")} value={tripType} onChange={(v) => { track("trip_type_changed", { to: v }); setTripType(v); }} choices={[{ value: "one_way", label: t(locale, "oneWay") }, { value: "round_trip", label: t(locale, "roundTrip") }]} />
 
-        <RoutePlaces places={places} oneWay={tripType === "one_way"} busy={busy} onChange={reorder} onPick={setPick} onUseLocation={useMyLocation} locating={locating} near={anchor} />
+        <RoutePlaces places={places} picked={picked} oneWay={tripType === "one_way"} busy={busy} onChange={reorder} onPick={setPick} onUseLocation={useMyLocation} locating={locating} near={anchor} />
 
         {/* The map is worth a look when a place needs confirming, not on every
             visit — it is the tallest thing on the page and most rides are

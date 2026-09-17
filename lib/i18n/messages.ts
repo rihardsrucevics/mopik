@@ -43,6 +43,7 @@ export type MessageKey =
   | "kindCity"
   | "kindVillage"
   | "kindHamlet"
+  | "placeConfirmed"
   | "kindAddress"
   | "kindPlace"
   | "kindFuel"
@@ -474,6 +475,7 @@ const lv: Messages = {
   kindCity: "pilsēta",
   kindVillage: "ciems",
   kindHamlet: "viensēta",
+  placeConfirmed: "atrasta vieta",
   kindAddress: "adrese",
   kindPlace: "vieta",
   kindFuel: "degviela",
@@ -900,6 +902,7 @@ const lt: Messages = {
   kindCity: "miestas",
   kindVillage: "kaimas",
   kindHamlet: "vienkiemis",
+  placeConfirmed: "rasta vieta",
   kindAddress: "adresas",
   kindPlace: "vieta",
   kindFuel: "degalinė",
@@ -1296,6 +1299,7 @@ const et: Messages = {
   kindCity: "linn",
   kindVillage: "küla",
   kindHamlet: "talu",
+  placeConfirmed: "leitud koht",
   kindAddress: "aadress",
   kindPlace: "koht",
   kindFuel: "tankla",
@@ -1688,6 +1692,7 @@ const en: Messages = {
   kindCity: "town",
   kindVillage: "village",
   kindHamlet: "hamlet",
+  placeConfirmed: "place found",
   kindAddress: "address",
   kindPlace: "place",
   kindFuel: "fuel",

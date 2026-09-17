@@ -24,7 +24,7 @@ import type { ResolvedPlace } from "@/lib/chat/places";
  * name the room it needs. Keyboard users keep the same moves: the handle is a
  * button and ArrowUp/ArrowDown on it move the row.
  */
-export function RoutePlaces({ places, oneWay, busy, onChange, onPick, onUseLocation, locating, near }: {
+export function RoutePlaces({ places, picked, oneWay, busy, onChange, onPick, onUseLocation, locating, near }: {
   places: string[];
   /**
    * The first place already pinned in this ride. Every other row searches
@@ -39,6 +39,13 @@ export function RoutePlaces({ places, oneWay, busy, onChange, onPick, onUseLocat
   onChange: (places: string[]) => void;
   /** Called with the new index order so picked coordinates travel with the row. */
   onPick: (index: number, place: ResolvedPlace | null) => void;
+  /**
+   * The place confirmed for each row, if any. A typed word and a place picked
+   * from the list looked identical — same black text, no way to tell whether
+   * the ride knows where "Cēsis" is. The confirmed ones now carry their
+   * region under the name.
+   */
+  picked: Record<number, ResolvedPlace | null>;
 }) {
 
 
@@ -114,6 +121,7 @@ export function RoutePlaces({ places, oneWay, busy, onChange, onPick, onUseLocat
             value={place}
             onChange={(v) => onChange(places.map((p, j) => (j === i ? v : p)))}
             onPick={(p) => { if (p) track("place_picked", { row: i, start: i === 0 }); onPick(i, p); }}
+            confirmed={picked[i] ?? null}
             near={near}
             icon={<MapPin className="size-3" />}
             label={label(i)}

@@ -38,7 +38,11 @@ function fixture(): Fixture {
     geometry: { type: "Point", coordinates: [lon, lat] },
     properties: {
       id,
-      category: "village",
+      // Not a village: those are for planning and naming rides, never
+      // suggested as sights, so `classifyPois` filters them out and this
+      // test — which is about *which country files get parsed* — would see
+      // empty lists for the wrong reason.
+      category: "viewpoint",
       score: 1,
       country,
       nameEn: id,
@@ -181,7 +185,7 @@ test("a routed ride parses only the countries its own bounding box reaches", asy
     const { poisForRoute } = await import("../lib/poi/route-pois");
 
     // A short line well inside AA. BB is 1° of empty away — far outside the
-    // 3 km `NEARBY_M` padding — so it must never be opened.
+    // `NEARBY_M` padding — so it must never be opened.
     const inAA = poisForRoute(
       { coordinates: [[20.05, 55.05], [20.1, 55.1], [20.15, 55.12]] },
       { locale: "en" }

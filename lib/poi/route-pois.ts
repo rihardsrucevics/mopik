@@ -49,8 +49,16 @@ export type { PoiCategory, RoutePoi, RoutePois };
 /** Closer than this to the line and the ride already passes it. */
 export const ON_ROUTE_M = 150;
 
-/** Past this a stop is a different ride, not a detour. */
-export const NEARBY_M = 3000;
+/**
+ * Past this a stop is a different ride, not a detour.
+ *
+ * Was 3000. The rider: a pin 3 km off the line reads as "not on my route" —
+ * on a phone at the zoom a ride is viewed at, it sits visibly away from the
+ * orange line with no road drawn to it. 1200 m is still a real detour a rider
+ * would take for a waterfall, and it keeps the pin next to the line it belongs
+ * to.
+ */
+export const NEARBY_M = 1200;
 
 /** A list of forty villages is not a suggestion. */
 export const MAX_NEARBY = 8;
@@ -74,6 +82,14 @@ export const MAX_ON_ROUTE = 12;
  * categories are the eleven below). They will rank themselves when the
  * Europe build adds them; nothing here needs to change.
  */
+/**
+ * What may be suggested as a sight. Everything in the dataset except villages,
+ * which are there to plan and name rides rather than to be looked at — see the
+ * filter in `classifyPois`. Derived from `STOP_APPEAL` so a category added to
+ * the dataset is suggestable by default and only the exception is listed.
+ */
+const NOT_SUGGESTABLE = new Set<PoiCategory>(["village"]);
+
 const STOP_APPEAL: Record<PoiCategory, number> = {
   viewpoint: 2.0,
   hillfort: 1.9,
@@ -93,6 +109,10 @@ const STOP_APPEAL: Record<PoiCategory, number> = {
   reserve: 0.9,
   village: 0.25,
 };
+
+const SUGGESTABLE = new Set<PoiCategory>(
+  (Object.keys(STOP_APPEAL) as PoiCategory[]).filter((c) => !NOT_SUGGESTABLE.has(c)),
+);
 
 /**
  * What a second place of a kind already suggested costs, in the same units as
@@ -361,6 +381,15 @@ export function classifyPois(
     // hundred of them are near this ride.
     if (poi.lon < box.minLon || poi.lon > box.maxLon) continue;
     if (poi.lat < box.minLat || poi.lat > box.maxLat) continue;
+
+    // Villages are in the dataset to *plan* and *name* rides ("Caur Turaidu"),
+    // not to be suggested as sights: a house pin next to every hamlet you pass
+    // is noise, and it crowds out the waterfall two kilometres on. The
+    // planning path (`lib/routing/loop.ts`) reads the same file and still sees
+    // them — only this after-the-fact "what did I ride past?" list excludes
+    // them. `STOP_APPEAL` damped villages to 0.25 but could not remove them:
+    // `onRoute` ignores appeal entirely below its cap.
+    if (!SUGGESTABLE.has(poi.category)) continue;
 
     const name = poiName(poi, locale);
     if (!name) continue;
