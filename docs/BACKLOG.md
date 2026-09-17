@@ -803,3 +803,36 @@ locally): whether the prompt change alone makes the model set
 `npx tsx scripts/chat-golden.ts [http://localhost:3000]`, the case
 "“vienalga” ends the destination question instead of repeating it" replays
 the rider's exact three turns and fails if any question is asked twice.
+
+## 24. Do we still need Stadia Maps at all?
+
+**Asked by the rider 2026-09-17:** his Stadia free trial has ended, so what
+breaks?
+
+**Measured, not guessed.** Stadia is used in exactly one place:
+`lib/routing/valhalla.ts`, for isochrones — the "how far can I get in N
+minutes" rings that seed a loop's anchor points. Map tiles are **not**
+Stadia: they come from `tile.openstreetmap.org`. Routing is our own BRouter
+at `https://brouter.mopik.eu`. So an expired key does not touch tiles or
+routing.
+
+It is also already survivable. `app/api/generate-route/route.ts:985`
+catches an isochrone failure and falls back to circular anchors. Evidence
+that the fallback is real: this machine's `.env.local` has **no** Stadia key
+at all, and routes generated correctly all session (Sigulda→Cēsis, 80 km,
+1 % retraced).
+
+**The open question, and the work:** the fallback keeps rides *working*, but
+nobody has measured whether it makes them *worse* — circular anchors ignore
+what is actually reachable, so a ring that crosses a lake or a motorway-only
+corridor may produce duller or more retraced loops. Decide between:
+
+1. Drop isochrones entirely and keep circular anchors, if the measured
+   difference is small — one dependency and one key gone.
+2. Replace them with our own BRouter, which can produce isochrones itself —
+   no third party, but new code to write and host load to check.
+3. Keep Stadia and pay, if the rings measurably make better loops.
+
+**How to settle it:** generate the same set of loops both ways (key present
+vs. key absent) and compare retraced percentage, sight count and total
+length. That number decides it; until it exists, this is a guess either way.
