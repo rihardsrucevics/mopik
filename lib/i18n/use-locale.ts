@@ -102,6 +102,37 @@ function subscribe(listener: () => void): () => void {
   return () => listeners.delete(listener);
 }
 
+/**
+ * Apply the client-only signals once, after hydration.
+ *
+ * The hydration render can only use what the server knew — the IP country —
+ * so a rider who had chosen a language would otherwise be stuck with whatever
+ * his IP implied. This resolves the full precedence and notifies the store,
+ * which is what moves every consumer onto the rider's own choice.
+ *
+ * It is called from an effect in `components/locale-boundary.tsx` rather than
+ * left to React. React re-reads `getSnapshot` after hydration *only* once the
+ * tree stops hydrating; measured here, `getServerSnapshot` was called on every
+ * pass and `getSnapshot` never, so the stored choice never arrived. Driving it
+ * explicitly is the difference between the rider's language being honoured and
+ * being silently ignored.
+ *
+ * This is not the setState-in-effect the store was built to avoid: nothing
+ * calls a component's setState here. The store settles itself and tells its
+ * subscribers, exactly as it does when the rider uses the picker.
+ */
+let settled = false;
+
+export function applyClientLocale(): void {
+  if (settled) return;
+  settled = true;
+  const rendered = serverSnapshot();
+  const real = snapshot();
+  if (real === rendered) return;
+  if (typeof document !== "undefined") document.documentElement.lang = real;
+  for (const listener of listeners) listener();
+}
+
 export function setLocale(next: UiLocale): void {
   current = next;
   saveStoredLocale(next);
