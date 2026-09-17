@@ -185,7 +185,23 @@ export function PlaceInput({ value, onChange, onPick, placeholder, icon, label, 
     <div className={`relative ${className ?? ""}`}>
       <label className="flex items-center gap-2 rounded-xl border border-stone-200 px-3 py-2 focus-within:border-[#f56300]">
         <span className="min-w-0 flex-1">
-        {label && <span className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-stone-400">{icon}{label}</span>}
+        {/* The confirmation rides on the label's own line. It used to be a
+            row of its own under the input, which made the field taller the
+            moment a place was picked — the whole form shifted under the
+            rider's thumb. The label row already has empty space to its right
+            and is always present, so nothing moves. */}
+        {label && (
+          <span className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-stone-400">
+            {icon}
+            <span className="shrink-0">{label}</span>
+            {isConfirmed && (
+              <span className="flex min-w-0 items-center gap-1 normal-case tracking-normal text-stone-500">
+                <Check className="size-3 shrink-0 text-[#16a34a]" />
+                <span className="truncate">{meta || m.placeConfirmed}</span>
+              </span>
+            )}
+          </span>
+        )}
         <input
           value={value}
           role="combobox"
@@ -210,12 +226,6 @@ export function PlaceInput({ value, onChange, onPick, placeholder, icon, label, 
             nothing (a city whose label is just its name) shows a plain tick
             instead, so the confirmed state always looks different from typed
             text — which is the whole point. */}
-        {isConfirmed && (
-          <span className="mt-0.5 flex items-center gap-1 text-[11px] text-stone-500">
-            <Check className="size-3 shrink-0 text-[#16a34a]" />
-            {meta ? <span className="truncate">{meta}</span> : <span className="truncate">{m.placeConfirmed}</span>}
-          </span>
-        )}
         </span>
         {trailing}
       </label>

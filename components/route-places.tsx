@@ -128,9 +128,22 @@ export function RoutePlaces({ places, picked, oneWay, busy, onChange, onPick, on
             placeholder={placeholder(i)}
             trailing={i === 0 ? (
               // The start is the one field a rider fills in every time, and it
-              // is almost always where they are standing. Offered, never
-              // assumed: the browser only asks for the location on the tap.
-              onUseLocation && !place.trim() ? (
+              // is almost always where they are standing. Empty, it offers the
+              // device's location — offered, never assumed, so the browser only
+              // asks on the tap. Filled, it offers to clear: every other row
+              // had a ✕ and this one did not, so the one field a rider most
+              // often changes was the one he had to select-all and delete.
+              place.trim() ? (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => remove(i)}
+                  aria-label={`${t(locale, "remove")}: ${place}`}
+                  className="flex size-8 shrink-0 items-center justify-center rounded-lg text-stone-400 transition hover:bg-stone-100 hover:text-stone-700"
+                >
+                  <X className="size-4" />
+                </button>
+              ) : onUseLocation ? (
                 // The crosshair alone: every map app uses it, so the label was
                 // spending a third of the field's width saying what the icon
                 // already says. The name still reaches a screen reader.
