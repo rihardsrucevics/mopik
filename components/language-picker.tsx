@@ -38,6 +38,24 @@ export function LanguagePicker() {
   const choose = (next: UiLocale) => {
     if (next !== locale) track("locale_changed", { locale: next });
     setLocale(next);
+    /**
+     * Put the choice in the address bar, so sharing a language is just
+     * copying the URL.
+     *
+     * Without this there was no way to send someone Mopik in Estonian: the
+     * card an unfurler builds follows *its own* server's country, and a
+     * crawler sits wherever the messenger's datacentre is. `?lang=` is the
+     * only signal that travels with the link.
+     *
+     * `replaceState`, not a navigation: the composer holds the ride being
+     * planned in React state, and re-running the route would throw it away
+     * just because the rider changed the language.
+     */
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.set("lang", next);
+      window.history.replaceState(null, "", url);
+    }
     setOpen(false);
   };
 

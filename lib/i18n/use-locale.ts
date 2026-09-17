@@ -19,11 +19,18 @@ import {
  *
  * Precedence, best signal first:
  *
- *   1. the rider's own stored choice — always wins, it is an explicit answer;
- *   2. the IP country, which `app/layout.tsx` reads from Vercel's
+ *   1. `?lang=` in the URL — someone deliberately shared *this* language;
+ *   2. the rider's own stored choice — an explicit answer he gave here;
+ *   3. the IP country, which `app/layout.tsx` reads from Vercel's
  *      `x-vercel-ip-country` on the server and writes onto `<html>`;
- *   3. the browser's language list;
- *   4. the default.
+ *   4. the browser's language list;
+ *   5. the default.
+ *
+ * The query sits above the stored choice on purpose. A rider who has set
+ * Latvian and opens a friend's `?lang=et` link is looking at something that
+ * was sent to him in Estonian; showing it in Latvian instead would ignore
+ * the one thing the sender actually chose. It is per-URL and not saved, so
+ * his own Latvian is back the moment he opens Mopik normally.
  *
  * The IP sits *above* the browser because a Latvian rider whose phone is set
  * to English should still get Latvian — which is exactly the rider's ask —
@@ -44,9 +51,23 @@ function localeFromDocument(): UiLocale | null {
   return isUiLocale(attr) ? attr : null;
 }
 
+/**
+ * `?lang=` on the current URL, when it names a language this build has.
+ *
+ * Client-only: the server render must not use it, or the hydration render
+ * (which reads `getServerSnapshot`) would disagree with it and tear. The
+ * effect in `LocaleBoundary` applies it right after hydration instead.
+ */
+function localeFromQuery(): UiLocale | null {
+  if (typeof window === "undefined") return null;
+  const asked = new URLSearchParams(window.location.search).get("lang");
+  return isUiLocale(asked) ? asked : null;
+}
+
 function snapshot(): UiLocale {
   if (!current) {
     current =
+      localeFromQuery() ??
       loadStoredLocale() ??
       localeFromDocument() ??
       (typeof navigator !== "undefined"

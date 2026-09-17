@@ -4,30 +4,21 @@ import Script from "next/script";
 import { AnalyticsProvider } from "@/components/analytics-provider";
 import { LocaleBoundary } from "@/components/locale-boundary";
 import { SiteFooter } from "@/components/site-footer";
-import { DEFAULT_LOCALE, localeFromCountry, type UiLocale } from "@/lib/i18n/locale";
+import { DEFAULT_LOCALE, localeFromCountry } from "@/lib/i18n/locale";
 import { t } from "@/lib/i18n/messages";
+import { DEFAULT_METADATA_LOCALE } from "@/lib/i18n/metadata-locale";
 import "./globals.css";
 
 const SITE_URL = "https://www.mopik.eu";
 const GA_ID = "G-M01X58GWMC";
 /**
- * What the metadata says when there is no country to read — a crawler from
- * outside the three home countries, or any request Vercel's edge did not
- * stamp. English, because it is the one language every audience can read;
- * this is a different question from `DEFAULT_LOCALE`, which is about the UI.
- */
-const DEFAULT_METADATA_LOCALE: UiLocale = "en";
-/**
- * The metadata follows the visitor's country, the same way the page does.
+ * The site-wide defaults. The home page overrides the title and description
+ * per request in `app/page.tsx`, which can also read `?lang=` — a layout gets
+ * no `searchParams`, and the query is the only language signal that travels
+ * with a shared link.
  *
- * `generateMetadata` may read `headers()` — it then resolves at request time,
- * which this layout already does for the language, so per-country metadata
- * costs nothing that was not already being paid. A visitor from Estonia gets
- * an Estonian title; a crawler with no country header gets English.
- *
- * A *shared route's* card is the opposite case and is deliberately handled
- * elsewhere: it is cached by whoever unfurls it first, so it follows the
- * rider who made it rather than whoever opens it. See `lib/share/card-locale.ts`.
+ * A *shared route's* card is a third case again, handled in
+ * `lib/share/card-locale.ts`: it follows the rider who made the ride.
  */
 export async function generateMetadata(): Promise<Metadata> {
   const ipLocale = localeFromCountry((await headers()).get("x-vercel-ip-country"));
