@@ -5,7 +5,7 @@ import { ImageResponse } from "next/og";
  * the intro, frozen mid-stroke, with the wordmark and tagline. Rendered by
  * Next at build time and served at /opengraph-image.
  */
-export const alt = "Mopik — adventure motorcycle routes in Latvia";
+export const alt = "Mopik — adventure motorcycle route planner for Europe";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -57,7 +57,7 @@ export default function Image() {
           </div>
           <div style={{ display: "flex", fontSize: 44, color: "#57534e" }}>Less planning. More riding.</div>
           <div style={{ display: "flex", fontSize: 28, color: "#78716c", marginTop: 6 }}>
-            Gravel and forest road routes in Latvia — from idea to GPX in seconds.
+            Plans gravel and forest road rides across Europe — from idea to GPX in seconds.
           </div>
         </div>
       </div>

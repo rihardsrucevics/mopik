@@ -3,9 +3,9 @@ import type { MetadataRoute } from "next";
 /** Installable on Android Chrome: name, icons, standalone display. */
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Mopik — adventure motorcycle routes",
+    name: "Mopik — adventure motorcycle route planner",
     short_name: "Mopik",
-    description: "Adventure and enduro routes along gravel and forest roads in Latvia — from idea to GPX.",
+    description: "Plans adventure and enduro rides along gravel and forest roads across Europe — from idea to GPX.",
     start_url: "/",
     display: "standalone",
     background_color: "#faf9f6",
