@@ -1,5 +1,7 @@
 import { ImageResponse } from "next/og";
 import { resolveShare } from "@/lib/share/resolve";
+import { t } from "@/lib/i18n/messages";
+import { DEFAULT_SHARE_LOCALE } from "@/lib/share/card-locale";
 
 /** The share card: the actual route line, coloured by surface, with the numbers. */
 export const alt = "Mopik route";
@@ -11,6 +13,8 @@ const COLOR: Record<string, string> = { asphalt: "#2f7bff", gravel: "#f56300", c
 export default async function Image({ params }: { params: Promise<{ code: string }> }) {
   const { code } = await params;
   const share = (await resolveShare(code))?.share ?? null;
+  // The same language the page's title uses — see `lib/share/card-locale.ts`.
+  const locale = share?.locale ?? DEFAULT_SHARE_LOCALE;
   const W = 1200, H = 630, PAD = 60, MAP_W = 640;
   let paths: { d: string; color: string }[] = [];
   if (share) {
@@ -47,13 +51,13 @@ export default async function Image({ params }: { params: Promise<{ code: string
           {paths.map((p, k) => <path key={k} d={p.d} fill="none" stroke={p.color} strokeWidth="7" strokeLinecap="round" strokeLinejoin="round" />)}
         </svg>
         <div style={{ position: "absolute", left: MAP_W, top: 0, width: W - MAP_W, height: H, display: "flex", flexDirection: "column", justifyContent: "space-between", padding: "56px 56px 48px 24px" }}>
-          <div style={{ display: "flex", fontSize: 22, letterSpacing: 5, color: "#bd4b00", fontWeight: 700 }}>SHARED ROUTE</div>
+          <div style={{ display: "flex", fontSize: 22, letterSpacing: 5, color: "#bd4b00", fontWeight: 700 }}>{t(locale, "shareCardKicker")}</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            <div style={{ display: "flex", fontSize: 46, fontWeight: 800, lineHeight: 1.05, letterSpacing: -1 }}>{share?.name ?? "Mopik route"}</div>
+            <div style={{ display: "flex", fontSize: 46, fontWeight: 800, lineHeight: 1.05, letterSpacing: -1 }}>{share?.name ?? t(locale, "shareCardFallbackName")}</div>
             <div style={{ display: "flex", gap: 28, marginTop: 8 }}>
               <div style={{ display: "flex", flexDirection: "column" }}><span style={{ fontSize: 18, color: "#78716c", letterSpacing: 2 }}>KM</span><span style={{ fontSize: 44, fontWeight: 700 }}>{share?.km ?? "—"}</span></div>
-              <div style={{ display: "flex", flexDirection: "column" }}><span style={{ fontSize: 18, color: "#78716c", letterSpacing: 2 }}>TIME</span><span style={{ fontSize: 44, fontWeight: 700 }}>{dur}</span></div>
-              <div style={{ display: "flex", flexDirection: "column" }}><span style={{ fontSize: 18, color: "#78716c", letterSpacing: 2 }}>GRAVEL</span><span style={{ fontSize: 44, fontWeight: 700 }}>{share?.unpavedPercent ?? "—"} %</span></div>
+              <div style={{ display: "flex", flexDirection: "column" }}><span style={{ fontSize: 18, color: "#78716c", letterSpacing: 2 }}>{t(locale, "shareCardTime")}</span><span style={{ fontSize: 44, fontWeight: 700 }}>{dur}</span></div>
+              <div style={{ display: "flex", flexDirection: "column" }}><span style={{ fontSize: 18, color: "#78716c", letterSpacing: 2 }}>{t(locale, "shareCardGravel")}</span><span style={{ fontSize: 44, fontWeight: 700 }}>{share?.unpavedPercent ?? "—"} %</span></div>
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>

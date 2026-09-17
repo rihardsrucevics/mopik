@@ -44,6 +44,12 @@ export type MessageKey =
   | "kindVillage"
   | "kindHamlet"
   | "placeConfirmed"
+  | "shareCardNotFound"
+  | "shareCardDescription"
+  | "shareCardKicker"
+  | "shareCardTime"
+  | "shareCardGravel"
+  | "shareCardFallbackName"
   | "kindAddress"
   | "kindPlace"
   | "kindFuel"
@@ -476,6 +482,12 @@ const lv: Messages = {
   kindVillage: "ciems",
   kindHamlet: "viensēta",
   placeConfirmed: "atrasta vieta",
+  shareCardNotFound: "Maršruts nav atrasts",
+  shareCardDescription: "{unpaved} % grants un meža ceļu, {repeated} % atkārtoti. Adventure maršruts no Mopik — lejupielādē GPX vai uztaisi līdzīgu.",
+  shareCardKicker: "DALĪTS MARŠRUTS",
+  shareCardTime: "LAIKS",
+  shareCardGravel: "GRANTS",
+  shareCardFallbackName: "Mopik maršruts",
   kindAddress: "adrese",
   kindPlace: "vieta",
   kindFuel: "degviela",
@@ -903,6 +915,12 @@ const lt: Messages = {
   kindVillage: "kaimas",
   kindHamlet: "vienkiemis",
   placeConfirmed: "rasta vieta",
+  shareCardNotFound: "Maršrutas nerastas",
+  shareCardDescription: "{unpaved} % žvyro ir miško kelių, {repeated} % kartojasi. Adventure maršrutas iš Mopik — atsisiųsk GPX arba susikurk panašų.",
+  shareCardKicker: "BENDRINTAS MARŠRUTAS",
+  shareCardTime: "LAIKAS",
+  shareCardGravel: "ŽVYRAS",
+  shareCardFallbackName: "Mopik maršrutas",
   kindAddress: "adresas",
   kindPlace: "vieta",
   kindFuel: "degalinė",
@@ -1300,6 +1318,12 @@ const et: Messages = {
   kindVillage: "küla",
   kindHamlet: "talu",
   placeConfirmed: "leitud koht",
+  shareCardNotFound: "Marsruuti ei leitud",
+  shareCardDescription: "{unpaved} % kruusa- ja metsateid, {repeated} % korduv. Adventure marsruut Mopikust — laadi alla GPX või tee sarnane.",
+  shareCardKicker: "JAGATUD MARSRUUT",
+  shareCardTime: "AEG",
+  shareCardGravel: "KRUUS",
+  shareCardFallbackName: "Mopiku marsruut",
   kindAddress: "aadress",
   kindPlace: "koht",
   kindFuel: "tankla",
@@ -1693,6 +1717,12 @@ const en: Messages = {
   kindVillage: "village",
   kindHamlet: "hamlet",
   placeConfirmed: "place found",
+  shareCardNotFound: "Route not found",
+  shareCardDescription: "{unpaved} % gravel and forest roads, {repeated} % retraced. An adventure route from Mopik — download the GPX or plan a similar one.",
+  shareCardKicker: "SHARED ROUTE",
+  shareCardTime: "TIME",
+  shareCardGravel: "GRAVEL",
+  shareCardFallbackName: "Mopik route",
   kindAddress: "address",
   kindPlace: "place",
   kindFuel: "fuel",

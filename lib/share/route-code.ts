@@ -1,6 +1,7 @@
 import type { GeneratedRoute, RoadClass, RouteSegmentProperties, SurfaceClass } from "@/lib/types";
 import { RidePlanSchema, type RidePlan } from "@/lib/chat/ride-plan";
 import type { ResolvedPlace } from "@/lib/chat/places";
+import { isUiLocale, type UiLocale } from "@/lib/i18n/locale";
 
 /**
  * A route as a link, with no database behind it.
@@ -133,6 +134,25 @@ export type ShareMeta = {
    * countries reports.
    */
   c?: number;
+  /**
+   * The language the rider who made this ride was using.
+   *
+   * It exists so the *share card* — the title, description and image a link
+   * unfurls into — can speak the language of the person who sent the link.
+   * That is possible here and nowhere else in the metadata: a shared link is
+   * one specific ride made by one specific rider, so there is a right answer,
+   * where the home page is read by everyone and would only ever be a lottery
+   * between four languages decided by whichever crawler asked first.
+   *
+   * Optional, and written only when a link is built — never by the saved-ride
+   * encoder. `rideId()` hashes the whole code, so a key that appeared in
+   * every encode would change the id of rides already saved on a rider's
+   * device and orphan every one of them. A code with no `l` decodes to
+   * `undefined`, which the share page reads as Latvian: links already sitting
+   * in riders' chats were made in Latvian, so that is the honest guess about
+   * what was actually there rather than a new default.
+   */
+  l?: UiLocale;
 };
 export type SharedRoute = {
   name: string; variant: string; km: number; minutes: number; unpavedPercent: number; repeatedPercent: number;
@@ -141,6 +161,12 @@ export type SharedRoute = {
   /** class of the stretch starting at point i (length points.length - 1) */
   classes: { roadClass: RoadClass; surface: SurfaceClass }[];
   plan: RidePlan | null;
+  /**
+   * The language of the rider who made this ride, when the code carries one
+   * (`l` on `ShareMeta`). `null` on every code made before this existed, and
+   * on saved-ride codes, which never carry it.
+   */
+  locale: UiLocale | null;
   details: {
     roadKm: number; trackKm: number; trailKm: number;
     asphaltPercent: number; gravelPercent: number; dirtPercent: number; unknownPercent: number;
@@ -172,7 +198,7 @@ function classAtOriginalIndex(route: GeneratedRoute): string[] {
   return out;
 }
 
-export function encodeRouteShare(route: GeneratedRoute, startLabel: string, plan?: RidePlan | null, places?: ResolvedPlace[] | null): string {
+export function encodeRouteShare(route: GeneratedRoute, startLabel: string, plan?: RidePlan | null, places?: ResolvedPlace[] | null, locale?: UiLocale | null): string {
   const coords = route.geometry.coordinates as Pt[];
   let keep = simplifyIndices(coords, SIMPLIFY_TOLERANCE_M);
   if (keep.length > MAX_POINTS) {
@@ -212,6 +238,9 @@ export function encodeRouteShare(route: GeneratedRoute, startLabel: string, plan
   // for a field most rides do not use, and absent already means zero on decode.
   if ((route.quality.gateCount ?? 0) > 0) meta.g = route.quality.gateCount;
   if (route.quality.coastKm > 0) meta.c = r1(route.quality.coastKm);
+  // Only the link-building path passes this. See `l` on `ShareMeta`: writing
+  // it unconditionally would change `rideId()` for rides already saved.
+  if (locale) meta.l = locale;
   const parts = [SHARE_VERSION, toBase64Url(JSON.stringify(meta)), encodeVarints(deltas), encodeVarints(runs)];
   if (plan) parts.push(encodePlanShare(plan, places));
   return parts.join("~");
@@ -258,7 +287,10 @@ export function decodeRouteShare(code: string): SharedRoute | null {
       gateCount: meta.g,
       coastKm: meta.c ?? 0,
     } : null;
-    return { name: meta.n, variant: meta.va, km: meta.km, minutes: meta.min, unpavedPercent: meta.up, repeatedPercent: meta.rep, startLabel: meta.s, points, classes, plan, details };
+    // Validated rather than trusted: the code is user-supplied, and an
+    // unknown value must not reach `messages()` as if it were a language.
+    const locale = isUiLocale(meta.l) ? meta.l : null;
+    return { name: meta.n, variant: meta.va, km: meta.km, minutes: meta.min, unpavedPercent: meta.up, repeatedPercent: meta.rep, startLabel: meta.s, points, classes, plan, details, locale };
   } catch {
     return null;
   }

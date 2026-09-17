@@ -206,3 +206,28 @@ test("a pre-count code's `y` decodes without claiming to be a gate count", () =>
   assert.equal(back.name, "Baldone tests");
   assert.equal(back.km, 3);
 });
+
+test("a share link carries the sender's language; a saved ride does not", () => {
+  // The language is what makes the card speak to the person who receives the
+  // link, so it has to survive the trip through the URL.
+  const withLocale = encodeRouteShare(fakeRoute(), "Baldone", null, null, "et");
+  assert.equal(decodeRouteShare(withLocale)!.locale, "et");
+
+  // ...but only when the link-building path asked for it. `rideId()` hashes
+  // the whole code, so a key written on every encode would change the id of
+  // every ride already saved on a rider's device and orphan all of them.
+  const saved = encodeRouteShare(fakeRoute(), "Baldone");
+  assert.equal(decodeRouteShare(saved)!.locale, null, "no language unless one was passed");
+  assert.equal(saved, encodeRouteShare(fakeRoute(), "Baldone"), "the saved-ride code is unchanged");
+
+  // Old links, already sitting in riders' chats, carry no language at all and
+  // must keep decoding rather than becoming "route not found".
+  const old = "1~eyJuIjoiVmVjcyIsInZhIjoiY29tcGxleCIsImttIjozLCJtaW4iOjkwLCJ1cCI6NjAsInJlcCI6NiwicyI6IkJhbGRvbmUiLCJkIjpbInJvYWR8YXNwaGFsdCJdfQ~ghq6Kw170E8HwWwB~AKCK";
+  const back = decodeRouteShare(old);
+  assert.ok(back, "a code that predates the language field still decodes");
+  assert.equal(back!.locale, null, "and reports no language, so the card falls back");
+
+  // A code is user-supplied: an unknown value must not reach messages().
+  const bogus = encodeRouteShare(fakeRoute(), "Baldone", null, null, "klingon" as never);
+  assert.equal(decodeRouteShare(bogus)!.locale, null, "an unknown language is refused, not trusted");
+});

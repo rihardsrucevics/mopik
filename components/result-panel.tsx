@@ -410,7 +410,10 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
   // opens its own sheet, which nobody wants for a link), so there the link
   // goes to the clipboard with a visible confirmation.
   const shareRoute = async () => {
-    const code = encodeRouteShare(route, route.stops?.[0]?.name ?? plan?.startPlace ?? "", plan, resolvedPlaces);
+    // The rider's own language travels with the link, so the card the
+    // recipient sees is written in the language the sender was using. Only
+    // here: the saved-ride encoders must not write it (see `l` on ShareMeta).
+    const code = encodeRouteShare(route, route.stops?.[0]?.name ?? plan?.startPlace ?? "", plan, resolvedPlaces, locale);
     // Short id from the store when it answers quickly; the long self-contained
     // link otherwise. Both open the same page.
     let url = shareUrl(code, window.location.origin);
