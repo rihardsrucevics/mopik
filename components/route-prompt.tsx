@@ -27,7 +27,10 @@ type Props = {
    */
   originCode?: string | null;
   /** a quick reply that acts on the client (show the routes) instead of being sent */
-  onAction?: (action: "show-routes" | "retry") => void;
+  /** A chip handled on the client rather than sent to the chat. The union
+   *  is the quick reply's own, so a new action cannot be added there and
+   *  silently dropped here. */
+  onAction?: (action: NonNullable<ChatQuickReply["action"]>) => void;
   /** Call the generation in flight off. */
   onCancel?: () => void;
 };

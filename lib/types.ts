@@ -427,4 +427,55 @@ export type UnplannableVerdict = {
   budgetSeconds: number;
   /** "timeout" when it ran out of time, "error" when the router refused */
   reason: "timeout" | "error";
+  /**
+   * Which rider-named segment is the problem, when the rider named any
+   * (backlog item 7, step 2d). Absent on a ride with no intermediate places,
+   * where `from`/`to` already say it and there is nothing to split.
+   *
+   * This is what makes the refusal actionable: "šis posms ir par grūtu —
+   * pievieno pieturu starp Poznań un Warszawa" tells the rider what to do,
+   * where the flat "too hard" only told them to go away. The index is into
+   * the ride's own hop order (0 = start → first via), so the chat can point
+   * at the right pair of fields.
+   */
+  segment?: {
+    /** 0-based position of the hop in the ride, start → via1 being 0 */
+    index: number;
+    from: string;
+    to: string;
+    km: number;
+    /** how many hops the ride has, so the chat can say "2. no 3" */
+    ofSegments: number;
+  };
+  /**
+   * The direct road for the failing segment, when the probe managed to route
+   * it before giving up on planning something interesting.
+   *
+   * Backlog item 7 calls this (b), and it is a **named offer, never a silent
+   * fallback**: the chat may say "nevaru izplānot interesantu maršrutu šim
+   * posmam, bet taisnāko ceļu varu" and let the rider choose. Returning this
+   * road *as* the ride would be exactly the substitution CLAUDE.md forbids —
+   * the headline leg is the shortest, most-travelled line between two points,
+   * which is the road an adventure rider was trying to avoid.
+   *
+   * Absent when even the direct road did not route in the time available,
+   * which is the common case for a timeout: there is then nothing to offer.
+   *
+   * It carries the **whole route**, not just the numbers, because the chip
+   * has to be able to show it. The client cannot fetch this itself: it would
+   * ask with the ride's own profile, and that profile is measured never to
+   * answer these legs (Berlin → Warszawa: null after 91 s, against 5.7 s on
+   * `car-fast`). So the one search that succeeded travels with the verdict.
+   * The line is simplified to 10 m, as the share code does, to keep the
+   * payload sane on a 600 km road.
+   */
+  directLeg?: DirectLegOffer;
+};
+
+/** The direct road, offered by name — never substituted for the ride. */
+export type DirectLegOffer = {
+  distanceKm: number;
+  durationMinutes: number;
+  /** the road itself, classified, ready for the map and the GPX export */
+  route: GeneratedRoute;
 };

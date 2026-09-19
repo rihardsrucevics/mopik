@@ -15,6 +15,7 @@ export type AnalyticsEvent =
   | "route_generated"        // routes arrived; props: versions, km, minutes, repeated, budget…
   | "route_infeasible"       // nothing fits the time; props: requested/minimum minutes
   | "route_unplannable"      // probe says the ride is too hard to search; props: leg_km, reason
+  | "direct_leg_shown"       // rider took the direct-road offer (item 7b); props: km, minutes
   | "generation_cancelled"   // "Atcelt" on the loader; props: case (first_from_form → back to the form | later → stays in the chat)
   | "overlap_chat_shown"     // best version retraces > 20 %
   | "route_version_selected" // Taisnākā / Līkumotākā / Sarežģītākā

@@ -22,7 +22,7 @@ import { seedPlanFromProfile } from "@/lib/chat/ride-profile";
 import type { ResolvedPlace } from "@/lib/chat/places";
 import { useRideProfile } from "@/lib/chat/use-ride-profile";
 import { DESKTOP_QUERY, useMediaQuery } from "@/lib/use-media-query";
-import { GenerateRouteResponse } from "@/lib/types";
+import { GenerateRouteResponse, type DirectLegOffer } from "@/lib/types";
 import { POI_KIND, type RoutePoi } from "@/lib/poi/kinds";
 import { describeDetourForFocus } from "@/lib/routing/use-detours";
 import { type DetourResult } from "@/lib/routing/detour";
@@ -96,6 +96,24 @@ export function HomePage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [plan, setPlan] = useState<RidePlan | null>(null);
   const [result, setResult] = useState<GenerateRouteResponse | null>(null);
+  /**
+   * The direct road the API offered when it refused a segment (backlog item
+   * 7b), waiting for the rider to ask for it by name.
+   *
+   * Held rather than shown: the offer is a tap, never a substitution. It is
+   * also held rather than re-fetched, because the client would have to ask
+   * with the ride's own profile and that profile is measured never to answer
+   * these legs at all (Berlin → Warszawa: null after 91 s).
+   */
+  const [directOffer, setDirectOffer] = useState<DirectLegOffer | null>(null);
+  /** True while the panel is showing that road rather than a planned ride. */
+  const [showingDirect, setShowingDirect] = useState(false);
+  /**
+   * The `intent` and `start` the refusal carried, so the offer can be shown
+   * as a real result. A ref rather than state: nothing renders from it until
+   * the rider taps, and `showDirectLeg` reads it outside a render.
+   */
+  const unplannableContextRef = useRef<GenerateRouteResponse | null>(null);
   const [phase, setPhase] = useState<"idle" | "thinking" | "routing">("idle");
   const [error, setError] = useState<string | null>(null);
   const [retry, setRetry] = useState<Retry | null>(null);
@@ -389,6 +407,33 @@ export function HomePage() {
     setQuickReplies([]);
   };
 
+  /**
+   * The rider tapped "Rādi taisnāko ceļu" — show the road the API offered.
+   *
+   * Everything needed is already in hand: the refusal carried the routed and
+   * classified road plus the intent and the start. Nothing is re-requested,
+   * and deliberately so — the client would have to ask with the ride's own
+   * profile, which is measured never to answer these legs (Berlin → Warszawa:
+   * null after 91 s against 5.7 s on `car-fast`). A "show me" that hung for
+   * a minute and then failed would be worse than the dead button it replaces.
+   *
+   * The panel is told this is the direct leg (`showingDirect`) so it can say
+   * so: a car route must never sit where an adventure route normally does
+   * without a word. CLAUDE.md, "never substitute silently".
+   */
+  const showDirectLeg = () => {
+    const offer = directOffer;
+    const base = unplannableContextRef.current;
+    if (!offer || !base) return;
+    track("direct_leg_shown", { km: offer.distanceKm, minutes: offer.durationMinutes });
+    setResult({ ...base, routes: [offer.route] });
+    setSelected(0);
+    setShowingDirect(true);
+    setLucky(false);
+    setChatting(false);
+    setQuickReplies([]);
+  };
+
   async function generate(current: RidePlan, conversation: ChatMessage[], pickedPlaces: ResolvedPlace[] = places) {
     setPhase("routing");
     const sourcePrompt = conversation.filter(m => m.role === "user").map(m => m.content).join("\n");
@@ -411,10 +456,19 @@ export function HomePage() {
         const { message, quickReplies: replies } = describeUnplannable(unplannable, true);
         setMessages([...conversation, { role: "assistant", content: message }]);
         setQuickReplies(replies);
+        // Held for the "Rādi taisnāko ceļu" chip. The road is already routed
+        // and travels in the verdict — asking the API again would use the
+        // ride's own profile, which is measured never to answer these legs.
+        setDirectOffer(unplannable.directLeg ?? null);
+        unplannableContextRef.current = data as GenerateRouteResponse;
+        setResult(null);
+        setShowingDirect(false);
         setChatting(true);
         setRetry(null);
         return;
       }
+      setDirectOffer(null);
+      setShowingDirect(false);
       const route = (data as GenerateRouteResponse).routes[0];
       if (!route) throw new Error(ui.chatErrNoMatch);
       const verdict = (data as GenerateRouteResponse).infeasible;
@@ -945,8 +999,8 @@ export function HomePage() {
             ? <RideComposer key={plan ? planSummary(plan, locale) : "new"} initialPlan={plan} initialPlaces={places} profile={profile} onProfileChange={changeProfile} busy={phase !== "idle"} onGenerate={startFromForm} onUseChat={() => setEntryMode("chat")} onPlacesChange={(p, tripType) => { setPreviewPlaces(p); setPreviewRoundTrip(tripType === "round_trip"); }} map={mapInComposer && mapVisible ? mapPanel : undefined}
                 onPickModeChange={changePickMode} pickPoint={pickPoint} geolocated={geolocated} />
             : result && result.routes.length > 0 && !chatting
-              ? <ResultPanel routes={result.routes} selected={selected} onSelect={setSelected} plan={plan} avoidTowns={result.intent.avoidTowns ?? false} lucky={lucky} remoteLoop={result.remoteLoop} longerSuggestion={result.longerSuggestion} tolerancePercent={result.intent.distanceTolerancePercent} busy={phase !== "idle"} onSend={send} onBackToForm={() => setEntryMode("form")} map={mapInResult && mapVisible ? mapPanel : undefined} resolvedPlaces={routedPlaces} alternatives={result.alternatives} sparsePlaceData={result.sparsePlaceData} assembledFromSegments={result.assembledFromSegments} offset={variantOffset} onOffsetChange={setVariantOffset} onShowPoi={showPoi} pois={routePois} poisLoading={poisLoading} poisFailed={poisFailed} onDetoursChange={setDetoursForMap} selectedPois={selectedPois} onToggleSelectPoi={toggleSelectPoi} onClearSelectedPois={clearSelectedPois} onRegenerateWithSelection={regenerateWithSelection} onSplicedChange={handleSplicedChange} />
-              : <RoutePrompt messages={messages} plan={plan} hasRoute={Boolean(route)} phase={phase} quickReplies={quickReplies} lucky={lucky && !route} onSend={send} onBackToForm={() => setEntryMode("form")} originCode={origin?.code ?? null} onAction={(action) => { if (action === "retry") { retryLast(); return; } setChatting(false); setQuickReplies([]); }} onCancel={cancel} />}
+              ? <ResultPanel routes={result.routes} selected={selected} onSelect={setSelected} plan={plan} avoidTowns={result.intent.avoidTowns ?? false} lucky={lucky} remoteLoop={result.remoteLoop} longerSuggestion={result.longerSuggestion} tolerancePercent={result.intent.distanceTolerancePercent} busy={phase !== "idle"} onSend={send} onBackToForm={() => setEntryMode("form")} map={mapInResult && mapVisible ? mapPanel : undefined} resolvedPlaces={routedPlaces} alternatives={result.alternatives} sparsePlaceData={result.sparsePlaceData} assembledFromSegments={result.assembledFromSegments} directLeg={showingDirect} offset={variantOffset} onOffsetChange={setVariantOffset} onShowPoi={showPoi} pois={routePois} poisLoading={poisLoading} poisFailed={poisFailed} onDetoursChange={setDetoursForMap} selectedPois={selectedPois} onToggleSelectPoi={toggleSelectPoi} onClearSelectedPois={clearSelectedPois} onRegenerateWithSelection={regenerateWithSelection} onSplicedChange={handleSplicedChange} />
+              : <RoutePrompt messages={messages} plan={plan} hasRoute={Boolean(route)} phase={phase} quickReplies={quickReplies} lucky={lucky && !route} onSend={send} onBackToForm={() => setEntryMode("form")} originCode={origin?.code ?? null} onAction={(action) => { if (action === "retry") { retryLast(); return; } if (action === "direct-leg") { showDirectLeg(); return; } setChatting(false); setQuickReplies([]); }} onCancel={cancel} />}
           {/* A ride that came from editing another one. Asked once, here,
               because only the rider knows whether the original is still
               wanted — and the answer is one tap either way. */}

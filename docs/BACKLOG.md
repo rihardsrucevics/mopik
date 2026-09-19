@@ -196,7 +196,7 @@ the first thing this project would store server-side.
 
 ## 7. A ride of ~1000 km still does not generate
 
-**Status 2026-09-15:** Step 1 done — a feasibility probe refuses or scales the search before it runs (`lib/routing/fetch-route-probe.ts`). Step 2 designed, not built.
+**Status 2026-09-19:** Steps 1 and 2d done — the probe measures each rider-named segment, the refusal names the hop that is too hard and offers that hop's direct road as a chip (`lib/routing/fetch-route-probe.ts`). Step 2c (consecutive days) remains the real answer and is unbuilt.
 
 Measured 2026-09-14, after the VPS was in place. Our own server routes
 Como → Budapest fine, but **one such leg takes 75 s** — and a generation tries
@@ -334,6 +334,60 @@ silent substitution: "nevaru izplānot interesantu maršrutu, bet taisnāko ceļ
 varu" is honest; quietly returning the motorway is not.
 
 (a) is done and needs no further work.
+
+### Step 2d shipped, 2026-09-19 — the refusal names the segment, and offers the road
+
+The probe now measures **each rider-named segment** (start → via1, via1 → via2,
+…) instead of one headline leg, under a shared 10 s budget, sequentially and
+longest hop first. A refusal names the hop that is the problem — "šis posms ir
+par grūtu: Innsbruck → Wien (~386 km, 2. no 3). Pievieno pieturu starp
+Innsbruck un Wien" — and carries the direct road for that hop as a chip the
+rider taps ("Rādi taisnāko ceļu"), never as a substitution.
+
+| ride | before | after | outcome |
+|---|---|---|---|
+| Rīga → Tallinn | 27.7 s, 2 routes | **23.8 s, 2 routes** | unchanged (8 of 22 candidates) |
+| Berlin → Poznań → Warszawa | 29.0 s → **422** | **22.3 s, 1 route, 715 km** | now plans |
+| Como → Innsbruck → Wien → Budapest | 10.1 s, flat refusal | 27.7 s, names Innsbruck → Wien + offer 477 km / 6 h 37 | actionable |
+| Berlin → Warszawa (no vias) | 10.1 s, flat refusal | 21.9 s, refusal + offer 572 km / 4 h 30 | no segment named, correctly |
+| Sigulda round trip | 22.4 s, 2 routes | **19.5 s, 2 routes** | unchanged, never probed |
+| Rīga → Baldone | 14.1 s, 2 routes | **13.0 s, 2 routes** | unchanged, never probed |
+
+**A candidate costs the whole ride, not its slowest hop.** Pricing Berlin →
+Poznań → Warszawa at its slowest segment (9.6 s) allowed three candidates and
+**all three timed out** — each was routing both hops. Even the bare segment sum
+was too cheap, because a corridor candidate inserts offset vias by design and
+that search is dearer than the straight leg the probe measured. Hence
+`candidateCostSeconds`, which sums the probed segments, charges unprobed ones
+at the slowest measured rate, and multiplies by `CORRIDOR_MARGIN` (1.5 — a
+margin, not a measurement, erring towards returning a ride).
+
+**Our own profile cannot route the legs the offer is for; `car-fast` can.**
+Measured on Berlin → Warszawa against `brouter.mopik.eu`:
+
+| profile | result |
+|---|---|
+| our moto profile flattened to `offRoad: 0`, no trails | **never answers** — null after 91 s |
+| stock `trekking` | 53.2 s |
+| stock `car-fast` | **5.7 s** |
+
+Nearly a factor of ten, and the flattened moto profile does not finish at all.
+The cost is our own cost script — the turn, surface, grade and off-road terms
+that make a Mopik route interesting are what make the search expensive — so
+flattening its dials buys a duller route, not a faster one. Innsbruck → Wien
+says the same: 28–43 s flattened, with and without motorways. The offer
+therefore routes on `car-fast`, which is also the honest profile for it: the
+straightest way *is* the road a car would take. The geometry travels inside
+the refusal (simplified to 10 m, as the share code does) because the client
+cannot re-request it — it would ask with the ride's own profile and hang.
+
+**Next open item: the probe's single measurement is noisy.** Rīga → Tallinn
+measured 3.1–10.4 s for the same leg across runs, and the generation that
+follows ran **19–51 s** as a result. This is **pre-existing, not caused by 2d**
+— the old code produced the identical 37.4 s / 13 candidates whenever it
+happened to measure 3.1 s. At 51 s it is one slow day from the 60 s Vercel cap.
+Worth either sampling the probe more than once or damping the scaling, but it
+is a change to the candidate arithmetic and wants its own measurement round.
 
 ## 8. POI for Europe
 

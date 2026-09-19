@@ -56,7 +56,7 @@ export type RidePlan = z.infer<typeof RidePlanSchema>;
 export const ChatMessageSchema = z.object({ role: z.enum(["user", "assistant"]), content: z.string().min(1).max(6000) });
 export type ChatMessage = z.infer<typeof ChatMessageSchema>;
 /** A tap target. `action` is handled on the client instead of being sent to the chat. */
-export type ChatQuickReply = { label: string; message: string; action?: "show-routes" | "retry" };
+export type ChatQuickReply = { label: string; message: string; action?: "show-routes" | "retry" | "direct-leg" };
 export type ChatResponse = { plan: RidePlan; message: string; ready: boolean; quickReplies: ChatQuickReply[] };
 /**
  * Which fact the chat is missing. Carried on the prompt so the server can

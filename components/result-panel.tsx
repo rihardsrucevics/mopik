@@ -93,8 +93,17 @@ function Row({ label, value, icon }: { label: string; value: string; icon?: stri
   );
 }
 
-export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, remoteLoop, longerSuggestion, tolerancePercent = 20, busy, onSend, onBackToForm, resolvedPlaces, alternatives, offset, onOffsetChange, map, sparsePlaceData = false, assembledFromSegments = false, onShowPoi, pois = null, poisLoading = false, poisFailed = false, onDetoursChange, selectedPois = [], onToggleSelectPoi, onClearSelectedPois, onRegenerateWithSelection, onSplicedChange }: {
+export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, remoteLoop, longerSuggestion, tolerancePercent = 20, busy, onSend, onBackToForm, resolvedPlaces, alternatives, offset, onOffsetChange, map, sparsePlaceData = false, assembledFromSegments = false, directLeg = false, onShowPoi, pois = null, poisLoading = false, poisFailed = false, onDetoursChange, selectedPois = [], onToggleSelectPoi, onClearSelectedPois, onRegenerateWithSelection, onSplicedChange }: {
   routes: GeneratedRoute[];
+  /**
+   * This is the direct-road offer (backlog item 7b), not a planned ride.
+   *
+   * The rider asked for it by name after Mopik refused the segment, so the
+   * panel must say what it is rather than let a `car-fast` line sit where an
+   * adventure route normally does. CLAUDE.md's "never substitute silently"
+   * is the rule; this flag is how the panel keeps it visible.
+   */
+  directLeg?: boolean;
   /** transit → loop → transit split, when the ride was built around a focus area */
   remoteLoop?: GenerateRouteResponse["remoteLoop"];
   /** the API's own offer when nothing inside the budget looped cleanly */
@@ -568,8 +577,14 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
         <div className="rounded-xl border border-stone-200 p-3">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
-              <div className="truncate text-sm font-semibold text-stone-900">{route.name}</div>
-              {route.stops && route.stops.length > 0 && <div className="truncate text-[11px] text-stone-500">{route.stops.map((s) => s.name).join(" · ")}</div>}
+              {/* The offer says what it is before it says where it goes. A
+                  rider who taps "Rādi taisnāko ceļu" must never mistake a
+                  car route for the ride Mopik plans. */}
+              {directLeg && <div className="truncate text-[10px] font-semibold uppercase tracking-wider text-[#bd4b00]">{m.directLegKicker}</div>}
+              <div className="truncate text-sm font-semibold text-stone-900">{directLeg ? m.directLegTitle : route.name}</div>
+              {directLeg
+                ? <div className="truncate text-[11px] text-stone-500">{route.name}</div>
+                : route.stops && route.stops.length > 0 && <div className="truncate text-[11px] text-stone-500">{route.stops.map((s) => s.name).join(" · ")}</div>}
             </div>
             {route.tet && <span className="shrink-0 rounded-full border border-[#f5630040] px-2 py-0.5 text-[10px] font-semibold text-[#f56300]" title={fi(m.resTetApprox, { km: route.tet.sliceKm })}>TET</span>}
           </div>
@@ -589,6 +604,11 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
             <div><div className="text-[10px] uppercase tracking-wider text-stone-400">{m.resTime}</div><div className="text-lg font-semibold tabular-nums">{spliced ? m.resApprox : ""}{duration(shownDurationSeconds)}</div></div>
             <div><div className="text-[10px] uppercase tracking-wider text-stone-400">{m.resRepeated}</div><div className="text-lg font-semibold tabular-nums" style={{ color: route.overlap.repeatedPercent > 15 ? "#ff3b30" : undefined }}>{route.overlap.repeatedPercent} %</div></div>
           </div>
+          {/* Said out loud, under the numbers the rider is reading: this is
+              the road, and the way to get a ride is to add a stop. */}
+          {directLeg && (
+            <p className="mt-2 rounded-lg border border-[#f5630040] bg-[#fff4ec] px-3 py-2 text-[11px] text-stone-700">{m.directLegNote}</p>
+          )}
           {spliced && spliced.applied.length > 0 && (
             <p className="mt-1 text-[11px] text-stone-500">
               {fi(m.resWithSights, { n: spliced.applied.length })}

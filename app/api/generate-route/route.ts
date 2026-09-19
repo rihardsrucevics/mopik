@@ -24,8 +24,12 @@ import { fetchRoutePath } from "@/lib/routing/brouter";
 // cannot plan in one go is named up front instead of after a 50 s wait.
 import {
   affordableCandidates,
-  headlineLeg,
-  probeLeg,
+  candidateCostSeconds,
+  directLegOffer,
+  DIRECT_OFFER_PROFILE,
+  probeSegments,
+  rideSegments,
+  segmentsWorthProbing,
   PROBE_BUDGET_MS,
   snapDistanceM,
 } from "@/lib/routing/fetch-route-probe";
@@ -44,6 +48,9 @@ import { planLoop, type LoopStop } from "@/lib/routing/loop";
 // the rule that folds them in without spending time the generation lacks.
 import { dropOffshoreVias, seawardBearing, seawardCorridors, seawardVias, withSeawardCandidates, type ViaProbe } from "@/lib/routing/seaward";
 import { detectLocale, nameLoop, stopLabels } from "@/lib/routing/name-route";
+// The direct-road offer reuses the share code's simplification: a 600 km car
+// route is tens of thousands of points and the refusal must stay small.
+import { simplifyIndices, SIMPLIFY_TOLERANCE_M } from "@/lib/share/route-code";
 import {
   GeneratedRoute,
   GenerateRouteResponse,
@@ -1139,6 +1146,62 @@ function withDeadline<T>(promise: Promise<T>, ms: number): Promise<T> {
   });
 }
 
+/**
+ * The direct road, packaged so the chat can actually show it.
+ *
+ * Backlog item 7's (b) is a *named offer*, and an offer the rider cannot see
+ * is a dead button. So the road the probe already routed on `car-fast` is
+ * classified with the same classifier every other route uses — the km, the
+ * riding time and the surfaces are therefore the real ones, not estimates —
+ * and travels inside the refusal.
+ *
+ * Two deliberate differences from a planned ride:
+ *
+ * - **The name says what it is.** `variant: "direct"` and a name built from
+ *   the two places, so nothing downstream can mistake this for one of the
+ *   "versions" a generation produces. It is the road, not the ride.
+ * - **The line is simplified to 10 m**, exactly as the share code does. A
+ *   600 km car route is tens of thousands of points, and the refusal has to
+ *   fit in a response the chat renders immediately.
+ *
+ * `overlap` and the rest come from the classifier, so a rider who exports
+ * the GPX gets honest numbers for the road they chose.
+ */
+function directLegOfferRoute(
+  path: RoutePath,
+  segment: { fromName: string; toName: string }
+): NonNullable<UnplannableVerdict["directLeg"]> {
+  const keep = simplifyIndices(path.coordinates as [number, number][], SIMPLIFY_TOLERANCE_M);
+  const simplified: RoutePath = {
+    ...path,
+    coordinates: keep.map((i) => path.coordinates[i]),
+  };
+  const classified = classifyRoute(simplified);
+  return {
+    distanceKm: Math.round(path.distanceMeters / 1000),
+    durationMinutes: Math.round(classified.durationSeconds / 60),
+    route: {
+      id: crypto.randomUUID(),
+      name: [segment.fromName, segment.toName].filter(Boolean).join(" → "),
+      geometry: { type: "LineString", coordinates: simplified.coordinates },
+      segments: classified.segments,
+      distanceMeters: path.distanceMeters,
+      durationSeconds: classified.durationSeconds,
+      roadMix: classified.roadMix,
+      surfaces: classified.surfaces,
+      quality: classified.quality,
+      overlap: classified.overlap,
+      // The profile is named for what it is. This road was not planned on
+      // the rider's dials and must never claim to have been.
+      profile: DIRECT_OFFER_PROFILE,
+      sourcePrompt: "",
+      // Not one of the generation's categories — the panel keys the
+      // "this is the road, not the ride" treatment off exactly this.
+      variant: "direct",
+    },
+  };
+}
+
 export async function POST(req: NextRequest) {
   const startedAt = Date.now();
   const remainingMs = () => TIME_BUDGET_MS - (Date.now() - startedAt);
@@ -1317,62 +1380,127 @@ export async function POST(req: NextRequest) {
       ? (remote ? 60 : body.lucky ? 120 : (requiredVia.length || destination) ? Math.max(80, Math.round(fixedDirectKm * 1.25)) : 80)
       : resolveTargetDistanceKm(intent);
 
-    // The feasibility probe. Route the headline leg once, under a short
-    // deadline, before committing to ~36 of them — because whether this
-    // request fits in 50 s is decided by how hard the *search* is, not by how
-    // long the ride is (Rīga → Berlin is 1133 km and routes in 23 s; Como →
-    // Budapest is 1126 km and takes 74 s). A kilometre threshold cannot tell
-    // those apart, so this measures instead of guessing.
+    // The feasibility probe. Route the rider's legs once, under a short
+    // shared deadline, before committing to ~36 of them — because whether
+    // this request fits in 50 s is decided by how hard the *search* is, not
+    // by how long the ride is (Rīga → Berlin is 1133 km and routes in 23 s;
+    // Como → Budapest is 1126 km and takes 74 s). A kilometre threshold
+    // cannot tell those apart, so this measures instead of guessing.
     //
-    // Only rides with named places are probed. A plain loop has no headline
-    // leg — its candidates are short shapes around one town, and the
-    // calibration route below already measures the region at the app's own
-    // expense. Probing it would pay for a leg twice and refuse nothing.
+    // Per **rider-named segment**, not per headline leg (backlog item 7,
+    // step 2d). Measured 2026-09-19: Berlin → Poznań → Warszawa has a
+    // headline leg of only ~300 km, which probed fast and waved the request
+    // through — and the generation then spent 29 s and returned a 422,
+    // because the hop nobody measured was the expensive one. Probing each
+    // hop turns that into an answer the rider can act on: which segment is
+    // too hard, and a stop inside it is the fix.
+    //
+    // Only rides with named places are probed. A plain loop has no segments —
+    // its candidates are short shapes around one town, and the calibration
+    // route below already measures the region at the app's own expense.
+    // Probing it would pay for a leg twice and refuse nothing.
     let reducedSearch: GenerateRouteResponse["reducedSearch"];
     /** what the probe measured one leg to cost, seconds; 0 when it did not run */
     let probeSeconds = 0;
     const probePlaces = [start, ...requiredVia, ...(destination ? [destination] : [])];
     if (probePlaces.length > 1) {
-      const leg = headlineLeg(probePlaces.map((p) => [p.lon, p.lat] as [number, number]));
-      // Short legs are never the problem and the probe would only add a round
-      // trip to every ordinary ride. Measured: Rīga → Baldone (46 km) probes
-      // in 2-3 s, which is pure cost on a request that was always going to
-      // work. The floor is well above every ride that generates today.
+      const allSegments = rideSegments(
+        probePlaces.map((p) => [p.lon, p.lat] as [number, number]),
+        probePlaces.map((p) => placeName(p.label))
+      );
+      // Short hops are never the problem and probing them would only add a
+      // round trip to every ordinary ride. Measured: Rīga → Baldone (46 km)
+      // probes in 2-3 s, which is pure cost on a request that was always
+      // going to work. The floor is well above every ride that generates
+      // today, and it applies per hop — so a ride whose every hop is short
+      // is not probed at all, however long the ride is in total.
       const PROBE_ABOVE_KM = 250;
-      if (leg && leg.km >= PROBE_ABOVE_KM) {
-        const outcome = await probeLeg({
-          points: [leg.from, leg.to],
+      const toProbe = segmentsWorthProbing(allSegments, PROBE_ABOVE_KM);
+      if (toProbe.length) {
+        const report = await probeSegments({
+          segments: toProbe,
           profileOptions: buildMotoProfileOptions(intent),
           signal: req.signal,
         });
         console.log(
-          `feasibility probe: ${placeName(start.label)} → ${placeName((destination ?? requiredVia[requiredVia.length - 1] ?? start).label)} ` +
-            `${Math.round(leg.km)} km straight line, ${outcome.seconds.toFixed(1)} s, ${outcome.ok ? "ok" : outcome.reason}`
+          `feasibility probe: ${report.probed.length} of ${allSegments.length} segments in ${report.totalSeconds.toFixed(1)} s — ` +
+            report.probed
+              .map(
+                (p) =>
+                  `${p.segment.fromName}→${p.segment.toName} ${Math.round(p.segment.km)} km ` +
+                  `${p.seconds.toFixed(1)} s ${p.outcome.ok ? "ok" : p.outcome.reason}`
+              )
+              .join("; ")
         );
-        if (!outcome.ok) {
+        if (report.failed) {
           // Said before the search, not after. The rider gets this in ~10 s
-          // with something they can act on, instead of ~50 s ending in 422.
+          // with something they can act on — *which* segment, and a stop
+          // inside it — instead of ~50 s ending in 422.
+          const bad = report.failed.segment;
+          // (b) as a named offer: the direct road for this segment, on the
+          // plainest profile, under its own short deadline. Never substituted
+          // for the ride — the chat offers it and the rider chooses. A null
+          // here simply means no offer, never a worse refusal.
+          const direct = await directLegOffer({
+            from: bad.from,
+            to: bad.to,
+            signal: req.signal,
+          });
           const unplannable: UnplannableVerdict = {
             from: placeName(origin.label),
             to: placeName((destination ?? requiredVia[requiredVia.length - 1] ?? start).label),
-            legKm: Math.round(leg.km),
+            legKm: Math.round(bad.km),
             budgetSeconds: Math.round(PROBE_BUDGET_MS / 1000),
-            reason: outcome.reason,
+            reason: report.failed.outcome.reason,
+            // Only when the rider actually named intermediate places. On a
+            // plain A → B there is one segment, naming it says nothing the
+            // `from`/`to` above do not, and there is nothing to split.
+            ...(allSegments.length > 1
+              ? {
+                  segment: {
+                    index: bad.index,
+                    from: bad.fromName,
+                    to: bad.toName,
+                    km: Math.round(bad.km),
+                    ofSegments: allSegments.length,
+                  },
+                }
+              : {}),
+            ...(direct ? { directLeg: directLegOfferRoute(direct, bad) } : {}),
           };
-          return NextResponse.json({ unplannable }, { status: 200 });
+          // `intent` and `start` travel with the refusal so the chat can show
+          // the direct road as a real result when the rider taps for it —
+          // without them the panel has no ride to render around the route.
+          return NextResponse.json(
+            { unplannable, intent, parser: parsed.source, start: { lat: start.lat, lon: start.lon, label: start.label } },
+            { status: 200 }
+          );
         }
-        // The routed leg itself is already handed to the candidate search by
-        // the probe (`rememberLeg`), so `via-0` reuses it rather than paying
-        // for the same search twice. Only its cost is needed here.
-        probeSeconds = outcome.seconds;
-        // The probe's own timing scales the search: at T seconds a leg, the
-        // generation can afford roughly (budget − spent − overhead) / T
-        // candidates. Fewer versions beats a 422.
-        const legMs = outcome.seconds * 1000;
+        // Every routed segment is already handed to the candidate search by
+        // the probe (`rememberLeg`), so the corridor candidates reuse them
+        // rather than paying for the same searches twice. Only the cost is
+        // needed here.
+        //
+        // What one candidate costs is what scales the search — and on a ride
+        // with stops that is *every* segment, not the slowest one. Measured
+        // 2026-09-19: pricing Berlin → Poznań → Warszawa at its slowest hop
+        // (9.6 s) allowed three candidates and all three timed out, because
+        // each was routing both hops. `candidateCostSeconds` prices the whole
+        // ride. The slowest segment is still what the rider is *shown* in
+        // `reducedSearch`, since that is the hop that explains the reduction.
+        //
+        // A fast segment keeps its full search: a ride whose hops all measure
+        // quick prices low and is not degraded because some other ride's
+        // segment was slow.
+        probeSeconds = report.slowestSeconds;
+        const perCandidate = candidateCostSeconds({
+          measured: report.probed.filter((p) => p.outcome.ok).map((p) => p.seconds),
+          totalSegments: allSegments.length,
+        });
         const affordable = affordableCandidates({
           budgetMs: TIME_BUDGET_MS,
           spentMs: Date.now() - startedAt,
-          legMs,
+          legMs: perCandidate * 1000,
           cap: Number.MAX_SAFE_INTEGER,
         });
         candidateCap = affordable;

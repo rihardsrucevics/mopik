@@ -388,6 +388,10 @@ export type MessageKey =
   | "pickOnMapCancel"
   | "pickedOnMap"
   | "pickOnMapConfirm"
+  /** The direct-road offer (backlog item 7b): the road, never a planned ride. */
+  | "directLegTitle"
+  | "directLegKicker"
+  | "directLegNote"
   | "hideMap"
   | "duration"
   | "flexible"
@@ -853,6 +857,9 @@ const lv: Messages = {
   pickOnMapCancel: "Atcelt",
   pickedOnMap: "izvēlēts kartē",
   pickOnMapConfirm: "Apstiprināt",
+  directLegTitle: "Taisnākais ceļš · asfalts",
+  directLegKicker: "Šis nav Mopik maršruts",
+  directLegNote: "Šis ir ceļš, nevis brauciens — īsākā līnija no A uz B, ko atradu, kad interesantu maršrutu šim posmam izplānot neizdevās. Pievieno pieturu pa vidu, un es pamēģināšu vēlreiz.",
   hideMap: "Paslēpt karti",
   duration: "Ilgums",
   flexible: "Brīvs",
@@ -1261,6 +1268,9 @@ const lt: Messages = {
   pickOnMapCancel: "Atšaukti",
   pickedOnMap: "pasirinkta žemėlapyje",
   pickOnMapConfirm: "Patvirtinti",
+  directLegTitle: "Tiesiausias kelias · asfaltas",
+  directLegKicker: "Tai nėra Mopik maršrutas",
+  directLegNote: "Tai kelias, o ne kelionė — trumpiausia linija iš A į B, kurią radau, kai nepavyko suplanuoti įdomaus maršruto šiai atkarpai. Pridėk sustojimą viduryje ir pabandysiu dar kartą.",
   hideMap: "Slėpti žemėlapį",
   duration: "Trukmė",
   flexible: "Laisva",
@@ -1673,6 +1683,9 @@ const et: Messages = {
   pickOnMapCancel: "Tühista",
   pickedOnMap: "valitud kaardil",
   pickOnMapConfirm: "Kinnita",
+  directLegTitle: "Otseteed · asfalt",
+  directLegKicker: "See ei ole Mopiku marsruut",
+  directLegNote: "See on tee, mitte sõit — lühim joon A-st B-sse, mille leidsin siis, kui sellele lõigule huvitavat marsruuti planeerida ei õnnestunud. Lisa vahepeale peatus ja proovin uuesti.",
   hideMap: "Peida kaart",
   duration: "Kestus",
   flexible: "Vaba",
@@ -2079,6 +2092,9 @@ const en: Messages = {
   pickOnMapCancel: "Cancel",
   pickedOnMap: "picked on the map",
   pickOnMapConfirm: "Confirm",
+  directLegTitle: "Straightest way · asphalt",
+  directLegKicker: "This is not a Mopik route",
+  directLegNote: "This is the road, not the ride — the shortest line from A to B, found after planning an interesting route for this stretch failed. Add a stop in the middle and I will try again.",
   hideMap: "Hide map",
   duration: "Duration",
   flexible: "Flexible",

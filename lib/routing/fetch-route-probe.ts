@@ -142,6 +142,145 @@ export function headlineLeg(points: Point[]): { from: Point; to: Point; km: numb
 }
 
 /**
+ * The rider's ride, cut at the places they named: start → via1, via1 → via2,
+ * … → finish. One entry per hop, carrying both the points and the names, so
+ * a refusal can say *which* hop is the problem in the rider's own words.
+ *
+ * Why per segment and not one headline leg (backlog item 7, step 2d). The
+ * headline leg is the right question for "is this whole ride too hard", but
+ * it is the wrong question once the rider has named intermediate places:
+ * measured on 2026-09-19, Berlin → Poznań → Warszawa has a headline leg of
+ * only ~300 km, which probes fast and waves the request through — and then
+ * the generation spends 29 s and returns a 422 anyway, because the *other*
+ * hop was the expensive one and nobody had measured it. Probing every hop
+ * turns that into an answer.
+ *
+ * A single-leg ride (no vias) yields exactly one segment, which is the same
+ * question `headlineLeg` asked — so the old behaviour is the one-segment
+ * case of this one, not a separate path.
+ */
+export type RideSegment = {
+  /** position in the ride, 0-based, for keying the verdict back to the plan */
+  index: number;
+  from: Point;
+  to: Point;
+  /** how the rider named these places; "" when the place has no name */
+  fromName: string;
+  toName: string;
+  /** straight-line km of the hop */
+  km: number;
+};
+
+/**
+ * Cut a ride into its rider-named segments.
+ *
+ * `points` and `names` are start, vias, finish in riding order. Names are
+ * positional and may be short — a missing name yields "", which the caller
+ * renders as the place's own label rather than inventing one.
+ */
+export function rideSegments(points: Point[], names: string[] = []): RideSegment[] {
+  const segments: RideSegment[] = [];
+  for (let i = 0; i < points.length - 1; i++) {
+    segments.push({
+      index: i,
+      from: points[i],
+      to: points[i + 1],
+      fromName: names[i] ?? "",
+      toName: names[i + 1] ?? "",
+      km: haversineMeters(points[i], points[i + 1]) / 1000,
+    });
+  }
+  return segments;
+}
+
+/**
+ * Which segments are worth probing, and in which order.
+ *
+ * Two rules, both from measurement. Short hops are never the problem — Rīga →
+ * Baldone (46 km) probes in 2-3 s of pure cost on a request that was always
+ * going to work — so a hop under `aboveKm` is skipped outright. And the
+ * remaining ones are probed **longest first**, because the probe budget is
+ * shared across the whole ride: if it runs out, it should have spent itself
+ * on the hop most likely to be the one that refuses, not on the first one in
+ * riding order. Ties keep riding order, so a refusal reads left to right.
+ */
+export function segmentsWorthProbing(segments: RideSegment[], aboveKm: number): RideSegment[] {
+  return segments
+    .filter((s) => s.km >= aboveKm)
+    .sort((a, b) => b.km - a.km || a.index - b.index);
+}
+
+/**
+ * The segment whose timing scales the search: the slowest one measured.
+ *
+ * Every corridor candidate rides the whole ride, so it pays for every
+ * segment — but the search is scaled by the slowest rather than by the sum,
+ * matching what `affordableCandidates` means by "what one routed leg costs".
+ * Using the sum would double-count on a ride whose segments were all probed
+ * and all fast, and cut a search that measured fine.
+ *
+ * Deliberately *not* the mean: one hard segment among three easy ones is
+ * still a hard search, and the mean would hide it.
+ */
+export function slowestSegmentSeconds(measured: { seconds: number }[]): number {
+  return measured.reduce((worst, m) => Math.max(worst, m.seconds), 0);
+}
+
+/**
+ * What **one candidate** costs, given what the probe measured.
+ *
+ * This is the number `affordableCandidates` needs, and on a multi-segment
+ * ride it is not the slowest segment. A corridor candidate rides the *whole*
+ * ride — every hop, plus the detour the corridor adds — so it pays for every
+ * segment, not just the worst one.
+ *
+ * Measured 2026-09-19, and this is why the helper exists. Berlin → Poznań →
+ * Warszawa: the probe measured one hop at 9.6 s, the slowest-segment
+ * arithmetic said three candidates were affordable, and **all three timed
+ * out** — because each of them was routing both hops, not one. Pricing a
+ * candidate at the slowest segment promised a budget that did not exist.
+ *
+ * So: the probed segments are summed, and the ones the shared budget never
+ * reached are charged at the slowest measured rate rather than at nothing.
+ * Charging them nothing is the mistake above; charging them the slowest is
+ * conservative in the direction that returns a ride instead of a 422.
+ *
+ * ## And a candidate is dearer than the sum of the rider's own legs
+ *
+ * The probe routes start → via → finish *straight*. A corridor candidate
+ * does not: it inserts offset vias to push the ride off the direct line,
+ * which is the entire point of Mopik, and that is a longer and harder search
+ * than the leg the probe measured. Measured 2026-09-19 on Berlin → Poznań →
+ * Warszawa: pricing candidates at the bare segment sum (8.1 s probed, 16.2 s
+ * for both hops) allowed two, and **both timed out**.
+ *
+ * `CORRIDOR_MARGIN` prices that difference. It is a margin, not a
+ * measurement — the honest reading of the evidence is "a candidate costs
+ * meaningfully more than the straight legs", and erring high costs the rider
+ * a version while erring low costs them the whole ride.
+ */
+export const CORRIDOR_MARGIN = 1.5;
+
+export function candidateCostSeconds(params: {
+  /** what each probed segment measured, seconds */
+  measured: number[];
+  /** how many segments the ride has in total, probed or not */
+  totalSegments: number;
+  /** how much dearer a corridor candidate is than the straight legs */
+  corridorMargin?: number;
+}): number {
+  if (!params.measured.length) return 0;
+  const measuredTotal = params.measured.reduce((sum, s) => sum + s, 0);
+  const slowest = Math.max(...params.measured);
+  // Hops below the probe floor are short by definition, but "short" is not
+  // "free" — they are still a search the candidate pays for. The slowest
+  // measured rate is the only evidence available about them.
+  const unprobed = Math.max(0, params.totalSegments - params.measured.length);
+  const straight = measuredTotal + unprobed * slowest;
+  return straight * (params.corridorMargin ?? CORRIDOR_MARGIN);
+}
+
+/**
  * Route one leg under a wall-clock deadline.
  *
  * Deliberately *not* `fetchRoutePath`: none of its rescue machinery belongs
@@ -158,8 +297,15 @@ export function headlineLeg(points: Point[]): { from: Point; to: Point; km: numb
  */
 export async function probeLeg(params: {
   points: Point[];
-  profileOptions: MotoProfileOptions;
+  /** the ride's profile; not needed, and ignored, when `stockProfile` is set */
+  profileOptions?: MotoProfileOptions;
   budgetMs?: number;
+  /**
+   * Route on one of BRouter's own built-in profiles instead of ours, by
+   * name. Only the direct-road offer uses this — see `directLegOffer` for
+   * the measurement that made it necessary.
+   */
+  stockProfile?: string;
   /** the rider's own cancel; aborts the probe like the deadline does */
   signal?: AbortSignal;
 }): Promise<ProbeOutcome> {
@@ -168,13 +314,22 @@ export async function probeLeg(params: {
   const spent = () => (Date.now() - startedAt) / 1000;
 
   let profileId: string;
-  try {
-    // Profile upload is cached by content, so this is free for every request
-    // after the first with these settings — and when it is not, it is part of
-    // what the generation would have paid anyway.
-    profileId = await uploadProfile(params.profileOptions);
-  } catch (err) {
-    return { ok: false, seconds: spent(), reason: "error", detail: message(err) };
+  if (params.stockProfile) {
+    // A profile BRouter ships with: nothing to upload, and nothing of ours
+    // in it. Deliberately not remembered for the candidate search either —
+    // a `car-fast` line is not a leg any Mopik candidate would ride.
+    profileId = params.stockProfile;
+  } else if (params.profileOptions) {
+    try {
+      // Profile upload is cached by content, so this is free for every request
+      // after the first with these settings — and when it is not, it is part of
+      // what the generation would have paid anyway.
+      profileId = await uploadProfile(params.profileOptions);
+    } catch (err) {
+      return { ok: false, seconds: spent(), reason: "error", detail: message(err) };
+    }
+  } else {
+    return { ok: false, seconds: spent(), reason: "error", detail: "no profile" };
   }
 
   const base = process.env.BROUTER_BASE_URL?.trim()
@@ -232,8 +387,10 @@ export async function probeLeg(params: {
     };
     // Hand the leg to the candidate search: it is about to ask for exactly
     // this one, and on a long ride it is the most expensive search of the
-    // generation.
-    rememberLeg(profileId, params.points, path);
+    // generation. A stock-profile leg is not offered — it is a `car-fast`
+    // line, which no Mopik candidate would ride, and the cache is keyed by
+    // profile anyway, so keeping it would only hold memory.
+    if (!params.stockProfile) rememberLeg(profileId, params.points, path);
     return { ok: true, seconds: spent(), points: params.points, path };
   } catch (err) {
     const aborted = err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
@@ -244,6 +401,215 @@ export async function probeLeg(params: {
       detail: aborted ? undefined : message(err),
     };
   }
+}
+
+/**
+ * Total wall-clock the whole probing phase may take, however many segments
+ * the rider named.
+ *
+ * The constraint the rider set: probing N segments must not itself eat the
+ * budget. A per-segment deadline alone does not bound it — four segments at
+ * `PROBE_BUDGET_MS` each is 40 s of a 50 s budget, and the ride would be
+ * refused for lack of time to plan it rather than for being hard. So the
+ * phase gets the same 10 s the single-leg probe always had, and segments
+ * draw from it in turn.
+ *
+ * The consequence is deliberate: a segment reached with little left gets
+ * little, and a segment that would have passed in 8 s may be called slow.
+ * That errs towards the honest refusal, which names the segment and offers
+ * the direct road, rather than towards a 50 s wait ending in a 422.
+ */
+export const SEGMENT_PROBE_TOTAL_MS = 10_000;
+
+/**
+ * The least a segment's own deadline may be cut to. Below this the answer
+ * stops being a measurement — every segment times out and the verdict names
+ * whichever one happened to be probed last, which is worse than not probing.
+ */
+export const MIN_SEGMENT_PROBE_MS = 2_500;
+
+/** One segment, measured. */
+export type SegmentProbe = {
+  segment: RideSegment;
+  outcome: ProbeOutcome;
+  /** wall-clock this segment cost, seconds — `outcome.seconds`, hoisted */
+  seconds: number;
+};
+
+/** A segment that did not route: the same shape, with the failure narrowed. */
+export type FailedSegmentProbe = SegmentProbe & {
+  outcome: Extract<ProbeOutcome, { ok: false }>;
+};
+
+/** What the probing phase concluded about the ride as a whole. */
+export type SegmentProbeReport = {
+  /** every segment actually probed, in the order they were probed */
+  probed: SegmentProbe[];
+  /** the first segment that failed, if any — the one the rider must fix */
+  failed: FailedSegmentProbe | null;
+  /** the slowest measured segment's cost, seconds; 0 when nothing was probed */
+  slowestSeconds: number;
+  /** total wall-clock of the phase, seconds */
+  totalSeconds: number;
+};
+
+/**
+ * Probe each rider-named segment, under a shared total deadline.
+ *
+ * ## Sequential, on purpose — the server is one vCPU
+ *
+ * The obvious optimisation is `Promise.all` over the segments, and it is the
+ * wrong one here. Measured 2026-09-14 and unchanged: with one long search
+ * already running, Berlin → Warszawa went 14.7 s → 35-40 s and Como →
+ * Budapest 77 s → 137 s. Overlapping two searches on one vCPU does not halve
+ * the wall-clock, it roughly doubles each search — so a concurrent probe of
+ * three segments would measure all three as slow and refuse a ride that
+ * plans fine sequentially. Worse, the measurement would be *wrong* in the
+ * direction that costs the rider their ride.
+ *
+ * So segments are probed one at a time, longest first, each drawing from what
+ * the phase has left. Concurrency is not free, and here it is not even
+ * cheaper.
+ *
+ * ## One slow segment does not degrade the rest
+ *
+ * A segment that probes fast keeps its full search: `slowestSeconds` scales
+ * the candidate pool, and a fast ride measures fast. Only a segment that
+ * actually fails stops the ride, and then the verdict names it.
+ */
+export async function probeSegments(params: {
+  segments: RideSegment[];
+  profileOptions: MotoProfileOptions;
+  /** total for the whole phase; per-segment deadlines are carved from it */
+  totalBudgetMs?: number;
+  signal?: AbortSignal;
+}): Promise<SegmentProbeReport> {
+  const totalBudgetMs = params.totalBudgetMs ?? SEGMENT_PROBE_TOTAL_MS;
+  const startedAt = Date.now();
+  const probed: SegmentProbe[] = [];
+  let failed: FailedSegmentProbe | null = null;
+
+  for (let i = 0; i < params.segments.length; i++) {
+    const segment = params.segments[i];
+    const spent = Date.now() - startedAt;
+    const left = totalBudgetMs - spent;
+    // Nothing left to measure with: stop rather than fire a request that is
+    // certain to time out and would only slander the segment it lands on.
+    if (left < MIN_SEGMENT_PROBE_MS) break;
+    // Share what remains between the segments still to go, but never below
+    // the floor — an even split across many segments would starve them all.
+    const remainingSegments = params.segments.length - i;
+    const budgetMs = Math.max(MIN_SEGMENT_PROBE_MS, Math.floor(left / remainingSegments));
+
+    const outcome = await probeLeg({
+      points: [segment.from, segment.to],
+      profileOptions: params.profileOptions,
+      budgetMs,
+      signal: params.signal,
+    });
+    const entry: SegmentProbe = { segment, outcome, seconds: outcome.seconds };
+    probed.push(entry);
+    if (!outcome.ok) {
+      // The first failure is the answer. Probing the rest would spend the
+      // rider's remaining seconds learning something they cannot act on —
+      // they have to fix this segment before any other one matters.
+      failed = { ...entry, outcome };
+      break;
+    }
+  }
+
+  return {
+    probed,
+    failed,
+    slowestSeconds: slowestSegmentSeconds(probed.filter((p) => p.outcome.ok)),
+    totalSeconds: (Date.now() - startedAt) / 1000,
+  };
+}
+
+/**
+ * How long the direct-road offer may take. It is an extra, not the answer:
+ * the rider has already waited the whole probe phase by the time this runs,
+ * so it gets a fixed slice and stays silent if it cannot make it.
+ *
+ * Measured 2026-09-19 on `car-fast`, the profile the offer actually uses:
+ * Berlin → Warszawa 5.7 s, Innsbruck → Wien (the Alpine hop that refuses
+ * Como → Budapest) 17.3 s. 20 s covers both with room for a loaded router.
+ *
+ * It is the last thing a refused request does, and it runs only on the
+ * refusal path, so the arithmetic that matters is the refusal's total: a
+ * ~10 s probe phase plus this still lands inside the 50 s budget. The rider
+ * waits a few seconds longer for a refusal that comes with a way forward,
+ * which is the trade item 7 is about.
+ */
+export const DIRECT_OFFER_BUDGET_MS = 20_000;
+
+/**
+ * BRouter's own car profile, which is what the offer routes on.
+ *
+ * Measured 2026-09-19 on Berlin → Warszawa against `brouter.mopik.eu`, the
+ * leg this offer exists for:
+ *
+ *   our moto profile, flattened to offRoad 0 / no trails   **never answers** (null at 91 s)
+ *   stock `trekking`                                       53.2 s
+ *   stock `car-fast`                                       **5.7 s**
+ *
+ * Nearly a factor of ten, and the flattened moto profile does not finish at
+ * all. The cost is our cost script — the turn, surface, grade and off-road
+ * terms that make a Mopik route interesting are what make the search
+ * expensive — so flattening its dials does not buy a fast search, it only
+ * buys a duller one. Innsbruck → Wien tells the same story: 28-43 s on our
+ * flattened profile, both with and without motorways.
+ *
+ * This is also the *honest* profile for the offer. "Taisnākais ceļš" is the
+ * road a car would take, and saying so with a car profile is more truthful
+ * than dressing our adventure profile down and calling the result direct.
+ */
+export const DIRECT_OFFER_PROFILE = "car-fast";
+
+/**
+ * The direct road for a segment Mopik could not plan interestingly —
+ * backlog item 7's idea (b), as a **named offer**.
+ *
+ * Why a second request rather than reusing the probe's own leg. On a timeout
+ * — which is the common failure — the probe has no path at all: it gave up
+ * before BRouter answered, so there is nothing to hand over.
+ *
+ * Why BRouter's stock car profile rather than ours flattened: because ours
+ * flattened **does not answer at all** on the legs that need this, while
+ * `car-fast` answers in seconds. The numbers are on `DIRECT_OFFER_PROFILE`,
+ * and they were a surprise — the first version of this function dressed our
+ * own profile down, and measured, it was the slowest option of the three.
+ *
+ * Returns null whenever it cannot deliver, and the caller then simply makes
+ * no offer. A failed offer must never become a failed refusal: the segment
+ * verdict is the answer, and this is the extra tap beside it.
+ *
+ * **The geometry comes back with it, and that is deliberate.** The rider taps
+ * "Rādi taisnāko ceļu" and the road must appear — it cannot be re-requested
+ * from the client, because the client would ask with the *ride's* profile and
+ * that profile is measured never to answer this leg (91 s, null). So the one
+ * search that did succeed is the one that gets shown.
+ *
+ * Never returned *as* the ride. CLAUDE.md: "never substitute silently" —
+ * the straightest line between two points is precisely the road an adventure
+ * rider was trying to avoid, so the rider chooses it or they do not get it.
+ */
+export async function directLegOffer(params: {
+  from: Point;
+  to: Point;
+  budgetMs?: number;
+  signal?: AbortSignal;
+}): Promise<RoutePath | null> {
+  const outcome = await probeLeg({
+    points: [params.from, params.to],
+    // The ride's own profile is deliberately not passed: the offer is a
+    // different road on a different profile, and accepting the rider's dials
+    // here would only imply it honours them.
+    stockProfile: DIRECT_OFFER_PROFILE,
+    budgetMs: params.budgetMs ?? DIRECT_OFFER_BUDGET_MS,
+    signal: params.signal,
+  });
+  return outcome.ok ? outcome.path : null;
 }
 
 function message(err: unknown): string {
