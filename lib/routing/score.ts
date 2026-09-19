@@ -18,6 +18,9 @@ export function loopRank(intent: RouteIntent, metrics: {
   coastPercent?: number;
   /** The same at a 3 km band — near the sea rather than on the shore road. */
   coastNearPercent?: number;
+  /** Share of the ride on roads a rider has ridden and confirmed, 0–100.
+   * 0 where no contributed GPX covers the area. */
+  riddenPercent?: number;
 }): number {
   const wantsUnpaved = intent.gravelPreference >= 70 || intent.trailPreference === "lots";
   const natureWeight = intent.rideStyle === "explore" ? 0.18 : intent.rideStyle === "balanced" ? 0.12 : 0.08;
@@ -89,6 +92,44 @@ export function loopRank(intent: RouteIntent, metrics: {
   const coastNearValue = Math.min(1, (metrics.coastNearPercent ?? 0) / COAST_TARGET_PERCENT);
   const seaBonus = SEA_WEIGHT * (coastValue + 0.25 * coastNearValue);
 
+  // Roads a rider has ridden — backlog item 6.
+  //
+  // The rider handed over GPX and said every road in them is rideable, so a
+  // candidate that uses one is on ground somebody has actually checked. That
+  // is worth something in the ranking: it is the difference between a track
+  // OSM merely fails to forbid and a track a motorcycle is known to get down.
+  //
+  // ## The weight, and the bound that matters more
+  //
+  // Bounded exactly like the sea term above, and for the same reason the rider
+  // gave there — *"jūras skata maksa nedrīkst būt 10 % pieaugums atkārtotos
+  // ceļos"*. Item 11's rule generalises: **a reference layer may never buy
+  // retracing.** The repeated-road penalty is `repeatedPercent` at 1–2x, so a
+  // term worth N points buys at most N % more retracing, and 4 points is the
+  // deliberate choice:
+  //
+  //  - Half the sea term. Riding a road somebody has confirmed is a smaller
+  //    thing than the view the rider asked for by name, and it should break a
+  //    tie rather than shape the ride. `natureScore` alone moves by more than
+  //    4 between similar candidates.
+  //  - So it buys at most 4 % more retracing, 2 % when `prioritizeLowOverlap`
+  //    — and against "galvenais nebraukt tos pašus ceļus" that is inside the
+  //    noise. A loop that genuinely doubles back is 20–50 % and loses by tens
+  //    of points; no amount of ridden road can rescue it.
+  //  - It cannot buy a ride out of the tracks and trails either:
+  //    `offRoadShortfall` spans 40 and `trailShortfall` 20.
+  //
+  // The target is 30 % rather than the sea's 25 %: a ridden road is a *road*,
+  // and a candidate that follows one for a third of the ride is following it
+  // deliberately, where a quarter can be coincidence in a small network.
+  //
+  // `riddenPercent` is 0 where no GPX covers the area, so this term is
+  // silently absent for most of Europe rather than penalising it — the layer
+  // has to earn its way in region by region as riders contribute.
+  const RIDDEN_WEIGHT = 4;
+  const RIDDEN_TARGET_PERCENT = 30;
+  const riddenBonus = RIDDEN_WEIGHT * Math.min(1, (metrics.riddenPercent ?? 0) / RIDDEN_TARGET_PERCENT);
+
   return metrics.repeatedPercent * (intent.prioritizeLowOverlap ? 2 : 1)
     + (wantsUnpaved ? Math.max(0, 55 - metrics.unpavedPercent) : 0)
     + trailShortfall
@@ -97,7 +138,8 @@ export function loopRank(intent: RouteIntent, metrics: {
     + metrics.excessDriftPercent
     + metrics.streetPercent * (intent.avoidTowns ? 1 : 0.3)
     - (metrics.natureScore ?? 0) * natureWeight
-    - seaBonus;
+    - seaBonus
+    - riddenBonus;
 }
 
 /** Bounds are enforced on the estimated ride, independently of ranking. */

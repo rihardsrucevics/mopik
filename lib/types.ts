@@ -183,8 +183,25 @@ export type RouteQuality = {
   sandKm: number;
   /** residential streets, living streets, service roads and yards */
   streetKm: number;
-  /** OSM highway=path distance without a positive motorcycle access tag. */
+  /**
+   * OSM highway=path distance without a positive motorcycle access tag.
+   *
+   * Excludes anything on a road the rider has ridden (`riddenKm`): the tag is
+   * missing rather than negative, and a road he rode and vouched for is better
+   * evidence than that absence. Backlog item 6.
+   */
   unverifiedPathKm: number;
+  /**
+   * Kilometres of this ride on roads a rider has ridden and confirmed —
+   * backlog item 6's reference layer, `lib/routing/ridden.ts`.
+   *
+   * Global, not this rider's history: the layer is built from contributed GPX
+   * and shipped like TET. Approximate geometry matching (sustained aligned
+   * proximity), so it is not a claim about a particular OSM way. 0 where no
+   * contributed GPX covers the area, which means "not measured" rather than
+   * "he has ridden none of it".
+   */
+  riddenKm: number;
   /** paved↔unpaved switches; each one is a turn onto or off a side road */
   surfaceSwitches: number;
   /** heading changes over 70°, per 10 km — a proxy for junction turns */

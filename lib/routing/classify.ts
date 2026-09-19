@@ -3,6 +3,7 @@ import { estimateRideSeconds } from "./speed";
 import { isUnverifiedMotorPath } from "./access";
 import { bboxOf, gateLookup, hasGateData, type GateLookup } from "@/lib/geo/gates";
 import { seaLookup, hasSeaData, type SeaLookup } from "@/lib/geo/sea";
+import { riddenStepFlags, riddenMetersFrom } from "./ridden";
 import {
   OverlapStats,
   RoadClass,
@@ -301,6 +302,18 @@ type CoastMeasurement = {
 const EMPTY_COAST: CoastMeasurement = { coastKm: 0, coastNearKm: 0, flags: null, measured: false };
 
 /**
+ * Which steps of the route run on a road the rider has ridden — item 6.
+ *
+ * Shaped like `CoastMeasurement` and used the same way: measured once per
+ * candidate, asked per edge and per segment. `stepFlags` is per coordinate
+ * pair, so it lines up with the segment loop's own index.
+ */
+type RiddenMeasurement = {
+  riddenKm: number;
+  stepFlags: boolean[];
+};
+
+/**
  * Kilometres ridden near the sea, on a real road.
  *
  * Item 11b established that this cannot come from the router: BRouter's
@@ -401,7 +414,8 @@ function measureElevation(path: RoutePath): { gain: number; range: number } {
 function measureQuality(
   path: RoutePath,
   gates: GateMeasurement,
-  coast: CoastMeasurement
+  coast: CoastMeasurement,
+  ridden: RiddenMeasurement
 ): RouteQuality & { turns: number } {
   const coords = path.coordinates;
   let rough = 0;
@@ -425,6 +439,13 @@ function measureQuality(
     for (let i = edge.beginShapeIndex + 1; i <= end; i++) {
       meters += haversineMeters(coords[i - 1], coords[i]);
     }
+    // How much of this edge runs on a road the rider has ridden. Measured on
+    // the edge's own steps rather than as a whole-edge verdict: a long edge
+    // can join a ridden road part way along it.
+    let riddenMeters = 0;
+    for (let i = edge.beginShapeIndex + 1; i <= end; i++) {
+      if (ridden.stepFlags[i - 1]) riddenMeters += haversineMeters(coords[i - 1], coords[i]);
+    }
     const hw = tags.highway ?? edge.use ?? "";
 
     if (
@@ -435,7 +456,20 @@ function measureQuality(
     }
     if (tags.surface === "sand") sand += meters;
     if (STREET_HIGHWAYS.has(hw)) street += meters;
-    if (isUnverifiedMotorPath(tags)) unverifiedPath += meters;
+    // Backlog item 6. A path with no positive motor access tag is unverified
+    // *because nobody has said either way* — the tag is missing, not negative.
+    // Where the rider has ridden the road, somebody has said: he did, and he
+    // handed over the GPX saying every road in it is rideable. That is better
+    // evidence than an absent OSM tag is evidence to the contrary, so the
+    // ridden metres are not counted as unverified and carry no ⚠️.
+    //
+    // This never touches an *explicit* restriction. `isUnverifiedMotorPath` is
+    // only ever true for a `highway=path` lacking a positive tag; a way tagged
+    // `motor_vehicle=no|private` is refused by the profile long before here,
+    // and no amount of ridden geometry changes that. "We do not guess about
+    // private roads" (item 12) still holds — this removes a guess rather than
+    // adding one.
+    if (isUnverifiedMotorPath(tags)) unverifiedPath += Math.max(0, meters - riddenMeters);
 
     const forestClass = classNumber(tags.estimated_forest_class);
     const riverClass = classNumber(tags.estimated_river_class);
@@ -512,6 +546,7 @@ function measureQuality(
     sandKm: km(sand),
     streetKm: km(street),
     unverifiedPathKm: km(unverifiedPath),
+    riddenKm: ridden.riddenKm,
     surfaceSwitches: switches,
     turnsPer10Km: Math.round((turns / totalKm) * 100) / 10,
     forestKm: km(forest),
@@ -609,6 +644,14 @@ export function classifyRoute(path: RoutePath): ClassifiedRoute {
   // nothing away from a coast.
   const sea = bbox && hasSeaData(bbox) ? seaLookup(bbox) : null;
   const coast = measureCoast(path, sea);
+  // Roads the rider has ridden, measured once for the whole candidate. Cheap
+  // where no GPX covers the area: the loader returns nothing and the matcher
+  // is never built.
+  const riddenFlags = riddenStepFlags(coords);
+  const ridden: RiddenMeasurement = {
+    riddenKm: Math.round(riddenMetersFrom(coords, riddenFlags) / 100) / 10,
+    stepFlags: riddenFlags,
+  };
   const features: GeoJSON.Feature<GeoJSON.LineString, RouteSegmentProperties>[] = [];
 
   const distByRoad: Record<RoadClass, number> = { road: 0, track: 0, trail: 0 };
@@ -679,7 +722,10 @@ export function classifyRoute(path: RoutePath): ClassifiedRoute {
     const roadClass = toRoadClass(edge?.use);
     const surface = toSurfaceClass(edge?.surface, edge?.unpaved, edge?.use);
     const trackGrade = roadClass === "track" ? edge?.tags?.tracktype : undefined;
-    const unverified = isUnverifiedMotorPath(edge?.tags);
+    // Same rule the km accounting uses: a path the rider has ridden is not
+    // unverified, so it carries no ⚠️ on the map either. The two must agree —
+    // a badge on a stretch the panel does not count reads as a bug.
+    const unverified = isUnverifiedMotorPath(edge?.tags) && !ridden.stepFlags[i];
     if (
       !current ||
       current.roadClass !== roadClass ||
@@ -712,7 +758,7 @@ export function classifyRoute(path: RoutePath): ClassifiedRoute {
   // dictionary entry and a varint pair — bytes in every link, for a flag
   // nothing renders. `quality.coastKm` is the number; add the flag when
   // something on the map actually draws it.
-  const { turns, ...quality } = measureQuality(path, gates, coast);
+  const { turns, ...quality } = measureQuality(path, gates, coast, ridden);
   const total = distByRoad.road + distByRoad.track + distByRoad.trail || 1;
   const pct = (m: number) => Math.round((m / total) * 100);
   const km = (m: number) => Math.round(m / 100) / 10;

@@ -53,6 +53,10 @@ next-env.d.ts
 # built output in public/tet* is what the app actually reads.
 /data/tet-gpx/
 
+# Riders' own ridden-roads GPX, the same rule: the rider's files stay with the
+# rider, and public/ridden* (26 KB, committed) is what the app reads.
+/data/ridden-gpx/
+
 # POI build outputs from scripts/build_poi_dataset.py (Geofabrik path): per
 # country files and the build log. What the app reads is the file the loader
 # points at; these are intermediates until the loader switch decides storage.

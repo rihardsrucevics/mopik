@@ -285,7 +285,7 @@ function routeWith(coastKm: number): GeneratedRoute {
     roadMix: { roadPercent: 80, trackPercent: 20, trailPercent: 0, roadKm: 4, trackKm: 1, trailKm: 0 },
     surfaces: { asphaltPercent: 40, gravelPercent: 55, dirtPercent: 5, unknownPercent: 0 },
     quality: {
-      roughTrackKm: 0.4, sandKm: 0, streetKm: 0.3, unverifiedPathKm: 0.2, surfaceSwitches: 4,
+      roughTrackKm: 0.4, sandKm: 0, streetKm: 0.3, unverifiedPathKm: 0.2, riddenKm: 0, surfaceSwitches: 4,
       turnsPer10Km: 8, forestKm: 2.1, riversideKm: 0.4, ruralOpenKm: 1.2, landscapeTransitions: 2,
       landscapeTypes: 2, elevationGainM: 60, elevationRangeM: 25, natureScore: 51,
       coastKm, coastNearKm: coastKm * 1.5,

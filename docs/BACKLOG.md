@@ -194,6 +194,95 @@ Unresolved: where ridden rides live. Saved rides are in `localStorage` today,
 so a history that survives a new phone needs somewhere to put it — which is
 the first thing this project would store server-side.
 
+### First concrete step, 2026-09-19 — the ridden roads layer
+
+The rider handed over three GPX and said every road in them is rideable. That
+is built as a **global reference layer**, shaped exactly like TET, not as
+per-rider history: `scripts/build-ridden.ts` → `public/ridden.geojson` (router,
+12 m) and `public/ridden/<CC>.geojson` + `index.json` (map, 25 m).
+`lib/routing/ridden.ts` loads it and **shares TET's matcher**
+(`createTetMatcher`), so the two layers cannot drift apart on what "on this
+road" means. Sources are git-ignored like `data/tet-gpx/`.
+
+**Only one of the three files was geometry.** `riga-adazi` is a real recording
+and used as-is. The other two are planned `rte` — 122 and 59 rtept, ~1.5 km
+apart — so they are **snapped**: every consecutive pair routed through BRouter
+(`trekking`) and the returned line stored. Fidelity, rtept → snapped line:
+papisilla median 1 m / p90 4 m / max 10 m, 0 of 115 beyond 50 m; sigulda
+median 1 m / p90 8 m / max 93 m, 1 of 52. Built: 11 sections, 316 km, LV 185 /
+EE 130, 26 KB.
+
+`trekking` over `car-fast`, measured on sigulda-riga: trekking routed 105.3 km
+against an 85.6 km chain and kept the 11.6 km of `highway=track` the rider
+rode; **car-fast returned 131.6 km, ten legs detouring over 2x, and 0 km of
+track**. A car profile would have deleted the most valuable part of the data.
+Its cost is that it is a bicycle profile, so cycleway/footway are dropped
+rather than stored (5.7 and 4.2 km) — this layer may not claim ground a
+motorcycle cannot use. Two legs were dropped as artefacts (papisilla 58: 17.27
+km routed for a 1.42 km gap; sigulda 37: x6.9 with `reversedirection=yes`, a
+U-turn where two rtepts straddle a divided road). A dropped leg **splits** the
+section rather than being bridged — a straight chord would be invented
+geometry, which is the whole thing this avoids.
+
+**The Rīga → Ādaži track is 100 % TET** (31.2 of 31.2 km match `TET_LV-02`, as
+its own metadata says). The layer adds nothing there; everything it adds comes
+from the other two rides.
+
+**Tag mix of what the rider actually rides**, which decides how much
+"verified" can ever change: papisilla 29 % unclassified, 27 % tertiary, 21 %
+secondary, 8 % track, 7 % primary — and **0.8 km of `highway=path`, 0.3 %**.
+Sigulda-Rīga is 33 % unclassified, 29 % tertiary, 15 % primary, 9 % track,
+**1.1 km path, 1.1 %** — a main-road ride (A2/P8), as the file's own name said
+it would be, and that changes nothing for the verified rule. The honest
+reading: **these are roads, not trails.** The verified-access rule only bites
+on `highway=path`, and the rider's own GPX barely contain any.
+
+**Measured, three rides plus the regression** (in-process harness, own
+BRouter, `accessPolicy: "verified"`; Stadia key absent so loops used circular
+anchors — equally before and after):
+
+| ride | before | after |
+|---|---|---|
+| Sigulda → Rīga one way | 111.2 km / 159 min, 2 % rep, 0 unverified | **identical**, ridden 46.4 km (41.7 %) |
+| Rīga → Ainaži one way | 167.1 km / 248 min, 1 % rep, 0 unverified | **identical**, ridden 33.4 km (20.0 %) |
+| Sigulda round trip 3 h | 107.3 km / 161 min, 0 % rep | **identical**, ridden 0 km |
+| Rīga round trip 2 h | 63.3 km / 108 min | 64.2 km / 113 min — **search noise, not this** |
+
+The Rīga difference reproduces *with the layer in place on both sides* (63.3,
+64.2, 64.2 across three runs, winner `ridden 0 km` each time), so it is the
+search, not the term. **The ranking term changed no route in these four
+rides.** The regression did not move. A ridden candidate did enter the pool
+once (Rīga, `optional-ridden-0`) and lost at 37 % retracing — which is the
+bound working, not a failure.
+
+**The bound.** Item 11's rule generalised: a reference layer may never buy
+retracing. `RIDDEN_WEIGHT` is 4 — half the sea term — so it buys at most 4 %
+more retracing, 2 % under `prioritizeLowOverlap`, and cannot outrank
+`offRoadShortfall` (spans 40) or `trailShortfall` (20).
+`scripts/ridden.test.ts` pins this as an assertion on the rank points
+themselves, so raising the weight fails the test rather than quietly changing
+the rides.
+
+**Verified access, the part that actually matters** — with
+`allow_unverified` and trails=lots, where `highway=path` can appear at all:
+Rīga → Ainaži cleared **0.49 of 10.77 km** of unverified path (4.5 %);
+Sigulda → Rīga complex cleared **1.79 of 15.43 km** (11.6 %). Real, measured,
+and small — because of the tag mix above. This is the honest size of the
+effect, not a disappointment: the mechanism is right and the data is thin.
+
+**Where the design did not survive contact with the data:** the brief expected
+the value to be in "how much is `highway=path`/`track` with no positive motor
+access". It is 0.3–1.1 % path. The layer's real contribution today is the
+41.7 % / 20.0 % of two rides it can *confirm* — and that is worth showing, not
+scoring.
+
+**Not done, deliberately** (components and i18n were out of scope): the result
+panel does not show "km on ridden roads". `quality.riddenKm` is on every route
+and `RouteQuality` documents it; showing it needs one line in the panel beside
+`unverifiedPathKm` and one message key. The map does not draw the layer
+either, though `public/ridden/index.json` has the bboxes for it, the same
+contract `public/tet/index.json` has.
+
 ## 7. A ride of ~1000 km still does not generate
 
 **Status 2026-09-19:** Steps 1 and 2d done — the probe measures each rider-named segment, the refusal names the hop that is too hard and offers that hop's direct road as a chip (`lib/routing/fetch-route-probe.ts`). Step 2c (consecutive days) remains the real answer and is unbuilt.

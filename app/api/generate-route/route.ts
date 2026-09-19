@@ -42,6 +42,7 @@ import { classifyRoute } from "@/lib/routing/classify";
 import { measureTetCoverage } from "@/lib/routing/tet-coverage";
 import { hasPlaceData } from "@/lib/geo/poi";
 import { pickTetSlice } from "@/lib/routing/tet";
+import { pickRiddenSlice } from "@/lib/routing/ridden";
 import { parseIsochrone, type IsoRing } from "@/lib/geo/isochrone";
 import { planLoop, type LoopStop } from "@/lib/routing/loop";
 // Item 11d: via points placed on the coastal side of an A-to-B corridor, and
@@ -1069,8 +1070,29 @@ async function buildCandidates(
       });
     }
   }
+  // Roads a rider has ridden are the same kind of ingredient as TET, offered
+  // on the same terms: these candidates compete with all normal loops under
+  // the same direction and quality rules, and never override them. Item 6.
+  //
+  // Not gated on `includeTet` — there is no "ridden roads mode" to ask for and
+  // the rider never has to know the layer exists. The gates are the ones that
+  // already decide whether a reference layer is worth routing through at all:
+  // a local router (this costs requests), and a rider who wants unpaved.
+  const riddenCandidates: Candidate[] = [];
+  if (selfHosted && !calibration?.secondPass &&
+      (intent.preferForest || intent.gravelPreference >= 60 || intent.trailPreference !== "none")) {
+    for (const variant of [0, 1] as const) {
+      const slice = pickRiddenSlice(start, Math.min(30000, targetKm * 200), variant, 8);
+      if (!slice || slice.entryDistanceKm > targetKm * 0.35) continue;
+      if (direction && !slice.viaPoints.every((p) => inSector(bearingDegrees(startPt, p), direction))) continue;
+      riddenCandidates.push({
+        variant: `optional-ridden-${variant}`, competing: true,
+        run: async () => ({ path: await route([startPt, ...slice.viaPoints, startPt]) }),
+      });
+    }
+  }
   return {
-    candidates: [...calibrationCandidate, ...shapes.map(toCandidate), ...tetCandidates],
+    candidates: [...calibrationCandidate, ...shapes.map(toCandidate), ...tetCandidates, ...riddenCandidates],
     fromShapes: (more) => more.map(toCandidate),
   };
 }
@@ -1744,6 +1766,11 @@ export async function POST(req: NextRequest) {
           // (`hasSeaData`), so every inland ride ranks exactly as before.
           coastPercent: (s.classified.quality.coastKm / (s.path.distanceMeters / 1000)) * 100,
           coastNearPercent: (s.classified.quality.coastNearKm / (s.path.distanceMeters / 1000)) * 100,
+          // Backlog item 6: roads a rider has ridden and confirmed. Zero where
+          // no contributed GPX covers the area, so rides elsewhere rank
+          // exactly as before, and bounded in `score.ts` so it can never buy
+          // retracing.
+          riddenPercent: (s.classified.quality.riddenKm / (s.path.distanceMeters / 1000)) * 100,
         });
       };
 
