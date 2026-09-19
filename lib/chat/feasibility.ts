@@ -1,5 +1,6 @@
 import type { ChatQuickReply, RidePlan } from "./ride-plan";
-import type { UnplannableVerdict } from "@/lib/types";
+import type { UnplannableVerdict, UnreachableStop } from "@/lib/types";
+import type { UiLocale } from "@/lib/i18n/locale";
 
 /**
  * Can the ride the rider described be ridden in the time they gave, on the
@@ -195,9 +196,18 @@ export function describeInfeasible(plan: RidePlan, estimate: FeasibilityEstimate
  */
 export function describeUnplannable(
   verdict: UnplannableVerdict,
-  lv: boolean
+  lv: boolean,
+  locale?: UiLocale
 ): { message: string; quickReplies: ChatQuickReply[] } {
   const t = (a: string, b: string) => (lv ? a : b);
+  // The unreachable pin is a more specific diagnosis than "this ride is too
+  // hard to search", so it answers first when it is present. It also speaks
+  // all four languages, which the older wording above does not — the caller
+  // may pass a locale; `lv` stays the fallback so existing callers are
+  // unchanged.
+  if (verdict.unreachableStop) {
+    return describeUnreachableStop(verdict.unreachableStop, locale ?? (lv ? "lv" : "en"));
+  }
   const segment = verdict.segment;
   const route = [verdict.from, verdict.to].filter(Boolean).join(" → ");
   const km = Math.round(verdict.legKm);
@@ -282,4 +292,119 @@ export function describeUnplannable(
       { label: t("Mainīt galamērķi", "Change the destination"), message: t("Izvēlēsimies tuvāku galamērķi.", "Let's choose a closer destination.") },
     ],
   };
+}
+
+/**
+ * A pin the profile cannot ride to, named — and never a dead end.
+ *
+ * ## The ride this was written for (2026-09-19, measured)
+ *
+ * Glāziņpurvs → Sporta iela 36 → Lielpurvi → Tūjas → Pilskalni 2, on
+ * Grūti · Sports · Meži. The rider got "Neizdevās atrast maršrutu, kas
+ * izpilda pieturvietas un norādītās robežas" and no idea which of his five
+ * pins was the problem.
+ *
+ * It was the finish. Pilskalni 2 is a farmstead whose only approach is
+ * `access=private` service road; the nearest public road is 1.2 km away.
+ * BRouter does not refuse such a point — it answers 200 and ends the line
+ * 471 m short — so every candidate "succeeded", the 300 m stop check threw
+ * them all away, and the refusal blamed the time budget.
+ *
+ * ## Why this always offers two chips
+ *
+ * The rider's rule: when a pin lands where one may not ride, say so **and**
+ * always offer the next actions. Telling someone their stop is unreachable
+ * and stopping there leaves them with a map and no move to make. So:
+ *
+ * - **Remove** is always offered. It is the one fix that always works.
+ * - **Move to the nearest road** is offered only when the router actually
+ *   found ground and it is close enough to still be the same place
+ *   (`canMove`, decided by `lib/routing/routable-point.ts`, not here — the
+ *   Confirm-time check uses the same rule, so the two cannot drift apart).
+ *
+ * Both are `action` chips carrying the stop, the way item 7's `direct-leg`
+ * carries its road: the edit is to the ride, and sending "take out Tūjas" to
+ * the model would be asking it to re-derive something already known.
+ *
+ * Four languages, unlike the older wording above: this sentence is the one a
+ * rider is most likely to meet without knowing why, and a rider reading
+ * Mopik in Estonian should not be told in Latvian that their pin is bad.
+ */
+export function describeUnreachableStop(
+  stop: UnreachableStop,
+  locale: UiLocale
+): { message: string; quickReplies: ChatQuickReply[] } {
+  const pick = <T,>(all: Record<UiLocale, T>): T => all[locale] ?? all.lv;
+  const name = stop.name;
+  const metres = stop.distanceM;
+
+  // What is wrong, in the rider's words. The place is named because that is
+  // the one fact the old refusal was missing.
+  const problem = pick({
+    lv: `Pieturu „${name}” ar šo profilu nevar sasniegt — pavelc to uz ceļa vai izņem.`,
+    lt: `Sustojimo „${name}“ su šiuo profiliu pasiekti negalima — patrauk jį prie kelio arba pašalink.`,
+    et: `Peatust „${name}” selle profiiliga ei saa — lohista see tee peale või eemalda.`,
+    en: `The stop “${name}” cannot be reached with this profile — drag it onto a road or remove it.`,
+  });
+
+  // How far the road is, when we measured it. A number turns "cannot" into
+  // something the rider can judge: 60 m is a mis-tap, 471 m is a farmstead.
+  const where =
+    metres === undefined
+      ? ""
+      : pick({
+          lv: `Tuvākais ceļš, pa kuru drīkst braukt, ir ~${metres} m nostāk.`,
+          lt: `Artimiausias kelias, kuriuo galima važiuoti, yra už ~${metres} m.`,
+          et: `Lähim tee, kus tohib sõita, on ~${metres} m eemal.`,
+          en: `The nearest road you may ride is ~${metres} m away.`,
+        });
+
+  const ask = pick({
+    lv: "Kā darām?",
+    lt: "Ką darome?",
+    et: "Kuidas teeme?",
+    en: "What shall we do?",
+  });
+
+  const quickReplies: ChatQuickReply[] = [];
+
+  // Move first when it is on offer: it keeps the ride the rider planned.
+  if (stop.canMove && stop.snappedTo) {
+    quickReplies.push({
+      label: pick({
+        lv: "Pārvietot uz tuvāko ceļu",
+        lt: "Perkelti prie artimiausio kelio",
+        et: "Liiguta lähimale teele",
+        en: "Move it to the nearest road",
+      }),
+      message: pick({
+        lv: `Pārvieto „${name}” uz tuvāko ceļu.`,
+        lt: `Perkelk „${name}“ prie artimiausio kelio.`,
+        et: `Liiguta „${name}” lähimale teele.`,
+        en: `Move “${name}” to the nearest road.`,
+      }),
+      action: "move-stop",
+      stop,
+    });
+  }
+
+  // Remove is always available — the fix that cannot fail.
+  quickReplies.push({
+    label: pick({
+      lv: `Izņemt pieturu „${name}”`,
+      lt: `Pašalinti sustojimą „${name}“`,
+      et: `Eemalda peatus „${name}”`,
+      en: `Remove the stop “${name}”`,
+    }),
+    message: pick({
+      lv: `Izņem pieturu „${name}”.`,
+      lt: `Pašalink sustojimą „${name}“.`,
+      et: `Eemalda peatus „${name}”.`,
+      en: `Remove the stop “${name}”.`,
+    }),
+    action: "remove-stop",
+    stop,
+  });
+
+  return { message: [problem, where, ask].filter(Boolean).join(" "), quickReplies };
 }

@@ -59,7 +59,7 @@ export type SelectedPoi = { id: string; name: string; lat: number; lon: number; 
  */
 export function SuggestionsCard({
   pois, loading, failed = false, expanded, onToggle, onShow,
-  selected = [], onToggleSelect, onClearSelection, onRegenerate, viaCount = 0, includedNames = [], busy,
+  selected = [], onToggleSelect, onClearSelection, onCommit, onSearchBetter, committable = false, viaCount = 0, includedNames = [], busy,
   detours = {}, detoursLoading = false, refusedIds = [],
 }: {
   /** null until the first expand has answered; both lists may be empty. */
@@ -84,8 +84,34 @@ export function SuggestionsCard({
   /** Tick or untick one row. Absent where the ride cannot be re-planned. */
   onToggleSelect?: (poi: SelectedPoi) => void;
   onClearSelection?: () => void;
-  /** Append every ticked place as a via and plan the ride again. */
-  onRegenerate?: () => void;
+  /**
+   * Keep the ticked places, with no search.
+   *
+   * The spliced line is already on the map — this makes it the ride. The
+   * primary action, because it is what the rider actually wants almost every
+   * time and it costs nothing: the detours were routed while he was reading
+   * the list.
+   */
+  onCommit?: () => void;
+  /**
+   * Plan the whole ride again through the ticked places.
+   *
+   * Secondary, named for what it does and honest about the wait. It used to be
+   * what the primary button did, silently, and that was the rider's complaint:
+   * every place he wanted cost 20-30 s. It is not removed, because it can
+   * genuinely find a cleaner loop that splicing cannot — losing that to make
+   * the common case fast would trade one of his asks for the other.
+   */
+  onSearchBetter?: () => void;
+  /**
+   * At least one ticked place has a routed detour spliced into the drawn line.
+   *
+   * What separates "keep this" from "there is nothing to keep yet": while the
+   * prefetch is still running, or where every ticked place turned out to be
+   * unreachable, there is no line to commit and the button says so by being
+   * disabled rather than by quietly falling back to the search.
+   */
+  committable?: boolean;
   /** Vias the ride already has, so the cap can be judged before the press. */
   viaCount?: number;
   /** Names of places this ride already passes as vias: they show "iekļauts". */
@@ -187,15 +213,17 @@ export function SuggestionsCard({
               </div>
             )}
           </div>
-          {selected.length > 0 && onRegenerate && (
+          {selected.length > 0 && (onCommit || onSearchBetter) && (
             /* Sticky so it survives the list's own scroll on a phone.
-               The button used to be the point of the card — "Pārģenerēt ar 3
-               objektiem", the one press that made a tick mean anything. It is
-               now optional: ticking already changed the map, and this asks for
-               the whole ride to be planned again *through* those places, which
-               is a better ride and costs a generation. The hint under it says
-               exactly that, because "Optimizēt" on its own does not explain
-               what it would do differently. */
+               Two actions, in the order the rider wants them. "Pievienot
+               izvēlētos" keeps the line that is already drawn — the detours
+               were routed while he read the list, so it is instant — and is
+               what almost every tick is actually asking for. "Meklēt labāku
+               apli" plans the whole ride again through the same places and
+               says what it costs; it can find a cleaner loop that splicing
+               cannot, so it stays, but it is no longer what a press silently
+               does. That silent version was the rider's complaint: every place
+               he wanted cost him 20-30 s of waiting. */
             <div className="sticky bottom-0 space-y-1.5 rounded-b-xl border-t border-stone-200 bg-white/95 px-3 py-2 backdrop-blur">
               {overCap && (
                 <p role="status" className="text-[11px] leading-snug text-stone-500">{fi(m.resSelectionCapNote, { max: MAX_VIAS })}</p>
@@ -209,14 +237,16 @@ export function SuggestionsCard({
                 </p>
               )}
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={onRegenerate}
-                  disabled={busy || overCap}
-                  className="flex h-9 flex-1 items-center justify-center rounded-full bg-[#f56300] px-3 text-xs font-semibold text-white transition hover:bg-[#d85600] disabled:opacity-40"
-                >
-                  {m.resOptimize}
-                </button>
+                {onCommit && (
+                  <button
+                    type="button"
+                    onClick={onCommit}
+                    disabled={busy || overCap || !committable}
+                    className="flex h-9 flex-1 items-center justify-center rounded-full bg-[#f56300] px-3 text-xs font-semibold text-white transition hover:bg-[#d85600] disabled:opacity-40"
+                  >
+                    {m.resAddSelected}
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={onClearSelection}
@@ -225,7 +255,24 @@ export function SuggestionsCard({
                   {m.resSelectionClear}
                 </button>
               </div>
-              <p className="text-[10px] leading-snug text-stone-400">{m.resOptimizeHint}</p>
+              <p className="text-[10px] leading-snug text-stone-400">{m.resAddSelectedHint}</p>
+              {/* The search, offered by name and below the instant one. A
+                  bordered button rather than a filled one: it is the deliberate
+                  choice, not the default, and the line under it is the wait it
+                  costs — a rider who presses it should know before, not after. */}
+              {onSearchBetter && (
+                <>
+                  <button
+                    type="button"
+                    onClick={onSearchBetter}
+                    disabled={busy || overCap}
+                    className="flex h-9 w-full items-center justify-center rounded-full border border-[#f56300] px-3 text-xs font-semibold text-[#bd4b00] transition hover:bg-[#fff4ec] disabled:opacity-40"
+                  >
+                    {m.resSearchBetter}
+                  </button>
+                  <p className="text-[10px] leading-snug text-stone-400">{m.resSearchBetterHint}</p>
+                </>
+              )}
             </div>
           )}
         </div>

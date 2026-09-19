@@ -12,6 +12,7 @@ import { rememberPlace } from "@/lib/chat/recent-places";
 import { pickedPlace } from "@/lib/chat/pick-name";
 import { fi } from "@/lib/i18n/format";
 import type { ResolvedPlace } from "@/lib/chat/places";
+import { placeRoles, type PlaceRoles } from "@/lib/map/place-roles";
 import {
   PROFILE_PRESETS,
   normalizeProfile,
@@ -113,17 +114,24 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   onGenerate: (plan: RidePlan, places: ResolvedPlace[]) => void;
   onUseChat: () => void;
   /**
-   * Picked places, in riding order, so the map can confirm them before a ride
-   * exists — with the trip type, which is what says whether the last of them
-   * is a finish or a stop.
+   * The picked places **with the role of the row each came from**, so the map
+   * can draw the right pin on each before a ride exists.
    *
-   * The map draws a stop as a 🅿️ pill and the start and finish as their own
-   * pins, and the list alone cannot tell the two apart: on a one-way ride the
-   * last confirmed place is the destination, on a round trip there is no
-   * destination and every place after the start is a stop. Passing the places
-   * without the shape is what put a 🅿️ on Warszawa.
+   * It used to be a flat list of whatever had been confirmed, plus the trip
+   * type, and the map worked the roles out by position — `[0]` is the start,
+   * the last is the finish. That is right only when the form is filled from
+   * the top down, and the rider does not fill it that way. Reported from
+   * production: start row empty, four stops added from the map, finish row
+   * empty — and the map drew a green start pin on the first stop and a red
+   * finish pin on the last, so a ride he had only marked stops for claimed to
+   * begin and end at them.
+   *
+   * This component is the one place that knows a row's role without guessing:
+   * row 0 is the start, the last row of a one-way ride is the finish, the rest
+   * are stops, and any of them may be empty. So the role travels with the
+   * place. See `lib/map/place-roles.ts` for the mapping and its tests.
    */
-  onPlacesChange?: (places: ResolvedPlace[], tripType: "round_trip" | "one_way") => void;
+  onPlacesChange?: (roles: PlaceRoles) => void;
   /**
    * The map, on phones only. It belongs to the places it confirms, so it sits
    * under them inside this block rather than above the whole page — where it
@@ -502,21 +510,129 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     onPickModeChange?.(true, { at, marker: own ? { lat: own.lat, lon: own.lon } : null });
   };
 
-  /** "Apstiprināt": the previewed place becomes the row's, and picking ends. */
-  const confirmPick = () => {
-    const row = pickingRow;
-    if (row === null || !preview) return;
-    setPlaces((prev) => prev.map((p, i) => (i === row ? preview.name : p)));
-    setPick(row, preview);
+  /**
+   * A pin the profile cannot reach, caught while the map is still open.
+   *
+   * Null except in the moment between a Confirm that found bad ground and the
+   * rider's answer to it. It holds the place he tried to confirm and the road
+   * the router did find, because "move it" has to commit a *different* point
+   * from the one he tapped and the two must not be confused with each other.
+   */
+  const [offRoad, setOffRoad] = useState<
+    { place: ResolvedPlace; row: number; snappedTo: { lat: number; lon: number } | null; distanceM: number } | null
+  >(null);
+  /** The probe is in flight: Confirm says so rather than appearing to do nothing. */
+  const [checking, setChecking] = useState(false);
+
+  /** Put the previewed place in its row and leave pick mode. The commit itself. */
+  const commitPick = (row: number, place: ResolvedPlace) => {
+    setPlaces((prev) => prev.map((p, i) => (i === row ? place.name : p)));
+    setPick(row, place);
     // The same shelf a dropdown pick goes on, for the same reason the
     // crosshair's place goes there: a spot found once should be offered by
     // name the next time, from the sofa, with no map open.
-    rememberPlace(preview);
+    rememberPlace(place);
     track("place_picked_on_map", { row, start: row === 0 });
+    setOffRoad(null);
     // `endPicking`, never `cancelPicking`: a stop added from the map is a new
     // row, and Cancel's job is to take such a row away again — running that
     // here would delete the very stop this press just committed.
     endPicking();
+  };
+
+  /**
+   * "Apstiprināt": ask whether the ride can actually reach this pin, then
+   * commit it.
+   *
+   * The check is the whole point of doing this here rather than at generation
+   * time. Measured on Pilskalni 2 (2026-09-19): a farmstead whose only
+   * approach is an `access=private` service road produced
+   * "Neizdevās atrast maršrutu…" after 15 s, naming nothing — BRouter had
+   * answered 200 for every candidate and quietly ended each line 471 m short.
+   * One short probe here turns that into a choice made while the map is open
+   * and the finger is still on the spot.
+   *
+   * **A pin we could not check is let through.** `probe-failed` means the
+   * router did not answer, not that the ground is bad, and refusing a pick on
+   * a failed request would make a network hiccup look like a verdict about a
+   * place. The generation remains the backstop, and it now names the stop.
+   */
+  const confirmPick = () => {
+    const row = pickingRow;
+    if (row === null || !preview || checking) return;
+    const place = preview;
+    // An answer already on screen is the rider's to act on; pressing Confirm
+    // again asks the same question and would get the same answer.
+    if (offRoad) return;
+    setChecking(true);
+    void (async () => {
+      try {
+        const plan = composeRidePlan({
+          places,
+          tripType,
+          durationMode,
+          hours: hours.trim() ? Number(hours.replace(",", ".")) : preset ?? 4,
+          profile: effectiveProfile,
+        });
+        const response = await fetch("/api/routable-point", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            lat: place.lat,
+            lon: place.lon,
+            plan,
+            // Somewhere the ride already is, so the probe rides a real leg
+            // towards the pin rather than a synthetic one beside it. The
+            // row's own place is not it: that is the point being replaced.
+            ...(confirmed.find((p) => p.lat !== place.lat || p.lon !== place.lon)
+              ? (() => {
+                  const other = confirmed.find((p) => p.lat !== place.lat || p.lon !== place.lon)!;
+                  return { from: { lat: other.lat, lon: other.lon } };
+                })()
+              : {}),
+          }),
+        });
+        if (!response.ok) { commitPick(row, place); return; }
+        const data = (await response.json()) as {
+          ok: boolean;
+          snappedTo?: { lat: number; lon: number };
+          distanceM?: number;
+          reason?: string;
+          canMove?: boolean;
+        };
+        // Only "too far from a road" is a verdict about the place. Everything
+        // else — a refused probe, a router that did not answer — is a verdict
+        // about the request, and the pick goes through.
+        if (data.ok || data.reason !== "too-far-from-road") { commitPick(row, place); return; }
+        track("pick_off_road", { row, distance_m: Math.round(data.distanceM ?? 0), can_move: Boolean(data.canMove) });
+        setOffRoad({
+          place,
+          row,
+          // Offered only when the server says the road is near enough to still
+          // be the same place — `canMove`, so this and the refusal's own chip
+          // cannot drift apart.
+          snappedTo: data.canMove && data.snappedTo ? data.snappedTo : null,
+          distanceM: Math.round(data.distanceM ?? 0),
+        });
+      } catch {
+        // The same rule as a failed probe: a pick is not lost to a network
+        // error.
+        commitPick(row, place);
+      } finally {
+        setChecking(false);
+      }
+    })();
+  };
+
+  /** "Pārvietot uz tuvāko ceļu": commit the road the router found, not the tap. */
+  const acceptOffRoadMove = () => {
+    if (!offRoad?.snappedTo) return;
+    const { place, row, snappedTo } = offRoad;
+    track("pick_off_road_moved", { row, distance_m: offRoad.distanceM });
+    // The name the rider picked, on the coordinates the ride can reach. The
+    // place is the same place — that is what `canMove` asserts — so renaming
+    // it here would tell him he had picked something else.
+    commitPick(row, { ...place, lat: snappedTo.lat, lon: snappedTo.lon });
   };
 
   /**
@@ -577,16 +693,29 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   // as the start should offer Latvian places below it, not a same-named
   // village on another continent. Until something is pinned the server falls
   // back to the rider's own region.
+  //
+  // Deliberately the first *confirmed* place rather than the start's row: a
+  // rider who has pinned only a stop should still have his other rows biased
+  // to that region. Biasing a search and drawing a pin are different
+  // questions, and conflating them is what the bug above was.
   const anchor = confirmed[0] ?? null;
-  const confirmedKey = confirmed.map((p) => `${p.lat},${p.lon}`).join("|");
+  // The rows as roles, which is what the map is actually asking about. Keyed
+  // on the role of each row and not merely on the coordinates, so moving a
+  // place from the finish row to a stop row re-draws its pin.
+  const roles = placeRoles({ picked, rowCount: places.length, tripType });
+  const rolesKey = [
+    roles.start ? `s:${roles.start.lat},${roles.start.lon}` : "s:-",
+    ...roles.vias.map((v, i) => `v${i}:${v.lat},${v.lon}`),
+    roles.finish ? `f:${roles.finish.lat},${roles.finish.lon}` : "f:-",
+  ].join("|");
   useEffect(() => {
-    onPlacesChange?.(confirmed, tripType);
-    // `confirmed` is rebuilt each render; the key is what actually changes.
-    // `tripType` is in the list too: switching Turp un atpakaļ ↔ Vienā virzienā
-    // moves the same last place between "finish" and "stop", so the map has to
-    // re-draw its marker without a place being re-picked.
+    onPlacesChange?.(roles);
+    // `roles` is rebuilt each render; the key is what actually changes. It
+    // carries the trip type implicitly — switching Turp un atpakaļ ↔ Vienā
+    // virzienā moves the last place between "finish" and "stop", which changes
+    // the key even though no place was re-picked.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [confirmedKey, tripType]);
+  }, [rolesKey]);
 
   // A plan the chat has modified carries its own profile; otherwise the
   // rider's remembered one applies.

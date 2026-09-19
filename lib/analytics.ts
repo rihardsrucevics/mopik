@@ -50,6 +50,11 @@ export type AnalyticsEvent =
   | "suggestion_added"        // "Pievienot" in Ieteikumi: a suggested place became a via point; props: via_count
   | "suggestion_shown"        // "Kartē" in Ieteikumi: the map flew to a suggestion without changing the ride; props: kind
   | "detour_previewed"       // a sight was ticked and its detour spliced into the drawn line; props: pois, delta_km
+  | "sights_committed"       // "Pievienot izvēlētos": the spliced ride became the ride, with no search; props: pois, delta_km, ms — is the instant path actually the one riders take?
+  | "search_better_loop"     // the full search asked for explicitly, with the ticked sights as vias; props: pois — how often is a cleaner loop worth 20-30 s?
+  | "route_edited"           // a correction on the result map; props: how (drag|tap), ms, repeated_before, repeated_after — does an edit make retracing worse, and do riders keep it?
+  | "route_edit_undone"      // the edit was reverted; props: how — the honest read on whether the corrections are good
+  | "route_edit_failed"      // the leg could not be routed through the new point; props: reason
   | "trip_type_changed"       // props: to (one_way|round_trip) — is the new default right?
   | "ride_edit_opened"        // "Rediģēt formā" on a shared or saved ride; props: from, saved
   | "shared_correction_sent" // "Ko mainīt?" typed on a shared ride's page; props: length, saved

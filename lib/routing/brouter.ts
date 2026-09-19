@@ -817,6 +817,59 @@ async function routeInSegments(points: Point[], profileId: string): Promise<Rout
   return { ...joinPaths(parts), assembledFromSegments: true };
 }
 
+/**
+ * Where does BRouter actually put the rider when asked to route to `to`?
+ *
+ * The measurement behind `lib/routing/routable-point.ts`. A point the profile
+ * may not reach — Pilskalni 2, a farmstead behind `access=private` service
+ * roads — is **not** refused: BRouter answers 200 and ends the line at the
+ * nearest node it is allowed to use, 471 m short. So "routable" cannot be
+ * read from success or failure, only from where the line ended.
+ *
+ * Deliberately raw and small: one request, its own deadline, no retry, no
+ * pacing, no nudge ring. A Confirm-time check that costs more than a couple
+ * of seconds is a check the rider will not wait for, and every rescue path in
+ * `fetchRoutePath` would hide exactly the gap this is trying to measure.
+ *
+ * `refused` distinguishes a router that said no (island, re-tracking — the
+ * point is hopeless) from one that never answered (slow, offline — we simply
+ * do not know), which is the difference between telling the rider their pin
+ * is unreachable and telling them we could not check.
+ */
+export async function probeSnapPoint(params: {
+  from: Point;
+  to: Point;
+  profileOptions: MotoProfileOptions;
+  timeoutMs?: number;
+}): Promise<{ ok: true; end: Point } | { ok: false; refused: boolean }> {
+  const { from, to, profileOptions, timeoutMs = 2_000 } = params;
+  try {
+    const profileId = await uploadProfile(profileOptions);
+    const lonlats = [from, to].map(([lon, lat]) => `${lon},${lat}`).join("|");
+    const url =
+      `${baseUrl()}/brouter?lonlats=${encodeURIComponent(lonlats)}` +
+      `&profile=${encodeURIComponent(profileId)}&alternativeidx=0&format=geojson`;
+    const res = await fetch(url, {
+      headers: authHeaders(),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!res.ok) {
+      // 4xx carries BRouter's own verdict on the point; 5xx and throttling
+      // say nothing about the ground, so they are "we could not check".
+      const body = await res.text();
+      const refused = res.status === 400 && /island|re-tracking track/.test(body);
+      return { ok: false, refused };
+    }
+    const data = (await res.json()) as { features?: BrouterFeature[] };
+    const coordinates = data.features?.[0]?.geometry.coordinates;
+    if (!coordinates?.length) return { ok: false, refused: false };
+    const last = coordinates[coordinates.length - 1];
+    return { ok: true, end: [last[0], last[1]] };
+  } catch {
+    return { ok: false, refused: false };
+  }
+}
+
 async function requestPath(url: string): Promise<RoutePath> {
   const res = await fetchWithRetry(url);
   const data = (await res.json()) as { features?: BrouterFeature[] };
