@@ -5,10 +5,11 @@ import { Check } from "lucide-react";
 import { useLocale } from "@/lib/i18n/use-locale";
 import { recentPlacesStore, refreshRecentPlaces, rememberPlace } from "@/lib/chat/recent-places";
 import { messages, type MessageKey } from "@/lib/i18n/messages";
+import { formatCoords, parseCoords } from "@/lib/geo/parse-coords";
 import type { PlaceKind } from "@/lib/chat/photon";
 import type { ResolvedPlace } from "@/lib/chat/places";
 
-type Suggestion = ResolvedPlace & { kind: PlaceKind | "recent" };
+type Suggestion = ResolvedPlace & { kind: PlaceKind | "recent" | "coordinates" };
 
 /**
  * A place kind, as the dictionary key that names it in each language.
@@ -55,6 +56,16 @@ const KIND_KEY = {
   spring: "kindSpring",
   park: "kindPark",
 } as const satisfies Partial<Record<PlaceKind, MessageKey>>;
+
+/**
+ * The raw-coordinates suggestion's own kind.
+ *
+ * It sits outside `KIND_KEY` because it is not a `PlaceKind` — the API never
+ * sends it. It is the field's own answer for a point the geocoder could not
+ * name, and the word is what tells the rider the row is their numbers rather
+ * than a place that happens to be called that.
+ */
+const COORDINATES_KEY: MessageKey = "kindCoordinates";
 
 /**
  * A place field with suggestions. Typing shows matching places — worldwide,
@@ -123,6 +134,29 @@ export function PlaceInput({ value, onChange, onPick, placeholder, icon, label, 
     const timer = setTimeout(async () => {
       if (q.length < 2) { setSuggestions([]); return; }
       try {
+        // Coordinates are a place too. A rider with a point and no name — a
+        // pin dropped in Google Maps, a waypoint off a GPS — used to have
+        // nothing to type here, because a row of digits matches no name in
+        // any gazetteer. Parsed here rather than on the server so the field
+        // knows not to spend a text search on it at all.
+        const point = parseCoords(q);
+        if (point) {
+          const res = await fetch(`/api/places?lat=${point.lat}&lon=${point.lon}`, { signal: controller.signal });
+          if (!res.ok) return;
+          const data = (await res.json()) as { places: Suggestion[] };
+          // Nothing named that point — mid-forest, at sea, or Photon is down.
+          // The ride still works on raw coordinates, so offer them as the
+          // suggestion instead of an empty list that reads as "no such place".
+          setSuggestions(data.places.length > 0 ? data.places : [{
+            name: formatCoords(point),
+            label: formatCoords(point),
+            lat: point.lat,
+            lon: point.lon,
+            kind: "coordinates" as const,
+          }]);
+          setActive(-1);
+          return;
+        }
         const nearParam = near ? `&near=${near.lat.toFixed(4)},${near.lon.toFixed(4)}` : "";
         const res = await fetch(`/api/places?q=${encodeURIComponent(q)}${nearParam}`, { signal: controller.signal });
         if (!res.ok) return;
@@ -155,6 +189,7 @@ export function PlaceInput({ value, onChange, onPick, placeholder, icon, label, 
   // not know about show no word at all — an untranslated kind is worse than a
   // blank, and the name already carries the meaning.
   const kindLabel = (kind: Suggestion["kind"]) => {
+    if (kind === "coordinates") return m[COORDINATES_KEY];
     const key = KIND_KEY[kind as keyof typeof KIND_KEY];
     return key ? m[key] : "";
   };

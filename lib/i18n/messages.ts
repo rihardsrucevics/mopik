@@ -44,6 +44,7 @@ export type MessageKey =
   | "kindVillage"
   | "kindHamlet"
   | "placeConfirmed"
+  | "kindCoordinates"
   | "metaTitle"
   | "metaCardLine"
   | "metaDescription"
@@ -489,6 +490,7 @@ const lv: Messages = {
   metaCardLine: "Saplāno grants un meža ceļu braucienus visā Eiropā — no ieceres līdz GPX dažās sekundēs.",
   metaDescription: "Mazāk plānošanas. Vairāk braukšanas. Mopik saplāno adventure un enduro maršrutus pa grants un meža ceļiem visā Eiropā — no ieceres līdz GPX dažās sekundēs.",
   shareCardNotFound: "Maršruts nav atrasts",
+  kindCoordinates: "koordinātas",
   shareCardDescription: "{unpaved} % grants un meža ceļu, {repeated} % atkārtoti. Adventure maršruts no Mopik — lejupielādē GPX vai uztaisi līdzīgu.",
   shareCardKicker: "DALĪTS MARŠRUTS",
   shareCardTime: "LAIKS",
@@ -929,6 +931,7 @@ const lt: Messages = {
   shareCardKicker: "BENDRINTAS MARŠRUTAS",
   shareCardTime: "LAIKAS",
   shareCardGravel: "ŽVYRAS",
+  kindCoordinates: "koordinatės",
   shareCardFallbackName: "Mopik maršrutas",
   kindAddress: "adresas",
   kindPlace: "vieta",
@@ -1339,6 +1342,7 @@ const et: Messages = {
   kindAddress: "aadress",
   kindPlace: "koht",
   kindFuel: "tankla",
+  kindCoordinates: "koordinaadid",
   kindCharging: "laadimine",
   kindRestaurant: "söögikoht",
   kindCafe: "kohvik",
@@ -1745,6 +1749,7 @@ const en: Messages = {
   kindRestaurant: "food",
   kindCafe: "cafe",
   kindParking: "parking",
+  kindCoordinates: "coordinates",
   kindHotel: "lodging",
   kindCampsite: "campsite",
   kindAttraction: "attraction",
