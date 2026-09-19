@@ -168,6 +168,27 @@ export function HomePage() {
   /** A fix the map's geolocate button obtained, handed back to the form. */
   const [geolocated, setGeolocated] = useState<{ lat: number; lon: number } | null>(null);
   /**
+   * The point a tap on the idle planning map landed on, with its own token.
+   *
+   * Separate state from `pickPoint` because it is a different question: that
+   * one answers "where does this row go", this one is "make me a row here".
+   * Folding them together would mean the composer could not tell a correction
+   * to the row it is picking from a request for a new one.
+   */
+  const [addStopPoint, setAddStopPoint] = useState<{ lat: number; lon: number; token: number } | null>(null);
+  const takeAddStopPoint = useCallback((p: { lat: number; lon: number }) => {
+    setAddStopPoint((prev) => ({ ...p, token: (prev?.token ?? 0) + 1 }));
+  }, []);
+  /**
+   * What the map should be offering while it is idle, as the form reports it.
+   *
+   * The form builds the sentence (it knows how many rows the ride has and what
+   * language it is speaking) and the page relays it to the map along with the
+   * door the hint is describing — so the words and the behaviour are switched
+   * on by one value and cannot disagree.
+   */
+  const [addStopOffer, setAddStopOffer] = useState<{ text: string; muted: boolean } | null>(null);
+  /**
    * Pick mode opening or closing, as the composer reports it.
    *
    * Opening a row that already has a place seeds the draggable marker there,
@@ -910,11 +931,21 @@ export function HomePage() {
   // it belongs inside the ride block, under the places it confirms — above the
   // whole page it outranked even ui.savedRides and read as a separate thing.
   const desktop = useMediaQuery(DESKTOP_QUERY);
-  // `picking` is here because a rider who has confirmed nothing yet is exactly
-  // the one who needs to point at a spot — the map's usual "only once there is
-  // something to show" rule would hide it at the one moment it is the whole
-  // interaction. It goes away again with pick mode.
-  const mapVisible = Boolean(result) || previewPlaces.length > 0 || picking;
+  /**
+   * The form is the view: the rider is composing a ride, not reading one.
+   *
+   * What separates the map that accepts a tap as a new stop from the map that
+   * does not. The result map is a separate job the rider has not asked for
+   * yet, and a stop added to a ride that has already been generated would have
+   * nowhere to go.
+   */
+  const planning = entryMode === "form" && !result;
+  // While planning the map is always available, whether or not anything is
+  // confirmed yet — it is now a way of *adding* places, so the rider with an
+  // empty form is precisely the one it has to be openable for. (`picking` was
+  // excused from the old rule for the same reason; this generalises it.) With
+  // a result on screen the old rule stands: the map shows the ride.
+  const mapVisible = Boolean(result) || previewPlaces.length > 0 || picking || planning;
   const mapPanel = (
     <MapPanel
       // Phone heights. The map yields to words whenever there are words to
@@ -972,6 +1003,17 @@ export function HomePage() {
         pickedPoint={picking ? pickPoint : null}
         onPickedPointMove={takePoint}
         pickCenter={picking ? pickCenter : null}
+        // Adding a stop straight from the map, which is what the rider asked
+        // for: no form first, no row's pin, just a tap. Offered only while the
+        // form is the view and it says the offer stands — `addStopOffer` is
+        // null in pick mode and gone entirely once a result is on screen, so
+        // the result map keeps a tap on empty map meaning what it always did.
+        //
+        // The door is shut at the cap while the hint stays: a rider who taps
+        // anyway gets the greyed sentence rather than silence, and nothing has
+        // to guess at the rule in two places.
+        onAddStopPoint={addStopOffer && !addStopOffer.muted && planning ? takeAddStopPoint : undefined}
+        addStopHint={planning ? addStopOffer : null}
         onGeolocated={setGeolocated} />
     </MapPanel>
   );
@@ -997,7 +1039,8 @@ export function HomePage() {
           <InstallPrompt show={Boolean(result) && !chatting} />
           {entryMode === "form"
             ? <RideComposer key={plan ? planSummary(plan, locale) : "new"} initialPlan={plan} initialPlaces={places} profile={profile} onProfileChange={changeProfile} busy={phase !== "idle"} onGenerate={startFromForm} onUseChat={() => setEntryMode("chat")} onPlacesChange={(p, tripType) => { setPreviewPlaces(p); setPreviewRoundTrip(tripType === "round_trip"); }} map={mapInComposer && mapVisible ? mapPanel : undefined}
-                onPickModeChange={changePickMode} pickPoint={pickPoint} geolocated={geolocated} />
+                onPickModeChange={changePickMode} pickPoint={pickPoint} geolocated={geolocated}
+                onAddStopOfferChange={setAddStopOffer} addStopPoint={addStopPoint} />
             : result && result.routes.length > 0 && !chatting
               ? <ResultPanel routes={result.routes} selected={selected} onSelect={setSelected} plan={plan} avoidTowns={result.intent.avoidTowns ?? false} lucky={lucky} remoteLoop={result.remoteLoop} longerSuggestion={result.longerSuggestion} tolerancePercent={result.intent.distanceTolerancePercent} busy={phase !== "idle"} onSend={send} onBackToForm={() => setEntryMode("form")} map={mapInResult && mapVisible ? mapPanel : undefined} resolvedPlaces={routedPlaces} alternatives={result.alternatives} sparsePlaceData={result.sparsePlaceData} assembledFromSegments={result.assembledFromSegments} directLeg={showingDirect} offset={variantOffset} onOffsetChange={setVariantOffset} onShowPoi={showPoi} pois={routePois} poisLoading={poisLoading} poisFailed={poisFailed} onDetoursChange={setDetoursForMap} selectedPois={selectedPois} onToggleSelectPoi={toggleSelectPoi} onClearSelectedPois={clearSelectedPois} onRegenerateWithSelection={regenerateWithSelection} onSplicedChange={handleSplicedChange} />
               : <RoutePrompt messages={messages} plan={plan} hasRoute={Boolean(route)} phase={phase} quickReplies={quickReplies} lucky={lucky && !route} onSend={send} onBackToForm={() => setEntryMode("form")} originCode={origin?.code ?? null} onAction={(action) => { if (action === "retry") { retryLast(); return; } if (action === "direct-leg") { showDirectLeg(); return; } setChatting(false); setQuickReplies([]); }} onCancel={cancel} />}

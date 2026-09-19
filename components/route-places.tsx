@@ -24,6 +24,54 @@ export function rowLabel(locale: UiLocale, i: number, oneWay: boolean, rows: num
   return `${t(locale, "via")} (${i})`;
 }
 
+// A new stop goes *before* the places already named, on both trip types.
+//
+// One way: appending made the new empty row the last one — which is the
+// finish — so adding a stop silently threw the destination away.
+//
+// Round trip: appending put the stop after the last place the rider had
+// named, which reads as "Rīga → Baldone → here". The rider asked for the
+// opposite (Rīga, [stop], Baldone, ↩ Rīga): a stop added to a planned ride
+// is far more often something to fit in on the way out than a new furthest
+// point. Either way it can be moved afterwards, and the return row makes
+// the last leg reachable.
+//
+// Exported, and out here rather than inside the component, because a tap on
+// the map now adds a stop too: the composer inserts the row and then hands it
+// to the map. One rule, in one place — a second copy of "where does a stop
+// go" is the thing that drifts, and the two ways in would then disagree about
+// what the rider gets.
+export function addStop(list: string[], toDestination: boolean): string[] {
+  if (list.length < 2) return [...list, ""];
+  // Keep the start first and, one way, the finish last.
+  return toDestination
+    ? [...list.slice(0, -1), "", list[list.length - 1]]
+    : [list[0], "", ...list.slice(1)];
+}
+
+/**
+ * How many rows the form will carry.
+ *
+ * The plan's schema takes six via places; the form has always counted whole
+ * rows against the same six, and the map tap must hit exactly the wall the
+ * "Pievienot pieturvietu" button hits — a tap that was allowed where the
+ * button was greyed out would be two different answers to one question.
+ */
+export const MAX_ROWS = 6;
+
+/**
+ * Where a stop added from the map lands in the list.
+ *
+ * `addStop` puts the blank row in position; this says which index that is, so
+ * the composer can hand *that* row to the map. Derived from the same rule
+ * rather than guessed: one way the new row is the one before the finish,
+ * round trip it is the second row (the ride's first stop).
+ */
+export function addedStopIndex(list: string[], toDestination: boolean): number {
+  if (list.length < 2) return list.length;
+  return toDestination ? list.length - 1 : 1;
+}
+
 /**
  * The ride as an ordered list of places.
  *
@@ -98,25 +146,6 @@ export function RoutePlaces({ places, picked, oneWay, busy, onChange, onPick, on
 
 
   const [locale] = useLocale();
-
-  // A new stop goes *before* the places already named, on both trip types.
-  //
-  // One way: appending made the new empty row the last one — which is the
-  // finish — so adding a stop silently threw the destination away.
-  //
-  // Round trip: appending put the stop after the last place the rider had
-  // named, which reads as "Rīga → Baldone → here". The rider asked for the
-  // opposite (Rīga, [stop], Baldone, ↩ Rīga): a stop added to a planned ride
-  // is far more often something to fit in on the way out than a new furthest
-  // point. Either way it can be moved afterwards, and the return row makes
-  // the last leg reachable.
-  const addStop = (list: string[], toDestination: boolean) => {
-    if (list.length < 2) return [...list, ""];
-    // Keep the start first and, one way, the finish last.
-    return toDestination
-      ? [...list.slice(0, -1), "", list[list.length - 1]]
-      : [list[0], "", ...list.slice(1)];
-  };
 
   const move = (from: number, to: number, how: "drag" | "tap" | "keyboard" = "drag") => {
     if (from === to || to < 1 || to >= places.length) return;
@@ -321,7 +350,7 @@ export function RoutePlaces({ places, picked, oneWay, busy, onChange, onPick, on
           new empty row the last one — which on a one-way ride *is* the
           destination, so adding a stop silently threw the finish away. On a
           round trip the last row is already a waypoint, so the end is right. */}
-      <button type="button" onClick={() => onChange(addStop(places, oneWay))} disabled={busy || places.length >= 6}
+      <button type="button" onClick={() => onChange(addStop(places, oneWay))} disabled={busy || places.length >= MAX_ROWS}
         className="inline-flex items-center gap-1 self-start text-xs font-medium text-[#bd4b00] disabled:opacity-40">
         <Plus className="size-3.5" />{oneWay ? t(locale, "addStop") : t(locale, "addPlace")}
       </button>

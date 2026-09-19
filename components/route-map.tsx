@@ -3,13 +3,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
+import { MapPinPlus } from "lucide-react";
 import { RouteSegmentProperties } from "@/lib/types";
 import { haversineMeters } from "@/lib/geo/geometry";
 import { useLocale } from "@/lib/i18n/use-locale";
 import { messages } from "@/lib/i18n/messages";
 import { fi } from "@/lib/i18n/format";
 import type { UiLocale } from "@/lib/i18n/locale";
-import { POI_KIND, type RoutePoi, type RoutePois } from "@/lib/poi/kinds";
+import { POI_KIND, stopNumbers, type RoutePoi, type RoutePois } from "@/lib/poi/kinds";
 
 // Serve the MapLibre worker from /public — bundler-emitted module workers
 // 404 under the Next.js dev server, leaving the map blank.
@@ -137,6 +138,20 @@ type Props = {
    */
   onPickPoint?: (p: { lat: number; lon: number }) => void;
   /**
+   * A tap on *empty* map while no row is waiting: the rider is adding a stop
+   * without having gone into the form first, which is the whole of what he
+   * asked for ("no kartes pašas man vajadzētu varēt pievienot pieturas").
+   *
+   * Deliberately a second door rather than `onPickPoint` switched on all the
+   * time, because the two taps do not mean the same thing. In pick mode every
+   * click is the answer and the road under it is irrelevant. Here the map is
+   * still a map: a tap on a sight's mark still opens that sight, and a tap on
+   * the drawn line still opens the road's card. Only a tap that would have hit
+   * nothing — the one that until now merely cleared the highlight — becomes a
+   * new stop. Set only while planning; the result map never gets it.
+   */
+  onAddStopPoint?: (p: { lat: number; lon: number }) => void;
+  /**
    * The point already picked, drawn as a marker the rider can drag.
    *
    * A finger lands within ~30 m of where it was aimed, which is the width of
@@ -162,6 +177,20 @@ type Props = {
    * reuse it rather than prompting again for the next row.
    */
   onGeolocated?: (p: { lat: number; lon: number }) => void;
+  /**
+   * The standing hint on a planning map that nobody has told what to do yet:
+   * "Piesit kartē, lai pievienotu pieturu", or why a tap will not.
+   *
+   * A tap on empty map is not an affordance — nothing about a map says the
+   * surface is a button — and the rider asked for the gesture precisely so he
+   * would not have to go back into the form. So the map says it itself, in
+   * words, for as long as the offer stands. Absent (and absent it is on the
+   * result map, and on any map not in planning) = no hint and no offer.
+   *
+   * `muted` is the cap: the ride is carrying every place the form will take,
+   * the hint says so instead of inviting a tap that would do nothing.
+   */
+  addStopHint?: { text: string; muted: boolean } | null;
 };
 
 const EMPTY: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
@@ -1234,15 +1263,43 @@ function segmentInfoHtml(
  * and is not already spoken for by the start and finish markers.
  */
 /**
- * Measured, and the reason the legend has no 🅿️ entry: at 390 px the pattern
+ * Measured, and the reason the legend has no stop entry: at 390 px the pattern
  * row (solid / raustītā / punktotā / TET) is exactly one line, 12 px high, and
- * a "🅿️ Pieturvieta" entry is 77 px wide against the 314 px the legend has
- * there — it wraps the row to two lines, 30 px. The legend is already a third
- * of a phone map's height and covers the route it explains, so the entry is
- * deliberately skipped. The marker explains itself by being tappable: the
- * card it opens names the place and says "Pieturvieta" in the rider's own
- * language, which the legend could only repeat. Re-measure before adding it —
- * the probe is four lines of DOM in the console.
+ * a "Pieturvieta" entry wraps the row to two lines, 30 px. The legend is
+ * already a third of a phone map's height and covers the route it explains, so
+ * the entry is deliberately skipped. The marker explains itself by being
+ * tappable: the card it opens names the place and says "Pieturvieta" in the
+ * rider's own language, which the legend could only repeat. Re-measure before
+ * adding it — the probe is four lines of DOM in the console.
+ */
+
+/**
+ * A typed stop is a **numbered pin**, not a glyph.
+ *
+ * It was 🅿️, chosen for legibility at 18 px on a phone, and the rider read it
+ * as exactly what it means everywhere else: parking. Worse, every stop looked
+ * identical — three 🅿️ pills on a line say "three stops somewhere" and leave
+ * the rider matching them to his form by guessing which is which. A number
+ * says *which* stop, and no glyph can: the whole content here is ordinal, and
+ * a picture has no ordinals.
+ *
+ * The number is the stop's position in the ride the rider sees in the form —
+ * 1, 2, 3 in via order — so the map and the form can be read against each
+ * other. It is derived from the `via` array's own order on every rebuild, not
+ * stored on the marker, which is what makes removing or moving a stop
+ * renumber the rest for free.
+ *
+ * A solid pin rather than the white pill the glyph needed: a digit has to
+ * carry at a glance against forest, water and the route's own orange, and
+ * white bold on the brand orange is the highest-contrast pair already in the
+ * map's vocabulary. 22 px with a 13 px digit — measured legible at phone width
+ * in the verification screenshots, and the same footprint the sight pills use,
+ * so a line of mixed markers still reads as one row of things.
+ *
+ * The start and the finish keep their own pins, and a sight keeps its kind's
+ * glyph: numbering those would claim an order the ride does not have. Only
+ * places the rider asked to ride *through* are numbered, and only they count
+ * toward the number — see the map over `via`.
  */
 const STOP_ICON = "🅿️";
 
@@ -1273,6 +1330,49 @@ function stopElement(title: string, icon: string = STOP_ICON, ringed = false): H
     "z-index:2";
   el.innerHTML =
     `<span style="font-size:18px;line-height:1;display:inline-block">${icon}</span>`;
+  return el;
+}
+
+/**
+ * A typed stop: a solid orange pin carrying its number in the ride.
+ *
+ * See the block over `STOP_ICON` for why a number and not a glyph. The shape
+ * is deliberately not `stopElement`'s white pill — that pill is the "something
+ * to look at" vocabulary the sights own, and a stop the rider *asked for* is a
+ * different claim. Solid brand orange with a white bold digit is the strongest
+ * contrast pair the map already uses, and it matches the ✓ the form shows on a
+ * confirmed row.
+ *
+ * 22 px, digit 13 px: the same footprint as the sight pills, so a line of
+ * mixed markers reads as one row rather than as two sizes of thing. Above the
+ * warning badges for the reason `stopElement` is — a note about the road must
+ * never cover a place the rider chose.
+ *
+ * `n` is passed in rather than counted here: the caller knows the ride order,
+ * and a counter living in the element would survive a rebuild and drift.
+ */
+function numberedStopElement(title: string, n: number): HTMLElement {
+  const el = document.createElement("button");
+  el.type = "button";
+  el.title = title;
+  el.setAttribute("aria-label", title);
+  el.style.cssText =
+    "display:flex;align-items:center;justify-content:center;" +
+    "width:22px;height:22px;border-radius:11px;" +
+    "background:#f56300;color:#fff;" +
+    // A white hairline between the orange pin and whatever is under it: on the
+    // route's own gravel orange the two hues are close enough that the pin's
+    // edge disappears, and a disc with no edge reads as a smudge.
+    "border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,0.32);" +
+    "font-weight:700;font-size:13px;line-height:1;" +
+    // The map's own font stack, so the digit is the interface's digit rather
+    // than whatever the canvas inherits.
+    "font-family:inherit;font-variant-numeric:tabular-nums;" +
+    "cursor:pointer;user-select:none;padding:0;" +
+    "z-index:2";
+  // A number, so nothing here can carry markup — but it goes through the same
+  // escape the cards use rather than trusting that forever.
+  el.textContent = String(n);
   return el;
 }
 
@@ -1550,7 +1650,7 @@ const SURFACE_COLOR_EXPR: maplibregl.ExpressionSpecification = [
   SURFACE_COLORS.unknown,
 ];
 
-export function RouteMap({ segments, start, destination, via, focus, onFocusCleared, onFocusToggle, selectedPois, routePois, showTet, onToggleTet, showSights, onToggleSights, onShowPoi, onPickPoint, pickedPoint, onPickedPointMove, pickCenter, onGeolocated }: Props) {
+export function RouteMap({ segments, start, destination, via, focus, onFocusCleared, onFocusToggle, selectedPois, routePois, showTet, onToggleTet, showSights, onToggleSights, onShowPoi, onPickPoint, onAddStopPoint, pickedPoint, onPickedPointMove, pickCenter, onGeolocated, addStopHint }: Props) {
   const [locale] = useLocale();
   const m = messages(locale);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1622,6 +1722,9 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
    */
   const onPickPointRef = useRef(onPickPoint);
   useEffect(() => { onPickPointRef.current = onPickPoint; }, [onPickPoint]);
+  /** The idle "a tap on nothing is a new stop" door, through a ref for the same reason. */
+  const onAddStopPointRef = useRef(onAddStopPoint);
+  useEffect(() => { onAddStopPointRef.current = onAddStopPoint; }, [onAddStopPoint]);
   const onPickedPointMoveRef = useRef(onPickedPointMove);
   useEffect(() => { onPickedPointMoveRef.current = onPickedPointMove; }, [onPickedPointMove]);
   const onGeolocatedRef = useRef(onGeolocated);
@@ -1972,17 +2075,28 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
           : [];
 
       for (const marker of viaMarkersRef.current) marker.remove();
-      // Every stop gets the 🅿️ pill and the same card mechanism the line and
-      // the badges use. It replaces a plain orange dot with a bare popup: two
+      // Every stop gets a marker and the same card mechanism the line and the
+      // badges use. It replaces a plain orange dot with a bare popup: two
       // identical circles that said only a label, and read as decoration
       // rather than as the places the rider asked to ride through.
-      viaMarkersRef.current = (via ?? []).map(place => {
+      //
+      // `via` arrives in ride order — the order the rider reads in the form —
+      // and `stopNumbers` turns it into the digit each marker wears, skipping
+      // the sights (see its own note). Computed from the whole list on every
+      // rebuild, which is how removing or moving a stop renumbers the rest
+      // with nothing to remember.
+      const numbers = stopNumbers(via ?? []);
+      viaMarkersRef.current = (via ?? []).map((place, i) => {
         // A sight carries its own kind's glyph in a ringed pill; a typed stop
-        // keeps the 🅿️. `category` is only set where the via came from a
+        // gets its number. `category` is only set where the via came from a
         // suggestion, and an unknown category (an older share code, a dataset
-        // built after this one) falls back to the 🅿️ rather than to a blank.
+        // built after this one) falls through to a numbered stop rather than
+        // to a blank — it is in the ride, so it is a stop.
         const entry = place.category ? POI_KIND[place.category as keyof typeof POI_KIND] : undefined;
-        const el = stopElement(place.label, entry?.icon ?? STOP_ICON, Boolean(entry));
+        const n = numbers[i];
+        const el = n === null
+          ? stopElement(place.label, entry?.icon ?? STOP_ICON, true)
+          : numberedStopElement(place.label, n);
         // A via that came from a suggestion is a *sight* the rider added, and
         // the rider's ruling is that "Apskates vietas" off means no sights on
         // the map — added ones included. Marked here and hidden by the small
@@ -2553,8 +2667,15 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
       if (!props || typeof id !== "number") {
         // A click on empty map is how a rider puts the highlight — and the
         // temporary ring on a suggestion — away.
+        const hadSomethingOpen = Boolean(highlightKeyRef.current) || Boolean(focusMarkerRef.current);
         clearHighlight();
         clearFocus();
+        // …and, while planning, it is also how a stop gets added. Only once
+        // there was nothing to put away: the first tap on empty map after a
+        // card or a ring is the rider dismissing it, and turning that same tap
+        // into a new row would answer a question he did not ask. The next tap
+        // — on a map with nothing open — is unambiguous, and adds the stop.
+        if (!hadSomethingOpen) onAddStopPointRef.current?.({ lat: e.lngLat.lat, lon: e.lngLat.lng });
         return;
       }
 
@@ -2674,6 +2795,38 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
           <span className="h-3 w-3 rounded-full bg-white shadow-sm" />
         </span>
       </button>
+      )}
+      {/* "Piesit kartē, lai pievienotu pieturu", for as long as the offer
+          stands.
+
+          In the switch row rather than in a corner of its own, and last in it,
+          so it is inside the one `left-3 right-14` box that already keeps
+          every top overlay clear of the zoom controls — and `flex-wrap` drops
+          it onto its own line the moment TET and the sights switch have taken
+          the width, which at 375 px is always. The bottom of the map was the
+          other candidate and is spoken for twice over: the full-screen button
+          sits bottom-left on phones and the legend stacks above it.
+
+          Not a button. Tapping the words would be a fourth thing to aim at
+          over a surface whose whole job is to receive the tap this sentence is
+          describing; it is a `status`, which is also how a screen reader is
+          told the map has become a way of adding a place.
+
+          At the cap it stays and changes what it says. A hint that vanished
+          would leave a rider tapping an unresponsive map with nothing to read;
+          greyed, it answers the question the dead tap raises. */}
+      {addStopHint && (
+        <span
+          role="status"
+          className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium shadow-sm backdrop-blur ${
+            addStopHint.muted
+              ? "border-[#ececf0] bg-white/95 text-stone-500"
+              : "border-[#f56300]/30 bg-[#fff3ea]/95 text-[#bd4b00]"
+          }`}
+        >
+          <MapPinPlus aria-hidden="true" className="size-3.5 shrink-0" />
+          {addStopHint.text}
+        </span>
       )}
       </div>
       {/* Bottom of the map, clear of the full-screen button in the corner.

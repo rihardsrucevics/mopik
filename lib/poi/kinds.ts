@@ -83,6 +83,43 @@ export const POI_KIND: Record<PoiCategory, { key: string; icon: string }> = {
 };
 
 /**
+ * A via as the numbering reads it: the label the marker carries, and the
+ * category that says whether it is a sight rather than one of the rider's own
+ * stops. Everything else a via holds (coordinates, kind, detail) is the
+ * marker's business, not the number's.
+ */
+export type NumberedVia = { label: string; category?: string };
+
+/**
+ * The number each via wears on the map, or null where it wears a kind's glyph.
+ *
+ * Here rather than in the map component so it can be tested: the failure it
+ * guards against is silent, and the rider is the one who would find it. (The
+ * component imports MapLibre's CSS at module level, which no test runner can
+ * load — the rule would otherwise only ever be verified by eye.)
+ *
+ * `via` arrives in ride order — the order the rider reads in the form — so
+ * this is a running count over the list. The subtlety is that a sight added
+ * from the suggestions sits in the *same* array and must not take a number:
+ * it is a place to look at, not the ride's third stop. Let it consume one and
+ * every stop after it is labelled one higher than its row, so the map quietly
+ * stops agreeing with the form.
+ *
+ * Recomputed from the whole list rather than stored per marker, which is what
+ * makes removing or moving a stop renumber the rest with nothing to
+ * invalidate.
+ */
+export function stopNumbers(via: readonly NumberedVia[]): (number | null)[] {
+  let n = 0;
+  // A via with no recognised category is a place the rider put in the ride, so
+  // it is a stop and takes the next number — an older share code or a dataset
+  // built after this one lands here, and "a stop" is the truthful reading of
+  // a place that is in the ride and not a sight we know. Only a known sight
+  // opts out.
+  return via.map((p) => (p.category && p.category in POI_KIND ? null : ++n));
+}
+
+/**
  * The place a suggestion's row points at on openstreetmap.org.
  *
  * The dataset's `id` is the OSM element with its type folded into the first
