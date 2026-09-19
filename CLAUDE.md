@@ -24,6 +24,43 @@ If `gh` is on `tronems`, `git push` fails with 403 — that one is loud.
 symptom is that www.mopik.eu does not change. When a deploy "did not work",
 check the account before you check the code.
 
+## Where this stands — handover, 2026-09-19 (evening, hard stop)
+
+**Production is `4d99441`, main is clean.** Shipped today, each verified in
+a browser on www.mopik.eu: metadata in four languages with `?lang=` on the
+link and the card (`/card?lang=`), shared-route cards in the author's
+language, coordinates in the place field (#14), pick a place on the map
+with Confirm (#13), stops added straight from the map with numbered pins,
+#7 step 2d (segment-wise probe + named refusal + `car-fast` direct-leg
+offer), #11 closed by measurement, ridden-roads reference layer (#6 first
+step — changed no route; value is *showing* `riddenKm`, panel line still to
+do), POI + gates for SI/CH/AT.
+
+**Unfinished work is parked on branch `wip/map-pins-and-fast-reroute`
+(f00acfd), NOT on main.** Read its commit message first. Complete there:
+the API for an unreachable pin (200 + `unplannable.unreachableStop`,
+`remove-stop`/`move-stop` chips, `/api/routable-point`) — measured on the
+rider's ride: "Pilskalni 2" is a farmstead behind `access=private`, BRouter
+ends 471 m short, no legal road within 300 m. Partial: role-based planning
+pins (`lib/map/place-roles.ts`, wired), "Starts"/"Finišs" labels (start
+pin was rendering clipped — unverified), fast incremental re-route (~640
+lines UI + `/api/reroute-leg`, unverified). Not started: dispatching the
+two chips in home-page.tsx and the routable-point check at `confirmPick`.
+`tsc` on the branch: 2 errors (analytics union), 301/301 tests. **Rider
+decisions since:** the finish pin stays RED with its label (chequered flag
+reversed); do not ship a chip that does nothing.
+
+**Two production observations, unresolved:** a Latvian prompt with foreign
+place names fell to the regex parser once (backlog 25); `hasPlaceData`'s
+1°/1.5° slack tells München it has place data via Austria (backlog 8).
+
+**Poland POI/gates build** was still running at the stop (`nice 19`,
+log `data/poi-build-3.log`, script in the 0284c868 session scratchpad,
+venv beside it). When `data/gates-PL.json` exists: `npx tsx
+scripts/publish-poi.ts && npx tsx scripts/publish-gates.ts`, commit
+`public/poi public/gates`, deploy. DE and IT still need a quiet machine.
+Guard builds on `memory_pressure` free %, never on swap-used.
+
 ## Vercel: the project moved accounts, 2026-09-14
 
 Mopik now deploys from **`rihards-projects-3063811e/mopik`** (the rider's own
