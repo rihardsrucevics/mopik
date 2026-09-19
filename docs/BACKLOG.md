@@ -490,6 +490,20 @@ rate-limits a full build and the script already rotates mirrors.
 The rider also asked whether **Google** could supply this instead. Not costed
 yet; do that before committing to another Overpass run.
 
+**2026-09-19: SI, CH and AT published** (2,835 / 6,643 / 11,416 POIs;
+6,816 / 22,973 / 49,910 gates) — 7 countries, 66,572 POIs, 14 MB; gates for
+6. Built on the 8 GB machine one country at a time with a guard on
+`memory_pressure` free %, not on swap-used (macOS keeps swap "used" high
+after processes exit; Slovenia built fine at 12.7 GB reported swap). PL was
+rebuilding for gates at the time of writing; DE and IT still need a quiet
+machine. **One honesty question surfaced by AT:** `hasPlaceData` answers
+true for München although the nearest Austrian POI is 53 km away, because
+the coverage slack is 1° / 1.5° (~110 km) — enough that a ride 100 km
+outside any published country is told it has place data. The test now uses
+Hamburg for "not published". Whether the slack should shrink to a real
+border margin (say 25 km) is open; measure how many border rides it would
+turn from "covered" to "sparse" before changing it.
+
 ## 9. ~~Multilingual UI~~ — DONE 2026-09-14
 
 Latvian for Latvians, Lithuanian for Lithuanians, Estonian for Estonians,
