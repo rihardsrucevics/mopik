@@ -18,8 +18,14 @@ maplibregl.setWorkerUrl("/maplibre-gl-worker.mjs");
 
 type Props = {
   segments: GeoJSON.FeatureCollection<GeoJSON.LineString, RouteSegmentProperties> | null;
-  start: { lat: number; lon: number } | null;
-  destination?: { lat: number; lon: number } | null;
+  /**
+   * The ride's two ends. `label` is the place's own name where the caller has
+   * one — a generated ride does, a form still being composed may not — and it
+   * becomes the pin's tooltip and its screen-reader name, so the marker says
+   * *which* place it is while the word under it says which end.
+   */
+  start: { lat: number; lon: number; label?: string } | null;
+  destination?: { lat: number; lon: number; label?: string } | null;
   /**
    * The ride's stops. `kind` and `detail` are optional and filled in from the
    * POI dataset where the stop is a place it knows — a hillfort's marker then
@@ -191,6 +197,45 @@ type Props = {
    * the hint says so instead of inviting a tap that would do nothing.
    */
   addStopHint?: { text: string; muted: boolean } | null;
+  /**
+   * Correcting the ride from the result map, which is the rider's second ask:
+   * *"I want to make corrections to the offered route through the map and
+   * quickly see the new route on the map, not wait for a full re-generation."*
+   *
+   * Two gestures, and deliberately no third:
+   *
+   * - **A tap on the drawn line** adds a via there (`viaIndex: null`). On the
+   *   line rather than near it, because the result map's empty space already
+   *   means "put the card away" and a tap that sometimes dismissed and
+   *   sometimes re-routed would be the same gesture doing two things. The line
+   *   is queried with the same `TAP_SLOP_PX` box the segment card uses, so it
+   *   is as tappable as the card already is at phone width.
+   * - **A drag of a numbered stop** moves it (`viaIndex` = its position).
+   *   Markers only, and the stop's own marker at that: MapLibre's marker drag
+   *   is its own implementation, not a gesture we synthesise, which is why
+   *   this is not the drag-and-drop CLAUDE.md rules out for the *form's* rows
+   *   — that rule is about reordering a list of DOM rows on iOS Safari, and
+   *   three attempts at it failed. Dragging a pin on a map is what the picked
+   *   point already does here, working, today.
+   *
+   * A tap on the line that does NOT re-route still opens the segment card, as
+   * it always has: the card is how a rider inspects a road and the edit must
+   * not cost him that. Which one happens is decided by the modifier-free rule
+   * below — see `onClick`.
+   */
+  onEditRoute?: (params: {
+    how: "drag" | "tap";
+    at: { lat: number; lon: number };
+    /** null = a new via tapped onto the line; otherwise the stop being moved */
+    viaIndex: number | null;
+    label?: string;
+  }) => void;
+  /**
+   * A leg is being re-routed. The stop markers stop accepting drags for its
+   * duration — a second edit spliced onto a line that is about to be replaced
+   * would be computed against geometry nobody is looking at any more.
+   */
+  editingRoute?: boolean;
 };
 
 const EMPTY: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
@@ -1160,7 +1205,23 @@ function segmentInfoHtml(
   m: Messages,
   locale: UiLocale,
   props: SegmentProps,
-  meters: number
+  meters: number,
+  /**
+   * The ride can be corrected here, so the card offers a stop at this point.
+   *
+   * On the card rather than on the tap itself, and this was the decision worth
+   * measuring. A tap on the line already means "tell me about this road", and
+   * a gesture that sometimes inspects and sometimes re-routes is the same
+   * finger doing two things — on a phone, where the line is 5 px under an 8 px
+   * slop box, the rider would have no way of aiming at one rather than the
+   * other. A button on the card that the tap already opens is unambiguous,
+   * needs no new gesture, and is a 30 px target instead of a 5 px one.
+   *
+   * It also keeps CLAUDE.md's rule that a correction is always the rider's own
+   * tap: nothing about the ride changes until he presses a button that says
+   * what it will do.
+   */
+  canAddStop = false,
 ): string {
   const grade = gradeBucket(props.trackGrade);
 
@@ -1244,6 +1305,18 @@ function segmentInfoHtml(
         // `<details>` when the warning has an explanation to expand).
         flags.join("") +
         `</div>`
+      : "") +
+    // "Add a stop here". `data-add-stop` is how the effect finds it once
+    // MapLibre has parsed the markup — the popup's DOM is not ours to hold a
+    // React ref inside, which is the same reason the focus card's own button
+    // is found by `data-add`.
+    (canAddStop
+      ? `<button type="button" data-add-stop="1" ` +
+        `style="margin-top:4px;width:100%;display:flex;align-items:center;` +
+        `justify-content:center;gap:4px;height:30px;border-radius:15px;` +
+        `border:1px solid #f5630040;background:#fff;color:#f56300;` +
+        `font-size:12px;font-weight:600;cursor:pointer;padding:0 10px">` +
+        `${esc(m.tapRouteToAddStop)}</button>`
       : "") +
     `</div>`
   );
@@ -1351,6 +1424,150 @@ function stopElement(title: string, icon: string = STOP_ICON, ringed = false): H
  * `n` is passed in rather than counted here: the caller knows the ride order,
  * and a counter living in the element would survive a rebuild and drift.
  */
+/**
+ * The word under one of the ride's two end pins — "Starts" or "Finišs".
+ *
+ * The rider's own correction. The finish was a plain red pin and the start a
+ * plain green one — the same shape twice, distinguished by a colour pair that
+ * says "stop / go" to a driver and nothing at all about *ends of a ride*. On a
+ * round trip the two sit on the same spot, and on a phone, against a green
+ * basemap, "which of these is where I start" was a question the map made the
+ * rider answer from context.
+ *
+ * ## Why this is a marker of its own, and not part of the pin
+ *
+ * The first version redrew the whole pin as a DOM element — a disc with a
+ * rotated square beneath it — so the label could sit inside the same flex
+ * column. **The rider saw it on the dev server and reported it broken:** the
+ * green teardrop came out clipped, tip pointing up into a blob, with a pale
+ * halo around it. Rebuilding MapLibre's pin by hand means reproducing its SVG,
+ * its anchor, its shadow and its transform exactly, and anything that wraps
+ * the pin in a new box can shift or crop it.
+ *
+ * So the pin is MapLibre's own again, untouched, with its own colour and its
+ * own `anchor`/transform — exactly what shipped before, and what production
+ * draws. The label is a **second marker at the same coordinate**, whose
+ * element is a zero-sized box with the pill absolutely positioned below it. It
+ * cannot change the pin's geometry because it is not in the pin's box at all.
+ *
+ * The finish's flag rides on its own marker too, for the same reason: it is
+ * drawn over MapLibre's pin rather than inside a hand-made one.
+ */
+function endpointLabelElement(params: { title: string; label: string }): HTMLElement {
+  const el = document.createElement("div");
+  el.title = params.title;
+  el.setAttribute("aria-label", `${params.label}: ${params.title}`);
+  // A box of its own, sized to nothing: it is anchored at the pin's tip (the
+  // coordinate) and the pill hangs below that point, absolutely positioned, so
+  // it has no influence on any other marker's box. `pointer-events:none` keeps
+  // it from swallowing a click meant for the map or the pin.
+  el.style.cssText = "position:relative;width:0;height:0;pointer-events:none;z-index:3";
+  el.innerHTML =
+    `<span style="position:absolute;top:3px;left:50%;transform:translateX(-50%);` +
+    `background:rgba(255,255,255,0.95);border-radius:7px;` +
+    `padding:1px 5px;font-size:10px;font-weight:700;line-height:1.4;` +
+    `color:#1c1917;box-shadow:0 1px 2px rgba(0,0,0,0.2);white-space:nowrap;` +
+    `font-family:inherit">${esc(params.label)}</span>`;
+  return el;
+}
+
+/**
+ * The flag inside the finish pin.
+ *
+ * Inline SVG rather than the Lucide React component: these markers live
+ * outside React (MapLibre owns their DOM), and the project has already learned
+ * that module-level `renderToStaticMarkup` crashes on the server and that
+ * Lucide's `color` prop sets stroke only.
+ *
+ * **Lucide's own `FlagTriangleRight` path was tried first and rejected on the
+ * screenshot.** Its pole stands at x=7 of a 24-wide box, so inside a 26 px
+ * disc the glyph sits visibly right of centre; and its single stroked path
+ * doubles back on itself, which at 14 px closes the triangle into a loop —
+ * measured, it read as a letter "P", which is the one thing a mark on a map
+ * next to 🅿️-shaped stop pins must not do.
+ *
+ * So the flag is drawn here: a pole on the centre line and a **filled**
+ * pennant beside it. Filled rather than stroked because a 2.5 px stroke around
+ * a 7 px triangle is mostly outline — the fill is what survives the size. The
+ * viewBox is tightened to the glyph so it fills the disc rather than floating
+ * in a 24-unit box with a third of it empty.
+ */
+/**
+ * The finish pin: a teardrop painted in black-and-white chequers.
+ *
+ * The rider's own design, in two corrections. First: a small flag *inside* a
+ * red pin is "useless at that size" — at 13 px in a 27 px head the pole and
+ * pennant are three or four pixels each, and on a green basemap they turn to
+ * mush. Second: the chequers are **black and white, like a real finish flag**,
+ * not red and white. So the whole pin carries the pattern and there is no
+ * glyph to squint at: the shape says "a place the ride is pinned to" and the
+ * chequers say which place, at any size the map draws it.
+ *
+ * ## Drawn by hand, and what that cost last time
+ *
+ * A hand-made pin is exactly what produced the clipped, haloed marker the
+ * rider reported. The difference here is that this is **MapLibre's own pin
+ * geometry**, not an approximation of it: the same 27 x 41 viewBox, the same
+ * teardrop path, so the element has the same box, the same anchor and the same
+ * tip-on-the-coordinate behaviour as the green start pin beside it. Only the
+ * fill changes.
+ *
+ * The chequers are clipped to the teardrop, so the pattern stops exactly at
+ * the pin's edge and the silhouette is unchanged. A thin dark outline keeps
+ * the white squares from dissolving into a pale basemap — the same problem the
+ * numbered stop pins solve with their white hairline, in reverse.
+ */
+const FINISH_CHECKER_PX = 6.75;
+
+/**
+ * SVG `id`s are document-global, so two of these on one page would have the
+ * second pin's pattern resolve against the first one's definition. The planner
+ * mounts one map, but a shared-route page beside a preview is one DOM, and an
+ * id collision here fails silently as an unpainted pin.
+ */
+let finishPinSeq = 0;
+
+function finishPinElement(title: string): HTMLElement {
+  const uid = `mopik-finish-${++finishPinSeq}`;
+  const el = document.createElement("div");
+  el.title = title;
+  el.setAttribute("aria-label", title);
+  // The element's box is the pin's box and nothing else: no wrapper, no extra
+  // padding, no shadow that would grow it. The label rides on its own marker.
+  el.style.cssText = "width:27px;height:41px;line-height:0;cursor:default";
+  el.innerHTML =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="27" height="41" viewBox="0 0 27 41" ` +
+    `display="block" aria-hidden="true">` +
+    `<defs>` +
+    // The teardrop, as MapLibre draws it: a circle of radius 13.5 with the
+    // sides drawn down to a point at the bottom.
+    `<clipPath id="${uid}-clip">` +
+    `<path d="M13.5 0C6.04 0 0 6.04 0 13.5 0 21 6 27 13.5 41 21 27 27 21 27 13.5 27 6.04 20.96 0 13.5 0z"/>` +
+    `</clipPath>` +
+    // 4 columns x ~6 rows of 6.75 px squares, which fills the 27 px width
+    // exactly and keeps every square square.
+    `<pattern id="${uid}-checks" width="${FINISH_CHECKER_PX * 2}" height="${FINISH_CHECKER_PX * 2}" ` +
+    `patternUnits="userSpaceOnUse">` +
+    `<rect width="${FINISH_CHECKER_PX * 2}" height="${FINISH_CHECKER_PX * 2}" fill="#fff"/>` +
+    `<rect width="${FINISH_CHECKER_PX}" height="${FINISH_CHECKER_PX}" fill="#111"/>` +
+    `<rect x="${FINISH_CHECKER_PX}" y="${FINISH_CHECKER_PX}" width="${FINISH_CHECKER_PX}" ` +
+    `height="${FINISH_CHECKER_PX}" fill="#111"/>` +
+    `</pattern>` +
+    `</defs>` +
+    // A drop shadow matching the one MapLibre's pin casts, so the two ends sit
+    // at the same height above the map rather than one of them looking flat.
+    `<ellipse cx="13.5" cy="39" rx="5" ry="1.8" fill="rgba(0,0,0,0.25)"/>` +
+    `<g clip-path="url(#${uid}-clip)">` +
+    `<rect width="27" height="41" fill="url(#${uid}-checks)"/>` +
+    `</g>` +
+    // The outline, drawn over the pattern so the silhouette stays crisp where
+    // a white square meets a pale basemap.
+    `<path d="M13.5 0C6.04 0 0 6.04 0 13.5 0 21 6 27 13.5 41 21 27 27 21 27 13.5 27 6.04 20.96 0 13.5 0z" ` +
+    `fill="none" stroke="#111" stroke-width="1.6"/>` +
+    `</svg>`;
+  return el;
+}
+
 function numberedStopElement(title: string, n: number): HTMLElement {
   const el = document.createElement("button");
   el.type = "button";
@@ -1650,7 +1867,7 @@ const SURFACE_COLOR_EXPR: maplibregl.ExpressionSpecification = [
   SURFACE_COLORS.unknown,
 ];
 
-export function RouteMap({ segments, start, destination, via, focus, onFocusCleared, onFocusToggle, selectedPois, routePois, showTet, onToggleTet, showSights, onToggleSights, onShowPoi, onPickPoint, onAddStopPoint, pickedPoint, onPickedPointMove, pickCenter, onGeolocated, addStopHint }: Props) {
+export function RouteMap({ segments, start, destination, via, focus, onFocusCleared, onFocusToggle, selectedPois, routePois, showTet, onToggleTet, showSights, onToggleSights, onShowPoi, onPickPoint, onAddStopPoint, pickedPoint, onPickedPointMove, pickCenter, onGeolocated, addStopHint, onEditRoute, editingRoute = false }: Props) {
   const [locale] = useLocale();
   const m = messages(locale);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1658,6 +1875,14 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
   const markerRef = useRef<maplibregl.Marker | null>(null);
   const showTetRef = useRef(false);
   const destMarkerRef = useRef<maplibregl.Marker | null>(null);
+  /**
+   * The words under the end pins, and the finish's flag.
+   *
+   * Their own markers, so MapLibre's pins keep their own geometry — see
+   * `endpointLabelElement` for the clipped teardrop that made this necessary.
+   * Held together because they are removed together, on every rebuild.
+   */
+  const endpointDecorationsRef = useRef<maplibregl.Marker[]>([]);
   const loadedRef = useRef(false);
   const viaMarkersRef = useRef<maplibregl.Marker[]>([]);
   const badgeMarkersRef = useRef<maplibregl.Marker[]>([]);
@@ -1729,6 +1954,17 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
   useEffect(() => { onPickedPointMoveRef.current = onPickedPointMove; }, [onPickedPointMove]);
   const onGeolocatedRef = useRef(onGeolocated);
   useEffect(() => { onGeolocatedRef.current = onGeolocated; }, [onGeolocated]);
+  /**
+   * Correcting the ride, through a ref for the reason every other callback
+   * here is: the handlers are attached once per `segments` change and a
+   * closure over the prop would keep calling the version that existed when the
+   * line was drawn — which, for an edit, is the version that would splice into
+   * the ride *before* the previous edit.
+   */
+  const onEditRouteRef = useRef(onEditRoute);
+  useEffect(() => { onEditRouteRef.current = onEditRoute; }, [onEditRoute]);
+  const editingRouteRef = useRef(editingRoute);
+  useEffect(() => { editingRouteRef.current = editingRoute; }, [editingRoute]);
   /** The draggable marker for the picked point, kept out of the route's markers. */
   const pickedMarkerRef = useRef<maplibregl.Marker | null>(null);
   /** The "where am I" button, added only while a row is being picked. */
@@ -2004,22 +2240,55 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
         if (showTet) void loadTet(map);
       }
 
+      // The two ends. The PINS are MapLibre's own, with their own colours,
+      // anchor and transform — untouched, exactly as they shipped and as
+      // production draws them. Rebuilding them by hand to fit a label inside
+      // produced a clipped teardrop with a halo, which the rider saw and
+      // reported; see `endpointLabelElement`.
+      //
+      // The word, and the finish's flag, are separate markers at the same
+      // coordinate whose elements are zero-sized boxes. They are rebuilt on
+      // every run rather than reused because the label is translated —
+      // reusing would leave "Starts" on the map after the rider switched the
+      // interface to English, the way the badges did before `locale` joined
+      // this effect's deps.
+      for (const marker of endpointDecorationsRef.current) marker.remove();
+      endpointDecorationsRef.current = [];
+
+      markerRef.current?.remove();
+      markerRef.current = null;
       if (start) {
-        if (!markerRef.current) {
-          markerRef.current = new maplibregl.Marker({ color: "#16a34a" });
-        }
-        markerRef.current.setLngLat([start.lon, start.lat]).addTo(map);
-      } else {
-        markerRef.current?.remove();
+        markerRef.current = new maplibregl.Marker({ color: "#16a34a" })
+          .setLngLat([start.lon, start.lat])
+          .addTo(map);
+        endpointDecorationsRef.current.push(
+          new maplibregl.Marker({
+            // The place's own name where there is one, so the tooltip and the
+            // screen-reader name say *which* place this is — the pill beside
+            // it says which end. `start` carries a label on a generated ride
+            // and none while the form is only being composed.
+            element: endpointLabelElement({ title: start.label ?? m.mapStart, label: m.mapStart }),
+          }).setLngLat([start.lon, start.lat]).addTo(map),
+        );
       }
 
+      destMarkerRef.current?.remove();
+      destMarkerRef.current = null;
       if (destination) {
-        if (!destMarkerRef.current) {
-          destMarkerRef.current = new maplibregl.Marker({ color: "#ff3b30" });
-        }
-        destMarkerRef.current.setLngLat([destination.lon, destination.lat]).addTo(map);
-      } else {
-        destMarkerRef.current?.remove();
+        // The chequered teardrop, on MapLibre's own pin geometry: same 27 x 41
+        // box, same tip-on-the-coordinate anchor as the green start pin, only
+        // the fill differs. `anchor: "bottom"` because a custom element has no
+        // pin anchor of its own — MapLibre's default for one is `center`,
+        // which would bury the tip half a pin below the place it marks.
+        destMarkerRef.current = new maplibregl.Marker({
+          element: finishPinElement(destination.label ?? m.mapFinish),
+          anchor: "bottom",
+        }).setLngLat([destination.lon, destination.lat]).addTo(map);
+        endpointDecorationsRef.current.push(
+          new maplibregl.Marker({
+            element: endpointLabelElement({ title: destination.label ?? m.mapFinish, label: m.mapFinish }),
+          }).setLngLat([destination.lon, destination.lat]).addTo(map),
+        );
       }
 
       for (const marker of badgeMarkersRef.current) marker.remove();
@@ -2115,9 +2384,45 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
             .setHTML(stopInfoHtml(m, place))
             .addTo(map);
         });
-        return new maplibregl.Marker({ element: el })
+        /**
+         * A stop the rider can drag to somewhere better.
+         *
+         * Offered only on a result map that accepts edits (`onEditRoute`), so
+         * a shared ride or a composing map keeps its pins fixed. The move is
+         * reported on `dragend` alone: each one is two BRouter legs, and a
+         * request per pointer sample would be a few hundred per drag. The
+         * marker follows the finger regardless, because MapLibre moves it
+         * itself — what waits for the release is the routing.
+         *
+         * This is not the drag-and-drop CLAUDE.md rules out. That rule is
+         * about reordering the form's DOM rows on iOS Safari, where three
+         * attempts failed and a tap was the working answer. This is MapLibre's
+         * own marker drag, the same implementation the picked point has used
+         * successfully since pick mode shipped.
+         */
+        const draggable = Boolean(onEditRouteRef.current);
+        const marker = new maplibregl.Marker({ element: el, draggable })
           .setLngLat([place.lon, place.lat])
           .addTo(map);
+        if (draggable) {
+          el.style.cursor = "grab";
+          el.title = `${place.label} — ${m.mapDragStopHint}`;
+          marker.on("dragend", () => {
+            // Re-read the ref rather than closing over the prop: by the time a
+            // drag ends, an earlier edit may have replaced the handler.
+            if (editingRouteRef.current) {
+              // A leg is already being routed. Put the pin back where the ride
+              // still has it rather than leaving it somewhere the line does
+              // not go — a marker that has moved and a line that has not is
+              // the one thing this feature must never show.
+              marker.setLngLat([place.lon, place.lat]);
+              return;
+            }
+            const { lat, lng } = marker.getLngLat();
+            onEditRouteRef.current?.({ how: "drag", at: { lat, lon: lng }, viaIndex: i });
+          });
+        }
+        return marker;
       });
 
       if (segments && segments.features.length > 0) {
@@ -2614,10 +2919,27 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
         : lineMeters(source?.geometry.coordinates ?? []);
 
       infoPopupRef.current?.remove();
-      infoPopupRef.current = new maplibregl.Popup({ offset: 12, maxWidth: "260px", closeButton: true })
+      const canAddStop = Boolean(onEditRouteRef.current);
+      const popup = new maplibregl.Popup({ offset: 12, maxWidth: "260px", closeButton: true })
         .setLngLat(lngLat)
-        .setHTML(segmentInfoHtml(m, locale, props, meters))
+        .setHTML(segmentInfoHtml(m, locale, props, meters, canAddStop))
         .addTo(map);
+      infoPopupRef.current = popup;
+      // The card's "add a stop here". Bound after `addTo`, which is when
+      // MapLibre has parsed the markup and the element exists. The point is
+      // the card's own anchor — where the rider tapped the line — rather than
+      // the segment's midpoint: he aimed at a place, and the stop belongs
+      // where he aimed.
+      if (canAddStop) {
+        popup.getElement()?.querySelector<HTMLButtonElement>("[data-add-stop]")
+          ?.addEventListener("click", (event) => {
+            event.stopPropagation();
+            if (editingRouteRef.current) return;
+            const at = maplibregl.LngLat.convert(lngLat);
+            popup.remove();
+            onEditRouteRef.current?.({ how: "tap", at: { lat: at.lat, lon: at.lng }, viaIndex: null });
+          });
+      }
       // The card and the highlight are one gesture: the rider should see which
       // line the numbers belong to. Keyed on the segment so tapping the same
       // one again closes both.

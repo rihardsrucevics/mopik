@@ -395,6 +395,60 @@ export type MessageKey =
    */
   | "tapMapToAddStop"
   | "tapMapStopsFull"
+  /**
+   * Including the ticked sights without re-planning, and correcting the ride
+   * on the result map.
+   *
+   * Two things the rider asked for on the same day: ticking a sight and
+   * *keeping* it must not cost a generation, and a correction made on the map
+   * must appear in the time of two short legs. Both produce a ride Mopik did
+   * not search for, so both are labelled — `resEdited` is the kicker, and
+   * `resSearchBetter` is the full search offered beside it, never instead of
+   * it. `resEditRetraced` is the honest half: an incremental edit can raise
+   * the repeated share and the rider is shown that, never shielded from it.
+   */
+  | "resAddSelected"
+  | "resAddSelectedHint"
+  | "resSearchBetter"
+  | "resSearchBetterHint"
+  | "resEdited"
+  | "resEditedHint"
+  | "resEditRetraced"
+  | "resEditUndo"
+  | "resEditRouting"
+  | "resEditFailed"
+  | "resEditMoved"
+  | "tapRouteToAddStop"
+  | "mapDragStopHint"
+  /**
+   * The words on the ride's two end pins.
+   *
+   * The rider asked for these after seeing a plain red pin and a plain green
+   * one: the same shape twice, told apart by a colour pair that means "stop /
+   * go" to a driver and nothing about the ends of a ride — and on a round trip
+   * the two sit on the same spot. The finish also carries a flag; the word is
+   * what makes it certain.
+   */
+  | "mapStart"
+  | "mapFinish"
+  /**
+   * A pin dropped where the profile may not ride, caught at Confirm rather
+   * than after a search.
+   *
+   * The same diagnosis the refusal gives (`describeUnreachableStop`), moved
+   * forward to the moment the rider is still looking at the map with his
+   * finger on the spot. Measured on Pilskalni 2: a farmstead behind
+   * `access=private` service roads cost 15 s of searching and a refusal that
+   * named nothing. Here it costs one short probe and the map is still open.
+   *
+   * Two ways out, never one: move the pin to the road the router did find, or
+   * cancel and aim again. "Move" is offered only when there is somewhere to
+   * move it to and it is near enough to still be the same place — `canMove`,
+   * decided by the server so this and the refusal cannot drift apart.
+   */
+  | "pickOffRoadTitle"
+  | "pickOffRoadMove"
+  | "pickOffRoadCancel"
   /** The direct-road offer (backlog item 7b): the road, never a planned ride. */
   | "directLegTitle"
   | "directLegKicker"
@@ -866,6 +920,24 @@ const lv: Messages = {
   pickOnMapConfirm: "Apstiprināt",
   tapMapToAddStop: "Atzīmē kartē, lai pievienotu pieturu",
   tapMapStopsFull: "Vairāk pieturu pievienot nevar",
+  resAddSelected: "Pievienot izvēlētos",
+  resAddSelectedHint: "Atzīmētās vietas paliek maršrutā — bez jaunas meklēšanas.",
+  resSearchBetter: "Meklēt labāku apli ar šīm pieturām",
+  resSearchBetterHint: "Pārplāno visu braucienu no jauna. Var atrast tīrāku apli, bet aizņem ~20–30 s.",
+  resEdited: "Labots ar roku",
+  resEditedHint: "Šo maršrutu izlaboji tu, nevis Mopik meklēšana.",
+  resEditRetraced: "Atkārtotie ceļi pārrēķināti: {pct} %",
+  resEditUndo: "Atsaukt labojumu",
+  resEditRouting: "Pārrēķinu posmu…",
+  resEditFailed: "Šeit neizdevās izbraukt — maršruts palika iepriekšējais.",
+  resEditMoved: "Punkts pārvietots {m} m uz tuvāko ceļu.",
+  tapRouteToAddStop: "Uzspied uz maršruta, lai pievienotu pieturu",
+  mapDragStopHint: "Pieturu var pavilkt uz citu vietu",
+  mapStart: "Starts",
+  mapFinish: "Finišs",
+  pickOffRoadTitle: "Šeit ar šo profilu nevar piebraukt. Tuvākais ceļš ir ~{m} m nostāk.",
+  pickOffRoadMove: "Pārvietot uz tuvāko ceļu",
+  pickOffRoadCancel: "Izvēlēties citu vietu",
   directLegTitle: "Taisnākais ceļš · asfalts",
   directLegKicker: "Šis nav Mopik maršruts",
   directLegNote: "Šis ir ceļš, nevis brauciens — īsākā līnija no A uz B, ko atradu, kad interesantu maršrutu šim posmam izplānot neizdevās. Pievieno pieturu pa vidu, un es pamēģināšu vēlreiz.",
@@ -1279,6 +1351,24 @@ const lt: Messages = {
   pickOnMapConfirm: "Patvirtinti",
   tapMapToAddStop: "Pažymėkite žemėlapyje, kad pridėtumėte sustojimą",
   tapMapStopsFull: "Daugiau sustojimų pridėti negalima",
+  resAddSelected: "Pridėti pažymėtas",
+  resAddSelectedHint: "Pažymėtos vietos lieka maršrute — be naujos paieškos.",
+  resSearchBetter: "Ieškoti geresnio rato su šiais sustojimais",
+  resSearchBetterHint: "Iš naujo suplanuoja visą maršrutą. Gali rasti švaresnį ratą, bet užtrunka ~20–30 s.",
+  resEdited: "Taisyta ranka",
+  resEditedHint: "Šį maršrutą pataisei tu, o ne Mopik paieška.",
+  resEditRetraced: "Kartojami keliai perskaičiuoti: {pct} %",
+  resEditUndo: "Atšaukti pataisymą",
+  resEditRouting: "Perskaičiuoju atkarpą…",
+  resEditFailed: "Čia nepavyko pravažiuoti — maršrutas liko ankstesnis.",
+  resEditMoved: "Taškas perkeltas {m} m iki artimiausio kelio.",
+  tapRouteToAddStop: "Spustelėk maršrutą, kad pridėtum sustojimą",
+  mapDragStopHint: "Sustojimą galima nutempti kitur",
+  mapStart: "Startas",
+  mapFinish: "Finišas",
+  pickOffRoadTitle: "Čia su šiuo profiliu privažiuoti negalima. Artimiausias kelias yra už ~{m} m.",
+  pickOffRoadMove: "Perkelti prie artimiausio kelio",
+  pickOffRoadCancel: "Rinktis kitą vietą",
   directLegTitle: "Tiesiausias kelias · asfaltas",
   directLegKicker: "Tai nėra Mopik maršrutas",
   directLegNote: "Tai kelias, o ne kelionė — trumpiausia linija iš A į B, kurią radau, kai nepavyko suplanuoti įdomaus maršruto šiai atkarpai. Pridėk sustojimą viduryje ir pabandysiu dar kartą.",
@@ -1696,6 +1786,24 @@ const et: Messages = {
   pickOnMapConfirm: "Kinnita",
   tapMapToAddStop: "Märgi kaardil, et lisada peatus",
   tapMapStopsFull: "Rohkem peatusi lisada ei saa",
+  resAddSelected: "Lisa valitud",
+  resAddSelectedHint: "Märgitud kohad jäävad marsruuti — ilma uue otsinguta.",
+  resSearchBetter: "Otsi parem ring nende peatustega",
+  resSearchBetterHint: "Planeerib kogu sõidu uuesti. Võib leida puhtama ringi, kuid võtab ~20–30 s.",
+  resEdited: "Käsitsi muudetud",
+  resEditedHint: "Selle marsruudi parandasid sina, mitte Mopiku otsing.",
+  resEditRetraced: "Korduvad teed arvutatud uuesti: {pct} %",
+  resEditUndo: "Võta muudatus tagasi",
+  resEditRouting: "Arvutan lõiku ümber…",
+  resEditFailed: "Siia ei õnnestunud sõita — marsruut jäi endiseks.",
+  resEditMoved: "Punkt nihutati {m} m lähima teeni.",
+  tapRouteToAddStop: "Puuduta marsruuti, et lisada peatus",
+  mapDragStopHint: "Peatust saab lohistada mujale",
+  mapStart: "Start",
+  mapFinish: "Finiš",
+  pickOffRoadTitle: "Siia selle profiiliga sõita ei saa. Lähim tee on ~{m} m eemal.",
+  pickOffRoadMove: "Liiguta lähimale teele",
+  pickOffRoadCancel: "Vali teine koht",
   directLegTitle: "Otseteed · asfalt",
   directLegKicker: "See ei ole Mopiku marsruut",
   directLegNote: "See on tee, mitte sõit — lühim joon A-st B-sse, mille leidsin siis, kui sellele lõigule huvitavat marsruuti planeerida ei õnnestunud. Lisa vahepeale peatus ja proovin uuesti.",
@@ -2107,6 +2215,24 @@ const en: Messages = {
   pickOnMapConfirm: "Confirm",
   tapMapToAddStop: "Mark on the map to add a stop",
   tapMapStopsFull: "No room for another stop",
+  resAddSelected: "Add the ticked places",
+  resAddSelectedHint: "The ticked places stay in the ride — no new search.",
+  resSearchBetter: "Search for a better loop with these stops",
+  resSearchBetterHint: "Plans the whole ride again. It can find a cleaner loop, but takes ~20–30 s.",
+  resEdited: "Edited by hand",
+  resEditedHint: "You corrected this route, not a Mopik search.",
+  resEditRetraced: "Repeated roads recomputed: {pct} %",
+  resEditUndo: "Undo the edit",
+  resEditRouting: "Re-routing the leg…",
+  resEditFailed: "Could not ride to there — the route is unchanged.",
+  resEditMoved: "The point was moved {m} m to the nearest road.",
+  tapRouteToAddStop: "Tap the route to add a stop",
+  mapDragStopHint: "A stop can be dragged somewhere else",
+  mapStart: "Start",
+  mapFinish: "Finish",
+  pickOffRoadTitle: "You cannot ride here with this profile. The nearest road is ~{m} m away.",
+  pickOffRoadMove: "Move it to the nearest road",
+  pickOffRoadCancel: "Pick another spot",
   directLegTitle: "Straightest way · asphalt",
   directLegKicker: "This is not a Mopik route",
   directLegNote: "This is the road, not the ride — the shortest line from A to B, found after planning an interesting route for this stretch failed. Add a stop in the middle and I will try again.",

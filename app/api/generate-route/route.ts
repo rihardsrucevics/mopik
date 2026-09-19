@@ -19,7 +19,8 @@ import { findResolvedPlace, type ResolvedPlace } from "@/lib/chat/places";
 // come from BRouter, whose profile we write ourselves — on 25-30 km Baltic
 // legs that yields 57-92% unpaved against Valhalla's 1-50%.
 import { fetchIsochrone } from "@/lib/routing/valhalla";
-import { fetchRoutePath } from "@/lib/routing/brouter";
+import { fetchRoutePath, probeSnapPoint } from "@/lib/routing/brouter";
+import { canOfferMove, checkRoutablePoint } from "@/lib/routing/routable-point";
 // The feasibility probe: one timed leg before the search, so a ride Mopik
 // cannot plan in one go is named up front instead of after a 50 s wait.
 import {
@@ -33,7 +34,7 @@ import {
   PROBE_BUDGET_MS,
   snapDistanceM,
 } from "@/lib/routing/fetch-route-probe";
-import { buildMotoProfileOptions } from "@/lib/routing/moto-profile";
+import { buildMotoProfileOptions, type MotoProfileOptions } from "@/lib/routing/moto-profile";
 import { buildCostingOptions, profileName } from "@/lib/routing/profiles";
 import { pruneSpurs } from "@/lib/routing/prune-spurs";
 import { joinPaths } from "@/lib/routing/join-paths";
@@ -59,6 +60,7 @@ import {
   RouteIntent,
   RouteIntentSchema,
   UnplannableVerdict,
+  UnreachableStop,
 } from "@/lib/types";
 
 /**
@@ -1142,6 +1144,63 @@ function mutations(shape: LoopShape): LoopShape[] {
 const ENDPOINT_SNAP_MARGIN_M = 150;
 
 /**
+ * When every candidate failed, is one of the rider's own pins simply
+ * unreachable on this profile?
+ *
+ * Measured 2026-09-19, and the reason this runs at all. A ride through
+ * Glāziņpurvs → Sporta iela 36 → Lielpurvi → Tūjas → Pilskalni 2 on
+ * Grūti · Sports · Meži returned "Neizdevās atrast maršrutu, kas izpilda
+ * pieturvietas un norādītās robežas" in 15 s, naming nothing. Every leg of
+ * that ride routes; the finish is the problem. Pilskalni 2 is a farmstead
+ * behind `access=private` service roads, and BRouter **does not refuse it** —
+ * it answers 200 and ends the line 471 m short, which `visitsRequiredStops`
+ * then rejects on all ~36 candidates.
+ *
+ * Because nothing was ever thrown, none of the existing rescues could see it:
+ * the endpoint-nudge ring runs only from a `catch` on "target island" /
+ * "error re-tracking track". It would not have helped either — measured, its
+ * best offset lands 495 m from the pin, *worse* than the plain 471 m snap,
+ * because there is no legal road within 300 m to find. The honest answer is
+ * to name the pin and offer the two ways out.
+ *
+ * Deliberately only on the failure path, and only for the rider's own places:
+ * this costs one short request per pin, which is nothing against a generation
+ * that has already spent its whole budget, but it would be real money on the
+ * happy path where every candidate routed.
+ */
+async function findUnreachableStop(
+  places: { place: GeocodeResult; name: string; index: number; role: "start" | "via" | "destination" }[],
+  profileOptions: MotoProfileOptions,
+  signal: AbortSignal
+): Promise<UnreachableStop | undefined> {
+  for (const { place, name, index, role } of places) {
+    if (signal.aborted) return undefined;
+    // Probed from another place in the ride when there is one, so the leg is
+    // a real approach rather than a synthetic hop beside the pin.
+    const other = places.find((p) => p.place !== place)?.place;
+    const verdict = await checkRoutablePoint({
+      point: [place.lon, place.lat],
+      from: other ? [other.lon, other.lat] : undefined,
+      probe: (leg) => probeSnapPoint({ from: leg[0], to: leg[1], profileOptions, timeoutMs: 2_500 }),
+    });
+    // "We could not check" is not a verdict: a slow probe must never turn
+    // into an accusation about the rider's pin.
+    if (verdict.ok || verdict.reason === "probe-failed") continue;
+    return {
+      name,
+      index,
+      role,
+      lat: place.lat,
+      lon: place.lon,
+      ...(verdict.snappedTo ? { snappedTo: verdict.snappedTo } : {}),
+      ...(verdict.distanceM !== undefined ? { distanceM: verdict.distanceM } : {}),
+      canMove: canOfferMove(verdict),
+    };
+  }
+  return undefined;
+}
+
+/**
  * Whether Mopik has a BRouter of its own. An empty `BROUTER_BASE_URL` means
  * the public instance, so it must not read as truthy — a blank value would
  * otherwise unlock the self-hosted budget and concurrency against a server
@@ -2102,6 +2161,54 @@ export async function POST(req: NextRequest) {
         settled[0].status === "rejected"
           ? String((settled[0] as PromiseRejectedResult).reason)
           : "unknown";
+
+      // Before blaming the budget, ask whether one of the rider's own pins is
+      // simply unreachable on this profile. Measured 2026-09-19: a finish at
+      // Pilskalni 2 (a farmstead behind `access=private` roads) killed all ~36
+      // candidates while every leg of the ride routed, and the rider was told
+      // to "precizē ilgumu" about a problem no amount of time could fix.
+      //
+      // The diagnosis is a 200 carrying an `unplannable` verdict, exactly like
+      // item 7's: nothing broke, and the chat has something honest to say —
+      // the place by name, and the two ways out. A 422 here would be a dead
+      // end, which is what the rider asked us to stop doing.
+      const named: { place: GeocodeResult; name: string; index: number; role: "start" | "via" | "destination" }[] = [
+        { place: start, name: placeName(start.label), index: 0, role: "start" as const },
+        ...requiredVia.map((p, i) => ({ place: p, name: placeName(p.label), index: i + 1, role: "via" as const })),
+        ...(destination
+          ? [{ place: destination, name: placeName(destination.label), index: requiredVia.length + 1, role: "destination" as const }]
+          : []),
+      ];
+      const unreachableStop = await findUnreachableStop(
+        named,
+        buildMotoProfileOptions(intent),
+        req.signal
+      );
+      if (unreachableStop) {
+        console.warn(
+          `every candidate failed: "${unreachableStop.name}" is not routable on this profile ` +
+            `(nearest allowed ground ${unreachableStop.distanceM ?? "?"} m away)`
+        );
+        const unplannable: UnplannableVerdict = {
+          from: placeName(start.label),
+          to: placeName((destination ?? requiredVia[requiredVia.length - 1] ?? start).label),
+          legKm: 0,
+          budgetSeconds: Math.round(PROBE_BUDGET_MS / 1000),
+          reason: "error",
+          unreachableStop,
+        };
+        return NextResponse.json(
+          {
+            unplannable,
+            intent,
+            parser: parsed.source,
+            start: { lat: start.lat, lon: start.lon, label: start.label },
+            ...(debugCandidates ? { debugCandidates } : {}),
+          },
+          { status: 200 }
+        );
+      }
+
       return NextResponse.json(
         {
           error: body.plan ? "Neizdevās atrast maršrutu, kas izpilda pieturvietas un norādītās robežas. Precizē ilgumu vai prasības čatā." : `All route candidates failed: ${firstError}`,

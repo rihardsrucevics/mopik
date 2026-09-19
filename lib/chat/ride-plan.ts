@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { messages } from "@/lib/i18n/messages";
 import type { UiLocale } from "@/lib/i18n/locale";
-import { RouteIntentSchema, type RouteIntent } from "@/lib/types";
+import { RouteIntentSchema, type RouteIntent, type UnreachableStop } from "@/lib/types";
 
 export const RidePlanSchema = z.object({
   startPlace: z.string().max(160).nullable(),
@@ -55,8 +55,23 @@ export const RidePlanSchema = z.object({
 export type RidePlan = z.infer<typeof RidePlanSchema>;
 export const ChatMessageSchema = z.object({ role: z.enum(["user", "assistant"]), content: z.string().min(1).max(6000) });
 export type ChatMessage = z.infer<typeof ChatMessageSchema>;
-/** A tap target. `action` is handled on the client instead of being sent to the chat. */
-export type ChatQuickReply = { label: string; message: string; action?: "show-routes" | "retry" | "direct-leg" };
+/**
+ * A tap target. `action` is handled on the client instead of being sent to
+ * the chat.
+ *
+ * `remove-stop` and `move-stop` (2026-09-19) carry a `stop`: a pin the
+ * profile cannot ride to is a dead end unless the rider is given the two ways
+ * out, and both are edits to the ride rather than something to ask the model
+ * about. `move-stop` is only ever offered with `stop.snappedTo` set and
+ * `stop.canMove` true — see `lib/routing/routable-point.ts` for the limit.
+ */
+export type ChatQuickReply = {
+  label: string;
+  message: string;
+  action?: "show-routes" | "retry" | "direct-leg" | "remove-stop" | "move-stop";
+  /** which place the action edits, for `remove-stop` / `move-stop` */
+  stop?: UnreachableStop;
+};
 export type ChatResponse = { plan: RidePlan; message: string; ready: boolean; quickReplies: ChatQuickReply[] };
 /**
  * Which fact the chat is missing. Carried on the prompt so the server can

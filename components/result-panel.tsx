@@ -19,6 +19,8 @@ import { SuggestionsCard, type DetourFocusNote, type SelectedPoi } from "@/compo
 import { useDetourAnalytics, useDetourPrefetch, useSplicedRoute } from "@/lib/routing/use-detours";
 import { type DetourResult } from "@/lib/routing/detour";
 import type { SplicedRoute } from "@/lib/routing/detour";
+import { splicedSurfaces } from "@/lib/routing/detour";
+import type { EditedRide } from "@/lib/routing/reroute-leg";
 
 /**
  * The left column once routes exist: what was asked, the three versions,
@@ -93,7 +95,7 @@ function Row({ label, value, icon }: { label: string; value: string; icon?: stri
   );
 }
 
-export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, remoteLoop, longerSuggestion, tolerancePercent = 20, busy, onSend, onBackToForm, resolvedPlaces, alternatives, offset, onOffsetChange, map, sparsePlaceData = false, assembledFromSegments = false, directLeg = false, onShowPoi, pois = null, poisLoading = false, poisFailed = false, onDetoursChange, selectedPois = [], onToggleSelectPoi, onClearSelectedPois, onRegenerateWithSelection, onSplicedChange }: {
+export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, remoteLoop, longerSuggestion, tolerancePercent = 20, busy, onSend, onBackToForm, resolvedPlaces, alternatives, offset, onOffsetChange, map, sparsePlaceData = false, assembledFromSegments = false, directLeg = false, onShowPoi, pois = null, poisLoading = false, poisFailed = false, onDetoursChange, selectedPois = [], onToggleSelectPoi, onClearSelectedPois, onCommitSelection, onSearchBetterLoop, onSplicedChange, edited = null, canUndo = false, onUndoEdit, editing = false, editNote = null }: {
   routes: GeneratedRoute[];
   /**
    * This is the direct-road offer (backlog item 7b), not a planned ride.
@@ -161,8 +163,41 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
   selectedPois?: SelectedPoi[];
   onToggleSelectPoi?: (poi: SelectedPoi) => void;
   onClearSelectedPois?: () => void;
-  /** Append every ticked sight as a via and plan the ride again. */
-  onRegenerateWithSelection?: () => void;
+  /**
+   * Keep the ticked sights, with no search at all.
+   *
+   * The spliced line the rider is already looking at becomes the ride: its
+   * numbers are recomputed from it and the places are written into the plan.
+   * This is the fast path the rider asked for — the detours are routed and
+   * spliced in milliseconds, and committing them used to throw all of that
+   * away and spend 20-30 s searching again.
+   */
+  onCommitSelection?: () => void;
+  /**
+   * The full search, with the ticked sights as vias — offered by name, never
+   * as what a press silently does.
+   *
+   * It can find a genuinely cleaner loop through the same places, and losing
+   * that to make committing fast would be trading one of the rider's asks for
+   * another. So both are on screen and the slower one says what it costs.
+   */
+  onSearchBetterLoop?: () => void;
+  /**
+   * The ride as the rider has changed it: sights kept, a stop dragged, a point
+   * tapped onto the line. Null while the ride is the one the API returned.
+   *
+   * Everything the panel shows reads through it — the headline numbers, the
+   * retraced share, the GPX, the share code — because the rider is looking at
+   * this line and every figure beside it has to describe it.
+   */
+  edited?: EditedRide | null;
+  /** One step back is available. */
+  canUndo?: boolean;
+  onUndoEdit?: () => void;
+  /** A leg is being re-routed right now. */
+  editing?: boolean;
+  /** What the last edit had to say for itself: a failure, or a moved point. */
+  editNote?: string | null;
   /**
    * Fly the map to a suggested place and ring it, without changing the ride.
    *
@@ -311,9 +346,33 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
    * SURFACE rows, the GPX and the map can never disagree about which ride the
    * rider is looking at.
    */
-  const shownDistanceMeters = spliced?.distanceMeters ?? route.distanceMeters;
-  const shownDurationSeconds = spliced?.durationSeconds ?? route.durationSeconds;
-  const shownSurfaces = spliced?.surfaces ?? route.surfaces;
+  const shownDistanceMeters = spliced?.distanceMeters ?? edited?.distanceMeters ?? route.distanceMeters;
+  const shownDurationSeconds = spliced?.durationSeconds ?? edited?.durationSeconds ?? route.durationSeconds;
+  // An edited ride's surfaces are recomputed from its own segments, on the
+  // same denominator `classify.ts` uses — the map is drawing a line with a
+  // gravel correction spliced into it and "30 % grants" has to count it.
+  const editedSurfaces = edited ? splicedSurfaces(edited.segments) : null;
+  const shownSurfaces = spliced?.surfaces ?? editedSurfaces ?? route.surfaces;
+  /**
+   * The repeated share, and the one place this panel had to change its mind.
+   *
+   * It used to be `route.overlap.repeatedPercent` always, with a comment
+   * saying a spliced figure invented here would be a different measurement
+   * wearing the same label. That was right about a *preview* — a tick is one
+   * untick away and the API's own number is still the truth about the ride.
+   * It is wrong about an *edit*: once the rider keeps sights or moves a stop,
+   * the line on the map is no longer the line the API measured, and showing
+   * that ride's old repeated figure is showing a number that has stopped
+   * describing what is on screen. The rider's one rule is not riding the same
+   * road twice; a correction can make that worse and he must see it.
+   *
+   * So `recomputeOverlap` (in `lib/routing/reroute-leg.ts`) runs the SAME
+   * measurement `classify.ts` does — consecutive coordinate pairs keyed at
+   * ~1 m with direction removed — over the edited geometry, and the edited
+   * figure is labelled as recomputed rather than passed off as the search's.
+   * A preview still shows the API's number, unchanged.
+   */
+  const shownRepeatedPercent = edited ? edited.overlap.repeatedPercent : route.overlap.repeatedPercent;
   const q = route.quality;
   // The RISKS share, on the same denominator the ROADS rows use: road + track
   // + trail is the whole ride, so the two blocks' percentages are comparable
@@ -344,7 +403,7 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
     // sheet and the programmatic click after an await left a timer-driven
     // popup never showing. The file downloads underneath it.
     setBeer(true);
-    track("gpx_downloaded", { variant: route.variant, km: Math.round(shownDistanceMeters / 1000), minutes: Math.round(shownDurationSeconds / 60), repeated: route.overlap.repeatedPercent, unpaved: shownUnpaved });
+    track("gpx_downloaded", { variant: route.variant, km: Math.round(shownDistanceMeters / 1000), minutes: Math.round(shownDurationSeconds / 60), repeated: shownRepeatedPercent, unpaved: shownUnpaved });
     try {
       /**
        * The spliced line, when sights are ticked.
@@ -360,7 +419,11 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
        * description, which is generated from the spliced numbers below. So
        * nothing is lost by splicing that was not already absent.
        */
-      const coordinates = spliced?.coordinates ?? route.geometry.coordinates;
+      // The same order the map draws in: the preview if one is on screen, the
+      // edited ride below it, the API's line otherwise. A GPX that did not
+      // carry the rider's correction would be the one place his edit was
+      // silently dropped — and the GPX is the thing he actually rides.
+      const coordinates = spliced?.coordinates ?? edited?.coordinates ?? route.geometry.coordinates;
       const res = await fetch("/api/export-gpx", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -454,7 +517,7 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
     return [
       plan ? planSummary(plan, locale) : "",
       // The spliced figures, so the file describes the track inside it.
-      `${Math.round(shownDistanceMeters / 1000)} km · ${duration(shownDurationSeconds)} · ${shownUnpaved} % ${m.resGravelShort} · ${route.overlap.repeatedPercent} % ${m.resRepeated.toLowerCase()}`,
+      `${Math.round(shownDistanceMeters / 1000)} km · ${duration(shownDurationSeconds)} · ${shownUnpaved} % ${m.resGravelShort} · ${shownRepeatedPercent} % ${m.resRepeated.toLowerCase()}`,
       spliced && spliced.applied.length > 0 ? fi(m.resWithSights, { n: spliced.applied.length }) : "",
       `${m.resRoadsLabel}: ${mix.roadKm} km, ${mix.trackKm} km ${m.legendTrack.toLowerCase()}, ${mix.trailKm} km ${m.legendTrail.toLowerCase()}`,
       `${variantLabels(m)[route.variant]?.label ?? route.variant} · Mopik (mopik.eu)`,
@@ -581,6 +644,16 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
                   rider who taps "Rādi taisnāko ceļu" must never mistake a
                   car route for the ride Mopik plans. */}
               {directLeg && <div className="truncate text-[10px] font-semibold uppercase tracking-wider text-[#bd4b00]">{m.directLegKicker}</div>}
+              {/* An edited ride says so before it says anything else, in the
+                  same slot and the same voice the direct-road offer uses. The
+                  rule is CLAUDE.md's: a ride Mopik searched for and a ride the
+                  rider corrected are different claims, and the panel must
+                  never let the second pass as the first. Only a hand edit
+                  earns it — keeping ticked sights is accepting an offer Mopik
+                  made, not correcting it. */}
+              {!directLeg && edited?.kind === "edit" && (
+                <div className="truncate text-[10px] font-semibold uppercase tracking-wider text-[#bd4b00]" title={m.resEditedHint}>{m.resEdited}</div>
+              )}
               <div className="truncate text-sm font-semibold text-stone-900">{directLeg ? m.directLegTitle : route.name}</div>
               {directLeg
                 ? <div className="truncate text-[11px] text-stone-500">{route.name}</div>
@@ -594,16 +667,62 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
               time is the ride's own average applied to the few hundred metres
               each detour replaces, so the total is close rather than measured.
               Saying so is cheaper than pretending, and the original numbers are
-              one untick away. Repeated % is deliberately NOT recomputed — it is
-              measured by `classify.ts` over a whole path with the yard and
-              coastline datasets in hand, which is a server's job; a spliced
-              figure invented here would be a different measurement wearing the
-              same label. */}
+              one untick away.
+
+              Repeated % follows the line: the API's figure while a tick is
+              only a preview, the recomputed one once the rider has kept it or
+              moved a stop. See `shownRepeatedPercent` for why that distinction
+              is the honest one rather than a convenience. */}
           <div className="mt-2 grid grid-cols-3 gap-2">
-            <div><div className="text-[10px] uppercase tracking-wider text-stone-400">{m.resDistance}</div><div className="text-lg font-semibold tabular-nums">{spliced ? m.resApprox : ""}{Math.round(shownDistanceMeters / 1000)} km</div></div>
-            <div><div className="text-[10px] uppercase tracking-wider text-stone-400">{m.resTime}</div><div className="text-lg font-semibold tabular-nums">{spliced ? m.resApprox : ""}{duration(shownDurationSeconds)}</div></div>
-            <div><div className="text-[10px] uppercase tracking-wider text-stone-400">{m.resRepeated}</div><div className="text-lg font-semibold tabular-nums" style={{ color: route.overlap.repeatedPercent > 15 ? "#ff3b30" : undefined }}>{route.overlap.repeatedPercent} %</div></div>
+            <div><div className="text-[10px] uppercase tracking-wider text-stone-400">{m.resDistance}</div><div className="text-lg font-semibold tabular-nums">{spliced || edited ? m.resApprox : ""}{Math.round(shownDistanceMeters / 1000)} km</div></div>
+            <div><div className="text-[10px] uppercase tracking-wider text-stone-400">{m.resTime}</div><div className="text-lg font-semibold tabular-nums">{spliced || edited ? m.resApprox : ""}{duration(shownDurationSeconds)}</div></div>
+            <div><div className="text-[10px] uppercase tracking-wider text-stone-400">{m.resRepeated}</div><div className="text-lg font-semibold tabular-nums" style={{ color: shownRepeatedPercent > 15 ? "#ff3b30" : undefined }}>{shownRepeatedPercent} %</div></div>
           </div>
+          {/* The edited ride's own line: what it is, what its retracing came
+              out at, and the way back. The retraced figure is repeated in
+              words rather than left to the number above it, because it is the
+              one figure an incremental edit can quietly make worse and the
+              rider is owed the statement that it was measured again on the
+              line he is looking at.
+
+              "Meklēt labāku apli" is offered right here, next to the edit,
+              rather than only inside the suggestions card: an edited ride is
+              exactly when a cleaner search is worth having, and it must never
+              be the thing that happens to a rider who did not ask. */}
+          {edited && (
+            <div className="mt-2 space-y-1.5 rounded-lg border border-[#f5630040] bg-[#fff4ec] px-3 py-2">
+              <p className="text-[11px] leading-snug text-stone-700">
+                {fi(m.resEditRetraced, { pct: edited.overlap.repeatedPercent })}
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                {canUndo && onUndoEdit && (
+                  <button type="button" onClick={onUndoEdit} disabled={editing}
+                    className="rounded-full border border-stone-300 bg-white px-3 py-1 text-[11px] font-medium text-stone-700 transition hover:bg-stone-50 disabled:opacity-40">
+                    {m.resEditUndo}
+                  </button>
+                )}
+                {onSearchBetterLoop && (plan?.viaPlaces.length ?? 0) > 0 && (
+                  <button type="button" onClick={onSearchBetterLoop} disabled={busy || editing}
+                    className="rounded-full border border-[#f56300] px-3 py-1 text-[11px] font-semibold text-[#bd4b00] transition hover:bg-white disabled:opacity-40">
+                    {m.resSearchBetter}
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+          {/* A leg being re-routed, and whatever the last edit had to say. Both
+              are transient and both are the answer to a gesture the rider just
+              made on the map, so they sit with the numbers that gesture
+              changed rather than on the map itself, where a card would cover
+              the line he is inspecting. */}
+          {editing && (
+            <p role="status" className="mt-2 flex items-center gap-1.5 text-[11px] text-stone-500">
+              <LoaderCircle className="size-3 animate-spin" />{m.resEditRouting}
+            </p>
+          )}
+          {editNote && !editing && (
+            <p role="status" className="mt-2 text-[11px] leading-snug text-[#bd4b00]">{editNote}</p>
+          )}
           {/* Said out loud, under the numbers the rider is reading: this is
               the road, and the way to get a ride is to add a stop. */}
           {directLeg && (
@@ -650,7 +769,9 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
           selected={selectedPois}
           onToggleSelect={onToggleSelectPoi}
           onClearSelection={onClearSelectedPois}
-          onRegenerate={onRegenerateWithSelection}
+          onCommit={onCommitSelection}
+          onSearchBetter={onSearchBetterLoop}
+          committable={Boolean(spliced && spliced.applied.length > 0)}
           viaCount={plan?.viaPlaces.length ?? 0}
           includedNames={plan?.viaPlaces ?? []}
           busy={busy}

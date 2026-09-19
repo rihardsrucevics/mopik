@@ -436,7 +436,13 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
               selected={selectedPois}
               onToggleSelect={planCode && share.plan ? toggleSelectPoi : undefined}
               onClearSelection={() => setSelectedPois([])}
-              onRegenerate={planCode && share.plan ? regenerateWithSelection : undefined}
+              // This page has no router of its own: its "add these places"
+              // hands the plan to the planner, which searches. So it is the
+              // card's *search* action, not its instant one — the shared page
+              // cannot splice a commit into a ride it did not generate, and a
+              // button that looked instant and was not would be the very wait
+              // the planner's new path removes.
+              onSearchBetter={planCode && share.plan ? regenerateWithSelection : undefined}
               viaCount={share.plan?.viaPlaces.length ?? 0}
               includedNames={share.plan?.viaPlaces ?? []}
               detours={detours}

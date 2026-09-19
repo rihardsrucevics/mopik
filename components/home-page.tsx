@@ -29,6 +29,20 @@ import { type DetourResult } from "@/lib/routing/detour";
 import { useRoutePois } from "@/lib/poi/use-route-pois";
 import { useMapLayer } from "@/lib/map/layer-prefs";
 import type { SplicedRoute } from "@/lib/routing/detour";
+import {
+  anchorsAlong,
+  coordinatesOf,
+  legForPoint,
+  nearestAlong,
+  tapCut,
+  recomputeOverlap,
+  spliceLeg,
+  type EditedRide,
+  type LegAnchor,
+} from "@/lib/routing/reroute-leg";
+import { cumulative } from "@/lib/routing/detour";
+import type { Point } from "@/lib/geo/geometry";
+import type { PlaceRoles } from "@/lib/map/place-roles";
 
 type Retry = { stage: "chat"; messages: ChatMessage[]; plan: RidePlan | null } | { stage: "route"; messages: ChatMessage[]; plan: RidePlan };
 
@@ -86,6 +100,27 @@ function stopKind(
  * picked place carries the bare name the rider ticked. Only places that were
  * ticked carry a `kind` at all, so a typed stop never matches and keeps 🅿️.
  */
+/**
+ * A monotonic stopwatch for the analytics, outside the component.
+ *
+ * `performance.now()` inside an `async function` declared in the component
+ * body reads as a render-phase call to `react-hooks/purity`, which cannot see
+ * that the body runs after an await. The call is genuinely not a render — it
+ * happens when the rider drags a pin — so the honest fix is to move it out of
+ * the component rather than to silence the rule at the call site, where the
+ * suppression would also cover whatever was written there later.
+ *
+ * It measures how long a leg re-route took, which is the number this whole
+ * feature exists to change: "far too long" was the complaint, and an event
+ * that carries the milliseconds is how it stays answered.
+ */
+function elapsedMsSince(start: number): number {
+  return Math.round(performance.now() - start);
+}
+function startClock(): number {
+  return performance.now();
+}
+
 function pickedCategory(places: ResolvedPlace[], label: string): string | undefined {
   const heads = [label, label.split("·")[0].trim(), label.split(",")[0].trim()];
   return places.find((p) => p.kind && heads.some((h) => h === p.name || h === p.label))?.kind;
@@ -136,15 +171,24 @@ export function HomePage() {
   // Places picked in the form, with coordinates; sent with every generation
   // so chat corrections keep pointing at the same towns.
   const [places, setPlaces] = useState<ResolvedPlace[]>([]);
-  // Places confirmed in the form but not yet routed: the map shows them so a
-  // wrong "Valmiera" is caught before a generation is spent on it.
-  const [previewPlaces, setPreviewPlaces] = useState<ResolvedPlace[]>([]);
-  // Whether the last of them is a finish or a stop. The composer reports it
-  // with the places because the list alone cannot say: a 🅿️ means "a stop of
-  // this ride", and on a one-way ride the last place is the destination and
-  // gets the destination's own pin. Without this, Berlin → Warszawa drew a
-  // 🅿️ on Warszawa.
-  const [previewRoundTrip, setPreviewRoundTrip] = useState(false);
+  /**
+   * Places confirmed in the form but not yet routed, **as roles**: the map
+   * shows them so a wrong "Valmiera" is caught before a generation is spent on
+   * it, and each one wears the pin of the row it came from.
+   *
+   * Roles rather than a flat list, because the flat list could not say which
+   * pin belonged to which place and the map guessed by position. With an empty
+   * start row that guess promoted the first stop to the start and the last to
+   * the finish — the rider's own production screenshot, four stops drawn as a
+   * complete ride he had not asked for. The composer knows every row's role
+   * whether or not it is filled; now it says so. See `lib/map/place-roles.ts`.
+   */
+  const [preview, setPreview] = useState<PlaceRoles>({ start: null, vias: [], finish: null });
+  /** Every confirmed place, for the questions that are about the set and not the roles. */
+  const previewPlaces = useMemo(
+    () => [preview.start, ...preview.vias, preview.finish].filter((p): p is ResolvedPlace => Boolean(p)),
+    [preview],
+  );
   /**
    * A row in the form is waiting for a point on the map.
    *
@@ -271,6 +315,41 @@ export function HomePage() {
     [result],
   );
   /**
+   * The ride as the rider has edited it: sights committed without a search, a
+   * via dragged, a stop tapped onto the line.
+   *
+   * Carried with the ride it belongs to, exactly as `splicedFor` is and for
+   * the same reason — a new generation must not leave an old edit drawn over
+   * it, and answering that in an effect costs a render during which the map
+   * shows the wrong line. `previous` is the undo: one step, holding the whole
+   * edited ride as it was before the last change, so reverting is an
+   * assignment rather than a recomputation that could drift.
+   *
+   * Note what is NOT here: nothing is re-scored or re-ranked. An edited ride
+   * is the rider's line and the panel says so out loud ("labots ar roku") with
+   * its retraced share recomputed. CLAUDE.md's "never substitute silently"
+   * runs in both directions — Mopik does not pass an edit off as its own
+   * search, and does not quietly undo one either.
+   */
+  const [editedFor, setEditedFor] = useState<{
+    result: GenerateRouteResponse | null;
+    /** null once the rider has undone back to the ride the API returned */
+    edited: EditedRide | null;
+  }>({ result: null, edited: null });
+  const edited = editedFor.result === result ? editedFor.edited : null;
+  /** One step back. Null when there is nothing to undo. */
+  const [undoFor, setUndoFor] = useState<{
+    result: GenerateRouteResponse | null;
+    previous: EditedRide | null;
+    /** what the undone edit was, so the event can say which kind riders reject */
+    how: "commit" | "drag" | "tap" | null;
+  }>({ result: null, previous: null, how: null });
+  const canUndo = undoFor.result === result && undoFor.how !== null;
+  /** A leg is being re-routed: the panel says so and the map does not accept a second edit. */
+  const [editing, setEditing] = useState(false);
+  /** What went wrong with the last edit, shown once and cleared by the next one. */
+  const [editNote, setEditNote] = useState<string | null>(null);
+  /**
    * The routed detours the result panel prefetched, so a marker's card can
    * state the same cost the list's row does. Empty until the prefetch answers,
    * and on the shared page's terms: it is only ever read through
@@ -368,7 +447,18 @@ export function HomePage() {
         // exact places it was built from, rather than on whatever the names
         // geocode to today. Older links carry none and fall back to names.
         const carried = decodePlanPlaces(p);
-        if (carried.length) { setPlaces(carried); setPreviewPlaces(carried); }
+        if (carried.length) {
+          setPlaces(carried);
+          // The plan's own shape decides the roles, not the list's order: a
+          // round trip has no finish, and a one-way ride's finish is its last
+          // place. The composer will report the same thing the moment it
+          // mounts; this is so the map is right on the first frame.
+          setPreview(
+            shared.returnToStart === true
+              ? { start: carried[0] ?? null, vias: carried.slice(1), finish: null }
+              : { start: carried[0] ?? null, vias: carried.slice(1, -1), finish: carried.length > 1 ? carried[carried.length - 1] : null },
+          );
+        }
         if (from) { const o = { code: from, saved: isCodeSaved(from) }; originRef.current = o; setOrigin(o); }
         // The correction typed on the shared ride's own page. `send` reads the
         // plan from state, which is a render away, so the decoded plan goes
@@ -764,7 +854,245 @@ export function HomePage() {
    * one-way ride the destination stays the destination because
    * `startFromForm` reads it from `destinationPlace`.
    */
-  function regenerateWithSelection() {
+  /**
+   * The ride's places right now, in riding order, including the start and the
+   * finish — from the edit if there is one, from the API otherwise.
+   *
+   * One function because three things need the same answer and must not
+   * disagree: the map's pins, the anchors an edit routes between, and the plan
+   * an edit writes back. Reading it from the edit first is what makes a second
+   * edit build on the first rather than on the ride the API returned.
+   */
+  function currentVias(): EditedRide["vias"] {
+    if (edited) return edited.vias;
+    return (result?.via ?? []).map((v) => ({
+      lat: v.lat,
+      lon: v.lon,
+      label: v.label,
+      ...(pickedCategory(places, v.label) ? { category: pickedCategory(places, v.label) } : {}),
+    }));
+  }
+
+  /** Vias with new ones appended, capped at the plan's own six. */
+  function insertVias(base: EditedRide["vias"], added: EditedRide["vias"]): EditedRide["vias"] {
+    return [...base, ...added].slice(0, 6);
+  }
+
+  /**
+   * Keep one step back before changing the ride.
+   *
+   * One step rather than a stack, because the rider asked for exactly that —
+   * "a bad edit is one tap away from reverting" — and a stack would raise the
+   * question of what "undo" means after a share, a save or a new generation.
+   * The previous *whole ride* is kept rather than an inverse operation: an
+   * inverse would have to recompute the geometry it is restoring, and a
+   * recomputation can drift from what was on screen. A copy cannot.
+   */
+  function rememberForUndo(previous: EditedRide | null, how: "commit" | "drag" | "tap") {
+    setUndoFor({ result, previous, how });
+  }
+
+  /**
+   * Put the ride back as it was before the last edit.
+   *
+   * `previous` null means the last edit was the first one, so undoing it
+   * returns to the ride the API actually searched for — which is exactly the
+   * right thing for `edited` to become, because null is what every consumer
+   * already reads as "the API's own line".
+   */
+  function undoEdit() {
+    if (!canUndo) return;
+    track("route_edit_undone", { how: undoFor.how ?? "" });
+    setEditedFor({ result, edited: undoFor.previous });
+    // The plan's vias follow the geometry back, or a shared ride would carry a
+    // stop the line no longer goes through.
+    if (plan) {
+      const restored = undoFor.previous?.vias ?? (result?.via ?? []).map((v) => ({ label: v.label }));
+      setPlan({ ...plan, viaPlaces: restored.map((v) => v.label) });
+    }
+    setUndoFor({ result: null, previous: null, how: null });
+    setEditNote(null);
+  }
+
+  /**
+   * A correction made on the result map: a stop dragged, or a point tapped
+   * onto the line.
+   *
+   * Re-routes **only the two legs either side** of the change — previous place
+   * → the new point → next place — and splices the answer into the drawn line.
+   * That is the whole idea: a ride is a sequence of legs the router already
+   * agreed to, and moving one stop invalidates two of them, not the other
+   * thirty. Two short legs is one to three seconds against a search's 20-30.
+   *
+   * Which two legs is decided from the *drawn* line rather than from the plan,
+   * because the drawn line is what the rider is pointing at: after a commit or
+   * an earlier edit the geometry and the plan's place list are both current,
+   * and the anchors are placed along the geometry so a tap lands in the leg
+   * whose stretch of line it fell on.
+   *
+   * A failure puts nothing on the map and says so. The ride the rider had is
+   * still the ride he has — a correction that cannot be routed must never cost
+   * him the route he already liked.
+   */
+  async function editRoute(params: {
+    how: "drag" | "tap";
+    /** Where the rider put the point. */
+    at: { lat: number; lon: number };
+    /**
+     * Which via he moved, by index into the current list, or null when this is
+     * a new point tapped onto the line.
+     */
+    viaIndex: number | null;
+    /** What to call a newly tapped place. */
+    label?: string;
+  }) {
+    if (!plan || !result || editing) return;
+    const baseSegments = edited?.segments ?? route?.segments ?? null;
+    const baseDistance = edited?.distanceMeters ?? route?.distanceMeters ?? null;
+    const baseDuration = edited?.durationSeconds ?? route?.durationSeconds ?? null;
+    if (!baseSegments || baseDistance === null || baseDuration === null) return;
+
+    const line = coordinatesOf(baseSegments);
+    if (line.length < 2) return;
+    const cum = cumulative(line);
+    const vias = currentVias();
+    const roundTrip = plan.returnToStart === true;
+
+    // The ride's fixed points, in riding order. The start and the finish carry
+    // `viaIndex: null`, which is what makes them un-draggable by construction:
+    // an edit routes from the anchor before to the anchor after, and an end
+    // has no anchor on one side.
+    const anchors: LegAnchor[] = [
+      { lat: result.start.lat, lon: result.start.lon, label: result.start.label, viaIndex: null },
+      ...vias.map((v, i) => ({ lat: v.lat, lon: v.lon, label: v.label, viaIndex: i })),
+      ...(roundTrip
+        ? [{ lat: result.start.lat, lon: result.start.lon, label: result.start.label, viaIndex: null }]
+        : result.destination
+          ? [{ lat: result.destination.lat, lon: result.destination.lon, label: result.destination.label, viaIndex: null }]
+          : []),
+    ];
+    if (anchors.length < 2) return;
+    const along = anchorsAlong({ line, cum, anchors, roundTrip });
+
+    /**
+     * What the edit replaces, and where the two new legs join the kept ride.
+     *
+     * The two gestures answer this differently, and conflating them cost a
+     * measured 126 km ride (see `TAP_WINDOW_M`). A **drag** moves a stop, so
+     * what it invalidates is exactly that stop's two legs: previous place →
+     * the new spot → next place. A **tap** adds a point to a stretch of line
+     * the rider is looking at, so it replaces a bounded window around that
+     * point and keeps the ride either side of it.
+     */
+    let cut: { fromMeters: number; toMeters: number };
+    let from: { lat: number; lon: number };
+    let to: { lat: number; lon: number };
+    let nextVias: EditedRide["vias"];
+    if (params.viaIndex !== null) {
+      // A dragged stop: its own anchor is the one being moved, so the legs are
+      // the ones on either side of it.
+      const anchorIndex = along.findIndex((a) => a.viaIndex === params.viaIndex);
+      if (anchorIndex <= 0 || anchorIndex >= along.length - 1) return;
+      const before = along[anchorIndex - 1];
+      const after = along[anchorIndex + 1];
+      cut = { fromMeters: before.alongMeters, toMeters: after.alongMeters };
+      from = { lat: before.lat, lon: before.lon };
+      to = { lat: after.lat, lon: after.lon };
+      nextVias = vias.map((v, i) => (i === params.viaIndex ? { ...v, lat: params.at.lat, lon: params.at.lon } : v));
+    } else {
+      // A tap on the line: a window around the tap, bounded by the stops
+      // either side of it so a neighbour's own leg is never swallowed.
+      if (vias.length >= 6) { setEditNote(ui.tapMapStopsFull); return; }
+      const alongMeters = nearestAlong([params.at.lon, params.at.lat], line, cum).alongMeters;
+      const leg = legForPoint({ anchors: along, alongMeters });
+      const window = tapCut({ line, cum, anchors: along, alongMeters });
+      if (!leg || !window) return;
+      cut = window.cut;
+      from = { lat: window.from[1], lon: window.from[0] };
+      to = { lat: window.to[1], lon: window.to[0] };
+      // Inserted at the position the line meets it, which is the only order
+      // that describes the ride the rider is looking at. A leg that starts at
+      // the ride's own start has no via before it, so the new one is first.
+      const previousVia = along[leg.beforeIndex].viaIndex;
+      const insertAt = previousVia === null ? 0 : previousVia + 1;
+      nextVias = [
+        ...vias.slice(0, insertAt),
+        { lat: params.at.lat, lon: params.at.lon, label: params.label ?? ui.mapStop },
+        ...vias.slice(insertAt),
+      ];
+    }
+    setEditing(true);
+    setEditNote(null);
+    const startedAt = startClock();
+    try {
+      const response = await fetch("/api/reroute-leg", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          plan,
+          from: { lat: from.lat, lon: from.lon },
+          through: params.at,
+          to: { lat: to.lat, lon: to.lon },
+        }),
+      });
+      if (!response.ok) {
+        track("route_edit_failed", { reason: String(response.status) });
+        setEditNote(ui.resEditFailed);
+        return;
+      }
+      const data = (await response.json()) as {
+        segments: GeoJSON.FeatureCollection<GeoJSON.LineString, import("@/lib/types").RouteSegmentProperties>;
+        distanceMeters: number;
+        durationSeconds: number;
+        endpointMovedMeters?: number;
+      };
+      const next = spliceLeg({
+        segments: baseSegments,
+        distanceMeters: baseDistance,
+        durationSeconds: baseDuration,
+        cut,
+        replacement: {
+          segments: data.segments,
+          distanceMeters: data.distanceMeters,
+          durationSeconds: data.durationSeconds,
+        },
+      });
+      const before = edited?.overlap.repeatedPercent ?? route?.overlap.repeatedPercent ?? 0;
+      rememberForUndo(edited, params.how);
+      setEditedFor({
+        result,
+        edited: {
+          coordinates: next.coordinates,
+          segments: next.segments,
+          distanceMeters: next.distanceMeters,
+          durationSeconds: next.durationSeconds,
+          overlap: next.overlap,
+          vias: nextVias,
+          kind: "edit",
+        },
+      });
+      setPlan({ ...plan, viaPlaces: nextVias.map((v) => v.label) });
+      // The router moved the point to reach routable ground. Said out loud
+      // rather than swallowed: the ride now goes somewhere slightly different
+      // from where the finger landed, and CLAUDE.md's rule is that a
+      // substitution is never silent.
+      const moved = Math.round(data.endpointMovedMeters ?? 0);
+      if (moved > 25) setEditNote(fi(ui.resEditMoved, { m: moved }));
+      track("route_edited", {
+        how: params.how,
+        ms: elapsedMsSince(startedAt),
+        repeated_before: before,
+        repeated_after: next.overlap.repeatedPercent,
+      });
+    } catch {
+      track("route_edit_failed", { reason: "network" });
+      setEditNote(ui.resEditFailed);
+    } finally {
+      setEditing(false);
+    }
+  }
+
+  function searchBetterLoop() {
     if (busyRef.current || !plan || selectedPois.length === 0) return;
     // Already-present names are dropped rather than duplicated: the rider may
     // have ticked something a previous pass put in the ride.
@@ -774,6 +1102,7 @@ export function HomePage() {
     // its own button past that, and this is the belt to that brace.
     if (plan.viaPlaces.length + fresh.length > 6) return;
     track("suggestion_added", { via_count: plan.viaPlaces.length + fresh.length, batch: fresh.length });
+    track("search_better_loop", { pois: fresh.length });
     const next: RidePlan = { ...plan, viaPlaces: [...plan.viaPlaces, ...fresh.map((p) => p.name)] };
     const names = new Set(fresh.map((p) => p.name));
     const picked: ResolvedPlace[] = [
@@ -786,6 +1115,86 @@ export function HomePage() {
     setSelectedPois([]);
     setFocusPoi(null);
     void startFromForm(next, picked);
+  }
+
+  /**
+   * "Pievienot izvēlētos": the ticked sights become part of the ride, with no
+   * search at all.
+   *
+   * This is the rider's complaint answered. Ticking a sight already splices a
+   * real routed detour into the drawn line in milliseconds — but *keeping* it
+   * went through the full 36-candidate search and cost him 20-30 s, so the
+   * fast path existed and was thrown away by the very press meant to act on
+   * it. Now the press keeps the line that is already on the screen: the
+   * geometry is the spliced one, the numbers are recomputed from it, and the
+   * sights are written into the plan as vias so sharing, saving, the GPX and
+   * any later search all carry them.
+   *
+   * Costs nothing when the detours are prefetched, which is the common case —
+   * the rider has been reading the list while they routed.
+   *
+   * **The search is not lost, it is moved.** "Meklēt labāku apli ar šīm
+   * pieturām" sits beside this and runs exactly what this used to run: it can
+   * find a cleaner loop through the same places, and that must stay available
+   * rather than being silently traded away for speed. Which one the rider gets
+   * is his tap, never our choice.
+   */
+  function commitSelection() {
+    if (busyRef.current || !plan || selectedPois.length === 0) return;
+    const fresh = selectedPois.filter((p) => !plan.viaPlaces.includes(p.name));
+    if (fresh.length === 0) { setSelectedPois([]); return; }
+    if (plan.viaPlaces.length + fresh.length > 6) return;
+    // Nothing spliced means nothing was routed to splice — every ticked place
+    // is still pending or unreachable. Falling through to the search would be
+    // the slow path arriving unannounced, so the press simply waits.
+    if (!spliced || spliced.applied.length === 0) return;
+
+    const startedAt = performance.now();
+    const overlap = recomputeOverlap(spliced.coordinates as Point[]);
+    // The ride's places as this commit leaves them: the ones it already had,
+    // plus the ticked sights in the order the spliced line meets them. Order
+    // matters — these become the plan's vias, and a later full search plans
+    // through them in the order given.
+    const appliedIds = new Set(spliced.applied.map((d) => d.poiId));
+    const addedInOrder = spliced.applied
+      .map((d) => fresh.find((p) => p.id === d.poiId))
+      .filter((p): p is SelectedPoi => Boolean(p));
+    const base = currentVias();
+    const edit: EditedRide = {
+      coordinates: spliced.coordinates as Point[],
+      segments: spliced.segments,
+      distanceMeters: spliced.distanceMeters,
+      durationSeconds: spliced.durationSeconds,
+      overlap,
+      // Inserted at the end of the vias, before the finish, the way a stop
+      // added from a suggestion always has been: these places are somewhere
+      // the ride already passes near, so they belong in the order the routed
+      // line meets them rather than at a position the rider never chose.
+      vias: insertVias(base, addedInOrder.map((p) => ({ lat: p.lat, lon: p.lon, label: p.name, category: p.category }))),
+      kind: "commit",
+    };
+    rememberForUndo(edited, "commit");
+    setEditedFor({ result, edited: edit });
+    // Written into the plan too, so the ride the rider can share, save, export
+    // or hand back to the search carries these places rather than only the
+    // picture doing.
+    setPlan({ ...plan, viaPlaces: [...plan.viaPlaces, ...addedInOrder.map((p) => p.name)] });
+    const names = new Set(addedInOrder.map((p) => p.name));
+    setPlaces([
+      ...places.filter((p) => !names.has(p.name)),
+      ...addedInOrder.map((p) => ({ name: p.name, label: p.name, lat: p.lat, lon: p.lon, kind: p.category, poiId: p.id })),
+    ]);
+    // A tick whose detour overlapped another's could not be spliced, so it is
+    // not in the ride and its tick stays — the card already says why, and
+    // dropping it here would quietly lose a place the rider asked for.
+    setSelectedPois(selectedPois.filter((p) => !appliedIds.has(p.id)));
+    setFocusPoi(null);
+    setEditNote(null);
+    track("sights_committed", {
+      pois: spliced.applied.length,
+      delta_km: Math.round((spliced.addedMeters / 1000) * 10) / 10,
+      ms: Math.round(performance.now() - startedAt),
+    });
   }
 
   /**
@@ -957,21 +1366,31 @@ export function HomePage() {
       className={`overflow-hidden rounded-2xl border border-stone-200 md:h-[calc(100vh-7rem)] ${(chatting || phase !== "idle") ? "h-[26dvh]" : "h-[42dvh]"}`}
       expandedClassName="md:relative md:inset-auto md:z-auto md:h-[calc(100vh-7rem)] md:overflow-hidden md:rounded-2xl md:border md:border-stone-200">
       <RouteMap
-        // The spliced line when sights are ticked — a real routed one, with
-        // the detours' own segments, so the map colours a gravel spur to a
-        // hillfort brown the first time it draws it.
-        segments={spliced?.segments ?? route?.segments ?? null}
-        start={result?.start ?? previewPlaces[0] ?? null}
-        // A 🅿️ is a stop, so the finish must never be one. While a ride is
-        // only being composed the map has to make the same distinction the
-        // result does: on a one-way ride with two or more confirmed places the
-        // last is the destination and takes the red pin, and everything
-        // between it and the start is a stop. A round trip has no destination
-        // at all — it returns to the start — so every place after the first is
-        // a stop, which is what the old `slice(1)` assumed for both shapes.
-        destination={result?.destination ?? (!previewRoundTrip && previewPlaces.length > 1 ? previewPlaces[previewPlaces.length - 1] : null)}
+        // Which line is drawn, in the order the rider last acted.
+        //
+        // A ticked-but-not-kept sight is a preview and wins while it is on
+        // screen: the rider is looking at what the tick did. Below it, an
+        // edited ride — sights he kept, a stop he dragged — is the ride
+        // itself. The API's own line is what remains when neither applies,
+        // which is also what undoing back to the start restores.
+        segments={spliced?.segments ?? edited?.segments ?? route?.segments ?? null}
+        // The start row's own place, never "the first place that happens to be
+        // confirmed". An empty start row draws no start pin — which is the
+        // whole of the bug this replaced: four stops added from the map became
+        // a green start, two numbers and a red finish.
+        start={result?.start ?? preview.start ?? null}
+        // A 🅿️ is a stop, so the finish must never be one — and the finish is
+        // the finish *row*, not the last confirmed place. `placeRoles` already
+        // returns null for a round trip (it returns to its start and has no
+        // destination) and for an empty finish row, so both of the cases the
+        // old positional rule got wrong are answered before they reach here.
+        destination={result?.destination ?? preview.finish ?? null}
+        // The ride's stops as they stand — from the edit when there is one, so
+        // a dragged pin stays where it was dropped and a tapped-in stop gets a
+        // pin of its own, rather than both snapping back to what the API
+        // returned on the next render.
         via={result
-          ? (result.via ?? []).map((v) => ({
+          ? (edited ? edited.vias : (result.via ?? [])).map((v) => ({
               ...v,
               ...(stopKind(stopKinds, v.label) ?? {}),
               // The POI category behind this via, when it came from a
@@ -983,7 +1402,16 @@ export function HomePage() {
               // typed stop's pill.
               ...(pickedCategory(places, v.label) ? { category: pickedCategory(places, v.label) } : {}),
             }))
-          : previewRoundTrip ? previewPlaces.slice(1) : previewPlaces.slice(1, -1)}
+          : preview.vias}
+        // Correcting the ride on the result map: drag a numbered stop, or tap
+        // the line to add one. Offered only with a ride on screen and only
+        // while no leg is already being re-routed — a second edit on top of an
+        // in-flight one would splice into a line that is about to be replaced.
+        // `picking` takes precedence for the same reason it does elsewhere: a
+        // map answering "where does this row go" must not also be answering
+        // "change the ride".
+        onEditRoute={result && !picking && !editing ? editRoute : undefined}
+        editingRoute={editing}
         focus={focusPoi}
         onFocusCleared={clearFocusPoi}
         onFocusToggle={toggleFocusedPoi}
@@ -1038,11 +1466,11 @@ export function HomePage() {
         <div className="min-w-0 space-y-4">
           <InstallPrompt show={Boolean(result) && !chatting} />
           {entryMode === "form"
-            ? <RideComposer key={plan ? planSummary(plan, locale) : "new"} initialPlan={plan} initialPlaces={places} profile={profile} onProfileChange={changeProfile} busy={phase !== "idle"} onGenerate={startFromForm} onUseChat={() => setEntryMode("chat")} onPlacesChange={(p, tripType) => { setPreviewPlaces(p); setPreviewRoundTrip(tripType === "round_trip"); }} map={mapInComposer && mapVisible ? mapPanel : undefined}
+            ? <RideComposer key={plan ? planSummary(plan, locale) : "new"} initialPlan={plan} initialPlaces={places} profile={profile} onProfileChange={changeProfile} busy={phase !== "idle"} onGenerate={startFromForm} onUseChat={() => setEntryMode("chat")} onPlacesChange={setPreview} map={mapInComposer && mapVisible ? mapPanel : undefined}
                 onPickModeChange={changePickMode} pickPoint={pickPoint} geolocated={geolocated}
                 onAddStopOfferChange={setAddStopOffer} addStopPoint={addStopPoint} />
             : result && result.routes.length > 0 && !chatting
-              ? <ResultPanel routes={result.routes} selected={selected} onSelect={setSelected} plan={plan} avoidTowns={result.intent.avoidTowns ?? false} lucky={lucky} remoteLoop={result.remoteLoop} longerSuggestion={result.longerSuggestion} tolerancePercent={result.intent.distanceTolerancePercent} busy={phase !== "idle"} onSend={send} onBackToForm={() => setEntryMode("form")} map={mapInResult && mapVisible ? mapPanel : undefined} resolvedPlaces={routedPlaces} alternatives={result.alternatives} sparsePlaceData={result.sparsePlaceData} assembledFromSegments={result.assembledFromSegments} directLeg={showingDirect} offset={variantOffset} onOffsetChange={setVariantOffset} onShowPoi={showPoi} pois={routePois} poisLoading={poisLoading} poisFailed={poisFailed} onDetoursChange={setDetoursForMap} selectedPois={selectedPois} onToggleSelectPoi={toggleSelectPoi} onClearSelectedPois={clearSelectedPois} onRegenerateWithSelection={regenerateWithSelection} onSplicedChange={handleSplicedChange} />
+              ? <ResultPanel routes={result.routes} selected={selected} onSelect={setSelected} plan={plan} avoidTowns={result.intent.avoidTowns ?? false} lucky={lucky} remoteLoop={result.remoteLoop} longerSuggestion={result.longerSuggestion} tolerancePercent={result.intent.distanceTolerancePercent} busy={phase !== "idle"} onSend={send} onBackToForm={() => setEntryMode("form")} map={mapInResult && mapVisible ? mapPanel : undefined} resolvedPlaces={routedPlaces} alternatives={result.alternatives} sparsePlaceData={result.sparsePlaceData} assembledFromSegments={result.assembledFromSegments} directLeg={showingDirect} offset={variantOffset} onOffsetChange={setVariantOffset} onShowPoi={showPoi} pois={routePois} poisLoading={poisLoading} poisFailed={poisFailed} onDetoursChange={setDetoursForMap} selectedPois={selectedPois} onToggleSelectPoi={toggleSelectPoi} onClearSelectedPois={clearSelectedPois} onCommitSelection={commitSelection} onSearchBetterLoop={searchBetterLoop} onSplicedChange={handleSplicedChange} edited={edited} canUndo={canUndo} onUndoEdit={undoEdit} editing={editing} editNote={editNote} />
               : <RoutePrompt messages={messages} plan={plan} hasRoute={Boolean(route)} phase={phase} quickReplies={quickReplies} lucky={lucky && !route} onSend={send} onBackToForm={() => setEntryMode("form")} originCode={origin?.code ?? null} onAction={(action) => { if (action === "retry") { retryLast(); return; } if (action === "direct-leg") { showDirectLeg(); return; } setChatting(false); setQuickReplies([]); }} onCancel={cancel} />}
           {/* A ride that came from editing another one. Asked once, here,
               because only the rider knows whether the original is still

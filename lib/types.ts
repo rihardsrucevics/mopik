@@ -487,6 +487,58 @@ export type UnplannableVerdict = {
    * payload sane on a 600 km road.
    */
   directLeg?: DirectLegOffer;
+  /**
+   * One place in the ride that the profile cannot reach at all, when every
+   * candidate failed for that same reason.
+   *
+   * Measured 2026-09-19, and the reason this field exists. A rider pinned
+   * Pilskalni 2 as the finish — a farmstead whose only approach is
+   * `access=private` service road — and got "Neizdevās atrast maršrutu, kas
+   * izpilda pieturvietas un norādītās robežas" after 15 s. Every one of the
+   * candidates had routed *successfully*: BRouter does not refuse such a
+   * point, it answers 200 and ends the line at the nearest node it may use,
+   * 471 m short. The 300 m stop check then threw all of them away, and the
+   * refusal blamed the rider's time budget for a problem with one pin.
+   *
+   * Note what this is **not**. It is not the nudge ring failing: that ring
+   * only runs from a `catch` on "target island" / "error re-tracking track",
+   * and neither was raised. It could not have helped anyway — measured, its
+   * best offset lands 495 m from the pin, worse than the plain snap, because
+   * there is no legal road within 300 m to find.
+   *
+   * So the honest answer names the place and offers the two ways out, which
+   * is what `describeUnplannable` builds from this: take the stop out, or
+   * move it to the road. `snappedTo` is where the router would actually put
+   * the rider — present whenever the router answered, even when the move is
+   * too far to offer, because the wording may still say how far the road is.
+   */
+  unreachableStop?: UnreachableStop;
+};
+
+/** A place in the ride that this profile cannot ride to. */
+export type UnreachableStop = {
+  /** the place as the rider named it, for the sentence and the chips */
+  name: string;
+  /**
+   * Where it sits in the ride: 0 is the start, then each via in order, and
+   * the finish last. The components owner needs this to point at the right
+   * field — a ride may name the same place twice.
+   */
+  index: number;
+  /** "start" | "via" | "destination" — which field the chips act on */
+  role: "start" | "via" | "destination";
+  lat: number;
+  lon: number;
+  /** the nearest ground this profile may ride on, when the router answered */
+  snappedTo?: { lat: number; lon: number };
+  /** metres from the pin to `snappedTo` */
+  distanceM?: number;
+  /**
+   * Whether "move it to the nearest road" may be offered, decided by
+   * `canOfferMove` in `lib/routing/routable-point.ts` rather than here, so
+   * the Confirm-time check and this refusal cannot drift apart.
+   */
+  canMove: boolean;
 };
 
 /** The direct road, offered by name — never substituted for the ride. */
