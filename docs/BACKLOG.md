@@ -491,7 +491,61 @@ opened). The word itself moved to the footer.
 
 ## 11. Routes still run along the sea
 
-**Status 2026-09-15:** 11a–11e shipped (beach paths refused; sea term; seaward candidates; no vias in the water). Decided: the sea may NOT buy retracing; 11f built corridor candidates instead (no coastal candidate above 3 %), and the beach check passed (0.84 km). Still open: the 209 s dry-land failures on Liepāja → Ventspils — a refused approach direction (fix measured at 8.3 s).
+**Status 2026-09-15:** 11a–11e shipped (beach paths refused; sea term; seaward candidates; no vias in the water). Decided: the sea may NOT buy retracing; 11f built corridor candidates instead (no coastal candidate above 3 %), and the beach check passed (0.84 km). ~~Still open: the 209 s dry-land failures on Liepāja → Ventspils — a refused approach direction (fix measured at 8.3 s).~~ **Closed by 11g; that diagnosis was refuted — see the 2026-09-19 status below.**
+
+**Status 2026-09-19 — the last open piece was already closed; nothing new was built.**
+The line above is stale in two ways, and both are worth writing down. The 209 s
+was fixed by item 11g (`1edb55e`, "A quarter-second refusal no longer costs a
+24-request ring"), and the diagnosis it repeats — "a refused approach
+direction" — is the one 11g *measured and refuted*: the via at 21.421589,
+56.921915 snaps 13 m onto a routable track and routes in and out on all four
+bearings. The real cause was ours, not BRouter's — a 60–370 ms refusal was
+being answered with a 24-request endpoint-nudge ring and a segmented retry.
+A generated via now gets 2 s of cheap alternatives (shift along the corridor,
+then drop) while the rider's own places keep the full ring.
+
+Re-measured today in process against `brouter.mopik.eu`, Adventure preset,
+sequentially (`ONLY=liepaja-ventspils npx tsx scripts/measure-seaward.ts`).
+BEFORE is the same checkout with `MOPIK_NO_VIA_RESCUE=1`, so the two rows
+differ only in this behaviour:
+
+| Liepāja → Ventspils | pool | routed | failed | **fail s** | ok s | **total s** |
+|---|---:|---:|---:|---:|---:|---:|
+| before (`MOPIK_NO_VIA_RESCUE=1`) | 12 | 9 | **6** | **101.2** | 2.9 | **106.1** |
+| **after (shipped)** | 12 | **15** | **0** | **0** | 11.2 | **13.1** |
+
+The six failures are exactly the six this item named — `via-0.35--1`,
+`via-0.7--1`, `via-1--1`, `via-1.4--1`, `zig-1.2`, `sea-0.75` — and each now
+routes by dropping its unreachable generated via. **The pick does not move:**
+`via-0-1`, 140.5 km, 0 % retraced, 15.4 coastal km, rank −2.16, identical to
+11f's published figure. The fail seconds read 101.2 rather than 11e's 209
+because a refusal's cost is the ring's wall clock and the instance is quicker
+today; the shape of the finding is unchanged.
+
+Through the API (`POST /api/generate-route`, `"debug": true`, dev server on
+:3000), all inside the 50 s budget and no failed candidate anywhere:
+
+| ride | s | routes | candidates | pick |
+|---|---:|---:|---:|---|
+| Liepāja → Ventspils | 14.3 | 1 | 18 | `via-0-1` 140.5 km, 0 % rep, coast 15.4 |
+| Sigulda round trip | 19.1 | 2 | 36 | unchanged, coast 0 |
+| Rīga → Baldone | 16.0 | 2 | 18 | unchanged, coast 0 |
+| Rīga → Jelgava (inland) | 20.8 | 2 | 23 | unchanged, coast 0 |
+
+The inland control is inert rather than merely quiet: Rīga → Jelgava's nearest
+coastline is **11.5 km**, far outside the 3 km band the scoring uses, so every
+candidate scores `coast=0`. It does open `public/sea/LV.json` — the index is
+per country and Latvia has a coast — and `hasSeaData` is what provably zeroes
+the term in a country with no coastline file, which is the honest version of
+"an inland ride opens no sea file". Rīga → Ainaži re-measured identical to the
+decimal (`sea-0.25`, 250.7 km, 13.1 coastal km, rank 10.21, shore path 15.69),
+so 11f's 0.84 km beach figure stands on the same geometry; the `beach.json`
+polygons that produced it were cleaned from the scratchpad and were not
+rebuilt, since no candidate changed.
+
+**Remaining, and unchanged by this:** 11f's fourth corridor pair `[0.25, 0.85]`
+is still a workaround — the fix makes the bad entries cheap, not routable — and
+the 13 coastal km it hoped to recover are still not recovered.
 
 Recurring. The sandy beach tracks are already refused (`beach_like_path`), so
 this is about riding *beside* the sea, not on it — measure what the routes
