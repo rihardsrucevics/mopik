@@ -944,3 +944,23 @@ corridor may produce duller or more retraced loops. Decide between:
 **How to settle it:** generate the same set of loops both ways (key present
 vs. key absent) and compare retraced percentage, sight count and total
 length. That number decides it; until it exists, this is a guess either way.
+
+## 25. A Latvian prompt with foreign place names fell to the regex parser in production
+
+**Observed 2026-09-19, once, while checking item 7 in production.** Posting
+`{"prompt":"no Como caur Innsbruck un Wien uz Budapest, grants"}` to
+`/api/generate-route` on www.mopik.eu came back with `parser: "heuristic"`,
+`viaPlaces: null` — the vias were dropped and the ride became a plain
+Como → Budapest, refused as a whole. Minutes later `"no Rīgas uz Siguldu,
+2 stundas"` came back `parser: "llm"` with 2 routes, so the Claude parser
+itself is alive in production. The same rides posted as a *form plan*
+(`plan` with `viaPlaces`) behave exactly as item 7 measured.
+
+Not diagnosed. Candidates, unweighed: the LLM call timing out on a longer
+prompt and the heuristic taking over silently (CLAUDE.md records that
+path); the structured output failing validation for non-Latvian names; or
+the word "grants" steering the fallback. One observation is not a rate —
+measure with `scripts/measure-prompts.mjs` against `API=https://www.mopik.eu`
+using foreign-name prompts before concluding anything. The user-visible
+cost when it happens is real: a rider who typed three stops gets a refusal
+that names none of them.
