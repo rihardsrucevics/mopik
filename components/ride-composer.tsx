@@ -1,14 +1,16 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
-import { ChevronDown, ChevronUp, Map as MapIcon, Sparkles } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { Check, ChevronDown, ChevronUp, Map as MapIcon, MapPinPlus, Sparkles } from "lucide-react";
 import { RidePlan } from "@/lib/chat/ride-plan";
 import { composeRidePlan, placesFromPlan } from "@/lib/chat/compose-plan";
-import { RoutePlaces } from "@/components/route-places";
+import { RoutePlaces, rowLabel } from "@/components/route-places";
 import { useLocale } from "@/lib/i18n/use-locale";
 import { t, messages, type MessageKey } from "@/lib/i18n/messages";
 import { track } from "@/lib/analytics";
 import { rememberPlace } from "@/lib/chat/recent-places";
+import { pickedPlace } from "@/lib/chat/pick-name";
+import { fi } from "@/lib/i18n/format";
 import type { ResolvedPlace } from "@/lib/chat/places";
 import {
   PROFILE_PRESETS,
@@ -96,7 +98,7 @@ function ProfileLine({ profile, onChange }: { profile: RideProfile; onChange: (p
   );
 }
 
-export function RideComposer({ initialPlan, initialPlaces, profile, onProfileChange, busy, onGenerate, onUseChat, onPlacesChange, map }: {
+export function RideComposer({ initialPlan, initialPlaces, profile, onProfileChange, busy, onGenerate, onUseChat, onPlacesChange, map, onPickModeChange, pickPoint, geolocated }: {
   initialPlan: RidePlan | null;
   /**
    * Coordinates the plan arrived with, matched to its rows by name. A ride
@@ -129,6 +131,32 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
    * from the ride being described. The desktop keeps its own sticky column.
    */
   map?: ReactNode;
+  /**
+   * Pick mode belongs to the page, not to this form, because the page owns the
+   * one MapLibre instance and everything it is told to draw. This says a row
+   * is waiting for a point (or that none is), and the page answers by handing
+   * the map an `onPickPoint` and a draggable marker.
+   */
+  onPickModeChange?: (picking: boolean, open?: {
+    /** Where to centre the map when pick mode opens; null keeps the bounds. */
+    at: { lat: number; lon: number } | null;
+    /** Where to put the draggable marker at once, when the row already has a place. */
+    marker: { lat: number; lon: number } | null;
+  }) => void;
+  /**
+   * The point the rider last tapped or dragged to, with a token that changes
+   * on every gesture. The token is what makes a second tap on the *same* spot
+   * a new answer rather than a no-op — a rider who dragged the marker away and
+   * tapped back where he started means that spot, and comparing coordinates
+   * would leave the row on the place he had dragged to.
+   */
+  pickPoint?: { lat: number; lon: number; token: number } | null;
+  /**
+   * A position the map's own geolocate button obtained. Remembered here for
+   * the same reason the crosshair's is: the next row's pick mode can then open
+   * on the rider without a second permission prompt.
+   */
+  geolocated?: { lat: number; lon: number } | null;
 }) {
   const [locale] = useLocale();
   const [places, setPlaces] = useState<string[]>(placesFromPlan(initialPlan));
@@ -150,6 +178,34 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   // Phone only: the map is opened on request, and stays open once it is.
   const [mapOpen, setMapOpen] = useState(false);
   const [locating, setLocating] = useState(false);
+  /**
+   * The row waiting for a point on the map, or none.
+   *
+   * A row index rather than a flag, because every row can be picked this way —
+   * the start, the finish and any stop. The rider asked for exactly that: a
+   * forest crossroads has no name to type, and "Līdz" is as often such a place
+   * as "No" is.
+   */
+  const [pickingRow, setPickingRow] = useState<number | null>(null);
+
+  /**
+   * Name a point, wherever it came from.
+   *
+   * The crosshair and a tap on the map are the same problem — coordinates with
+   * no name — and they were the same fifteen lines twice over. The lookup is
+   * best-effort on purpose: a point it cannot name still plans a ride, and the
+   * coordinate pair in the field is a truthful answer rather than a failure.
+   */
+  const nameForPoint = useCallback(async (lat: number, lon: number): Promise<ResolvedPlace | null> => {
+    try {
+      const res = await fetch(`/api/places?lat=${lat}&lon=${lon}`);
+      if (!res.ok) return null;
+      return ((await res.json()) as { places: ResolvedPlace[] }).places?.[0] ?? null;
+    } catch {
+      // Offline, or the lookup is down. The point itself is still good.
+      return null;
+    }
+  }, []);
 
   /**
    * "Mana vieta": the device's coordinates, named. Offered rather than applied
@@ -165,16 +221,10 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     navigator.geolocation.getCurrentPosition(
       async ({ coords }) => {
         const { latitude: lat, longitude: lon } = coords;
-        let place: ResolvedPlace = { name: `${lat.toFixed(4)}, ${lon.toFixed(4)}`, label: "Mana atrašanās vieta", lat, lon };
-        try {
-          const res = await fetch(`/api/places?lat=${lat}&lon=${lon}`);
-          if (res.ok) {
-            const found = ((await res.json()) as { places: ResolvedPlace[] }).places?.[0];
-            if (found) place = found;
-          }
-        } catch {
-          // Keep the coordinates: the ride can still be planned from them.
-        }
+        // Remembered so pick mode can open on the rider without asking again.
+        setLastFix({ lat, lon });
+        const found = await nameForPoint(lat, lon);
+        const place: ResolvedPlace = found ?? { name: `${lat.toFixed(4)}, ${lon.toFixed(4)}`, label: t(locale, "myLocation"), lat, lon };
         setPlaces((prev) => prev.map((p, i) => (i === 0 ? place.name : p)));
         setPick(0, place);
         // The same shelf a dropdown pick goes on. A place found by GPS was the
@@ -226,6 +276,147 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
       return [i, key ? byName.get(key) ?? null : null];
     })));
   };
+
+  /**
+   * The last position the device gave us in this session.
+   *
+   * Kept so pick mode can centre on the rider without asking again: the
+   * permission prompt is the expensive part, and a rider who has already
+   * answered it once should not be asked a second time to see the same map.
+   * Never *requested* from here — only remembered when the crosshair or the
+   * map's own geolocate button has already obtained it.
+   */
+  const [lastFix, setLastFix] = useState<{ lat: number; lon: number } | null>(null);
+  // The map's geolocate button is the other way a fix arrives. Same shelf.
+  useEffect(() => { if (geolocated) setLastFix(geolocated); }, [geolocated]);
+
+  /**
+   * The rows' own text, read from inside the point handler.
+   *
+   * The handler runs from a token the *page* changes, so it cannot close over
+   * the form's state and still see it: without this it would compare a new
+   * pick against whatever the rows held when the row entered pick mode, and a
+   * name typed in between would not count as a collision.
+   */
+  const placesRef = useRef(places);
+  useEffect(() => { placesRef.current = places; }, [places]);
+  const pickingRowRef = useRef(pickingRow);
+  useEffect(() => { pickingRowRef.current = pickingRow; }, [pickingRow]);
+
+  /**
+   * The place under the marker, named but not yet the row's answer.
+   *
+   * Picking is two steps on purpose. A tap lands within ~30 m of where it was
+   * aimed and the rider corrects it by dragging, so the name changes two or
+   * three times before it is the right one — committing on every one of those
+   * would mean the form kept answering a question that was still being asked.
+   * The row shows this as a preview; "Apstiprināt" is what makes it the ride's.
+   */
+  const [preview, setPreview] = useState<ResolvedPlace | null>(null);
+
+  /**
+   * A point arrived from the map — a tap in pick mode, or a drag of the marker
+   * that tap left behind.
+   *
+   * The name is the reverse lookup's, made distinguishable where the ride
+   * already uses it (`pickedPlace`): two taps in one parish both come back
+   * "Ķekava", and the API resolves a row to its coordinates *by name*, so
+   * without this the second row would silently be planned through the first
+   * one's point. The row being picked into is excluded from the comparison —
+   * re-picking a row must not make it collide with its own old name.
+   */
+  const token = pickPoint?.token ?? null;
+  useEffect(() => {
+    const row = pickingRowRef.current;
+    // Token 0 is the seed the page puts under a row that already has a place:
+    // its name is known and shown, and re-deriving one would only risk showing
+    // the rider a different word for the spot he has not yet moved.
+    if (!pickPoint || pickPoint.token === 0 || row === null) return;
+    const { lat, lon } = pickPoint;
+    let cancelled = false;
+    void (async () => {
+      const found = await nameForPoint(lat, lon);
+      if (cancelled) return;
+      const taken = placesRef.current.filter((_, i) => i !== row);
+      setPreview(pickedPlace(found, lat, lon, taken, t(locale, "pickedOnMap")));
+    })();
+    // A drag landing while the previous lookup is still in flight must not let
+    // the older answer overwrite the newer one.
+    return () => { cancelled = true; };
+    // Keyed on the token: the same coordinates tapped twice are two answers,
+    // and `pickPoint` itself is rebuilt by the page on every gesture anyway.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
+
+  /**
+   * Hand a row to the map.
+   *
+   * On a phone the map is behind the "Rādīt kartē" toggle and normally only
+   * appears once a place is confirmed — which is precisely backwards for this:
+   * the rider who needs to point at a spot is the one who has nothing confirmed
+   * yet. So entering pick mode opens the map itself, under the row that asked.
+   */
+  const cancelPicking = () => { setPickingRow(null); setPreview(null); onPickModeChange?.(false); };
+
+  const startPicking = (index: number) => {
+    // A second press on the same row's pin puts it away again, so the pin is
+    // its own way out as well as the way in.
+    if (pickingRow === index) { cancelPicking(); return; }
+
+    /**
+     * Where to open the map, best first.
+     *
+     * 1. This row's own place. "Mana lokācija → pavilkt → Apstiprināt" is the
+     *    start row's whole flow: the crosshair puts the rider's town in the
+     *    field, and the pin then only has to be nudged onto the right yard.
+     *    The marker is seeded there too, so there is something to drag at once.
+     * 2. Any other place already confirmed in the ride — a finish picked near
+     *    a start is far likelier than a finish on another continent.
+     * 3. The last fix this session already obtained. Reused, never re-asked:
+     *    the prompt is offered, never assumed.
+     * 4. Nothing, and the map keeps the bounds it has.
+     */
+    const own = picked[index] ?? null;
+    const at = own ?? confirmed[0] ?? lastFix ?? null;
+    // Only the row's own place seeds a marker. Another row's place, or the
+    // rider's own position, says where to *look* — putting a draggable pin on
+    // it would be Mopik answering a question it was not asked, and one tap on
+    // Apstiprināt away from planting the finish on top of the start.
+    setPreview(own);
+    setPickingRow(index);
+    setMapOpen(true);
+    setError(null);
+    onPickModeChange?.(true, { at, marker: own ? { lat: own.lat, lon: own.lon } : null });
+  };
+
+  /** "Apstiprināt": the previewed place becomes the row's, and picking ends. */
+  const confirmPick = () => {
+    const row = pickingRow;
+    if (row === null || !preview) return;
+    setPlaces((prev) => prev.map((p, i) => (i === row ? preview.name : p)));
+    setPick(row, preview);
+    // The same shelf a dropdown pick goes on, for the same reason the
+    // crosshair's place goes there: a spot found once should be offered by
+    // name the next time, from the sofa, with no map open.
+    rememberPlace(preview);
+    track("place_picked_on_map", { row, start: row === 0 });
+    cancelPicking();
+  };
+
+  // Escape leaves pick mode, the same key that dismisses everything else on
+  // the map. A rider on a laptop who pressed the pin by mistake should not
+  // have to find the pin again to get an ordinary map back — and nothing has
+  // been committed to the row, so escaping costs him nothing.
+  useEffect(() => {
+    if (pickingRow === null) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") cancelPicking(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // `cancelPicking` is rebuilt every render; listing it would re-attach the
+    // listener on every keystroke in the form. Whether a row is being picked
+    // is the only thing this effect is about.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pickingRow]);
 
   // Report picked places upward in riding order, so the map can draw a pin per
   // confirmed place and the rider sees that "Brīvības iela 105" is the one
@@ -280,6 +471,40 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     onGenerate(plan, Object.values(picked).filter((p): p is ResolvedPlace => p !== null));
   };
 
+  /**
+   * Everything the rider needs while a row is waiting for a point, rendered
+   * under that row: what to do, the map, and the two ways out.
+   *
+   * On a phone the map itself is in here — the same node the page hands down,
+   * moved into this slot rather than mounted a second time. On the desktop the
+   * map keeps its own column and `map` is undefined, so this is the hint and
+   * the buttons alone, sitting against the ringed row they belong to.
+   */
+  const pickSlot = pickingRow === null ? null : (
+    <div className="mt-2 space-y-2">
+      <div className="flex items-center gap-2 rounded-xl bg-[#fff3ea] px-3 py-2 text-xs font-medium text-[#bd4b00]" role="status">
+        <MapPinPlus className="size-3.5 shrink-0" />
+        <span className="min-w-0 flex-1">{fi(t(locale, "pickOnMapHint"), { label: rowLabel(locale, pickingRow, tripType === "one_way", places.length) })}</span>
+      </div>
+      {map && <div>{map}</div>}
+      {/* The two ways out, under the map rather than over it: a primary button
+          on the map itself would be a thing to tap in the middle of a surface
+          whose whole job this minute is to receive taps. Confirm is dead until
+          there is a point to confirm — a rider who presses it before tapping
+          should be told by its state, not by nothing happening. */}
+      <div className="flex items-center gap-2">
+        <button type="button" onClick={confirmPick} disabled={!preview}
+          className="flex h-10 flex-1 items-center justify-center gap-1.5 rounded-full bg-[#f56300] text-sm font-semibold text-white transition hover:bg-[#d85600] disabled:opacity-40">
+          <Check className="size-4" />{t(locale, "pickOnMapConfirm")}
+        </button>
+        <button type="button" onClick={cancelPicking}
+          className="h-10 shrink-0 rounded-full border border-stone-200 px-4 text-sm font-medium text-stone-600 transition hover:bg-stone-50">
+          {t(locale, "pickOnMapCancel")}
+        </button>
+      </div>
+    </div>
+  );
+
   return (
     <section className="flex flex-col overflow-hidden rounded-2xl border border-stone-200 bg-white md:h-[calc(100vh-7rem)]" aria-label={t(locale, "a11yRideInput")}>
       <div className="border-b border-stone-200 bg-[#faf9f6] px-4 py-3">
@@ -296,13 +521,17 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
             shape of the ride is asking the rider to guess. */}
         <ChoiceRow label={t(locale, "tripType")} value={tripType} onChange={(v) => { track("trip_type_changed", { to: v }); setTripType(v); }} choices={[{ value: "one_way", label: t(locale, "oneWay") }, { value: "round_trip", label: t(locale, "roundTrip") }]} />
 
-        <RoutePlaces places={places} picked={picked} oneWay={tripType === "one_way"} busy={busy} onChange={reorder} onPick={setPick} onUseLocation={useMyLocation} locating={locating} near={anchor} />
+        <RoutePlaces places={places} picked={picked} oneWay={tripType === "one_way"} busy={busy} onChange={reorder} onPick={setPick} onUseLocation={useMyLocation} locating={locating} near={anchor}
+          onPickOnMap={onPickModeChange ? startPicking : undefined} pickingRow={pickingRow} pickSlot={pickSlot} preview={preview} />
 
         {/* The map is worth a look when a place needs confirming, not on every
             visit — it is the tallest thing on the page and most rides are
             planned without ever glancing at it. So it opens on request, and
-            the toggle only appears once there is a confirmed place to show. */}
-        {map && (
+            the toggle only appears once there is a confirmed place to show.
+            While a row is being picked the map has moved up into that row's
+            own slot, so this whole block steps aside rather than offering to
+            hide the very thing the rider was asked to tap. */}
+        {map && pickingRow === null && (
           <div className="md:hidden">
             <button type="button" onClick={() => setMapOpen((v) => { if (!v) track("form_map_opened"); return !v; })} aria-expanded={mapOpen}
               className="inline-flex items-center gap-1.5 text-xs font-medium text-[#bd4b00]">

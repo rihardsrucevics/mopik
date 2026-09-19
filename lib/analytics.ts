@@ -44,6 +44,7 @@ export type AnalyticsEvent =
   | "form_location_used"      // "Mana vieta" filled the start from the device
   | "places_reordered"        // a stop moved; props: how (drag|tap|keyboard) — is the iOS path used?
   | "place_picked"            // a suggestion chosen; props: kind, group — are POIs actually picked?
+  | "place_picked_on_map"     // a row filled by tapping the map; props: row, start — is the map used for the start, or for the places that have no name?
   | "suggestion_added"        // "Pievienot" in Ieteikumi: a suggested place became a via point; props: via_count
   | "suggestion_shown"        // "Kartē" in Ieteikumi: the map flew to a suggestion without changing the ride; props: kind
   | "detour_previewed"       // a sight was ticked and its detour spliced into the drawn line; props: pois, delta_km

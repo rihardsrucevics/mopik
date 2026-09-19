@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { RouteSegmentProperties } from "@/lib/types";
@@ -125,6 +125,43 @@ type Props = {
   onToggleSights: (visible: boolean) => void;
   /** Open the row's card for a sight the rider clicked on the map. */
   onShowPoi?: (poi: RoutePoi) => void;
+  /**
+   * Pick mode: the next click on the map is a place for the form, not a
+   * question about a road.
+   *
+   * Set only while a row is waiting for a point. The map then answers the
+   * click with these coordinates and does nothing else — no segment card, no
+   * highlight, no clearing the focus ring — because in pick mode every click
+   * means the same thing and a card opening under the rider's finger would
+   * cover the very spot he is aiming at.
+   */
+  onPickPoint?: (p: { lat: number; lon: number }) => void;
+  /**
+   * The point already picked, drawn as a marker the rider can drag.
+   *
+   * A finger lands within ~30 m of where it was aimed, which is the width of
+   * a village street — dragging is how the pick is corrected, and it is the
+   * reason this is a marker rather than a dot in a layer. `onPickedPointMove`
+   * fires on `dragend` only: reverse geocoding every frame of a drag would be
+   * a request per pointer sample.
+   */
+  pickedPoint?: { lat: number; lon: number } | null;
+  onPickedPointMove?: (p: { lat: number; lon: number }) => void;
+  /**
+   * Where to take the map when pick mode opens, with a token so opening it
+   * twice on the same row flies there twice — a rider who has panned away and
+   * pressed the pin again means "take me back".
+   *
+   * Zoom ~14 rather than the route's fit: a rider aiming at a yard needs the
+   * village legible, and the bounds the map happened to be showing are about
+   * a different question.
+   */
+  pickCenter?: { lat: number; lon: number; token: number } | null;
+  /**
+   * A fix the map's own geolocate button obtained, handed back so the form can
+   * reuse it rather than prompting again for the next row.
+   */
+  onGeolocated?: (p: { lat: number; lon: number }) => void;
 };
 
 const EMPTY: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
@@ -1513,7 +1550,7 @@ const SURFACE_COLOR_EXPR: maplibregl.ExpressionSpecification = [
   SURFACE_COLORS.unknown,
 ];
 
-export function RouteMap({ segments, start, destination, via, focus, onFocusCleared, onFocusToggle, selectedPois, routePois, showTet, onToggleTet, showSights, onToggleSights, onShowPoi }: Props) {
+export function RouteMap({ segments, start, destination, via, focus, onFocusCleared, onFocusToggle, selectedPois, routePois, showTet, onToggleTet, showSights, onToggleSights, onShowPoi, onPickPoint, pickedPoint, onPickedPointMove, pickCenter, onGeolocated }: Props) {
   const [locale] = useLocale();
   const m = messages(locale);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1573,6 +1610,28 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
    */
   const onShowPoiRef = useRef(onShowPoi);
   useEffect(() => { onShowPoiRef.current = onShowPoi; }, [onShowPoi]);
+  /**
+   * Pick mode, read from the map's click handler for the same reason the
+   * callbacks above are: the handler is attached once and outlives the render
+   * that created it, so reading the prop directly would leave it forever
+   * seeing whatever pick mode was when the listener was built.
+   *
+   * This one matters more than the others, because it is what decides that a
+   * click is a place rather than a question about a road — a stale value here
+   * means the tap opens a segment card instead of filling the row.
+   */
+  const onPickPointRef = useRef(onPickPoint);
+  useEffect(() => { onPickPointRef.current = onPickPoint; }, [onPickPoint]);
+  const onPickedPointMoveRef = useRef(onPickedPointMove);
+  useEffect(() => { onPickedPointMoveRef.current = onPickedPointMove; }, [onPickedPointMove]);
+  const onGeolocatedRef = useRef(onGeolocated);
+  useEffect(() => { onGeolocatedRef.current = onGeolocated; }, [onGeolocated]);
+  /** The draggable marker for the picked point, kept out of the route's markers. */
+  const pickedMarkerRef = useRef<maplibregl.Marker | null>(null);
+  /** The "where am I" button, added only while a row is being picked. */
+  const geolocateRef = useRef<maplibregl.GeolocateControl | null>(null);
+  /** The map exists. State, not a ref, because effects have to re-run on it. */
+  const [ready, setReady] = useState(false);
   /**
    * The gesture that just pressed a sight's mark, so the map's own click can
    * let that one through.
@@ -1780,10 +1839,17 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
     });
 
     mapRef.current = map;
+    // A ref alone cannot wake the effects that need the map: this component
+    // mounts with `mapRef` empty, and the pick-mode effects run for the first
+    // time before this one has created anything. `segments` happens to serve
+    // that purpose for the older effects (see the interaction effect's note);
+    // pick mode has no such prop, and its control was silently never added.
+    setReady(true);
     return () => {
       map.remove();
       mapRef.current = null;
       loadedRef.current = false;
+      setReady(false);
     };
   }, []);
 
@@ -1964,6 +2030,97 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
     // `locale` is in the list so switching language re-labels the badges that
     // are already on the map, rather than waiting for the next generation.
   }, [segments, start, destination, via, showTet, locale]);
+
+  /**
+   * The picked point, as a marker the rider can drag.
+   *
+   * Its own colour — violet, against the green start, the red finish and the
+   * white sight pills — because it is a fourth kind of thing: a point that is
+   * being *decided*, not yet one of the ride's places. As soon as the row is
+   * filled the ordinary start/finish/stop marker appears under it and this one
+   * goes away with the pick mode that created it.
+   *
+   * `dragend` only. The reverse lookup behind a move is a network request, and
+   * one per pointer sample would be a few hundred requests per drag; the rider
+   * sees the marker follow his finger either way, because MapLibre moves it
+   * itself.
+   */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (!pickedPoint) { pickedMarkerRef.current?.remove(); pickedMarkerRef.current = null; return; }
+    if (!pickedMarkerRef.current) {
+      const marker = new maplibregl.Marker({ color: "#7c3aed", draggable: true });
+      // Above the ride's own pins. The moment a tap fills the row, the start
+      // (or finish) marker appears at exactly the same coordinates and — being
+      // added later — paints on top: measured, the violet marker was completely
+      // hidden behind the green one and there was nothing left to drag. The
+      // picked point is the thing being decided, so it wins while it exists.
+      marker.getElement().style.zIndex = "2";
+      marker.on("dragend", () => {
+        const { lat, lng } = marker.getLngLat();
+        onPickedPointMoveRef.current?.({ lat, lon: lng });
+      });
+      pickedMarkerRef.current = marker;
+    }
+    pickedMarkerRef.current.setLngLat([pickedPoint.lon, pickedPoint.lat]).addTo(map);
+    // The coordinates, not the object. The parent rebuilds it on every reverse
+    // lookup, and an identity dependency would re-run `setLngLat` for a point
+    // that has not moved — harmless here, but it is the coordinates that this
+    // effect is actually about and the list should say so.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, pickedPoint?.lat, pickedPoint?.lon]);
+
+  /**
+   * "Where am I", while a row is being picked.
+   *
+   * MapLibre's own control, with its own icon and its own error state — a
+   * denied permission is something riders have seen a hundred times in other
+   * map apps, and a sentence of ours beside it would add nothing.
+   *
+   * `trackUserLocation: false`: this centres once and then lets go. Tracking
+   * would keep re-centring the map under a rider who is trying to drag a pin
+   * onto a specific yard, which is the opposite of what the button is for.
+   *
+   * Added only in pick mode, because it is only ever an answer to "where do I
+   * put this pin" — a finished route's map has no use for it and the corner is
+   * already carrying the zoom controls.
+   */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (!onPickPoint) {
+      if (geolocateRef.current) { map.removeControl(geolocateRef.current); geolocateRef.current = null; }
+      return;
+    }
+    if (geolocateRef.current) return;
+    const control = new maplibregl.GeolocateControl({
+      positionOptions: { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 },
+      trackUserLocation: false,
+      showAccuracyCircle: true,
+    });
+    // The permission prompt happens on the rider's tap and nowhere else — the
+    // control never triggers itself, and nothing here calls `trigger()`.
+    control.on("geolocate", (e) => {
+      onGeolocatedRef.current?.({ lat: e.coords.latitude, lon: e.coords.longitude });
+    });
+    map.addControl(control, "top-right");
+    geolocateRef.current = control;
+  }, [ready, onPickPoint]);
+
+  /**
+   * Take the map to where the row's place already is when pick mode opens.
+   *
+   * Zoom 14, not the ride's bounds: a rider correcting a pin needs to see
+   * which side of a village street he is on. Keyed on the token so pressing
+   * the same row's pin twice flies back, for the reason `focus` does.
+   */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !pickCenter) return;
+    map.easeTo({ center: [pickCenter.lon, pickCenter.lat], zoom: Math.max(map.getZoom(), 14), duration: 700 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, pickCenter?.token]);
 
   /**
    * "Kartē" on a suggestion: fly there, ring the place, open its card.
@@ -2384,6 +2541,12 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
       // `stopPropagation` cannot reach it. Compared on the browser's own
       // timestamps, which are the same clock for both events.
       if (e.originalEvent.timeStamp - sightClickAtRef.current < 50) return;
+      // Pick mode: this click is a place for the form and nothing else. It
+      // returns before the segment lookup on purpose — a rider aiming at a
+      // forest track is aiming at the drawn line as often as not, and opening
+      // that road's card would both cover the point and leave the row empty.
+      const pick = onPickPointRef.current;
+      if (pick) { pick({ lat: e.lngLat.lat, lon: e.lngLat.lng }); return; }
       const feature = featureAt(e.point);
       const props = feature?.properties as SegmentProps | undefined;
       const id = props?.[SEGMENT_ID];
@@ -2479,7 +2642,14 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
           that looked different would read as two different kinds of thing.
           Its swatch is a miniature of the mark it governs (a white pill with
           a stone border) rather than a colour sample, because what it turns on
-          is a shape, not a line colour. */}
+          is a shape, not a line colour.
+
+          Only once there is a route. Sights are the ones a *ride* passes or
+          runs near, so with no route there are none to show and the switch
+          governed nothing — it sat over the map a rider was using to choose a
+          starting point, promising something it could not deliver. TET stays:
+          where the trail runs is worth knowing before the ride exists. */}
+      {segments && segments.features.length > 0 && (
       <button
         type="button"
         onClick={() => onToggleSights(!showSights)}
@@ -2504,6 +2674,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
           <span className="h-3 w-3 rounded-full bg-white shadow-sm" />
         </span>
       </button>
+      )}
       </div>
       {/* Bottom of the map, clear of the full-screen button in the corner.
           At the top-left it covered the corner the route is usually framed

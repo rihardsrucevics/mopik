@@ -128,6 +128,46 @@ export function HomePage() {
   // 🅿️ on Warszawa.
   const [previewRoundTrip, setPreviewRoundTrip] = useState(false);
   /**
+   * A row in the form is waiting for a point on the map.
+   *
+   * Here rather than in the composer for the reason `focusPoi` is: the page
+   * owns the one MapLibre instance and everything it is handed. The composer
+   * says when a row is waiting; this decides what the map does about it.
+   */
+  const [picking, setPicking] = useState(false);
+  /**
+   * The point the rider tapped, or dragged the marker to, with a token that
+   * rises on every gesture. The token is what makes tapping the same spot
+   * twice two answers — coordinates alone would make the second tap a no-op,
+   * which is wrong after the marker has been dragged away and back.
+   */
+  const [pickPoint, setPickPoint] = useState<{ lat: number; lon: number; token: number } | null>(null);
+  const takePoint = useCallback((p: { lat: number; lon: number }) => {
+    setPickPoint((prev) => ({ ...p, token: (prev?.token ?? 0) + 1 }));
+  }, []);
+  /** Where to take the map when pick mode opens, with its own re-fly token. */
+  const [pickCenter, setPickCenter] = useState<{ lat: number; lon: number; token: number } | null>(null);
+  /** A fix the map's geolocate button obtained, handed back to the form. */
+  const [geolocated, setGeolocated] = useState<{ lat: number; lon: number } | null>(null);
+  /**
+   * Pick mode opening or closing, as the composer reports it.
+   *
+   * Opening a row that already has a place seeds the draggable marker there,
+   * so "mana lokācija → pavilkt → Apstiprināt" has something to drag from the
+   * first frame. Opening an empty row seeds nothing: a marker the rider did
+   * not put anywhere is a place he did not choose.
+   */
+  const changePickMode = useCallback((on: boolean, open?: { at: { lat: number; lon: number } | null; marker: { lat: number; lon: number } | null }) => {
+    setPicking(on);
+    if (!on) { setPickPoint(null); setPickCenter(null); return; }
+    // Token 0 on the seed: the form already knows this place by name (it is
+    // the row's own), so the marker appears without spending a reverse lookup
+    // re-deriving a name it would then have to reconcile with the one shown.
+    // A drag or a tap raises the token and the lookup runs then.
+    setPickPoint(open?.marker ? { ...open.marker, token: 0 } : null);
+    setPickCenter(open?.at ? { ...open.at, token: Date.now() } : null);
+  }, []);
+  /**
    * The suggestion the rider pressed "Kartē" on, if any.
    *
    * Lives here rather than in the result panel because the map does — the same
@@ -816,7 +856,11 @@ export function HomePage() {
   // it belongs inside the ride block, under the places it confirms — above the
   // whole page it outranked even ui.savedRides and read as a separate thing.
   const desktop = useMediaQuery(DESKTOP_QUERY);
-  const mapVisible = Boolean(result) || previewPlaces.length > 0;
+  // `picking` is here because a rider who has confirmed nothing yet is exactly
+  // the one who needs to point at a spot — the map's usual "only once there is
+  // something to show" rule would hide it at the one moment it is the whole
+  // interaction. It goes away again with pick mode.
+  const mapVisible = Boolean(result) || previewPlaces.length > 0 || picking;
   const mapPanel = (
     <MapPanel
       // Phone heights. The map yields to words whenever there are words to
@@ -865,7 +909,16 @@ export function HomePage() {
         routePois={routePois}
         onShowPoi={showPoiFromMap}
         showTet={showTet} onToggleTet={setShowTet}
-        showSights={showSights} onToggleSights={setShowSights} />
+        showSights={showSights} onToggleSights={setShowSights}
+        // Pick mode, and the marker it leaves behind. Both are handed over
+        // only while a row is actually waiting: with no `onPickPoint` the map
+        // answers a click the way it always has, and the violet marker is not
+        // a fourth kind of pin left lying on a finished ride.
+        onPickPoint={picking ? takePoint : undefined}
+        pickedPoint={picking ? pickPoint : null}
+        onPickedPointMove={takePoint}
+        pickCenter={picking ? pickCenter : null}
+        onGeolocated={setGeolocated} />
     </MapPanel>
   );
   // Where the map lives depends only on the viewport and the view — never on
@@ -889,7 +942,8 @@ export function HomePage() {
         <div className="min-w-0 space-y-4">
           <InstallPrompt show={Boolean(result) && !chatting} />
           {entryMode === "form"
-            ? <RideComposer key={plan ? planSummary(plan, locale) : "new"} initialPlan={plan} initialPlaces={places} profile={profile} onProfileChange={changeProfile} busy={phase !== "idle"} onGenerate={startFromForm} onUseChat={() => setEntryMode("chat")} onPlacesChange={(p, tripType) => { setPreviewPlaces(p); setPreviewRoundTrip(tripType === "round_trip"); }} map={mapInComposer && mapVisible ? mapPanel : undefined} />
+            ? <RideComposer key={plan ? planSummary(plan, locale) : "new"} initialPlan={plan} initialPlaces={places} profile={profile} onProfileChange={changeProfile} busy={phase !== "idle"} onGenerate={startFromForm} onUseChat={() => setEntryMode("chat")} onPlacesChange={(p, tripType) => { setPreviewPlaces(p); setPreviewRoundTrip(tripType === "round_trip"); }} map={mapInComposer && mapVisible ? mapPanel : undefined}
+                onPickModeChange={changePickMode} pickPoint={pickPoint} geolocated={geolocated} />
             : result && result.routes.length > 0 && !chatting
               ? <ResultPanel routes={result.routes} selected={selected} onSelect={setSelected} plan={plan} avoidTowns={result.intent.avoidTowns ?? false} lucky={lucky} remoteLoop={result.remoteLoop} longerSuggestion={result.longerSuggestion} tolerancePercent={result.intent.distanceTolerancePercent} busy={phase !== "idle"} onSend={send} onBackToForm={() => setEntryMode("form")} map={mapInResult && mapVisible ? mapPanel : undefined} resolvedPlaces={routedPlaces} alternatives={result.alternatives} sparsePlaceData={result.sparsePlaceData} assembledFromSegments={result.assembledFromSegments} offset={variantOffset} onOffsetChange={setVariantOffset} onShowPoi={showPoi} pois={routePois} poisLoading={poisLoading} poisFailed={poisFailed} onDetoursChange={setDetoursForMap} selectedPois={selectedPois} onToggleSelectPoi={toggleSelectPoi} onClearSelectedPois={clearSelectedPois} onRegenerateWithSelection={regenerateWithSelection} onSplicedChange={handleSplicedChange} />
               : <RoutePrompt messages={messages} plan={plan} hasRoute={Boolean(route)} phase={phase} quickReplies={quickReplies} lucky={lucky && !route} onSend={send} onBackToForm={() => setEntryMode("form")} originCode={origin?.code ?? null} onAction={(action) => { if (action === "retry") { retryLast(); return; } setChatting(false); setQuickReplies([]); }} onCancel={cancel} />}
