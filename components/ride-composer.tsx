@@ -567,20 +567,46 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     setChecking(true);
     void (async () => {
       try {
+        // The plan is built **with this pick already in its row**, not from
+        // the form as it stands. The row being picked is still empty until
+        // the commit, and a one-way ride whose finish is blank is an
+        // incomplete plan: `planToIntent` refuses it ("Where should this
+        // one-way ride finish?"), the route answers 500, and the pick then
+        // falls through the `!response.ok` branch unchecked — which is
+        // exactly the silent pass this whole check exists to prevent.
+        //
+        // Measured on Pilskalni 2: the API returns the right verdict for the
+        // coordinate (471 m, `canMove`) while the composer was sending it a
+        // plan it could not parse at all.
+        //
+        // Only the profile is read from this plan — `buildMotoProfileOptions`
+        // over `planToIntent` — so filling the row with the place's own name
+        // asks exactly the question the rider is about to ask for real.
+        //
+        // `destinationAny` then covers the rest: a rider who is picking his
+        // START has a finish row that is still empty, and that is an
+        // incomplete one-way plan for the same reason. It says "anywhere",
+        // which is true of a ride still being composed and is the one answer
+        // that cannot add a constraint the rider did not give. The finish, if
+        // he names one later, is checked by its own press.
         const plan = composeRidePlan({
-          places,
+          places: places.map((p, i) => (i === row ? place.name : p)),
           tripType,
           durationMode,
           hours: hours.trim() ? Number(hours.replace(",", ".")) : preset ?? 4,
           profile: effectiveProfile,
         });
+        const probePlan: RidePlan =
+          plan.returnToStart || plan.destinationPlace?.trim()
+            ? plan
+            : { ...plan, destinationAny: true };
         const response = await fetch("/api/routable-point", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             lat: place.lat,
             lon: place.lon,
-            plan,
+            plan: probePlan,
             // Somewhere the ride already is, so the probe rides a real leg
             // towards the pin rather than a synthetic one beside it. The
             // row's own place is not it: that is the point being replaced.
