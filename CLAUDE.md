@@ -24,6 +24,39 @@ If `gh` is on `tronems`, `git push` fails with 403 — that one is loud.
 symptom is that www.mopik.eu does not change. When a deploy "did not work",
 check the account before you check the code.
 
+## Where this stands — handover, 2026-09-20
+
+**Production is `84b6a38`, main clean, no WIP branch left.** Shipped today,
+each verified in a browser on www.mopik.eu: Poland gates (294k) + refreshed
+POIs; the parked map branch merged — role-based planning pins, "Starts" /
+red "Finišs" labels, the unreachable-stop verdict wired end to end (200 +
+`unplannable.unreachableStop`, chips `remove-stop` / `move-stop`, and a
+`/api/routable-point` check at Confirm that used to 500 silently); GPX
+exports carry `<wpt>` for start, finish, numbered stops and sights
+(validated with gpxpy); and the planning map now runs on **one active row**
+— a row's pin button sets it, a mark on the map always goes there, marking
+again moves it, "+ Pietura" on the map adds a row and activates it, one
+`role="status"` hint says what the next mark does, and the map header has
+the place search bound to the active row. Latvian copy never says
+"piesit" (rider's rule); the finish pin is red (chequered flag reversed).
+
+**Fast incremental re-route is code-complete but OFF:** `FAST_REROUTE =
+false` in components/home-page.tsx gates `onEditRoute`; `lib/routing/
+reroute-leg.ts` + test and `app/api/reroute-leg` are inert and shipped.
+Before turning it on, make it follow the active-row model (mark = move the
+active stop) and verify the ~640 UI lines — none of it has been exercised.
+
+**Backlog 26/27 are the next small fixes:** the share code's `startLabel`
+is the first *stop* (pre-existing; GPX already works around it), and
+typed places are only found unreachable after the full 55 s search — probe
+them before it, the way map picks are probed at Confirm.
+
+**Italy → Germany POI/gates build** was running at `nice 19` (log
+`data/poi-build-4.log`, script `run-phase2-it-de.sh` in the 4f00db17
+session scratchpad, venv in the 0284c868 one). When `data/gates-DE.json`
+exists: publish both scripts, commit `public/poi public/gates`, deploy.
+`hasPlaceData`'s 1°/1.5° slack question (backlog 8) is still open.
+
 ## Where this stands — handover, 2026-09-19 (evening, hard stop)
 
 **Production is `4d99441`, main is clean.** Shipped today, each verified in
