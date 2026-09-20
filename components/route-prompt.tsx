@@ -26,11 +26,17 @@ type Props = {
    * the ride itself rather than an empty form.
    */
   originCode?: string | null;
-  /** a quick reply that acts on the client (show the routes) instead of being sent */
-  /** A chip handled on the client rather than sent to the chat. The union
-   *  is the quick reply's own, so a new action cannot be added there and
-   *  silently dropped here. */
-  onAction?: (action: NonNullable<ChatQuickReply["action"]>) => void;
+  /**
+   * A chip handled on the client rather than sent to the chat.
+   *
+   * The **whole reply** is passed, not just its `action`. `remove-stop` and
+   * `move-stop` carry the place they act on in `reply.stop` — the name, the
+   * index, the role and the road the router found — and a callback taking
+   * only the action string dropped all of it on the floor, leaving the page
+   * to guess which stop the rider meant. Passing the reply also means a chip
+   * that grows a new field cannot silently lose it here.
+   */
+  onAction?: (reply: ChatQuickReply & { action: NonNullable<ChatQuickReply["action"]> }) => void;
   /** Call the generation in flight off. */
   onCancel?: () => void;
 };
@@ -125,7 +131,7 @@ export function RoutePrompt({ messages, plan, hasRoute, phase, quickReplies, luc
         ))}
         {!busy && quickReplies.length > 0 && (
           <div className="flex flex-wrap gap-2" aria-label={t(locale, "chatQuickReplies")}>
-            {quickReplies.map((reply) => <button key={reply.label} type="button" onClick={() => { track("quick_reply_used", { label: reply.label, action: reply.action ?? "message" }); if (reply.action) onAction?.(reply.action); else send(reply.message); }} className="rounded-full border border-[#f56300] bg-white px-3.5 py-2 text-xs font-medium text-[#bd4b00] transition hover:bg-[#fff4ec]">{reply.label}</button>)}
+            {quickReplies.map((reply) => <button key={reply.label} type="button" onClick={() => { track("quick_reply_used", { label: reply.label, action: reply.action ?? "message" }); if (reply.action) onAction?.({ ...reply, action: reply.action }); else send(reply.message); }} className="rounded-full border border-[#f56300] bg-white px-3.5 py-2 text-xs font-medium text-[#bd4b00] transition hover:bg-[#fff4ec]">{reply.label}</button>)}
           </div>
         )}
         {/* No `onCancel` here on purpose: while a generation runs the cancel

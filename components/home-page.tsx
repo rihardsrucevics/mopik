@@ -22,7 +22,7 @@ import { seedPlanFromProfile } from "@/lib/chat/ride-profile";
 import type { ResolvedPlace } from "@/lib/chat/places";
 import { useRideProfile } from "@/lib/chat/use-ride-profile";
 import { DESKTOP_QUERY, useMediaQuery } from "@/lib/use-media-query";
-import { GenerateRouteResponse, type DirectLegOffer } from "@/lib/types";
+import { GenerateRouteResponse, type DirectLegOffer, type UnreachableStop } from "@/lib/types";
 import { POI_KIND, type RoutePoi } from "@/lib/poi/kinds";
 import { describeDetourForFocus } from "@/lib/routing/use-detours";
 import { type DetourResult } from "@/lib/routing/detour";
@@ -45,6 +45,47 @@ import type { Point } from "@/lib/geo/geometry";
 import type { PlaceRoles } from "@/lib/map/place-roles";
 
 type Retry = { stage: "chat"; messages: ChatMessage[]; plan: RidePlan | null } | { stage: "route"; messages: ChatMessage[]; plan: RidePlan };
+
+/**
+ * Fast incremental re-routing — **off, and deliberately so.**
+ *
+ * The idea: a ride is a sequence of legs the router already agreed to, so
+ * moving one stop invalidates two of them rather than all thirty. Dragging a
+ * numbered pin on the result map, or tapping the line to add a via, would
+ * re-route only the legs either side and splice the answer in — one to three
+ * seconds against a full search's twenty to thirty.
+ *
+ * ## Why it is off
+ *
+ * It was never verified. The pure module and its test are sound and the API
+ * route answers, but the UI half was written and left mid-flight: no path
+ * through it has been ridden end to end, the failure and undo behaviour is
+ * unproven on a phone, and a correction that silently makes a ride worse is
+ * exactly the kind of thing the rider finds on the road rather than here.
+ * Half-working does not reach a rider, so the entry points are shut rather
+ * than shipped and watched.
+ *
+ * ## What is still here, and still sound
+ *
+ * - `lib/routing/reroute-leg.ts` and `scripts/reroute-leg.test.ts` — pure,
+ *   tested, imported for `recomputeOverlap` / `spliceLeg` / `insertVias`,
+ *   which the **shipped** sights feature uses. Do not delete them: taking
+ *   this flag out is not the same as taking that module out.
+ * - `app/api/reroute-leg/route.ts` — compiles and answers, and nothing in the
+ *   UI calls it while this is false. Inert, not dead.
+ * - `editRoute`, `undoEdit`, the `edited` / `editNote` state and the panel's
+ *   "Labots ar roku" kicker. The state is **shared with the sights feature**,
+ *   which ships: committing ticked sights produces an edited ride the same
+ *   way, so none of it may be removed with this flag.
+ *
+ * ## To resume
+ *
+ * Flip this to `true`. That restores both entry points — the draggable result
+ * pins and tap-to-add-via — because `onEditRoute` is the single prop they
+ * both hang from. Then verify on a phone: drag a stop, tap the line, undo
+ * each, and a leg the router refuses. Nothing else needs changing.
+ */
+const FAST_REROUTE = false;
 
 /**
  * A message a rider can forward. Browser DOM errors (Safari: "The string did
@@ -119,6 +160,32 @@ function elapsedMsSince(start: number): number {
 }
 function startClock(): number {
   return performance.now();
+}
+
+/**
+ * Is this picked place the one the refusal is about?
+ *
+ * **Coordinates first, the name only as a fallback.** The verdict carries the
+ * `lat`/`lon` it actually tried to route to, and that is the one key that
+ * cannot be ambiguous: a ride may hold the same name twice (a stop and the
+ * finish both "Sigulda"), and removing the wrong one would take out a place
+ * the rider can reach and leave the one he cannot.
+ *
+ * ~11 m of tolerance — a shade under 1e-4 degrees. The coordinate makes a
+ * round trip through JSON and back, and a ride's places are never that close
+ * together, so this is loose enough to survive the encoding and far too tight
+ * to catch a neighbouring stop.
+ *
+ * The name is tried only when no coordinate matches, for the place the rider
+ * typed rather than picked: those reach `places` without having been geocoded
+ * on this client, so there may be no coordinate to compare.
+ */
+function matchesStop(place: ResolvedPlace, name: string, stop: UnreachableStop): boolean {
+  const near = Math.abs(place.lat - stop.lat) < 1e-4 && Math.abs(place.lon - stop.lon) < 1e-4;
+  if (near) return true;
+  const fold = (s: string) => s.normalize("NFKD").replace(/[̀-ͯ]/g, "").trim().toLowerCase();
+  const key = fold(name);
+  return fold(place.name) === key || fold(place.label) === key;
 }
 
 function pickedCategory(places: ResolvedPlace[], label: string): string | undefined {
@@ -545,6 +612,103 @@ export function HomePage() {
     setQuickReplies([]);
   };
 
+  /**
+   * The two chips under "this stop cannot be reached": take it out, or move it
+   * to the road the router found.
+   *
+   * Both edit the ride and re-plan straight away. They are `action` chips
+   * rather than sentences sent to the model for the reason `direct-leg` is:
+   * the fact is already known — the API measured it and named the place — and
+   * asking the model to re-derive "take out Tūjas" from Latvian prose is a
+   * round trip that can only lose information the verdict already has.
+   *
+   * ## The plan and the picked places are edited together
+   *
+   * A ride is carried in two halves: `plan` holds the names the rider typed
+   * and `places` the coordinates they resolved to, and `generate` sends both.
+   * Editing one and not the other is how a stop comes back from the dead — the
+   * name is gone from the plan but its coordinate is still in `places`, and
+   * the next generation routes through it anyway. So each handler builds the
+   * next plan AND the next places, and hands both to `generate` explicitly
+   * rather than letting it default to the `places` state that has not
+   * re-rendered yet.
+   *
+   * `stop.role` decides which field is edited, never the index alone: a ride
+   * may name the same place as a stop and as its finish, and `index` counts
+   * through the whole ride (0 = start, then vias, then the finish) while
+   * `viaPlaces` counts only the middle.
+   */
+  function reviseUnreachableStop(stop: UnreachableStop, how: "remove" | "move") {
+    const current = plan;
+    if (!current) return;
+    // The via's own position in `viaPlaces`: the ride's index minus the start.
+    const viaIndex = stop.index - 1;
+    if (stop.role === "via" && (viaIndex < 0 || viaIndex >= current.viaPlaces.length)) return;
+    if (how === "move" && !stop.snappedTo) return;
+
+    // Which name this chip is about, so the matching entry in `places` can be
+    // found. For a via it is the plan's own string; for the two ends it is the
+    // field's, and `stop.name` is what the verdict called it either way.
+    const name =
+      stop.role === "via" ? current.viaPlaces[viaIndex]
+      : stop.role === "start" ? current.startPlace ?? stop.name
+      : current.destinationPlace ?? stop.name;
+
+    let nextPlan: RidePlan;
+    let nextPlaces: ResolvedPlace[];
+
+    if (how === "remove") {
+      // Only a stop can be dropped: a ride with no start has nowhere to begin,
+      // and the chips never offer it — `describeUnreachableStop` builds
+      // "remove" for any role, but the API only ever reports an unreachable
+      // start or finish alongside a `canMove` the rider can take instead.
+      nextPlan =
+        stop.role === "via"
+          ? { ...current, viaPlaces: current.viaPlaces.filter((_, i) => i !== viaIndex) }
+          : stop.role === "destination"
+            // A finish the ride cannot reach, taken out, leaves a ride that
+            // ends wherever it gets to — which is exactly `destinationAny`,
+            // the "man vienalga" the composer already builds.
+            ? { ...current, destinationPlace: null, destinationAny: true }
+            : current;
+      if (nextPlan === current && stop.role === "start") return;
+      // The coordinate goes with the name, or the next generation routes
+      // through a place the plan no longer mentions.
+      nextPlaces = places.filter((p) => !matchesStop(p, name, stop));
+    } else {
+      const moved = stop.snappedTo!;
+      // The name the rider picked, on the coordinates the ride can reach. The
+      // place is the same place — that is what `canMove` asserts — so the plan
+      // is untouched and only the coordinate moves. Renaming it here would
+      // tell the rider he had asked for somewhere else.
+      nextPlan = current;
+      const existing = places.find((p) => matchesStop(p, name, stop));
+      const replacement: ResolvedPlace = existing
+        ? { ...existing, lat: moved.lat, lon: moved.lon }
+        : { name, label: name, lat: moved.lat, lon: moved.lon };
+      nextPlaces = existing
+        ? places.map((p) => (p === existing ? replacement : p))
+        : [...places, replacement];
+    }
+
+    track("quick_reply_used", { label: how === "move" ? "move-stop" : "remove-stop", action: how });
+    setPlan(nextPlan);
+    setPlaces(nextPlaces);
+    setQuickReplies([]);
+    setDirectOffer(null);
+    unplannableContextRef.current = null;
+    const said =
+      how === "move"
+        ? fi(ui.chatStopMoved, { place: stop.name })
+        : fi(ui.chatStopRemoved, { place: stop.name });
+    const conversation: ChatMessage[] = [...messages, { role: "assistant", content: said }];
+    setMessages(conversation);
+    setChatting(true);
+    // Straight back to the search with the corrected ride. The rider asked for
+    // a fix, not for a form to fill in again.
+    void generate(nextPlan, conversation, nextPlaces);
+  }
+
   async function generate(current: RidePlan, conversation: ChatMessage[], pickedPlaces: ResolvedPlace[] = places) {
     setPhase("routing");
     const sourcePrompt = conversation.filter(m => m.role === "user").map(m => m.content).join("\n");
@@ -564,7 +728,11 @@ export function HomePage() {
       if (unplannable) {
         track("route_unplannable", { leg_km: unplannable.legKm, reason: unplannable.reason });
         setLucky(false);
-        const { message, quickReplies: replies } = describeUnplannable(unplannable, true);
+        // The interface's own language. `lv` stays `true` because the older
+        // wording in `describeUnplannable` only speaks that pair; the
+        // unreachable-stop sentence beside it speaks all four and reads the
+        // locale, so the rider meets that one in the language he is using.
+        const { message, quickReplies: replies } = describeUnplannable(unplannable, true, locale);
         setMessages([...conversation, { role: "assistant", content: message }]);
         setQuickReplies(replies);
         // Held for the "Rādi taisnāko ceļu" chip. The road is already routed
@@ -1410,7 +1578,13 @@ export function HomePage() {
         // `picking` takes precedence for the same reason it does elsewhere: a
         // map answering "where does this row go" must not also be answering
         // "change the ride".
-        onEditRoute={result && !picking && !editing ? editRoute : undefined}
+        // `FAST_REROUTE` first: this prop is the single thing both entry
+        // points hang from — the map makes its stop pins draggable only when
+        // it is given, and only then does a tap on the line add a via — so
+        // withholding it shuts both at once and leaves nothing half-wired for
+        // a rider to find. See the flag for why, and for what to do to
+        // resume.
+        onEditRoute={FAST_REROUTE && result && !picking && !editing ? editRoute : undefined}
         editingRoute={editing}
         focus={focusPoi}
         onFocusCleared={clearFocusPoi}
@@ -1471,7 +1645,7 @@ export function HomePage() {
                 onAddStopOfferChange={setAddStopOffer} addStopPoint={addStopPoint} />
             : result && result.routes.length > 0 && !chatting
               ? <ResultPanel routes={result.routes} selected={selected} onSelect={setSelected} plan={plan} avoidTowns={result.intent.avoidTowns ?? false} lucky={lucky} remoteLoop={result.remoteLoop} longerSuggestion={result.longerSuggestion} tolerancePercent={result.intent.distanceTolerancePercent} busy={phase !== "idle"} onSend={send} onBackToForm={() => setEntryMode("form")} map={mapInResult && mapVisible ? mapPanel : undefined} resolvedPlaces={routedPlaces} alternatives={result.alternatives} sparsePlaceData={result.sparsePlaceData} assembledFromSegments={result.assembledFromSegments} directLeg={showingDirect} offset={variantOffset} onOffsetChange={setVariantOffset} onShowPoi={showPoi} pois={routePois} poisLoading={poisLoading} poisFailed={poisFailed} onDetoursChange={setDetoursForMap} selectedPois={selectedPois} onToggleSelectPoi={toggleSelectPoi} onClearSelectedPois={clearSelectedPois} onCommitSelection={commitSelection} onSearchBetterLoop={searchBetterLoop} onSplicedChange={handleSplicedChange} edited={edited} canUndo={canUndo} onUndoEdit={undoEdit} editing={editing} editNote={editNote} />
-              : <RoutePrompt messages={messages} plan={plan} hasRoute={Boolean(route)} phase={phase} quickReplies={quickReplies} lucky={lucky && !route} onSend={send} onBackToForm={() => setEntryMode("form")} originCode={origin?.code ?? null} onAction={(action) => { if (action === "retry") { retryLast(); return; } if (action === "direct-leg") { showDirectLeg(); return; } setChatting(false); setQuickReplies([]); }} onCancel={cancel} />}
+              : <RoutePrompt messages={messages} plan={plan} hasRoute={Boolean(route)} phase={phase} quickReplies={quickReplies} lucky={lucky && !route} onSend={send} onBackToForm={() => setEntryMode("form")} originCode={origin?.code ?? null} onAction={(reply) => { if (reply.action === "retry") { retryLast(); return; } if (reply.action === "direct-leg") { showDirectLeg(); return; } if (reply.action === "remove-stop" || reply.action === "move-stop") { if (reply.stop) reviseUnreachableStop(reply.stop, reply.action === "move-stop" ? "move" : "remove"); return; } setChatting(false); setQuickReplies([]); }} onCancel={cancel} />}
           {/* A ride that came from editing another one. Asked once, here,
               because only the rider knows whether the original is still
               wanted — and the answer is one tap either way. */}

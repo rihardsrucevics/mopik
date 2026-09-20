@@ -650,7 +650,13 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
                   rider corrected are different claims, and the panel must
                   never let the second pass as the first. Only a hand edit
                   earns it — keeping ticked sights is accepting an offer Mopik
-                  made, not correcting it. */}
+                  made, not correcting it.
+
+                  While `FAST_REROUTE` is false this cannot appear: `"edit"` is
+                  set only by `editRoute`, whose entry points are shut, and the
+                  sights commit sets `"commit"`. The branch stays rather than
+                  being deleted because it is this kicker's whole definition —
+                  see the flag in `home-page.tsx`. */}
               {!directLeg && edited?.kind === "edit" && (
                 <div className="truncate text-[10px] font-semibold uppercase tracking-wider text-[#bd4b00]" title={m.resEditedHint}>{m.resEdited}</div>
               )}

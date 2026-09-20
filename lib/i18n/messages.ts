@@ -388,6 +388,8 @@ export type MessageKey =
   | "pickOnMapCancel"
   | "pickedOnMap"
   | "pickOnMapConfirm"
+  /** Confirm, while the routable-point probe is in flight. */
+  | "pickOnMapChecking"
   /**
    * Adding a stop straight from the map: the standing hint on an idle planning
    * map, and what it says instead once the ride is carrying all the places the
@@ -426,8 +428,10 @@ export type MessageKey =
    * The rider asked for these after seeing a plain red pin and a plain green
    * one: the same shape twice, told apart by a colour pair that means "stop /
    * go" to a driver and nothing about the ends of a ride — and on a round trip
-   * the two sit on the same spot. The finish also carries a flag; the word is
-   * what makes it certain.
+   * the two sit on the same spot. The pins stayed plain red and green in the
+   * end (the chequered flag was tried and reversed — see `FINISH_PIN_COLOR`),
+   * so these words are the whole answer to "which end is this", not a
+   * confirmation of a glyph.
    */
   | "mapStart"
   | "mapFinish"
@@ -449,6 +453,20 @@ export type MessageKey =
   | "pickOffRoadTitle"
   | "pickOffRoadMove"
   | "pickOffRoadCancel"
+  /**
+   * What the chat says after one of the unreachable-stop chips is tapped.
+   *
+   * The rider tapped a chip and the ride changed; the line says which place
+   * and what happened to it, in the chat's own voice, before the new search
+   * starts. Without it the refusal simply vanishes and a loader appears, and
+   * the rider is left to infer that his tap did anything at all.
+   *
+   * It is written as the assistant's own line rather than echoed as the
+   * rider's, because the edit is Mopik's doing: the chip carried the fact and
+   * the client applied it.
+   */
+  | "chatStopMoved"
+  | "chatStopRemoved"
   /** The direct-road offer (backlog item 7b): the road, never a planned ride. */
   | "directLegTitle"
   | "directLegKicker"
@@ -918,6 +936,7 @@ const lv: Messages = {
   pickOnMapCancel: "Atcelt",
   pickedOnMap: "izvēlēts kartē",
   pickOnMapConfirm: "Apstiprināt",
+  pickOnMapChecking: "Pārbaudu…",
   tapMapToAddStop: "Atzīmē kartē, lai pievienotu pieturu",
   tapMapStopsFull: "Vairāk pieturu pievienot nevar",
   resAddSelected: "Pievienot izvēlētos",
@@ -938,6 +957,8 @@ const lv: Messages = {
   pickOffRoadTitle: "Šeit ar šo profilu nevar piebraukt. Tuvākais ceļš ir ~{m} m nostāk.",
   pickOffRoadMove: "Pārvietot uz tuvāko ceļu",
   pickOffRoadCancel: "Izvēlēties citu vietu",
+  chatStopMoved: "Pārvietoju „{place}” uz tuvāko ceļu un meklēju no jauna.",
+  chatStopRemoved: "Izņēmu pieturu „{place}” un meklēju no jauna.",
   directLegTitle: "Taisnākais ceļš · asfalts",
   directLegKicker: "Šis nav Mopik maršruts",
   directLegNote: "Šis ir ceļš, nevis brauciens — īsākā līnija no A uz B, ko atradu, kad interesantu maršrutu šim posmam izplānot neizdevās. Pievieno pieturu pa vidu, un es pamēģināšu vēlreiz.",
@@ -1349,6 +1370,7 @@ const lt: Messages = {
   pickOnMapCancel: "Atšaukti",
   pickedOnMap: "pasirinkta žemėlapyje",
   pickOnMapConfirm: "Patvirtinti",
+  pickOnMapChecking: "Tikrinu…",
   tapMapToAddStop: "Pažymėkite žemėlapyje, kad pridėtumėte sustojimą",
   tapMapStopsFull: "Daugiau sustojimų pridėti negalima",
   resAddSelected: "Pridėti pažymėtas",
@@ -1369,6 +1391,8 @@ const lt: Messages = {
   pickOffRoadTitle: "Čia su šiuo profiliu privažiuoti negalima. Artimiausias kelias yra už ~{m} m.",
   pickOffRoadMove: "Perkelti prie artimiausio kelio",
   pickOffRoadCancel: "Rinktis kitą vietą",
+  chatStopMoved: "Perkėliau „{place}“ prie artimiausio kelio ir ieškau iš naujo.",
+  chatStopRemoved: "Pašalinau sustojimą „{place}“ ir ieškau iš naujo.",
   directLegTitle: "Tiesiausias kelias · asfaltas",
   directLegKicker: "Tai nėra Mopik maršrutas",
   directLegNote: "Tai kelias, o ne kelionė — trumpiausia linija iš A į B, kurią radau, kai nepavyko suplanuoti įdomaus maršruto šiai atkarpai. Pridėk sustojimą viduryje ir pabandysiu dar kartą.",
@@ -1784,6 +1808,7 @@ const et: Messages = {
   pickOnMapCancel: "Tühista",
   pickedOnMap: "valitud kaardil",
   pickOnMapConfirm: "Kinnita",
+  pickOnMapChecking: "Kontrollin…",
   tapMapToAddStop: "Märgi kaardil, et lisada peatus",
   tapMapStopsFull: "Rohkem peatusi lisada ei saa",
   resAddSelected: "Lisa valitud",
@@ -1804,6 +1829,8 @@ const et: Messages = {
   pickOffRoadTitle: "Siia selle profiiliga sõita ei saa. Lähim tee on ~{m} m eemal.",
   pickOffRoadMove: "Liiguta lähimale teele",
   pickOffRoadCancel: "Vali teine koht",
+  chatStopMoved: "Liigutasin „{place}” lähimale teele ja otsin uuesti.",
+  chatStopRemoved: "Eemaldasin peatuse „{place}” ja otsin uuesti.",
   directLegTitle: "Otseteed · asfalt",
   directLegKicker: "See ei ole Mopiku marsruut",
   directLegNote: "See on tee, mitte sõit — lühim joon A-st B-sse, mille leidsin siis, kui sellele lõigule huvitavat marsruuti planeerida ei õnnestunud. Lisa vahepeale peatus ja proovin uuesti.",
@@ -2213,6 +2240,7 @@ const en: Messages = {
   pickOnMapCancel: "Cancel",
   pickedOnMap: "picked on the map",
   pickOnMapConfirm: "Confirm",
+  pickOnMapChecking: "Checking…",
   tapMapToAddStop: "Mark on the map to add a stop",
   tapMapStopsFull: "No room for another stop",
   resAddSelected: "Add the ticked places",
@@ -2233,6 +2261,8 @@ const en: Messages = {
   pickOffRoadTitle: "You cannot ride here with this profile. The nearest road is ~{m} m away.",
   pickOffRoadMove: "Move it to the nearest road",
   pickOffRoadCancel: "Pick another spot",
+  chatStopMoved: "Moved “{place}” to the nearest road and searching again.",
+  chatStopRemoved: "Removed the stop “{place}” and searching again.",
   directLegTitle: "Straightest way · asphalt",
   directLegKicker: "This is not a Mopik route",
   directLegNote: "This is the road, not the ride — the shortest line from A to B, found after planning an interesting route for this stretch failed. Add a stop in the middle and I will try again.",

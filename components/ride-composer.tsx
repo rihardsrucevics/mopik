@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { Check, ChevronDown, ChevronUp, Map as MapIcon, MapPinPlus, Sparkles } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, Map as MapIcon, MapPinPlus, Sparkles, TriangleAlert } from "lucide-react";
 import { RidePlan } from "@/lib/chat/ride-plan";
 import { composeRidePlan, placesFromPlan } from "@/lib/chat/compose-plan";
 import { RoutePlaces, addStop, addedStopIndex, rowLabel, MAX_ROWS } from "@/components/route-places";
@@ -765,15 +765,50 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
         <span className="min-w-0 flex-1">{fi(t(locale, "pickOnMapHint"), { label: rowLabel(locale, pickingRow, tripType === "one_way", places.length) })}</span>
       </div>
       {map && <div>{map}</div>}
+      {/* The verdict on the tapped point, under the map and above the buttons.
+          Here rather than in a dialog because the rider is still looking at
+          the spot: the map stays on screen, the pin stays where he put it, and
+          the answer sits between what he did and what he can do about it.
+          `role="alert"` — it arrives after a press and replaces what Confirm
+          was about to do, which is exactly what a screen reader must be told
+          without being asked. */}
+      {offRoad && (
+        <div className="space-y-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2.5" role="alert">
+          <div className="flex gap-2 text-xs font-medium text-amber-900">
+            <TriangleAlert className="mt-px size-3.5 shrink-0" />
+            <span className="min-w-0 flex-1">{fi(t(locale, "pickOffRoadTitle"), { m: offRoad.distanceM })}</span>
+          </div>
+          {/* Move is offered only when the server said the road is near enough
+              to still be the same place (`canMove`, which is what `snappedTo`
+              being non-null here means). Cancel is always offered, and is the
+              only way out when it is not: a chip that cannot act must not be
+              drawn — the rider's rule. */}
+          <div className="flex items-center gap-2">
+            {offRoad.snappedTo && (
+              <button type="button" onClick={acceptOffRoadMove}
+                className="h-9 flex-1 rounded-full bg-[#f56300] px-3 text-xs font-semibold text-white transition hover:bg-[#d85600]">
+                {t(locale, "pickOffRoadMove")}
+              </button>
+            )}
+            <button type="button" onClick={() => setOffRoad(null)}
+              className={`h-9 rounded-full border border-amber-300 px-3 text-xs font-medium text-amber-900 transition hover:bg-amber-100 ${offRoad.snappedTo ? "shrink-0" : "flex-1"}`}>
+              {t(locale, "pickOffRoadCancel")}
+            </button>
+          </div>
+        </div>
+      )}
       {/* The two ways out, under the map rather than over it: a primary button
           on the map itself would be a thing to tap in the middle of a surface
           whose whole job this minute is to receive taps. Confirm is dead until
           there is a point to confirm — a rider who presses it before tapping
-          should be told by its state, not by nothing happening. */}
+          should be told by its state, not by nothing happening. While the
+          probe is in flight it is disabled and says so, because a press that
+          takes a second and shows nothing reads as a button that does not
+          work. */}
       <div className="flex items-center gap-2">
-        <button type="button" onClick={confirmPick} disabled={!preview}
+        <button type="button" onClick={confirmPick} disabled={!preview || checking || Boolean(offRoad)}
           className="flex h-10 flex-1 items-center justify-center gap-1.5 rounded-full bg-[#f56300] text-sm font-semibold text-white transition hover:bg-[#d85600] disabled:opacity-40">
-          <Check className="size-4" />{t(locale, "pickOnMapConfirm")}
+          <Check className="size-4" />{checking ? t(locale, "pickOnMapChecking") : t(locale, "pickOnMapConfirm")}
         </button>
         <button type="button" onClick={cancelPicking}
           className="h-10 shrink-0 rounded-full border border-stone-200 px-4 text-sm font-medium text-stone-600 transition hover:bg-stone-50">

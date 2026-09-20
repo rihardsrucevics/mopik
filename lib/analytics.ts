@@ -59,7 +59,9 @@ export type AnalyticsEvent =
   | "ride_edit_opened"        // "Rediģēt formā" on a shared or saved ride; props: from, saved
   | "shared_correction_sent" // "Ko mainīt?" typed on a shared ride's page; props: length, saved
   | "edited_ride_kept"        // the edit produced a new ride and the original stays
-  | "edited_ride_replaced";   // the edit replaced the ride it started from
+  | "edited_ride_replaced"    // the edit replaced the ride it started from
+  | "pick_off_road"           // a tapped place is too far from any road the profile may ride; props: row, distance_m, can_move — how often does the map offer ground a ride cannot reach?
+  | "pick_off_road_moved";    // the rider took the nearest road instead of his tap; props: row, distance_m — is moving the pick the answer, or does he cancel it?
 
 declare global {
   interface Window { gtag?: (...args: unknown[]) => void }

@@ -1472,101 +1472,36 @@ function endpointLabelElement(params: { title: string; label: string }): HTMLEle
 }
 
 /**
- * The flag inside the finish pin.
+ * The finish pin is **plain red**, and the ends are told apart by their words.
  *
- * Inline SVG rather than the Lucide React component: these markers live
- * outside React (MapLibre owns their DOM), and the project has already learned
- * that module-level `renderToStaticMarkup` crashes on the server and that
- * Lucide's `color` prop sets stroke only.
+ * The chequered flag is reversed. It went flag-inside-a-red-pin → a whole
+ * teardrop painted in black-and-white chequers → back to plain red, and the
+ * rider's last word is the one that stands. The reasoning that survives the
+ * reversal is worth keeping, because it is what the colours now rest on:
  *
- * **Lucide's own `FlagTriangleRight` path was tried first and rejected on the
- * screenshot.** Its pole stands at x=7 of a 24-wide box, so inside a 26 px
- * disc the glyph sits visibly right of centre; and its single stroked path
- * doubles back on itself, which at 14 px closes the triangle into a loop —
- * measured, it read as a letter "P", which is the one thing a mark on a map
- * next to 🅿️-shaped stop pins must not do.
+ * - A flag *inside* the pin was "useless at that size" — at 13 px in a 27 px
+ *   head the pole and pennant are three or four pixels each and turn to mush
+ *   on a green basemap. So there is no glyph in either pin, and there should
+ *   not be one: whatever distinguishes the ends has to survive 27 px.
+ * - The chequers survived the size, but they cost the pair its symmetry. A
+ *   patterned pin beside a flat green one reads as two different *kinds* of
+ *   thing, when they are the same kind of thing at opposite ends of one ride.
  *
- * So the flag is drawn here: a pole on the centre line and a **filled**
- * pennant beside it. Filled rather than stroked because a 2.5 px stroke around
- * a 7 px triangle is mostly outline — the fill is what survives the size. The
- * viewBox is tightened to the glyph so it fills the disc rather than floating
- * in a 24-unit box with a third of it empty.
+ * What actually answers "which of these is where I start" is the word under
+ * the pin — `endpointLabelElement`, in the rider's own language — and once
+ * the words are there the colour only has to separate the two at a glance.
+ * Red against green does that, it is MapLibre's own pin at both ends, and it
+ * is what production draws today.
+ *
+ * So there is no `finishPinElement`: the finish is `new maplibregl.Marker({
+ * color: FINISH_PIN_COLOR })`, the start the same with green. Nothing is
+ * hand-drawn, which is also the surest way to keep the clipped, haloed
+ * teardrop the rider reported from coming back — see `endpointLabelElement`
+ * for that history.
  */
-/**
- * The finish pin: a teardrop painted in black-and-white chequers.
- *
- * The rider's own design, in two corrections. First: a small flag *inside* a
- * red pin is "useless at that size" — at 13 px in a 27 px head the pole and
- * pennant are three or four pixels each, and on a green basemap they turn to
- * mush. Second: the chequers are **black and white, like a real finish flag**,
- * not red and white. So the whole pin carries the pattern and there is no
- * glyph to squint at: the shape says "a place the ride is pinned to" and the
- * chequers say which place, at any size the map draws it.
- *
- * ## Drawn by hand, and what that cost last time
- *
- * A hand-made pin is exactly what produced the clipped, haloed marker the
- * rider reported. The difference here is that this is **MapLibre's own pin
- * geometry**, not an approximation of it: the same 27 x 41 viewBox, the same
- * teardrop path, so the element has the same box, the same anchor and the same
- * tip-on-the-coordinate behaviour as the green start pin beside it. Only the
- * fill changes.
- *
- * The chequers are clipped to the teardrop, so the pattern stops exactly at
- * the pin's edge and the silhouette is unchanged. A thin dark outline keeps
- * the white squares from dissolving into a pale basemap — the same problem the
- * numbered stop pins solve with their white hairline, in reverse.
- */
-const FINISH_CHECKER_PX = 6.75;
-
-/**
- * SVG `id`s are document-global, so two of these on one page would have the
- * second pin's pattern resolve against the first one's definition. The planner
- * mounts one map, but a shared-route page beside a preview is one DOM, and an
- * id collision here fails silently as an unpainted pin.
- */
-let finishPinSeq = 0;
-
-function finishPinElement(title: string): HTMLElement {
-  const uid = `mopik-finish-${++finishPinSeq}`;
-  const el = document.createElement("div");
-  el.title = title;
-  el.setAttribute("aria-label", title);
-  // The element's box is the pin's box and nothing else: no wrapper, no extra
-  // padding, no shadow that would grow it. The label rides on its own marker.
-  el.style.cssText = "width:27px;height:41px;line-height:0;cursor:default";
-  el.innerHTML =
-    `<svg xmlns="http://www.w3.org/2000/svg" width="27" height="41" viewBox="0 0 27 41" ` +
-    `display="block" aria-hidden="true">` +
-    `<defs>` +
-    // The teardrop, as MapLibre draws it: a circle of radius 13.5 with the
-    // sides drawn down to a point at the bottom.
-    `<clipPath id="${uid}-clip">` +
-    `<path d="M13.5 0C6.04 0 0 6.04 0 13.5 0 21 6 27 13.5 41 21 27 27 21 27 13.5 27 6.04 20.96 0 13.5 0z"/>` +
-    `</clipPath>` +
-    // 4 columns x ~6 rows of 6.75 px squares, which fills the 27 px width
-    // exactly and keeps every square square.
-    `<pattern id="${uid}-checks" width="${FINISH_CHECKER_PX * 2}" height="${FINISH_CHECKER_PX * 2}" ` +
-    `patternUnits="userSpaceOnUse">` +
-    `<rect width="${FINISH_CHECKER_PX * 2}" height="${FINISH_CHECKER_PX * 2}" fill="#fff"/>` +
-    `<rect width="${FINISH_CHECKER_PX}" height="${FINISH_CHECKER_PX}" fill="#111"/>` +
-    `<rect x="${FINISH_CHECKER_PX}" y="${FINISH_CHECKER_PX}" width="${FINISH_CHECKER_PX}" ` +
-    `height="${FINISH_CHECKER_PX}" fill="#111"/>` +
-    `</pattern>` +
-    `</defs>` +
-    // A drop shadow matching the one MapLibre's pin casts, so the two ends sit
-    // at the same height above the map rather than one of them looking flat.
-    `<ellipse cx="13.5" cy="39" rx="5" ry="1.8" fill="rgba(0,0,0,0.25)"/>` +
-    `<g clip-path="url(#${uid}-clip)">` +
-    `<rect width="27" height="41" fill="url(#${uid}-checks)"/>` +
-    `</g>` +
-    // The outline, drawn over the pattern so the silhouette stays crisp where
-    // a white square meets a pale basemap.
-    `<path d="M13.5 0C6.04 0 0 6.04 0 13.5 0 21 6 27 13.5 41 21 27 27 21 27 13.5 27 6.04 20.96 0 13.5 0z" ` +
-    `fill="none" stroke="#111" stroke-width="1.6"/>` +
-    `</svg>`;
-  return el;
-}
+const FINISH_PIN_COLOR = "#dc2626";
+/** The start, for the same reason and in the same place. */
+const START_PIN_COLOR = "#16a34a";
 
 function numberedStopElement(title: string, n: number): HTMLElement {
   const el = document.createElement("button");
@@ -2240,25 +2175,24 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
         if (showTet) void loadTet(map);
       }
 
-      // The two ends. The PINS are MapLibre's own, with their own colours,
-      // anchor and transform — untouched, exactly as they shipped and as
-      // production draws them. Rebuilding them by hand to fit a label inside
-      // produced a clipped teardrop with a halo, which the rider saw and
-      // reported; see `endpointLabelElement`.
+      // The two ends. Both PINS are MapLibre's own, green and red, with their
+      // own geometry, anchor and transform — untouched, exactly as they
+      // shipped and as production draws them. Rebuilding one by hand to fit a
+      // label inside produced a clipped teardrop with a halo, which the rider
+      // saw and reported; see `endpointLabelElement`.
       //
-      // The word, and the finish's flag, are separate markers at the same
-      // coordinate whose elements are zero-sized boxes. They are rebuilt on
-      // every run rather than reused because the label is translated —
-      // reusing would leave "Starts" on the map after the rider switched the
-      // interface to English, the way the badges did before `locale` joined
-      // this effect's deps.
+      // The word under each is a separate marker at the same coordinate whose
+      // element is a zero-sized box. They are rebuilt on every run rather than
+      // reused because the label is translated — reusing would leave "Starts"
+      // on the map after the rider switched the interface to English, the way
+      // the badges did before `locale` joined this effect's deps.
       for (const marker of endpointDecorationsRef.current) marker.remove();
       endpointDecorationsRef.current = [];
 
       markerRef.current?.remove();
       markerRef.current = null;
       if (start) {
-        markerRef.current = new maplibregl.Marker({ color: "#16a34a" })
+        markerRef.current = new maplibregl.Marker({ color: START_PIN_COLOR })
           .setLngLat([start.lon, start.lat])
           .addTo(map);
         endpointDecorationsRef.current.push(
@@ -2275,15 +2209,13 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
       destMarkerRef.current?.remove();
       destMarkerRef.current = null;
       if (destination) {
-        // The chequered teardrop, on MapLibre's own pin geometry: same 27 x 41
-        // box, same tip-on-the-coordinate anchor as the green start pin, only
-        // the fill differs. `anchor: "bottom"` because a custom element has no
-        // pin anchor of its own — MapLibre's default for one is `center`,
-        // which would bury the tip half a pin below the place it marks.
-        destMarkerRef.current = new maplibregl.Marker({
-          element: finishPinElement(destination.label ?? m.mapFinish),
-          anchor: "bottom",
-        }).setLngLat([destination.lon, destination.lat]).addTo(map);
+        // MapLibre's own pin in red, exactly as the start is in green: same
+        // geometry, same anchor, same tip on the coordinate. No element of our
+        // own, so there is no box to clip the teardrop and no `anchor` to get
+        // wrong — see `FINISH_PIN_COLOR` for why the chequers went.
+        destMarkerRef.current = new maplibregl.Marker({ color: FINISH_PIN_COLOR })
+          .setLngLat([destination.lon, destination.lat])
+          .addTo(map);
         endpointDecorationsRef.current.push(
           new maplibregl.Marker({
             element: endpointLabelElement({ title: destination.label ?? m.mapFinish, label: m.mapFinish }),
