@@ -1067,3 +1067,23 @@ measure with `scripts/measure-prompts.mjs` against `API=https://www.mopik.eu`
 using foreign-name prompts before concluding anything. The user-visible
 cost when it happens is real: a rider who typed three stops gets a refusal
 that names none of them.
+
+## 26. A shared ride's `startLabel` is its first stop, not its start
+
+Found 2026-09-20 while adding GPX waypoints. `encodeRouteShare` is called
+with `route.stops?.[0]?.name ?? plan.startPlace` as the start label, so on
+a ride with stops the share code — and the shared page's own header
+("Sākums: Līgatne") — names a *stop* as the start. The GPX waypoint takes
+its name from the plan's first place and is right; the metadata is not.
+Fix the call sites in components/result-panel.tsx and lib/share/saved-rides.ts
+to pass the plan's start, keeping old codes decodable.
+
+## 27. Diagnose unreachable pins before the search, not after 55 s
+
+Measured 2026-09-20 in production: the ride with "Pilskalni 2" as finish
+(a farmstead behind `access=private`) now returns 200 with the stop named
+and two chips — but only after the full candidate search has run and
+failed, **55 s** against the 60 s cap. Map-picked points are already checked
+at Confirm (`/api/routable-point`, ~230 ms); typed places are not. Probe
+each rider place for reachability before the search when the ride has vias
+or a finish, and refuse in a few seconds with the same chips.
