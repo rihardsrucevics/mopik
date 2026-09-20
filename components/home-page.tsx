@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useRef, useState, useEffect } from "react";
-import { RouteMap } from "@/components/route-map";
+import { RouteMap, type MapControls } from "@/components/route-map";
 import { RoutePrompt } from "@/components/route-prompt";
 import { ResultPanel } from "@/components/result-panel";
 import type { DetourFocusNote, SelectedPoi } from "@/components/suggestions-card";
@@ -279,26 +279,17 @@ export function HomePage() {
   /** A fix the map's geolocate button obtained, handed back to the form. */
   const [geolocated, setGeolocated] = useState<{ lat: number; lon: number } | null>(null);
   /**
-   * The point a tap on the idle planning map landed on, with its own token.
+   * The planning map's own header bar, as the form reports it.
    *
-   * Separate state from `pickPoint` because it is a different question: that
-   * one answers "where does this row go", this one is "make me a row here".
-   * Folding them together would mean the composer could not tell a correction
-   * to the row it is picking from a request for a new one.
+   * The form builds it — it knows which row is active, what that row is called
+   * in the rider's language, how many rows the ride has — and the page relays
+   * it to the map. One value carries the hint, the "+ Pietura" button and the
+   * search field, so what the header says and what a tap does are switched on
+   * together and cannot disagree. That disagreement is the whole bug this
+   * replaced: a tap meant "fill row X" or "make a new stop" depending on state
+   * nothing on screen reported.
    */
-  const [addStopPoint, setAddStopPoint] = useState<{ lat: number; lon: number; token: number } | null>(null);
-  const takeAddStopPoint = useCallback((p: { lat: number; lon: number }) => {
-    setAddStopPoint((prev) => ({ ...p, token: (prev?.token ?? 0) + 1 }));
-  }, []);
-  /**
-   * What the map should be offering while it is idle, as the form reports it.
-   *
-   * The form builds the sentence (it knows how many rows the ride has and what
-   * language it is speaking) and the page relays it to the map along with the
-   * door the hint is describing — so the words and the behaviour are switched
-   * on by one value and cannot disagree.
-   */
-  const [addStopOffer, setAddStopOffer] = useState<{ text: string; muted: boolean } | null>(null);
+  const [mapControls, setMapControls] = useState<MapControls | null>(null);
   /**
    * Pick mode opening or closing, as the composer reports it.
    *
@@ -1170,7 +1161,7 @@ export function HomePage() {
     } else {
       // A tap on the line: a window around the tap, bounded by the stops
       // either side of it so a neighbour's own leg is never swallowed.
-      if (vias.length >= 6) { setEditNote(ui.tapMapStopsFull); return; }
+      if (vias.length >= 6) { setEditNote(ui.mapAddStopFull); return; }
       const alongMeters = nearestAlong([params.at.lon, params.at.lat], line, cum).alongMeters;
       const leg = legForPoint({ anchors: along, alongMeters });
       const window = tapCut({ line, cum, anchors: along, alongMeters });
@@ -1605,17 +1596,12 @@ export function HomePage() {
         pickedPoint={picking ? pickPoint : null}
         onPickedPointMove={takePoint}
         pickCenter={picking ? pickCenter : null}
-        // Adding a stop straight from the map, which is what the rider asked
-        // for: no form first, no row's pin, just a tap. Offered only while the
-        // form is the view and it says the offer stands — `addStopOffer` is
-        // null in pick mode and gone entirely once a result is on screen, so
-        // the result map keeps a tap on empty map meaning what it always did.
-        //
-        // The door is shut at the cap while the hint stays: a rider who taps
-        // anyway gets the greyed sentence rather than silence, and nothing has
-        // to guess at the rule in two places.
-        onAddStopPoint={addStopOffer && !addStopOffer.muted && planning ? takeAddStopPoint : undefined}
-        addStopHint={planning ? addStopOffer : null}
+        // The planning header: the hint naming the active row, "+ Pietura",
+        // and the place field bound to that row. Only while the form is the
+        // view — a result map has no active row and nothing to add a stop to,
+        // and a header over a finished ride would be describing a form the
+        // rider has left.
+        controls={planning ? mapControls : null}
         onGeolocated={setGeolocated} />
     </MapPanel>
   );
@@ -1642,7 +1628,7 @@ export function HomePage() {
           {entryMode === "form"
             ? <RideComposer key={plan ? planSummary(plan, locale) : "new"} initialPlan={plan} initialPlaces={places} profile={profile} onProfileChange={changeProfile} busy={phase !== "idle"} onGenerate={startFromForm} onUseChat={() => setEntryMode("chat")} onPlacesChange={setPreview} map={mapInComposer && mapVisible ? mapPanel : undefined}
                 onPickModeChange={changePickMode} pickPoint={pickPoint} geolocated={geolocated}
-                onAddStopOfferChange={setAddStopOffer} addStopPoint={addStopPoint} />
+                onMapControlsChange={setMapControls} mapShown={mapVisible && planning} />
             : result && result.routes.length > 0 && !chatting
               ? <ResultPanel routes={result.routes} selected={selected} onSelect={setSelected} plan={plan} avoidTowns={result.intent.avoidTowns ?? false} lucky={lucky} remoteLoop={result.remoteLoop} longerSuggestion={result.longerSuggestion} tolerancePercent={result.intent.distanceTolerancePercent} busy={phase !== "idle"} onSend={send} onBackToForm={() => setEntryMode("form")} map={mapInResult && mapVisible ? mapPanel : undefined} resolvedPlaces={routedPlaces} alternatives={result.alternatives} sparsePlaceData={result.sparsePlaceData} assembledFromSegments={result.assembledFromSegments} directLeg={showingDirect} offset={variantOffset} onOffsetChange={setVariantOffset} onShowPoi={showPoi} pois={routePois} poisLoading={poisLoading} poisFailed={poisFailed} onDetoursChange={setDetoursForMap} selectedPois={selectedPois} onToggleSelectPoi={toggleSelectPoi} onClearSelectedPois={clearSelectedPois} onCommitSelection={commitSelection} onSearchBetterLoop={searchBetterLoop} onSplicedChange={handleSplicedChange} edited={edited} canUndo={canUndo} onUndoEdit={undoEdit} editing={editing} editNote={editNote} />
               : <RoutePrompt messages={messages} plan={plan} hasRoute={Boolean(route)} phase={phase} quickReplies={quickReplies} lucky={lucky && !route} onSend={send} onBackToForm={() => setEntryMode("form")} originCode={origin?.code ?? null} onAction={(reply) => { if (reply.action === "retry") { retryLast(); return; } if (reply.action === "direct-leg") { showDirectLeg(); return; } if (reply.action === "remove-stop" || reply.action === "move-stop") { if (reply.stop) reviseUnreachableStop(reply.stop, reply.action === "move-stop" ? "move" : "remove"); return; } setChatting(false); setQuickReplies([]); }} onCancel={cancel} />}

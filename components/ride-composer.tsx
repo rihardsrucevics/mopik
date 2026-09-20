@@ -1,10 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { Check, ChevronDown, ChevronUp, Map as MapIcon, MapPinPlus, Sparkles, TriangleAlert } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, Map as MapIcon, Sparkles, TriangleAlert } from "lucide-react";
 import { RidePlan } from "@/lib/chat/ride-plan";
 import { composeRidePlan, placesFromPlan } from "@/lib/chat/compose-plan";
-import { RoutePlaces, addStop, addedStopIndex, rowLabel, MAX_ROWS } from "@/components/route-places";
+import { RoutePlaces, addStop, addedStopIndex, defaultActiveRow, rowLabel, MAX_ROWS } from "@/components/route-places";
 import { useLocale } from "@/lib/i18n/use-locale";
 import { t, messages, type MessageKey } from "@/lib/i18n/messages";
 import { track } from "@/lib/analytics";
@@ -99,7 +99,7 @@ function ProfileLine({ profile, onChange }: { profile: RideProfile; onChange: (p
   );
 }
 
-export function RideComposer({ initialPlan, initialPlaces, profile, onProfileChange, busy, onGenerate, onUseChat, onPlacesChange, map, onPickModeChange, pickPoint, geolocated, onAddStopOfferChange, addStopPoint }: {
+export function RideComposer({ initialPlan, initialPlaces, profile, onProfileChange, busy, onGenerate, onUseChat, onPlacesChange, map, mapShown: mapOnPage = false, onPickModeChange, pickPoint, geolocated, onMapControlsChange }: {
   initialPlan: RidePlan | null;
   /**
    * Coordinates the plan arrived with, matched to its rows by name. A ride
@@ -140,13 +140,26 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
    */
   map?: ReactNode;
   /**
+   * Is the planning map on screen at all?
+   *
+   * The form cannot work this out: on a phone the map is the `map` node behind
+   * this component's own toggle, and on the desktop it is in a column the page
+   * owns and this component never sees. Both are cases where exactly one row
+   * must be active, and asking the form to infer it from `map` being undefined
+   * is how the rule would end up right on one of them and wrong on the other.
+   */
+  mapShown?: boolean;
+  /**
+   * A row is active and the map is answering it, or the form has left the map
+   * alone entirely.
+   *
    * Pick mode belongs to the page, not to this form, because the page owns the
-   * one MapLibre instance and everything it is told to draw. This says a row
-   * is waiting for a point (or that none is), and the page answers by handing
-   * the map an `onPickPoint` and a draggable marker.
+   * one MapLibre instance and everything it is told to draw. This says which
+   * row the next tap belongs to (or that none does), and the page answers by
+   * handing the map an `onPickPoint` and a draggable marker.
    */
   onPickModeChange?: (picking: boolean, open?: {
-    /** Where to centre the map when pick mode opens; null keeps the bounds. */
+    /** Where to centre the map when the row becomes active; null keeps the bounds. */
     at: { lat: number; lon: number } | null;
     /** Where to put the draggable marker at once, when the row already has a place. */
     marker: { lat: number; lon: number } | null;
@@ -166,24 +179,39 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
    */
   geolocated?: { lat: number; lon: number } | null;
   /**
-   * The offer the map should be making while nobody is picking: a tap on empty
-   * map adds a stop, or — at the cap — says why it will not.
+   * Everything the map's own header bar shows while the rider is planning:
+   * the one hint line, the button that makes a new stop, and the place field
+   * that fills the active row by name instead of by tap.
    *
    * Built here rather than in the page because everything it depends on is the
-   * form's: how many rows the ride has, and the locale the form is speaking.
-   * The page owns the map and only has to relay it. `null` withdraws the offer
-   * entirely, which is what pick mode does — the hint would then be a second
-   * instruction over a map that is already following the first one.
-   */
-  onAddStopOfferChange?: (offer: { text: string; muted: boolean } | null) => void;
-  /**
-   * A point tapped on the map with no row waiting: a new stop, made here.
+   * form's — which row is active, what that row is called in the rider's
+   * language, and how many rows the ride already has. The page owns the map
+   * and only has to relay it, so the words and the behaviour are switched on
+   * by one value and cannot disagree.
    *
-   * Separate from `pickPoint` because the row does not exist yet — this is the
-   * gesture that creates it. The token carries the same meaning it does there:
-   * tapping the same spot twice is two answers, not one.
+   * `null` while the form is not planning on this map at all, which is what
+   * unmounting reports: a map with no active row would otherwise keep a header
+   * describing a form that has gone.
    */
-  addStopPoint?: { lat: number; lon: number; token: number } | null;
+  onMapControlsChange?: (controls: {
+    /** "Atzīmē kartē → „Līdz”" — what the next tap does, always present. */
+    hint: string;
+    /** Make a new stop row and hand it to the map. Null at the cap. */
+    onAddStop: (() => void) | null;
+    /** Why the button is dead, shown as its tooltip at the cap. */
+    addStopLabel: string;
+    addStopFullLabel: string;
+    /** The active row's own text and its place, for the header's search field. */
+    search: {
+      value: string;
+      confirmed: ResolvedPlace | null;
+      onChange: (value: string) => void;
+      onPick: (place: ResolvedPlace | null) => void;
+      /** Bias the search around a place the ride already has. */
+      near: { lat: number; lon: number } | null;
+      placeholder: string;
+    };
+  } | null) => void;
 }) {
   const [locale] = useLocale();
   const [places, setPlaces] = useState<string[]>(placesFromPlan(initialPlan));
@@ -204,24 +232,77 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   const [error, setError] = useState<string | null>(null);
   // Phone only: the map is opened on request, and stays open once it is.
   const [mapOpen, setMapOpen] = useState(false);
-  const [locating, setLocating] = useState(false);
   /**
-   * The row waiting for a point on the map, or none.
+   * Is a planning map actually in front of the rider?
    *
-   * A row index rather than a flag, because every row can be picked this way —
-   * the start, the finish and any stop. The rider asked for exactly that: a
+   * Two ways it can be, and the rule ("exactly one active row while the map is
+   * open") has to hold for both. On a phone the map node is handed to this
+   * component and sits behind `mapOpen`; on the desktop there is no node here
+   * at all and the page keeps the map in its own column, which `mapOnPage`
+   * reports. `map` being undefined is therefore not "no map" — it is "the map
+   * is somewhere this component cannot see".
+   */
+  /**
+   * The one row the map is answering.
+   *
+   * ## Why there is exactly one of these
+   *
+   * The map used to carry two modes that looked identical. A row's pin button
+   * put it in "pick a place for row X"; with no row waiting, a tap on the same
+   * map created a new stop instead. Both drew a marker, both offered Confirm,
+   * and which one the rider was in was invisible — so a tap meant two
+   * different things depending on state nothing on screen reported. He saw
+   * pins land in the wrong roles and called it a mess.
+   *
+   * So: while the planning map is open exactly one row is active, the map's
+   * single hint line names it, and **a tap always means "this point → the
+   * active row"**. A new stop is now an explicit button in the map's header
+   * rather than a meaning a tap silently takes on. Confirming keeps the same
+   * row active, so a second tap *moves* the place it just confirmed instead of
+   * creating another one.
+   *
+   * A row index rather than a flag, because every row can be answered this way
+   * — the start, the finish and any stop. The rider asked for exactly that: a
    * forest crossroads has no name to type, and "Līdz" is as often such a place
    * as "No" is.
-   */
-  const [pickingRow, setPickingRow] = useState<number | null>(null);
-  /**
-   * Whether the row being picked was created by the tap that started the pick.
    *
-   * A stop added from the map does not exist until the tap makes it, so Cancel
-   * has to undo the tap as well as the pick — otherwise the rider who changes
-   * his mind is left with a blank "Caur (1)" he never asked for and now has to
-   * find the ✕ for. The pin button's rows are never removed on cancel: those
-   * were already part of the ride.
+   * **Never null.** It is seeded with `defaultActiveRow` — the first empty
+   * row, start first — and only ever moves because of something the rider did:
+   * a pin button, "+ Pietura", a pick, or opening the map again. Deriving it
+   * live from "the first empty row" was tried and moved under him: typing the
+   * first letter of a name made that row non-empty, the rule handed the map to
+   * the next one, and the field he was typing into emptied itself one
+   * keystroke in. `activeRow` above only clamps it to a row that still exists,
+   * for the case where the rider removes the row the map was answering.
+   */
+  const [chosenRow, setChosenRow] = useState(() => defaultActiveRow(placesFromPlan(initialPlan)));
+  const mapShown = map ? mapOpen : mapOnPage;
+  /**
+   * The one row the map is answering, or none because the map is closed.
+   *
+   * **While the planning map is open, exactly one row is active.** That is the
+   * whole invariant, and it holds here by construction: `chosenRow` is never
+   * null, so the only thing that can make this null is the map not being on
+   * screen at all.
+   *
+   * The clamp is for the one case the rider can cause and nothing else
+   * handles: removing the row the map was answering. The index would then
+   * point past the end, and the hint would name a row that is gone while the
+   * next tap landed in whatever inherited the index.
+   */
+  const activeRow = !mapShown ? null : Math.min(chosenRow, Math.max(places.length - 1, 0));
+  const [locating, setLocating] = useState(false);
+  /**
+   * Whether the active row was created by "+ Pietura" and has never been
+   * confirmed.
+   *
+   * A stop made from the map does not exist until the button makes it, so
+   * Cancel has to undo the insertion as well as the pick — otherwise the rider
+   * who changes his mind is left with a blank "Caur (1)" he never asked for
+   * and now has to find the ✕ for. A row the pin button handed over is never
+   * removed on cancel: it was already part of the ride. Confirming clears this
+   * for the same reason — once the row holds a place, Cancel on the *next*
+   * tap must leave that place standing.
    */
   const [rowIsNew, setRowIsNew] = useState(false);
 
@@ -337,8 +418,8 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
    */
   const placesRef = useRef(places);
   useEffect(() => { placesRef.current = places; }, [places]);
-  const pickingRowRef = useRef(pickingRow);
-  useEffect(() => { pickingRowRef.current = pickingRow; }, [pickingRow]);
+  const activeRowRef = useRef(activeRow);
+  useEffect(() => { activeRowRef.current = activeRow; }, [activeRow]);
 
   /**
    * The place under the marker, named but not yet the row's answer.
@@ -364,7 +445,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
    */
   const token = pickPoint?.token ?? null;
   useEffect(() => {
-    const row = pickingRowRef.current;
+    const row = activeRowRef.current;
     // Token 0 is the seed the page puts under a row that already has a place:
     // its name is known and shown, and re-deriving one would only risk showing
     // the rider a different word for the spot he has not yet moved.
@@ -385,101 +466,85 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
+  // Report picked places upward in riding order, so the map can draw a pin per
+  // confirmed place and the rider sees that "Brīvības iela 105" is the one
+  // they meant before spending a generation on it. In an effect, not inside
+  // the state updater: calling a parent's setState while rendering is exactly
+  // what React warns about.
+  const confirmed = places.map((_, i) => picked[i]).filter((p): p is ResolvedPlace => Boolean(p));
+  // The first pinned place biases every other row's search: choosing Sigulda
+  // as the start should offer Latvian places below it, not a same-named
+  // village on another continent. Until something is pinned the server falls
+  // back to the rider's own region.
+  //
+  // Deliberately the first *confirmed* place rather than the start's row: a
+  // rider who has pinned only a stop should still have his other rows biased
+  // to that region. Biasing a search and drawing a pin are different
+  // questions, and conflating them is what the bug above was.
+  const anchor = confirmed[0] ?? null;
+
   /**
-   * A tap on the open map with no row waiting: a stop, made on the spot.
+   * A pin the profile cannot reach, caught while the map is still open.
    *
-   * This is the gesture the rider asked for. Adding a stop used to be "press
-   * Pievienot pieturvietu, then find the new row's pin, then tap the map" —
-   * three targets for one intention, two of them in a form he had scrolled
-   * away from to look at the map. Now the map itself is the first step.
-   *
-   * The row is inserted by `addStop`, the same function the form's own button
-   * calls, so a stop lands in the same place whichever way it was asked for —
-   * before the finish one way, at the head of the stops on a round trip.
-   *
-   * It then enters pick mode exactly as the pin would have: the new row is the
-   * picked row, the marker is at the tap, and Apstiprināt / Atcelt are the two
-   * ways out. Nothing is committed by the tap alone — a tap is easy to make by
-   * accident on a surface that also pans, and Cancel takes the row away again.
-   *
-   * The name is derived here rather than left to the effect above, which reads
-   * `pickingRowRef`: that ref is only updated by an effect of its own, so at
-   * this moment it still says "no row" and the lookup's answer would be thrown
-   * away. The row index is known here anyway.
+   * Null except in the moment between a Confirm that found bad ground and the
+   * rider's answer to it. It holds the place he tried to confirm and the road
+   * the router did find, because "move it" has to commit a *different* point
+   * from the one he tapped and the two must not be confused with each other.
    */
-  const addToken = addStopPoint?.token ?? null;
-  useEffect(() => {
-    // Only when nothing else is going on. A tap arriving while a row is
-    // already being picked belongs to that row, and the map never sends one:
-    // the page wires this door shut in pick mode. Guarded anyway, because a
-    // token in flight across the frame that opens pick mode would otherwise
-    // add a stop the rider did not ask for.
-    if (!addStopPoint || pickingRow !== null) return;
-    const { lat, lon } = addStopPoint;
-    const oneWay = tripType === "one_way";
-    const current = placesRef.current;
-    // The cap the form's own button obeys. The map's hint has already said so
-    // — this is the second lock, for the tap that was in flight when the last
-    // row was added.
-    if (current.length >= MAX_ROWS) return;
-    const next = addStop(current, oneWay);
-    const row = addedStopIndex(current, oneWay);
-    reorder(next);
-    setPickingRow(row);
-    setRowIsNew(true);
-    setMapOpen(true);
-    setError(null);
-    // No `at`: the rider tapped what he can already see, and flying the map to
-    // re-centre on his own finger would move the ground out from under the
-    // marker he is about to drag. The marker goes exactly where he tapped.
-    onPickModeChange?.(true, { at: null, marker: { lat, lon } });
-    track("stop_added_from_map", { count: next.length });
+  const [offRoad, setOffRoad] = useState<
+    { place: ResolvedPlace; row: number; snappedTo: { lat: number; lon: number } | null; distanceM: number } | null
+  >(null);
+  /** The probe is in flight: Confirm says so rather than appearing to do nothing. */
+  const [checking, setChecking] = useState(false);
 
-    let cancelled = false;
-    void (async () => {
-      const found = await nameForPoint(lat, lon);
-      if (cancelled) return;
-      // Every other row's text is what the new name must not collide with —
-      // the new row's own is blank, so it cannot be its own collision.
-      const taken = next.filter((_, i) => i !== row);
-      setPreview(pickedPlace(found, lat, lon, taken, t(locale, "pickedOnMap")));
-    })();
-    return () => { cancelled = true; };
-    // Keyed on the token, like every other gesture from the map: two taps on
-    // the same spot are two stops, and comparing coordinates would swallow
-    // the second one.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [addToken]);
-
-  /** Leave pick mode and give the map back, keeping whatever the rows now hold. */
+  /**
+   * Drop the pick under the active row. Whatever the rows hold stands.
+   *
+   * It does *not* end pick mode, and it does not let go of the row. The map is
+   * still open, so a row is still active — that is the invariant — and the
+   * rider is most likely to try again on the very row he just cancelled.
+   */
   const endPicking = () => {
-    setPickingRow(null);
     setPreview(null);
     setRowIsNew(false);
-    onPickModeChange?.(false);
-  };
-
-  const cancelPicking = () => {
-    const row = pickingRow;
-    endPicking();
-    // Take the ghost row away with the pick that created it. Through
-    // `reorder`, not `setPlaces`, so the other rows' coordinates are re-keyed
-    // to their new indices — the row being dropped is blank and carries none.
-    if (rowIsNew && row !== null) reorder(places.filter((_, i) => i !== row));
   };
 
   /**
-   * Hand a row to the map.
+   * "Atcelt": undo the pick, and the row itself if "+ Pietura" made it.
+   *
+   * A row made by "+ Pietura" and never confirmed is a ghost — the rider asked
+   * for a stop, changed his mind, and must not be left with a blank "Caur (1)"
+   * to find the ✕ for. Every other row was already part of the ride and stays,
+   * and stays active: cancelling a pick is "not that spot", not "not that row".
+   */
+  const cancelPicking = () => {
+    const row = activeRow;
+    endPicking();
+    setOffRoad(null);
+    if (rowIsNew && row !== null) {
+      // Through `reorder`, not `setPlaces`, so the other rows' coordinates are
+      // re-keyed to their new indices — the row being dropped is blank and
+      // carries none.
+      reorder(places.filter((_, i) => i !== row));
+      // The row the map was answering has gone, so the map goes back to the
+      // question it would have asked had that row never existed.
+      setChosenRow(defaultActiveRow(places.filter((_, i) => i !== row)));
+    }
+    // The violet marker goes with the pick it belonged to.
+    onPickModeChange?.(true, { at: null, marker: null });
+  };
+
+  /**
+   * Make this row the one the map is answering.
    *
    * On a phone the map is behind the "Rādīt kartē" toggle, which the rider may
-   * not have opened yet — so entering pick mode opens the map itself, under
-   * the row that asked.
+   * not have opened yet — so activating a row opens the map itself, under the
+   * row that asked.
+   *
+   * `isNew` says the row was just inserted by "+ Pietura" and so belongs to
+   * Cancel; a row handed over by its own pin button never is.
    */
-  const startPicking = (index: number) => {
-    // A second press on the same row's pin puts it away again, so the pin is
-    // its own way out as well as the way in.
-    if (pickingRow === index) { cancelPicking(); return; }
-
+  const activateRow = (index: number, isNew = false) => {
     /**
      * Where to open the map, best first.
      *
@@ -500,31 +565,88 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     // it would be Mopik answering a question it was not asked, and one tap on
     // Apstiprināt away from planting the finish on top of the start.
     setPreview(own);
-    setPickingRow(index);
-    // The pin hands over a row the ride already has, so Cancel must leave it
-    // standing. Only the map's own tap creates a row, and only that tap sets
-    // this.
-    setRowIsNew(false);
+    setChosenRow(index);
+    setRowIsNew(isNew);
     setMapOpen(true);
     setError(null);
+    setOffRoad(null);
     onPickModeChange?.(true, { at, marker: own ? { lat: own.lat, lon: own.lon } : null });
   };
 
   /**
-   * A pin the profile cannot reach, caught while the map is still open.
+   * A row's pin button.
    *
-   * Null except in the moment between a Confirm that found bad ground and the
-   * rider's answer to it. It holds the place he tried to confirm and the road
-   * the router did find, because "move it" has to commit a *different* point
-   * from the one he tapped and the two must not be confused with each other.
+   * It activates the row, and that is all it does now. It used to toggle —
+   * pressing the active row's pin put the map away again — which was the
+   * escape hatch back to the old idle mode, where a tap meant something else.
+   * With one row always active there is no such mode to return to, and a
+   * second press on the pin of the row you are already answering is most
+   * likely a rider making sure, not asking for the map to stop listening.
    */
-  const [offRoad, setOffRoad] = useState<
-    { place: ResolvedPlace; row: number; snappedTo: { lat: number; lon: number } | null; distanceM: number } | null
-  >(null);
-  /** The probe is in flight: Confirm says so rather than appearing to do nothing. */
-  const [checking, setChecking] = useState(false);
+  const startPicking = (index: number) => {
+    // A row the rider hands over by its pin is a row the ride already has, so
+    // Cancel must leave it standing — even if "+ Pietura" made it a moment ago
+    // and he has since gone back to it deliberately.
+    activateRow(index, false);
+  };
 
-  /** Put the previewed place in its row and leave pick mode. The commit itself. */
+  /**
+   * "+ Pietura" on the map: insert a stop row and make it the active one.
+   *
+   * The explicit control that replaced "a tap on the idle map creates a stop".
+   * The gesture is gone; the capability is not, and it is now something the
+   * rider can see and aim at instead of a meaning a tap quietly took on.
+   *
+   * The row is inserted by `addStop`, the same function the form's own button
+   * calls, so a stop lands in the same place whichever way it was asked for —
+   * before the finish one way, at the head of the stops on a round trip.
+   *
+   * Nothing is committed by the press: the new row is blank and active, the
+   * next tap previews a place in it, and Cancel takes the row away again.
+   */
+  const addStopFromMap = () => {
+    // The rows as this render sees them, never `placesRef`. The ref is synced
+    // by an effect and is therefore one commit behind whatever the last press
+    // did — and the press before this one is very often the Confirm that
+    // filled a row. Measured: pressing "+ Pietura" twice in a row read the
+    // pre-Confirm list the second time and inserted the stop one row too high,
+    // which silently emptied the stop the rider had just confirmed. The
+    // handler is rebuilt every render, so `places` here is always current.
+    const current = places;
+    // The cap the form's own button obeys. The map's button is disabled at the
+    // cap, so this is the second lock rather than the first.
+    if (current.length >= MAX_ROWS) return;
+    const oneWay = tripType === "one_way";
+    const next = addStop(current, oneWay);
+    const row = addedStopIndex(current, oneWay);
+    reorder(next);
+    track("stop_added_from_map", { count: next.length });
+    // No `at` beyond what `activateRow` works out: a blank row has no place of
+    // its own, so the map stays where the rider left it and his next tap lands
+    // on the ground he is already looking at.
+    setPreview(null);
+    setChosenRow(row);
+    setRowIsNew(true);
+    setMapOpen(true);
+    setError(null);
+    setOffRoad(null);
+    onPickModeChange?.(true, { at: null, marker: null });
+  };
+
+  /**
+   * Put the previewed place in its row. The commit itself.
+   *
+   * **The row stays active.** This is the rule that makes one mode possible:
+   * after Confirm the hint still names the same row, so the next tap *moves*
+   * the place just confirmed — new preview, new Confirm — instead of meaning
+   * something else. Leaving the map here is what created the invisible second
+   * mode in the first place, where a tap on a map that looked exactly the same
+   * created a row nobody had asked for.
+   *
+   * The preview is cleared because it has become the row's real answer, and
+   * `rowIsNew` with it: a confirmed stop is part of the ride, so Cancel on a
+   * later tap must leave it standing rather than deleting it.
+   */
   const commitPick = (row: number, place: ResolvedPlace) => {
     setPlaces((prev) => prev.map((p, i) => (i === row ? place.name : p)));
     setPick(row, place);
@@ -534,10 +656,20 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     rememberPlace(place);
     track("place_picked_on_map", { row, start: row === 0 });
     setOffRoad(null);
-    // `endPicking`, never `cancelPicking`: a stop added from the map is a new
-    // row, and Cancel's job is to take such a row away again — running that
-    // here would delete the very stop this press just committed.
-    endPicking();
+    setPreview(null);
+    setRowIsNew(false);
+    // **Pinned, not left to the default.** This row was empty a moment ago, so
+    // the default rule ("the first empty row") would hand the map to the next
+    // one the instant the name landed — and the rider's second tap, aimed at
+    // correcting the pin he is looking at, would drop a place into a row he
+    // had not asked about. Confirming is what makes a row *chosen*.
+    setChosenRow(row);
+    // The violet "being decided" marker goes, and the row's own role pin —
+    // green start, red finish, numbered stop — appears under it. The row stays
+    // active, so this re-opens the same pick mode with nothing to drag rather
+    // than closing it: `at: null` keeps the map exactly where the rider is
+    // looking, which is at the pin that just landed.
+    onPickModeChange?.(true, { at: null, marker: null });
   };
 
   /**
@@ -558,7 +690,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
    * place. The generation remains the backstop, and it now names the stop.
    */
   const confirmPick = () => {
-    const row = pickingRow;
+    const row = activeRow;
     if (row === null || !preview || checking) return;
     const place = preview;
     // An answer already on screen is the rider's to act on; pressing Confirm
@@ -662,69 +794,148 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   };
 
   /**
-   * Tell the page what the map should be offering.
+   * Tell the page whether a row is active at all.
    *
-   * The offer stands whenever the planning map is open and idle: no row is
-   * waiting, so a tap means nothing yet and can be given a meaning. In pick
-   * mode it is withdrawn — the pick slot's own hint is already telling the
-   * rider what the map is for, and two instructions over one map is one too
-   * many. At the cap the offer becomes an explanation instead of an
-   * invitation, because a tap that silently does nothing is worse than a
-   * greyed sentence saying why.
+   * The handlers — a pin press, "+ Pietura", a pick in the map's field — say
+   * *where* to open and what to put under the marker, which only they know.
+   * This says the simpler thing they cannot: that the map has become (or
+   * stopped being) a surface whose taps answer a row, which happens on its own
+   * whenever the map opens or closes and the default rule takes over.
    *
-   * Deliberately not conditioned on the map being on screen. The hint is drawn
-   * *by* the map, so a map that is not mounted shows nothing either way, and
-   * the two places a map can be mounted — the phone's toggle and the desktop's
-   * own column — are the page's business, not the form's. Asking the form to
-   * track both is how the offer would end up right in one of them and wrong in
-   * the other.
+   * Keyed on "is there a row" rather than on which one, because the page's
+   * answer to both is the same: wire `onPickPoint`, or do not. Re-running it
+   * on every change of row would re-seed the marker the handlers just placed.
    */
-  const offerText = places.length >= MAX_ROWS ? t(locale, "tapMapStopsFull") : t(locale, "tapMapToAddStop");
-  const offerMuted = places.length >= MAX_ROWS;
-  const offering = pickingRow === null;
+  const picking = activeRow !== null;
   useEffect(() => {
-    onAddStopOfferChange?.(offering ? { text: offerText, muted: offerMuted } : null);
-    // The parent's callback is an inline arrow and is rebuilt every render;
-    // listing it would re-report the same offer on every keystroke in the form.
+    if (!picking) { onPickModeChange?.(false); return; }
+    // No `at`, no `marker`: the map stays where the rider left it and the
+    // violet pin is only ever placed by something he did.
+    onPickModeChange?.(true, { at: null, marker: null });
+    // The parent's callback is an inline arrow, rebuilt every render; listing
+    // it would re-open pick mode on every keystroke in the form and throw away
+    // the marker under the rider's finger.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [offering, offerText, offerMuted]);
+  }, [picking]);
+
+  /**
+   * Hand the map's own header bar everything it shows.
+   *
+   * The form builds it because the form is what knows it: which row is active,
+   * what that row is called in the rider's language, how many rows the ride
+   * has and which places it may bias a search around. The page owns the map
+   * and relays this — so the hint, the button and the field are switched on by
+   * one value and cannot disagree with what a tap actually does.
+   *
+   * Deliberately not conditioned on the map being on screen in any particular
+   * place. The header is drawn *by* the map, so a map that is not mounted
+   * shows nothing either way, and the two places a map can be mounted — the
+   * phone's toggle and the desktop's own column — are the page's business.
+   */
+  const activeLabel = activeRow === null ? "" : rowLabel(locale, activeRow, tripType === "one_way", places.length);
+  const atCap = places.length >= MAX_ROWS;
+  /**
+   * Every row's text, as one string, so the header is rebuilt whenever any of
+   * them changes.
+   *
+   * `places.length` and the active row's own value are not enough, and the gap
+   * between them cost a stop. Confirming a preview leaves the active row's
+   * *displayed* value identical — the preview's name becomes the row's name —
+   * so nothing in a narrower dependency list changes, the effect does not
+   * re-run, and the map keeps the "+ Pietura" handler built for the rows as
+   * they were before the Confirm. Pressing it then inserted against a stale
+   * list and wiped the stop the rider had just confirmed. Measured: three
+   * presses left rows 0 and 1 empty and two named places gone.
+   */
+  const rowsKey = places.join(String.fromCharCode(0));
+  const activeValue = activeRow === null ? "" : (preview ? preview.name : places[activeRow] ?? "");
+  const activeConfirmed = activeRow === null ? null : (preview ?? picked[activeRow] ?? null);
+  useEffect(() => {
+    if (activeRow === null) { onMapControlsChange?.(null); return; }
+    onMapControlsChange?.({
+      hint: fi(t(locale, "mapActiveRowHint"), { label: activeLabel }),
+      // Null at the cap rather than a handler that returns: the button is then
+      // disabled and says why, and a control that does nothing is never shipped.
+      onAddStop: atCap ? null : addStopFromMap,
+      addStopLabel: t(locale, "mapAddStop"),
+      addStopFullLabel: t(locale, "mapAddStopFull"),
+      search: {
+        value: activeValue,
+        confirmed: activeConfirmed,
+        // Typing in the map's field is typing in the row, exactly as in the
+        // form: the same `onChange`, so a name typed here is geocoded at
+        // generation time even if the rider never picks from the list. A
+        // preview under the marker is replaced the moment he types, because he
+        // has stopped answering with the map and started answering with words.
+        onChange: (value: string) => {
+          setPreview(null);
+          setPlaces((prev) => prev.map((p, i) => (i === activeRow ? value : p)));
+          setPick(activeRow, null);
+          // Typing is choosing the row, too. Without this the first letter
+          // fills the row, the default rule ("the first empty row") sees it is
+          // no longer empty and hands the map to the next one — and the field
+          // the rider is typing into empties itself under his thumb, one
+          // keystroke in. Measured on "Rigas": row 0 held it, the field went
+          // blank and the hint had moved to „Līdz”.
+          setChosenRow(activeRow);
+        },
+        // A pick from the dropdown is the row's answer at once — the same
+        // `onPick` path the form's field takes, tick and recent places
+        // included. There is nothing to Confirm: the rider chose a named place
+        // from a list, which is not the "did I hit the right yard" question
+        // that tapping a map asks.
+        onPick: (place: ResolvedPlace | null) => {
+          if (!place) { setPick(activeRow, null); return; }
+          track("place_picked", { row: activeRow, start: activeRow === 0 });
+          setPreview(null);
+          setPlaces((prev) => prev.map((p, i) => (i === activeRow ? place.name : p)));
+          setPick(activeRow, place);
+          setRowIsNew(false);
+          setOffRoad(null);
+          // The same pinning a Confirm does, and for the same reason: filling
+          // this row must not hand the map to the next empty one behind the
+          // rider's back while he is still looking at what he just chose.
+          setChosenRow(activeRow);
+          // Take the map to it, and clear the violet marker: the row now holds
+          // a place chosen by name, and a draggable pin left on the last tap
+          // would be a second, older answer to the same row.
+          onPickModeChange?.(true, { at: { lat: place.lat, lon: place.lon }, marker: null });
+        },
+        near: anchor,
+        placeholder: t(locale, "mapSearchPlaceholder"),
+      },
+    });
+    // The parent's callback is an inline arrow and is rebuilt every render;
+    // listing it would re-report the same controls on every keystroke.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeRow, activeLabel, atCap, activeValue, activeConfirmed, anchor, locale, tripType, rowsKey]);
   // Nothing is offered once the form is gone. Without this the page would keep
-  // wiring the map's add-stop door after the rider left for the result.
-  useEffect(() => () => onAddStopOfferChange?.(null),
+  // drawing a map header for a form the rider has left.
+  useEffect(() => () => onMapControlsChange?.(null),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     []);
 
-  // Escape leaves pick mode, the same key that dismisses everything else on
-  // the map. A rider on a laptop who pressed the pin by mistake should not
-  // have to find the pin again to get an ordinary map back — and nothing has
-  // been committed to the row, so escaping costs him nothing.
+  // Escape is Atcelt, the same key that dismisses everything else on the map.
+  // A rider on a laptop who activated a row by mistake should not have to find
+  // the pin again — and nothing has been committed to the row, so escaping
+  // costs him nothing.
+  //
+  // `rowIsNew` and `preview` are in the deps because the listener closes over
+  // them and they are exactly what Cancel branches on. Measured: pressing
+  // "+ Pietura" on a two-row form makes the new stop row 1, which is also the
+  // row "Līdz" had been — `activeRow` did not change, the listener was not
+  // rebuilt, and Escape ran an older closure that still believed the row was
+  // one the ride already had. It left the ghost row it exists to remove.
   useEffect(() => {
-    if (pickingRow === null) return;
+    if (activeRow === null) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") cancelPicking(); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-    // `cancelPicking` is rebuilt every render; listing it would re-attach the
-    // listener on every keystroke in the form. Whether a row is being picked
-    // is the only thing this effect is about.
+    // `cancelPicking` itself is rebuilt every render; listing it would
+    // re-attach the listener on every keystroke in the form.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pickingRow]);
+  }, [activeRow, rowIsNew, preview, rowsKey]);
 
-  // Report picked places upward in riding order, so the map can draw a pin per
-  // confirmed place and the rider sees that "Brīvības iela 105" is the one
-  // they meant before spending a generation on it. In an effect, not inside
-  // the state updater: calling a parent's setState while rendering is exactly
-  // what React warns about.
-  const confirmed = places.map((_, i) => picked[i]).filter((p): p is ResolvedPlace => Boolean(p));
-  // The first pinned place biases every other row's search: choosing Sigulda
-  // as the start should offer Latvian places below it, not a same-named
-  // village on another continent. Until something is pinned the server falls
-  // back to the rider's own region.
-  //
-  // Deliberately the first *confirmed* place rather than the start's row: a
-  // rider who has pinned only a stop should still have his other rows biased
-  // to that region. Biasing a search and drawing a pin are different
-  // questions, and conflating them is what the bug above was.
-  const anchor = confirmed[0] ?? null;
   // The rows as roles, which is what the map is actually asking about. Keyed
   // on the role of each row and not merely on the coordinates, so moving a
   // place from the finish row to a stop row re-draws its pin.
@@ -776,21 +987,31 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   };
 
   /**
-   * Everything the rider needs while a row is waiting for a point, rendered
-   * under that row: what to do, the map, and the two ways out.
+   * The two ways out of a pick, rendered under the active row.
    *
-   * On a phone the map itself is in here — the same node the page hands down,
-   * moved into this slot rather than mounted a second time. On the desktop the
-   * map keeps its own column and `map` is undefined, so this is the hint and
-   * the buttons alone, sitting against the ringed row they belong to.
+   * The hint that used to head this slot has gone to the map, where the rider
+   * is actually looking: the map now carries one hint line, always present,
+   * always naming the row the next tap answers. A second copy of it against
+   * the row was the other half of the "two modes that look identical" problem
+   * — two instructions over one map, each true only some of the time.
+   *
+   * The map itself is no longer moved in here either. It stays in the one
+   * place it is mounted (the toggle below on a phone, the page's own column on
+   * the desktop) for as long as the rider is planning, because there is no
+   * longer a mode it leaves: a row is always active while the map is open, so
+   * shuttling the node between two slots would remount MapLibre on every pin
+   * press. The ringed row and the map's own hint say which field is being
+   * answered, which is what the moving map was for.
+   *
+   * It appears only when there is something to act on: a previewed point, a
+   * row "+ Pietura" made and has not been answered yet, or a verdict about bad
+   * ground. A confirmed row stays active so that the next tap MOVES its place
+   * — but until that tap there is nothing to confirm and nothing to cancel,
+   * and a pair of buttons that do nothing is exactly what the rider said not
+   * to ship. The next tap brings them back with a preview under them.
    */
-  const pickSlot = pickingRow === null ? null : (
+  const pickSlot = activeRow === null || !(preview || rowIsNew || offRoad) ? null : (
     <div className="mt-2 space-y-2">
-      <div className="flex items-center gap-2 rounded-xl bg-[#fff3ea] px-3 py-2 text-xs font-medium text-[#bd4b00]" role="status">
-        <MapPinPlus className="size-3.5 shrink-0" />
-        <span className="min-w-0 flex-1">{fi(t(locale, "pickOnMapHint"), { label: rowLabel(locale, pickingRow, tripType === "one_way", places.length) })}</span>
-      </div>
-      {map && <div>{map}</div>}
       {/* The verdict on the tapped point, under the map and above the buttons.
           Here rather than in a dialog because the rider is still looking at
           the spot: the map stays on screen, the pin stays where he put it, and
@@ -861,7 +1082,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
         <ChoiceRow label={t(locale, "tripType")} value={tripType} onChange={(v) => { track("trip_type_changed", { to: v }); setTripType(v); }} choices={[{ value: "one_way", label: t(locale, "oneWay") }, { value: "round_trip", label: t(locale, "roundTrip") }]} />
 
         <RoutePlaces places={places} picked={picked} oneWay={tripType === "one_way"} busy={busy} onChange={reorder} onPick={setPick} onUseLocation={useMyLocation} locating={locating} near={anchor}
-          onPickOnMap={onPickModeChange ? startPicking : undefined} pickingRow={pickingRow} pickSlot={pickSlot} preview={preview} />
+          onPickOnMap={onPickModeChange ? startPicking : undefined} activeRow={mapShown ? activeRow : null} pickSlot={mapShown ? pickSlot : null} preview={preview} />
 
         {/* The map is worth a look when a place needs confirming, not on every
             visit — it is the tallest thing on the page and most rides are
@@ -874,12 +1095,20 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
             and he was the one it was hidden from. (Pick mode had already been
             excused from the rule for the same reason; this generalises it.)
 
-            While a row is being picked the map has moved up into that row's
-            own slot, so this whole block steps aside rather than offering to
-            hide the very thing the rider was asked to tap. */}
-        {map && pickingRow === null && (
+            The map stays here while a row is active, rather than moving up
+            into that row's slot as it used to. There is no idle map to go back
+            to any more — one row is active for as long as the map is open — so
+            a map that moved would remount MapLibre on every pin press. What
+            the moving map was for, saying which field is being answered, the
+            ringed row and the map's own hint line now do. */}
+        {map && (
           <div className="md:hidden">
-            <button type="button" onClick={() => setMapOpen((v) => { if (!v) track("form_map_opened"); return !v; })} aria-expanded={mapOpen}
+            {/* Opening the map asks "which row is unanswered?" again — the
+                rider may have filled several in the form since he last looked
+                at it, and the row that was active then is not the question he
+                has now. Closing it changes nothing: the choice is harmless
+                while nothing is listening to it. */}
+            <button type="button" onClick={() => setMapOpen((v) => { if (!v) { track("form_map_opened"); setChosenRow(defaultActiveRow(places)); } return !v; })} aria-expanded={mapOpen}
               className="inline-flex items-center gap-1.5 text-xs font-medium text-[#bd4b00]">
               <MapIcon className="size-3.5" />
               {mapOpen ? t(locale, "hideMap") : t(locale, "showOnMap")}

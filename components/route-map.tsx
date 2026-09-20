@@ -11,10 +11,59 @@ import { messages } from "@/lib/i18n/messages";
 import { fi } from "@/lib/i18n/format";
 import type { UiLocale } from "@/lib/i18n/locale";
 import { POI_KIND, stopNumbers, type RoutePoi, type RoutePois } from "@/lib/poi/kinds";
+import { PlaceInput } from "@/components/place-input";
+import type { ResolvedPlace } from "@/lib/chat/places";
 
 // Serve the MapLibre worker from /public — bundler-emitted module workers
 // 404 under the Next.js dev server, leaving the map blank.
 maplibregl.setWorkerUrl("/maplibre-gl-worker.mjs");
+
+/**
+ * The planning map's header bar: everything the rider needs above the map
+ * while he is composing a ride.
+ *
+ * ## Why the map carries all three
+ *
+ * The map had grown two modes that looked identical. A row's pin button put it
+ * in "pick a place for row X"; with no row waiting, a tap on the same map made
+ * a new stop instead. Both drew a marker, both offered Confirm, and nothing on
+ * screen said which one was live — so a tap meant two different things
+ * depending on invisible state, and pins landed in roles the rider had not
+ * asked for.
+ *
+ * The model that replaced it has exactly one active row at any time, and **a
+ * tap always means "this point → the active row"**. That rule is only honest
+ * if the map says whose row it is, so:
+ *
+ * - `hint` is the one hint line — "Atzīmē kartē → „Līdz”" — always present
+ *   while the map is being planned on, always naming the row the next tap
+ *   answers. It is the only hint on the map; every other one has gone.
+ * - `onAddStop` is the explicit control that replaced "a tap on the idle map
+ *   creates a stop". The gesture is gone and the capability is a button, which
+ *   is a thing the rider can see and aim at. `null` at the six-row cap, where
+ *   the button is disabled and `addStopFullLabel` says why.
+ * - `search` is the same place field the form's rows use, bound to the active
+ *   row. A rider looking at the map should not have to go back to the form to
+ *   type a name he already knows — and a pick here fills the row exactly as a
+ *   pick in the form does, tick and recent places included.
+ *
+ * Built by the composer, which is the one thing that knows which row is active
+ * and what it is called; the page only relays it.
+ */
+export type MapControls = {
+  hint: string;
+  onAddStop: (() => void) | null;
+  addStopLabel: string;
+  addStopFullLabel: string;
+  search: {
+    value: string;
+    confirmed: ResolvedPlace | null;
+    onChange: (value: string) => void;
+    onPick: (place: ResolvedPlace | null) => void;
+    near: { lat: number; lon: number } | null;
+    placeholder: string;
+  };
+};
 
 type Props = {
   segments: GeoJSON.FeatureCollection<GeoJSON.LineString, RouteSegmentProperties> | null;
@@ -144,20 +193,6 @@ type Props = {
    */
   onPickPoint?: (p: { lat: number; lon: number }) => void;
   /**
-   * A tap on *empty* map while no row is waiting: the rider is adding a stop
-   * without having gone into the form first, which is the whole of what he
-   * asked for ("no kartes pašas man vajadzētu varēt pievienot pieturas").
-   *
-   * Deliberately a second door rather than `onPickPoint` switched on all the
-   * time, because the two taps do not mean the same thing. In pick mode every
-   * click is the answer and the road under it is irrelevant. Here the map is
-   * still a map: a tap on a sight's mark still opens that sight, and a tap on
-   * the drawn line still opens the road's card. Only a tap that would have hit
-   * nothing — the one that until now merely cleared the highlight — becomes a
-   * new stop. Set only while planning; the result map never gets it.
-   */
-  onAddStopPoint?: (p: { lat: number; lon: number }) => void;
-  /**
    * The point already picked, drawn as a marker the rider can drag.
    *
    * A finger lands within ~30 m of where it was aimed, which is the width of
@@ -184,19 +219,12 @@ type Props = {
    */
   onGeolocated?: (p: { lat: number; lon: number }) => void;
   /**
-   * The standing hint on a planning map that nobody has told what to do yet:
-   * "Piesit kartē, lai pievienotu pieturu", or why a tap will not.
+   * The planning map's own header bar. Absent on the result map and on any map
+   * that is not being planned on.
    *
-   * A tap on empty map is not an affordance — nothing about a map says the
-   * surface is a button — and the rider asked for the gesture precisely so he
-   * would not have to go back into the form. So the map says it itself, in
-   * words, for as long as the offer stands. Absent (and absent it is on the
-   * result map, and on any map not in planning) = no hint and no offer.
-   *
-   * `muted` is the cap: the ride is carrying every place the form will take,
-   * the hint says so instead of inviting a tap that would do nothing.
+   * See `MapControls` for what is in it and why the map draws all three.
    */
-  addStopHint?: { text: string; muted: boolean } | null;
+  controls?: MapControls | null;
   /**
    * Correcting the ride from the result map, which is the rider's second ask:
    * *"I want to make corrections to the offered route through the map and
@@ -1802,7 +1830,7 @@ const SURFACE_COLOR_EXPR: maplibregl.ExpressionSpecification = [
   SURFACE_COLORS.unknown,
 ];
 
-export function RouteMap({ segments, start, destination, via, focus, onFocusCleared, onFocusToggle, selectedPois, routePois, showTet, onToggleTet, showSights, onToggleSights, onShowPoi, onPickPoint, onAddStopPoint, pickedPoint, onPickedPointMove, pickCenter, onGeolocated, addStopHint, onEditRoute, editingRoute = false }: Props) {
+export function RouteMap({ segments, start, destination, via, focus, onFocusCleared, onFocusToggle, selectedPois, routePois, showTet, onToggleTet, showSights, onToggleSights, onShowPoi, onPickPoint, pickedPoint, onPickedPointMove, pickCenter, onGeolocated, controls, onEditRoute, editingRoute = false }: Props) {
   const [locale] = useLocale();
   const m = messages(locale);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1883,8 +1911,6 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
   const onPickPointRef = useRef(onPickPoint);
   useEffect(() => { onPickPointRef.current = onPickPoint; }, [onPickPoint]);
   /** The idle "a tap on nothing is a new stop" door, through a ref for the same reason. */
-  const onAddStopPointRef = useRef(onAddStopPoint);
-  useEffect(() => { onAddStopPointRef.current = onAddStopPoint; }, [onAddStopPoint]);
   const onPickedPointMoveRef = useRef(onPickedPointMove);
   useEffect(() => { onPickedPointMoveRef.current = onPickedPointMove; }, [onPickedPointMove]);
   const onGeolocatedRef = useRef(onGeolocated);
@@ -2920,16 +2946,12 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
       const id = props?.[SEGMENT_ID];
       if (!props || typeof id !== "number") {
         // A click on empty map is how a rider puts the highlight — and the
-        // temporary ring on a suggestion — away.
-        const hadSomethingOpen = Boolean(highlightKeyRef.current) || Boolean(focusMarkerRef.current);
+        // temporary ring on a suggestion — away. While planning it never
+        // creates anything: a new stop is the header's own button now, so a
+        // tap here that hit nothing means nothing, which is what a map has
+        // always meant by it.
         clearHighlight();
         clearFocus();
-        // …and, while planning, it is also how a stop gets added. Only once
-        // there was nothing to put away: the first tap on empty map after a
-        // card or a ring is the rider dismissing it, and turning that same tap
-        // into a new row would answer a question he did not ask. The next tap
-        // — on a map with nothing open — is unambiguous, and adds the stop.
-        if (!hadSomethingOpen) onAddStopPointRef.current?.({ lat: e.lngLat.lat, lon: e.lngLat.lng });
         return;
       }
 
@@ -2988,12 +3010,74 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
         className="pointer-events-none absolute left-0 top-0 z-10 grid items-center justify-items-start gap-x-2 gap-y-1 whitespace-nowrap rounded-md bg-white/95 px-2 py-1 text-[11px] font-medium leading-none text-foreground shadow-sm backdrop-blur"
       />
 
-      {/* The map's two layer switches, in one row at the top-left.
+      {/* Everything that sits over the top of the map, in one column: the
+          planning header first (the hint, "+ Pietura" and the place field),
+          then the layer switches.
+
+          One box rather than several corners, because `left-3 right-14` is the
+          one rule that keeps every top overlay clear of the zoom controls at
+          every width, and the planning header has to obey it too. */}
+      <div className="absolute left-3 right-14 top-3 flex flex-col gap-2">
+      {controls && (
+        /* The planning header. At 375 px this is two lines of ~34 px and the
+           map keeps the rest of its height — measured; a field of the form's
+           own size (a label row plus a 16 px input) took 64 px and left the
+           map barely taller than the header. So the field is the compact
+           PlaceInput: no label, one line, the tick and the region moving into
+           the dropdown's own rows instead of above the input.
+
+           The search and the button share the first line, the hint has the
+           second to itself. The hint is the thing the rider reads on every
+           tap, so it is never the thing that gets truncated by a long place
+           name beside it. */
+        <div className="flex flex-col gap-1.5">
+          <div className="flex items-center gap-1.5">
+            <PlaceInput
+              className="min-w-0 flex-1"
+              value={controls.search.value}
+              onChange={controls.search.onChange}
+              onPick={controls.search.onPick}
+              confirmed={controls.search.confirmed}
+              near={controls.search.near}
+              placeholder={controls.search.placeholder}
+              compact
+            />
+            {/* Disabled at the cap and saying why, rather than absent: a
+                button that comes and goes is a control the rider cannot learn
+                the position of, and the question the dead button raises ("why
+                can I not add another?") is exactly what its tooltip answers.
+                It never does nothing — at the cap it is `disabled`, so the
+                press does not land at all. */}
+            <button
+              type="button"
+              onClick={controls.onAddStop ?? undefined}
+              disabled={!controls.onAddStop}
+              title={controls.onAddStop ? controls.addStopLabel : controls.addStopFullLabel}
+              aria-label={controls.onAddStop ? controls.addStopLabel : controls.addStopFullLabel}
+              className="h-10 shrink-0 rounded-full border border-[#ececf0] bg-white/95 px-3 text-xs font-semibold text-[#bd4b00] shadow-sm backdrop-blur transition-colors hover:bg-white disabled:text-stone-400 disabled:hover:bg-white/95"
+            >
+              {controls.addStopLabel}
+            </button>
+          </div>
+          {/* The one hint line. It says what the next tap does and names the
+              row it does it to, for as long as the map is being planned on —
+              every other hint the map used to carry has gone, because a map
+              with two instructions on it is a map where a tap means whichever
+              one the rider happened to read. */}
+          <span
+            role="status"
+            className="flex items-center gap-1.5 self-start rounded-full border border-[#f56300]/30 bg-[#fff3ea]/95 px-3 py-1.5 text-xs font-medium text-[#bd4b00] shadow-sm backdrop-blur"
+          >
+            <MapPinPlus aria-hidden="true" className="size-3.5 shrink-0" />
+            {controls.hint}
+          </span>
+        </div>
+      )}
+      {/* The map's two layer switches, in one row.
           `flex-wrap` because "Vaatamisväärsused" beside TET is wider than a
           375 px phone: the second switch drops onto its own line rather than
-          running under the zoom controls on the right. `right-14` keeps them
-          clear of those controls at every width. */}
-      <div className="absolute left-3 right-14 top-3 flex flex-wrap items-center gap-2">
+          running under the zoom controls on the right. */}
+      <div className="flex flex-wrap items-center gap-2">
       <button
         type="button"
         onClick={() => onToggleTet(!showTet)}
@@ -3050,38 +3134,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
         </span>
       </button>
       )}
-      {/* "Piesit kartē, lai pievienotu pieturu", for as long as the offer
-          stands.
-
-          In the switch row rather than in a corner of its own, and last in it,
-          so it is inside the one `left-3 right-14` box that already keeps
-          every top overlay clear of the zoom controls — and `flex-wrap` drops
-          it onto its own line the moment TET and the sights switch have taken
-          the width, which at 375 px is always. The bottom of the map was the
-          other candidate and is spoken for twice over: the full-screen button
-          sits bottom-left on phones and the legend stacks above it.
-
-          Not a button. Tapping the words would be a fourth thing to aim at
-          over a surface whose whole job is to receive the tap this sentence is
-          describing; it is a `status`, which is also how a screen reader is
-          told the map has become a way of adding a place.
-
-          At the cap it stays and changes what it says. A hint that vanished
-          would leave a rider tapping an unresponsive map with nothing to read;
-          greyed, it answers the question the dead tap raises. */}
-      {addStopHint && (
-        <span
-          role="status"
-          className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium shadow-sm backdrop-blur ${
-            addStopHint.muted
-              ? "border-[#ececf0] bg-white/95 text-stone-500"
-              : "border-[#f56300]/30 bg-[#fff3ea]/95 text-[#bd4b00]"
-          }`}
-        >
-          <MapPinPlus aria-hidden="true" className="size-3.5 shrink-0" />
-          {addStopHint.text}
-        </span>
-      )}
+      </div>
       </div>
       {/* Bottom of the map, clear of the full-screen button in the corner.
           At the top-left it covered the corner the route is usually framed

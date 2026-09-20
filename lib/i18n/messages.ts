@@ -391,12 +391,18 @@ export type MessageKey =
   /** Confirm, while the routable-point probe is in flight. */
   | "pickOnMapChecking"
   /**
-   * Adding a stop straight from the map: the standing hint on an idle planning
-   * map, and what it says instead once the ride is carrying all the places the
-   * form will take.
+   * The planning map's own controls, above the map.
+   *
+   * One hint line, always present, always naming the row the next tap answers
+   * — `pickOnMapHint` says the same thing in a sentence, this is the short
+   * form the map has room for. Then the button that makes a new stop row and
+   * hands it to the map, with the cap's explanation as its tooltip, and the
+   * placeholder of the search field that fills the same row by name.
    */
-  | "tapMapToAddStop"
-  | "tapMapStopsFull"
+  | "mapActiveRowHint"
+  | "mapAddStop"
+  | "mapAddStopFull"
+  | "mapSearchPlaceholder"
   /**
    * Including the ticked sights without re-planning, and correcting the ride
    * on the result map.
@@ -937,8 +943,10 @@ const lv: Messages = {
   pickedOnMap: "izvēlēts kartē",
   pickOnMapConfirm: "Apstiprināt",
   pickOnMapChecking: "Pārbaudu…",
-  tapMapToAddStop: "Atzīmē kartē, lai pievienotu pieturu",
-  tapMapStopsFull: "Vairāk pieturu pievienot nevar",
+  mapActiveRowHint: "Atzīmē kartē → „{label}”",
+  mapAddStop: "+ Pietura",
+  mapAddStopFull: "Vairāk pieturu pievienot nevar",
+  mapSearchPlaceholder: "Meklē vietu…",
   resAddSelected: "Pievienot izvēlētos",
   resAddSelectedHint: "Atzīmētās vietas paliek maršrutā — bez jaunas meklēšanas.",
   resSearchBetter: "Meklēt labāku apli ar šīm pieturām",
@@ -1371,8 +1379,10 @@ const lt: Messages = {
   pickedOnMap: "pasirinkta žemėlapyje",
   pickOnMapConfirm: "Patvirtinti",
   pickOnMapChecking: "Tikrinu…",
-  tapMapToAddStop: "Pažymėkite žemėlapyje, kad pridėtumėte sustojimą",
-  tapMapStopsFull: "Daugiau sustojimų pridėti negalima",
+  mapActiveRowHint: "Pažymėkite žemėlapyje → „{label}“",
+  mapAddStop: "+ Sustojimas",
+  mapAddStopFull: "Daugiau sustojimų pridėti negalima",
+  mapSearchPlaceholder: "Ieškoti vietos…",
   resAddSelected: "Pridėti pažymėtas",
   resAddSelectedHint: "Pažymėtos vietos lieka maršrute — be naujos paieškos.",
   resSearchBetter: "Ieškoti geresnio rato su šiais sustojimais",
@@ -1809,8 +1819,10 @@ const et: Messages = {
   pickedOnMap: "valitud kaardil",
   pickOnMapConfirm: "Kinnita",
   pickOnMapChecking: "Kontrollin…",
-  tapMapToAddStop: "Märgi kaardil, et lisada peatus",
-  tapMapStopsFull: "Rohkem peatusi lisada ei saa",
+  mapActiveRowHint: "Märgi kaardil → „{label}“",
+  mapAddStop: "+ Peatus",
+  mapAddStopFull: "Rohkem peatusi lisada ei saa",
+  mapSearchPlaceholder: "Otsi kohta…",
   resAddSelected: "Lisa valitud",
   resAddSelectedHint: "Märgitud kohad jäävad marsruuti — ilma uue otsinguta.",
   resSearchBetter: "Otsi parem ring nende peatustega",
@@ -2241,8 +2253,10 @@ const en: Messages = {
   pickedOnMap: "picked on the map",
   pickOnMapConfirm: "Confirm",
   pickOnMapChecking: "Checking…",
-  tapMapToAddStop: "Mark on the map to add a stop",
-  tapMapStopsFull: "No room for another stop",
+  mapActiveRowHint: "Mark on the map → \"{label}\"",
+  mapAddStop: "+ Stop",
+  mapAddStopFull: "No room for another stop",
+  mapSearchPlaceholder: "Search for a place…",
   resAddSelected: "Add the ticked places",
   resAddSelectedHint: "The ticked places stay in the ride — no new search.",
   resSearchBetter: "Search for a better loop with these stops",

@@ -14,9 +14,9 @@ import type { UiLocale } from "@/lib/i18n/locale";
 /**
  * What a row is called, from its position and the trip type.
  *
- * Exported because the pick-on-map hint says the row's own name back to the
- * rider — "Piesit kartē, kur ir Līdz" — and a second copy of this rule in the
- * composer would be the thing that drifts when the labels change.
+ * Exported because the map's hint says the row's own name back to the rider —
+ * „Atzīmē kartē → „Līdz”” — and a second copy of this rule in the composer
+ * would be the thing that drifts when the labels change.
  */
 export function rowLabel(locale: UiLocale, i: number, oneWay: boolean, rows: number): string {
   if (i === 0) return t(locale, "from");
@@ -36,11 +36,11 @@ export function rowLabel(locale: UiLocale, i: number, oneWay: boolean, rows: num
 // point. Either way it can be moved afterwards, and the return row makes
 // the last leg reachable.
 //
-// Exported, and out here rather than inside the component, because a tap on
-// the map now adds a stop too: the composer inserts the row and then hands it
-// to the map. One rule, in one place — a second copy of "where does a stop
-// go" is the thing that drifts, and the two ways in would then disagree about
-// what the rider gets.
+// Exported, and out here rather than inside the component, because the map's
+// own "+ Pietura" adds a stop too: the composer inserts the row and then makes
+// it the active one. One rule, in one place — a second copy of "where does a
+// stop go" is the thing that drifts, and the two ways in would then disagree
+// about what the rider gets.
 export function addStop(list: string[], toDestination: boolean): string[] {
   if (list.length < 2) return [...list, ""];
   // Keep the start first and, one way, the finish last.
@@ -53,11 +53,35 @@ export function addStop(list: string[], toDestination: boolean): string[] {
  * How many rows the form will carry.
  *
  * The plan's schema takes six via places; the form has always counted whole
- * rows against the same six, and the map tap must hit exactly the wall the
- * "Pievienot pieturvietu" button hits — a tap that was allowed where the
- * button was greyed out would be two different answers to one question.
+ * rows against the same six, and the map's "+ Pietura" must hit exactly the
+ * wall the form's "Pievienot pieturvietu" button hits — one enabled where the
+ * other was greyed out would be two different answers to one question.
  */
 export const MAX_ROWS = 6;
+
+/**
+ * Which row the map answers when it opens with none chosen.
+ *
+ * The planning map always has exactly one active row — a tap means "this point
+ * → that row" and nothing else — so opening the map has to pick one, and the
+ * choice has to be the one the rider would have made himself.
+ *
+ * **The first empty row, start first.** A rider who opens the map on a blank
+ * form is going to point at where he is setting off from; a rider who has
+ * already named a start and opens it again is answering the next unanswered
+ * question. Falling through to row 0 when every row is full is deliberate: the
+ * start is the row most often corrected, and "the map is answering something"
+ * is never allowed to be false.
+ *
+ * Takes the row *text* rather than the picks, because a name typed without
+ * being pinned is still an answer to that row — the API geocodes it — and
+ * treating it as empty would send the rider back to a question he has already
+ * answered.
+ */
+export function defaultActiveRow(places: string[]): number {
+  const empty = places.findIndex((p) => !p.trim());
+  return empty === -1 ? 0 : empty;
+}
 
 /**
  * Where a stop added from the map lands in the list.
@@ -87,7 +111,7 @@ export function addedStopIndex(list: string[], toDestination: boolean): number {
  * name the room it needs. Keyboard users keep the same moves: the handle is a
  * button and ArrowUp/ArrowDown on it move the row.
  */
-export function RoutePlaces({ places, picked, oneWay, busy, onChange, onPick, onUseLocation, locating, near, onPickOnMap, pickingRow, pickSlot, preview }: {
+export function RoutePlaces({ places, picked, oneWay, busy, onChange, onPick, onUseLocation, locating, near, onPickOnMap, activeRow, pickSlot, preview }: {
   places: string[];
   /**
    * The first place already pinned in this ride. Every other row searches
@@ -108,25 +132,34 @@ export function RoutePlaces({ places, picked, oneWay, busy, onChange, onPick, on
    * tap everywhere.
    */
   onPickOnMap?: (index: number) => void;
-  /** The row currently waiting for a point, so its button reads as pressed. */
-  pickingRow?: number | null;
   /**
-   * The map and its controls, rendered directly under the row being picked.
+   * The one row the map is answering, so its pin reads as pressed and the row
+   * is ringed. Null while no planning map is on screen.
    *
-   * It goes *here*, inside the list, rather than under the whole form: the
-   * rider tapped the pin on "No" and was given a map below "Līdz", which is a
-   * different question than the one he asked. The same MapLibre node moves
-   * into this slot — there is exactly one instance in the app, and mounting a
-   * second is a second WebGL context.
+   * It is ringed even when there is nothing to Confirm yet, because that is
+   * the invariant the rider was promised: while the map is open one row is
+   * always the one a tap will fill, and the ring plus the map's own hint are
+   * the two places that say which.
+   */
+  activeRow?: number | null;
+  /**
+   * Apstiprināt / Atcelt for the active row, rendered directly under it.
    *
-   * Absent on the desktop, where the map keeps its own column; the row is
-   * marked instead, so it is still clear which field is being answered.
+   * It goes *here*, inside the list, rather than under the whole form: the two
+   * ways out of a pick belong against the row they would answer. The map is no
+   * longer in this slot — it stays where it is mounted for as long as the
+   * rider is planning, because there is no idle mode for it to return to and
+   * moving it would remount MapLibre on every pin press.
+   *
+   * Absent when there is nothing to confirm or cancel: a confirmed row stays
+   * active so the next tap moves its place, and until that tap these buttons
+   * would do nothing.
    */
   pickSlot?: ReactNode;
   /**
    * The place under the marker, not yet committed to the row.
    *
-   * Shown in the picked row's field so the rider reads the name he is about to
+   * Shown in the active row's field so the rider reads the name he is about to
    * accept — but it is deliberately not in `places` and not in `picked`, so a
    * ride generated without pressing Apstiprināt carries nothing from a pick
    * that was never finished.
@@ -179,11 +212,11 @@ export function RoutePlaces({ places, picked, oneWay, busy, onChange, onPick, on
     <button
       type="button"
       disabled={busy}
-      aria-pressed={pickingRow === i}
+      aria-pressed={activeRow === i}
       onClick={() => onPickOnMap(i)}
       aria-label={`${t(locale, "pickOnMap")}: ${label(i)}`}
       title={t(locale, "pickOnMap")}
-      className={`flex size-8 shrink-0 items-center justify-center rounded-lg transition disabled:opacity-40 ${pickingRow === i ? "bg-[#f56300] text-white" : "text-[#bd4b00] hover:bg-stone-100"}`}
+      className={`flex size-8 shrink-0 items-center justify-center rounded-lg transition disabled:opacity-40 ${activeRow === i ? "bg-[#f56300] text-white" : "text-[#bd4b00] hover:bg-stone-100"}`}
     >
       <MapPinPlus className="size-4" />
     </button>
@@ -219,15 +252,15 @@ export function RoutePlaces({ places, picked, oneWay, busy, onChange, onPick, on
         // other column and there is no slot under the field, so this ring is
         // the only thing saying which of three identical fields the map is
         // currently answering.
-        <div key={i} className={pickingRow === i ? "rounded-xl ring-2 ring-[#f56300]/40" : undefined}>
+        <div key={i} className={activeRow === i ? "rounded-xl ring-2 ring-[#f56300]/40" : undefined}>
           <PlaceInput
             // While this row is being picked the field reads the marker's own
             // place. It is a preview and nothing more: the ride still holds
             // whatever was there before until Apstiprināt is pressed.
-            value={pickingRow === i && preview ? preview.name : place}
+            value={activeRow === i && preview ? preview.name : place}
             onChange={(v) => onChange(places.map((p, j) => (j === i ? v : p)))}
             onPick={(p) => { if (p) track("place_picked", { row: i, start: i === 0 }); onPick(i, p); }}
-            confirmed={pickingRow === i && preview ? preview : picked[i] ?? null}
+            confirmed={activeRow === i && preview ? preview : picked[i] ?? null}
             near={near}
             icon={<MapPin className="size-3" />}
             label={label(i)}
@@ -322,9 +355,8 @@ export function RoutePlaces({ places, picked, oneWay, busy, onChange, onPick, on
               </span>
             )}
           />
-          {/* The map, under the row that asked for it. The node itself is the
-              app's one MapLibre instance, handed down by the composer. */}
-          {pickingRow === i && pickSlot}
+          {/* Apstiprināt / Atcelt, under the row they answer. */}
+          {activeRow === i && pickSlot}
         </div>
       ))}
 
