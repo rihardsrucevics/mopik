@@ -13,6 +13,7 @@ import { encodeRouteShare, shareUrl } from "@/lib/share/route-code";
 import type { ResolvedPlace } from "@/lib/chat/places";
 import { isSaved, removeRide, rideId, saveRide } from "@/lib/share/saved-rides";
 import { gpxFilename } from "@/lib/gpx/filename";
+import { rideWaypoints } from "@/lib/gpx/waypoints";
 import { RouteActionRow } from "@/components/action-row";
 import { type RoutePoi, type RoutePois } from "@/lib/poi/kinds";
 import { SuggestionsCard, type DetourFocusNote, type SelectedPoi } from "@/components/suggestions-card";
@@ -427,7 +428,7 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
       const res = await fetch("/api/export-gpx", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: route.name, coordinates, description: gpxDescription(), places: ridePlaces(), km: shownDistanceMeters / 1000 }),
+        body: JSON.stringify({ name: route.name, coordinates, description: gpxDescription(), places: ridePlaces(), km: shownDistanceMeters / 1000, waypoints: gpxWaypoints() }),
       });
       if (!res.ok) return;
       const blob = await res.blob();
@@ -508,6 +509,51 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
     if (!plan) return route.stops?.map((s) => s.name) ?? [];
     const end = plan.returnToStart ? plan.startPlace : plan.destinationPlace;
     return [plan.startPlace, plan.focusArea, ...plan.viaPlaces, end].filter((p): p is string => Boolean(p));
+  };
+
+  /**
+   * The plan, as pins the device can draw.
+   *
+   * A GPX of `<trkpt>`s is a line and nothing else: the stops the rider chose
+   * and the sights he ticked exist only on this screen until they are written
+   * as `<wpt>`. `resolvedPlaces` is what the API actually routed through, in
+   * riding order — start, vias, and on a one-way ride the destination — so it
+   * is the honest source for the flags rather than the plan's typed names,
+   * which may be a case form or a place the geocoder read differently.
+   *
+   * Ticked sights are appended from `spliced.applied`, which is ordered by
+   * where each detour leaves the ride, so they land in ride order rather than
+   * in the order the boxes were pressed. They are matched back to
+   * `selectedPois` for the name, the coordinates and the kind — the detour
+   * itself carries only a `poiId`. A sight that has not finished routing has
+   * no detour yet and is deliberately left out: it is not in the line inside
+   * the file either, and a pin for a place the track does not visit is the
+   * one thing worse than no pin.
+   */
+  const gpxWaypoints = () => {
+    const places = resolvedPlaces ?? [];
+    const byId = new Map(selectedPois.map((p) => [p.id, p]));
+    const sights = (spliced?.applied ?? [])
+      .map((d) => byId.get(d.poiId))
+      .filter((p): p is SelectedPoi => Boolean(p))
+      .map((p) => ({ name: p.name, lat: p.lat, lon: p.lon, kind: p.category }));
+    // A round trip has no finish of its own, so the last resolved place is an
+    // ordinary stop rather than a red flag. `plan.returnToStart` is nullable
+    // and only `true` is a loop (CLAUDE.md) — an unanswered plan must not be
+    // read as one, so the geometry answers instead: a ride whose line ends
+    // within 100 m of where it started came back, whatever the plan says. A
+    // shared or saved ride reopened without a plan is exactly that case.
+    const line = route.geometry.coordinates;
+    const first = line[0];
+    const last = line[line.length - 1];
+    const closed = Boolean(first && last)
+      && Math.hypot((last[0] - first[0]) * Math.cos((first[1] * Math.PI) / 180), last[1] - first[1]) * 111_320 < 100;
+    const loop = plan?.returnToStart === true || (plan?.returnToStart !== false && closed);
+    // The sights sit between the last stop and the finish: they are places on
+    // the way, not the end of the ride.
+    const end = !loop && places.length >= 2 ? places.slice(-1) : [];
+    const middle = end.length ? places.slice(0, -1) : places;
+    return rideWaypoints({ places: [...middle, ...sights, ...end], returnToStart: loop, locale });
   };
 
   // What the file is, in one paragraph: the request, the result, the surface.

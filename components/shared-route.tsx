@@ -19,6 +19,7 @@ import { track } from "@/lib/analytics";
 import { decodePlanPlaces, encodePlanShare, sharedRouteSegments, type SharedRoute } from "@/lib/share/route-code";
 import { isCodeSaved, removeRide, rideId, saveSharedRide } from "@/lib/share/saved-rides";
 import { gpxFilename } from "@/lib/gpx/filename";
+import { rideWaypoints } from "@/lib/gpx/waypoints";
 import { DESKTOP_QUERY } from "@/lib/use-media-query";
 import { useDetourAnalytics, useDetourPrefetch, useSplicedRoute, describeDetourForFocus } from "@/lib/routing/use-detours";
 import { useRoutePois } from "@/lib/poi/use-route-pois";
@@ -320,6 +321,60 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
     setFocusPoi((current) => (current ? { ...current, picked: !current.picked } : current));
   };
 
+  /**
+   * The plan this page can honestly put in the file.
+   *
+   * Less than the planner has, and deliberately so — a share code carries a
+   * route, not a ride's full state — so each pin here is something the code
+   * actually says:
+   *
+   * - **The start** is always known: `share.points[0]` is where the line
+   *   begins and `share.startLabel` is what the sender called it.
+   * - **The stops** come from `decodePlanPlaces`, the resolved places the code
+   *   carries under `pl`. A link made before that existed decodes to `[]`
+   *   (see the note there), and then the file carries the start and the
+   *   sights and claims nothing about stops it cannot name. The first entry is
+   *   dropped: it is the same start, already covered above, and by its own
+   *   plan name rather than the one on screen.
+   * - **The ticked sights** are the ones whose detour actually routed, in the
+   *   order they meet the ride — the same rule the planner uses.
+   *
+   * The ride is treated as returning to its start, which is what this page
+   * already assumes everywhere else: the map draws no finish pin
+   * (`destination={null}`) and the filename repeats the start label. So no red
+   * flag is written, rather than one guessed onto the last stop.
+   */
+  const gpxWaypoints = () => {
+    const byId = new Map(selectedPois.map((p) => [p.id, p]));
+    const sights = (spliced?.applied ?? [])
+      .map((d) => byId.get(d.poiId))
+      .filter((p): p is SelectedPoi => Boolean(p))
+      .map((p) => ({ name: p.name, lat: p.lat, lon: p.lon, kind: p.category }));
+    const planPlaces = planCode ? decodePlanPlaces(planCode) : [];
+    /**
+     * The start's *name* comes from the plan when the code carries one, not
+     * from `share.startLabel`.
+     *
+     * Measured on a real shared link: `startLabel` is written by the panel as
+     * `route.stops?.[0]?.name ?? plan.startPlace`, and on a ride with stops
+     * that first entry is a **stop**, not the start — a Sigulda → Līgatne →
+     * Cēsis link comes back labelled "Līgatne", which is why this page's own
+     * header reads "Sākums: Līgatne" too. That is a pre-existing bug in the
+     * share metadata and is not this file's to fix, but a green flag saying
+     * "Starts · Līgatne" standing on Sigulda's coordinates is a pin that
+     * actively lies, so the plan's first place — which is correct — names it
+     * where one exists. The coordinates are always the line's own first point.
+     */
+    const startName = planPlaces[0]?.name ?? share.startLabel;
+    const startLabelText = planPlaces[0]?.label ?? share.startLabel;
+    const stops = planPlaces.slice(1);
+    return rideWaypoints({
+      places: [{ name: startName, label: startLabelText, lat: start.lat, lon: start.lon }, ...stops, ...sights],
+      returnToStart: true,
+      locale,
+    });
+  };
+
   const downloadGpx = async () => {
     track("shared_gpx_downloaded", { km: shownKm, variant: share.variant });
     // The spliced line when sights are ticked — a real routed track, and as
@@ -328,7 +383,7 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
     // so splicing loses nothing that was there.
     const coordinates = spliced?.coordinates ?? share.points;
     const res = await fetch("/api/export-gpx", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
-      name: share.name, coordinates, km: shownKm, places: [share.startLabel],
+      name: share.name, coordinates, km: shownKm, places: [share.startLabel], waypoints: gpxWaypoints(),
       description: [`${share.name} · ${shownKm} km · ${duration(shownMinutes)} · ${shownUnpaved} % ${m.resGravelPct}`,
         spliced && spliced.applied.length > 0 ? fi(m.resWithSights, { n: spliced.applied.length }) : "",
         fi(m.shGpxRepeated, { pct: share.repeatedPercent, place: share.startLabel }),
