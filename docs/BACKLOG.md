@@ -1110,3 +1110,17 @@ same operation with the grab point becoming a new stop. Full re-search stays
 as an explicit "Meklēt labāku apli". Related: a tap on the result map today
 shows a leaked violet pick marker that does nothing (being removed
 2026-09-24) — riders read it as exactly this feature.
+
+## 30. The planning map's header is cramped
+
+**Rider, 2026-09-24, screenshot at phone width.** Since 84b6a38 the map's
+top-left corner stacks three things — the search pill ("Erdmaņi" with its
+tick), the "+ Pietura" pill, the hint line („Atzīmē kartē → „Līdz””) — and
+the TET toggle sits right under them, all inside the `left-3 right-14` box
+next to the zoom controls. It covers a third of a 375 px map and reads as
+clutter. Tidy it: one header row is the target (search field that expands
+on focus, "+" icon button for a stop, hint folded into the field's
+placeholder or shown only while a mark is pending), TET moved to the
+bottom row with the legend or into the layers control, and the whole thing
+must not hide the start pin that the map centres on. Measure the map area
+left visible at 375 px before/after.
