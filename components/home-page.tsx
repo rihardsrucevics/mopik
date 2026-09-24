@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useRef, useState, useEffect } from "react";
 import { RouteMap, type MapControls } from "@/components/route-map";
+import { mapWiring } from "@/lib/map/map-wiring";
 import { RoutePrompt } from "@/components/route-prompt";
 import { ResultPanel } from "@/components/result-panel";
 import type { DetourFocusNote, SelectedPoi } from "@/components/suggestions-card";
@@ -1506,8 +1507,15 @@ export function HomePage() {
    * does not. The result map is a separate job the rider has not asked for
    * yet, and a stop added to a ride that has already been generated would have
    * nowhere to go.
+   *
+   * `wiring` is what the map is handed because of it. The pick flow hangs from
+   * the view, not from `picking` alone: that flag is the composer's report and
+   * outlived the composer — it stayed up under the generated ride, and every
+   * tap on the result map dropped a violet marker with nothing to answer to.
+   * See `lib/map/map-wiring.ts`.
    */
-  const planning = entryMode === "form" && !result;
+  const wiring = mapWiring({ entryMode, hasResult: Boolean(result), rowActive: picking });
+  const planning = wiring.planning;
   // While planning the map is always available, whether or not anything is
   // confirmed yet — it is now a way of *adding* places, so the rider with an
   // empty form is precisely the one it has to be openable for. (`picking` was
@@ -1566,16 +1574,18 @@ export function HomePage() {
         // the line to add one. Offered only with a ride on screen and only
         // while no leg is already being re-routed — a second edit on top of an
         // in-flight one would splice into a line that is about to be replaced.
-        // `picking` takes precedence for the same reason it does elsewhere: a
-        // map answering "where does this row go" must not also be answering
-        // "change the ride".
+        // The pick flow takes precedence for the same reason it does
+        // elsewhere: a map answering "where does this row go" must not also be
+        // answering "change the ride". Read from `wiring.pick`, not the raw
+        // `picking` flag, which could be left up under a result and would
+        // then have shut this off with no pick flow to show for it.
         // `FAST_REROUTE` first: this prop is the single thing both entry
         // points hang from — the map makes its stop pins draggable only when
         // it is given, and only then does a tap on the line add a via — so
         // withholding it shuts both at once and leaves nothing half-wired for
         // a rider to find. See the flag for why, and for what to do to
         // resume.
-        onEditRoute={FAST_REROUTE && result && !picking && !editing ? editRoute : undefined}
+        onEditRoute={FAST_REROUTE && result && !wiring.pick && !editing ? editRoute : undefined}
         editingRoute={editing}
         focus={focusPoi}
         onFocusCleared={clearFocusPoi}
@@ -1589,20 +1599,25 @@ export function HomePage() {
         showTet={showTet} onToggleTet={setShowTet}
         showSights={showSights} onToggleSights={setShowSights}
         // Pick mode, and the marker it leaves behind. Both are handed over
-        // only while a row is actually waiting: with no `onPickPoint` the map
-        // answers a click the way it always has, and the violet marker is not
-        // a fourth kind of pin left lying on a finished ride.
-        onPickPoint={picking ? takePoint : undefined}
-        pickedPoint={picking ? pickPoint : null}
-        onPickedPointMove={takePoint}
-        pickCenter={picking ? pickCenter : null}
+        // only while planning with a row actually waiting (`wiring.pick`):
+        // with no `onPickPoint` the map answers a click the way it always has
+        // — segment card, sight card, or clearing the highlight — and the
+        // violet marker is not a fourth kind of pin left lying on a finished
+        // ride. Gated on the view and not on `picking` alone because that
+        // flag was left up under the result, which is exactly how a rider
+        // found a violet pin on his generated ride. The geolocate control
+        // hangs from `onPickPoint` inside the map, so it goes with it.
+        onPickPoint={wiring.pick ? takePoint : undefined}
+        pickedPoint={wiring.pick ? pickPoint : null}
+        onPickedPointMove={wiring.pick ? takePoint : undefined}
+        pickCenter={wiring.pick ? pickCenter : null}
         // The planning header: the hint naming the active row, "+ Pietura",
         // and the place field bound to that row. Only while the form is the
         // view — a result map has no active row and nothing to add a stop to,
         // and a header over a finished ride would be describing a form the
         // rider has left.
-        controls={planning ? mapControls : null}
-        onGeolocated={setGeolocated} />
+        controls={wiring.header ? mapControls : null}
+        onGeolocated={wiring.pick ? setGeolocated : undefined} />
     </MapPanel>
   );
   // Where the map lives depends only on the viewport and the view — never on
@@ -1627,7 +1642,10 @@ export function HomePage() {
           <InstallPrompt show={Boolean(result) && !chatting} />
           {entryMode === "form"
             ? <RideComposer key={plan ? planSummary(plan, locale) : "new"} initialPlan={plan} initialPlaces={places} profile={profile} onProfileChange={changeProfile} busy={phase !== "idle"} onGenerate={startFromForm} onUseChat={() => setEntryMode("chat")} onPlacesChange={setPreview} map={mapInComposer && mapVisible ? mapPanel : undefined}
-                onPickModeChange={changePickMode} pickPoint={pickPoint} geolocated={geolocated}
+                // Only while planning: the form reopened over a result shows the
+                // generated ride on its map, which answers no row — a pin button
+                // there would open a pick flow whose taps go nowhere.
+                onPickModeChange={planning ? changePickMode : undefined} pickPoint={pickPoint} geolocated={geolocated}
                 onMapControlsChange={setMapControls} mapShown={mapVisible && planning} />
             : result && result.routes.length > 0 && !chatting
               ? <ResultPanel routes={result.routes} selected={selected} onSelect={setSelected} plan={plan} avoidTowns={result.intent.avoidTowns ?? false} lucky={lucky} remoteLoop={result.remoteLoop} longerSuggestion={result.longerSuggestion} tolerancePercent={result.intent.distanceTolerancePercent} busy={phase !== "idle"} onSend={send} onBackToForm={() => setEntryMode("form")} map={mapInResult && mapVisible ? mapPanel : undefined} resolvedPlaces={routedPlaces} alternatives={result.alternatives} sparsePlaceData={result.sparsePlaceData} assembledFromSegments={result.assembledFromSegments} directLeg={showingDirect} offset={variantOffset} onOffsetChange={setVariantOffset} onShowPoi={showPoi} pois={routePois} poisLoading={poisLoading} poisFailed={poisFailed} onDetoursChange={setDetoursForMap} selectedPois={selectedPois} onToggleSelectPoi={toggleSelectPoi} onClearSelectedPois={clearSelectedPois} onCommitSelection={commitSelection} onSearchBetterLoop={searchBetterLoop} onSplicedChange={handleSplicedChange} edited={edited} canUndo={canUndo} onUndoEdit={undoEdit} editing={editing} editNote={editNote} />

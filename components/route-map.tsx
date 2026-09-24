@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { MapPinPlus } from "lucide-react";
+import { Check, MapPinPlus, TriangleAlert } from "lucide-react";
 import { RouteSegmentProperties } from "@/lib/types";
 import { haversineMeters } from "@/lib/geo/geometry";
 import { useLocale } from "@/lib/i18n/use-locale";
@@ -46,12 +46,40 @@ maplibregl.setWorkerUrl("/maplibre-gl-worker.mjs");
  *   row. A rider looking at the map should not have to go back to the form to
  *   type a name he already knows — and a pick here fills the row exactly as a
  *   pick in the form does, tick and recent places included.
+ * - `pending` is the bar at the bottom of the map: Confirm / Cancel for the
+ *   point under the violet marker, or the router's verdict that it is off the
+ *   road with its own Move / Cancel. Present only while a mark is pending —
+ *   marked, not yet confirmed. It lives on the map because that is where the
+ *   rider's eyes and thumb are while he marks; under the row in the form it
+ *   was off screen on a phone the moment the map was scrolled into view.
  *
  * Built by the composer, which is the one thing that knows which row is active
  * and what it is called; the page only relays it.
  */
+export type MapPendingMark = {
+  /** "Apstiprināt", or "Pārbauda…" while the routable-point check runs. */
+  confirmLabel: string;
+  /** Null while the check is in flight — the button is then disabled. */
+  onConfirm: (() => void) | null;
+  cancelLabel: string;
+  /** Drops the mark; a row "+ Pietura" made goes with it. Escape does the same. */
+  onCancel: () => void;
+  /** The router's "this point is N m from a road", replacing Confirm / Cancel
+   *  while it is on screen. */
+  offRoad: {
+    title: string;
+    moveLabel: string;
+    /** Null when no road is near enough to still be the same place: the
+     *  Move button is then not drawn at all. */
+    onMove: (() => void) | null;
+    dismissLabel: string;
+    onDismiss: () => void;
+  } | null;
+};
+
 export type MapControls = {
   hint: string;
+  pending: MapPendingMark | null;
   onAddStop: (() => void) | null;
   addStopLabel: string;
   addStopFullLabel: string;
@@ -1930,6 +1958,8 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
   const pickedMarkerRef = useRef<maplibregl.Marker | null>(null);
   /** The "where am I" button, added only while a row is being picked. */
   const geolocateRef = useRef<maplibregl.GeolocateControl | null>(null);
+  /** The pending-mark bar, measured to keep the violet marker out from under it. */
+  const pendingBarRef = useRef<HTMLDivElement | null>(null);
   /** The map exists. State, not a ref, because effects have to re-run on it. */
   const [ready, setReady] = useState(false);
   /**
@@ -2447,6 +2477,37 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
     // effect is actually about and the list should say so.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, pickedPoint?.lat, pickedPoint?.lon]);
+
+  /**
+   * Keep the violet marker clear of the pending bar.
+   *
+   * The bar sits over the bottom of the map, and the marker lands wherever the
+   * rider tapped — so a tap low on a 42dvh phone map put the pin, or most of
+   * it, behind Confirm: he could not see what he was confirming. When the
+   * marker's tip is under the bar (or its body would be), the map is panned
+   * up just enough to stand it clear. Only then: a pin already in view is
+   * left exactly where the finger put it.
+   *
+   * Keyed on what the bar shows as well as on the point, because the bar comes
+   * a moment after the tap — it waits for the reverse lookup that names the
+   * point — and it is only then that there is anything to be covered by; and
+   * because the off-road verdict replaces Confirm / Cancel with a card about
+   * twice as tall, which covered a pin the shorter bar had left in view
+   * (measured at 400 px).
+   */
+  const pendingShown = !controls?.pending ? "" : controls.pending.offRoad ? "verdict" : "confirm";
+  useEffect(() => {
+    const map = mapRef.current;
+    const bar = pendingBarRef.current;
+    const box = containerRef.current?.getBoundingClientRect();
+    if (!ready || !map || !bar || !box || !pickedPoint) return;
+    const barTop = bar.getBoundingClientRect().top - box.top;
+    const tip = map.project([pickedPoint.lon, pickedPoint.lat]).y;
+    const clearance = 12;
+    if (tip <= barTop - clearance) return;
+    map.panBy([0, tip - (barTop - clearance)], { duration: 300 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, pendingShown, pickedPoint?.lat, pickedPoint?.lon]);
 
   /**
    * "Where am I", while a row is being picked.
@@ -3136,6 +3197,66 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
       )}
       </div>
       </div>
+      {/* The pending mark's bar: Confirm / Cancel, or the off-road verdict
+          with its Move / Cancel. Only while a point is marked and not yet
+          confirmed, and only on the planning map — `controls` is never handed
+          to a result map.
+
+          Above everything else at the bottom. On a phone it spans the map and
+          sits over the full-screen button, which MapPanel stacks over the
+          legend (`--map-legend` is its measured height, 0 px on the inline
+          strip where the legend is hidden) — 0.75 rem inset + 2.5 rem button
+          + 0.5 rem gap. On the desktop there is no full-screen button, so it
+          goes straight above the legend, at the right, where it clears both
+          the legend in the left corner and the attribution under it.
+
+          `pointer-events-none` on the wrapper and `auto` on what is drawn:
+          the gaps between the buttons are map, and a tap there marks the map
+          as it would anywhere else. The marker is kept clear of it by the
+          effect above. */}
+      {controls?.pending && (
+        <div
+          ref={pendingBarRef}
+          className="pointer-events-none absolute bottom-[calc(3.75rem+var(--map-legend,0px))] left-3 right-3 z-20 md:bottom-[calc(0.75rem+var(--map-legend,0px))] md:left-auto md:w-[22rem]"
+        >
+          {controls.pending.offRoad ? (
+            /* The verdict, where the rider is looking: the pin stays where he
+               put it and the answer sits over the map beside it. Its own card
+               takes taps — it is a thing to read, not a gap in the bar.
+               `role="alert"`: it arrives after a press and replaces what
+               Confirm was about to do. */
+            <div role="alert" className="pointer-events-auto space-y-2 rounded-2xl border border-amber-300 bg-amber-50/95 p-2.5 shadow-md backdrop-blur">
+              <div className="flex gap-2 text-xs font-medium text-amber-900">
+                <TriangleAlert aria-hidden="true" className="mt-px size-3.5 shrink-0" />
+                <span className="min-w-0 flex-1">{controls.pending.offRoad.title}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                {controls.pending.offRoad.onMove && (
+                  <button type="button" onClick={controls.pending.offRoad.onMove}
+                    className="h-9 flex-1 rounded-full bg-[#f56300] px-3 text-xs font-semibold text-white transition hover:bg-[#d85600]">
+                    {controls.pending.offRoad.moveLabel}
+                  </button>
+                )}
+                <button type="button" onClick={controls.pending.offRoad.onDismiss}
+                  className={`h-9 rounded-full border border-amber-300 bg-white/80 px-3 text-xs font-medium text-amber-900 transition hover:bg-amber-100 ${controls.pending.offRoad.onMove ? "shrink-0" : "flex-1"}`}>
+                  {controls.pending.offRoad.dismissLabel}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={controls.pending.onConfirm ?? undefined} disabled={!controls.pending.onConfirm}
+                className="pointer-events-auto flex h-10 flex-1 items-center justify-center gap-1.5 rounded-full bg-[#f56300] text-sm font-semibold text-white shadow-md transition hover:bg-[#d85600] disabled:opacity-60">
+                <Check aria-hidden="true" className="size-4" />{controls.pending.confirmLabel}
+              </button>
+              <button type="button" onClick={controls.pending.onCancel}
+                className="pointer-events-auto h-10 shrink-0 rounded-full border border-stone-200 bg-white/95 px-4 text-sm font-medium text-stone-700 shadow-md backdrop-blur transition hover:bg-white">
+                {controls.pending.cancelLabel}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
       {/* Bottom of the map, clear of the full-screen button in the corner.
           At the top-left it covered the corner the route is usually framed
           into. Down here it sits over the edge of the frame, clear of the TET

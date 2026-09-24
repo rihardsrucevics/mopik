@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { Check, ChevronDown, ChevronUp, Map as MapIcon, Sparkles, TriangleAlert } from "lucide-react";
+import { ChevronDown, ChevronUp, Map as MapIcon, Sparkles } from "lucide-react";
+import type { MapPendingMark } from "@/components/route-map";
 import { RidePlan } from "@/lib/chat/ride-plan";
 import { composeRidePlan, placesFromPlan } from "@/lib/chat/compose-plan";
 import { RoutePlaces, addStop, addedStopIndex, defaultActiveRow, rowLabel, MAX_ROWS } from "@/components/route-places";
@@ -196,6 +197,9 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   onMapControlsChange?: (controls: {
     /** "Atzīmē kartē → „Līdz”" — what the next tap does, always present. */
     hint: string;
+    /** The bar over the bottom of the map while a mark is pending — Confirm /
+     *  Cancel, or the off-road verdict — and null otherwise. */
+    pending: MapPendingMark | null;
     /** Make a new stop row and hand it to the map. Null at the cap. */
     onAddStop: (() => void) | null;
     /** Why the button is dead, shown as its tooltip at the cap. */
@@ -289,8 +293,13 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
    * handles: removing the row the map was answering. The index would then
    * point past the end, and the hint would name a row that is gone while the
    * next tap landed in whatever inherited the index.
+   *
+   * Also null when the page offers no pick flow at all (`onPickModeChange`
+   * absent): the form reopened over a generated ride shows that ride on its
+   * map, which answers no row. An active ring, a hint or a Confirm there would
+   * promise a tap that goes nowhere.
    */
-  const activeRow = !mapShown ? null : Math.min(chosenRow, Math.max(places.length - 1, 0));
+  const activeRow = !mapShown || !onPickModeChange ? null : Math.min(chosenRow, Math.max(places.length - 1, 0));
   const [locating, setLocating] = useState(false);
   /**
    * Whether the active row was created by "+ Pietura" and has never been
@@ -444,19 +453,32 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
    * re-picking a row must not make it collide with its own old name.
    */
   const token = pickPoint?.token ?? null;
+  /**
+   * The gesture whose lookup has answered. While it trails `token`, a point
+   * is under the marker and its name is still on the way — the map's bar is
+   * already up (a mark is pending from the moment the marker lands) with
+   * Confirm disabled, because the rider has marked something and must be able
+   * to take it back without waiting seconds for a reverse lookup.
+   */
+  const [namedToken, setNamedToken] = useState<number | null>(null);
   useEffect(() => {
     const row = activeRowRef.current;
     // Token 0 is the seed the page puts under a row that already has a place:
     // its name is known and shown, and re-deriving one would only risk showing
     // the rider a different word for the spot he has not yet moved.
     if (!pickPoint || pickPoint.token === 0 || row === null) return;
-    const { lat, lon } = pickPoint;
+    const { lat, lon, token: asked } = pickPoint;
     let cancelled = false;
     void (async () => {
-      const found = await nameForPoint(lat, lon);
-      if (cancelled) return;
-      const taken = placesRef.current.filter((_, i) => i !== row);
-      setPreview(pickedPlace(found, lat, lon, taken, t(locale, "pickedOnMap")));
+      try {
+        const found = await nameForPoint(lat, lon);
+        if (cancelled) return;
+        const taken = placesRef.current.filter((_, i) => i !== row);
+        setPreview(pickedPlace(found, lat, lon, taken, t(locale, "pickedOnMap")));
+      } finally {
+        // Even when the lookup failed: the bar must not wait on it forever.
+        if (!cancelled) setNamedToken(asked);
+      }
     })();
     // A drag landing while the previous lookup is still in flight must not let
     // the older answer overwrite the newer one.
@@ -850,9 +872,65 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   const rowsKey = places.join(String.fromCharCode(0));
   const activeValue = activeRow === null ? "" : (preview ? preview.name : places[activeRow] ?? "");
   const activeConfirmed = activeRow === null ? null : (preview ?? picked[activeRow] ?? null);
+  /**
+   * The pending mark's handlers, always the latest render's.
+   *
+   * The map holds on to the controls object until the effect below re-runs,
+   * and `confirmPick` reads half the form — the rows, the trip type, the
+   * duration, the profile — to build the plan it probes with. Handing the map
+   * the handlers themselves would freeze whichever of those it saw last time
+   * the effect ran; this is the stale-closure bug "+ Pietura" already had once
+   * (see `rowsKey`). So the map is given stable wrappers that call through;
+   * the ref is synced further down, after `effectiveProfile` exists, because
+   * `confirmPick` reads it.
+   */
+  const pendingHandlers = useRef<{ confirm: () => void; cancel: () => void; move: () => void; dismiss: () => void } | null>(null);
+  /**
+   * What the map's bottom bar shows, or null when no mark is pending.
+   *
+   * **Pending = a point is under the violet marker and not yet committed**, or
+   * the router has just said that point is off the road. A confirmed row stays
+   * active so the next tap moves its place, but until that tap there is
+   * nothing to confirm or cancel, and a pair of buttons that do nothing is
+   * exactly what the rider said not to ship. The next tap brings them back.
+   *
+   * It starts the moment the marker lands, before the reverse lookup has
+   * named the point (`naming`): Cancel is live at once, Confirm follows the
+   * name.
+   *
+   * A row "+ Pietura" has just made, with no tap yet, is not pending either:
+   * Escape still takes it away again, and the first tap brings the bar with
+   * its Cancel.
+   */
+  const naming = activeRow !== null && token !== null && token !== 0 && namedToken !== token;
+  const pendingKey = activeRow === null || !(preview || offRoad || naming)
+    ? ""
+    : [preview?.lat, preview?.lon, checking, naming, offRoad?.distanceM ?? "", offRoad?.snappedTo ? 1 : 0].join("|");
   useEffect(() => {
     if (activeRow === null) { onMapControlsChange?.(null); return; }
+    const pending = !pendingKey ? null : {
+      confirmLabel: checking ? t(locale, "pickOnMapChecking") : t(locale, "pickOnMapConfirm"),
+      // Null while the probe is in flight: the button is then disabled and
+      // says so, because a press that takes a second and shows nothing reads
+      // as a button that does not work.
+      // …and while the tapped point is still being named: there is nothing
+      // yet for Confirm to commit.
+      onConfirm: checking || naming || !preview ? null : () => pendingHandlers.current?.confirm(),
+      cancelLabel: t(locale, "pickOnMapCancel"),
+      onCancel: () => pendingHandlers.current?.cancel(),
+      offRoad: !offRoad ? null : {
+        title: fi(t(locale, "pickOffRoadTitle"), { m: offRoad.distanceM }),
+        moveLabel: t(locale, "pickOffRoadMove"),
+        // Move is offered only when the server said the road is near enough
+        // to still be the same place (`canMove`, which is what `snappedTo`
+        // being non-null means). A chip that cannot act must not be drawn.
+        onMove: offRoad.snappedTo ? () => pendingHandlers.current?.move() : null,
+        dismissLabel: t(locale, "pickOffRoadCancel"),
+        onDismiss: () => pendingHandlers.current?.dismiss(),
+      },
+    };
     onMapControlsChange?.({
+      pending,
       hint: fi(t(locale, "mapActiveRowHint"), { label: activeLabel }),
       // Null at the cap rather than a handler that returns: the button is then
       // disabled and says why, and a control that does nothing is never shipped.
@@ -908,10 +986,19 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     // The parent's callback is an inline arrow and is rebuilt every render;
     // listing it would re-report the same controls on every keystroke.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeRow, activeLabel, atCap, activeValue, activeConfirmed, anchor, locale, tripType, rowsKey]);
+  }, [activeRow, activeLabel, atCap, activeValue, activeConfirmed, anchor, locale, tripType, rowsKey, pendingKey]);
   // Nothing is offered once the form is gone. Without this the page would keep
   // drawing a map header for a form the rider has left.
   useEffect(() => () => onMapControlsChange?.(null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []);
+  // And no row is waiting once the form is gone. Generating unmounts the form,
+  // and without this the page's "a row is waiting" flag stayed up under the
+  // result — every tap on the finished ride then dropped the violet marker,
+  // with no row, hint or Confirm for it to answer to. The page also gates the
+  // pick flow on the view (`lib/map/map-wiring.ts`); this keeps the flag
+  // itself honest for anything else that reads it.
+  useEffect(() => () => onPickModeChange?.(false),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     []);
 
@@ -968,6 +1055,11 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     setProfileOverride(next);
     onProfileChange(next);
   };
+  // The map's pending-bar handlers, current as of this render (see
+  // `pendingHandlers`). After `effectiveProfile`, which `confirmPick` reads.
+  useEffect(() => {
+    pendingHandlers.current = { confirm: confirmPick, cancel: cancelPicking, move: acceptOffRoadMove, dismiss: () => setOffRoad(null) };
+  });
 
   const submit = () => {
     const filled = places.map((p) => p.trim()).filter(Boolean);
@@ -986,85 +1078,6 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     onGenerate(plan, Object.values(picked).filter((p): p is ResolvedPlace => p !== null));
   };
 
-  /**
-   * The two ways out of a pick, rendered under the active row.
-   *
-   * The hint that used to head this slot has gone to the map, where the rider
-   * is actually looking: the map now carries one hint line, always present,
-   * always naming the row the next tap answers. A second copy of it against
-   * the row was the other half of the "two modes that look identical" problem
-   * — two instructions over one map, each true only some of the time.
-   *
-   * The map itself is no longer moved in here either. It stays in the one
-   * place it is mounted (the toggle below on a phone, the page's own column on
-   * the desktop) for as long as the rider is planning, because there is no
-   * longer a mode it leaves: a row is always active while the map is open, so
-   * shuttling the node between two slots would remount MapLibre on every pin
-   * press. The ringed row and the map's own hint say which field is being
-   * answered, which is what the moving map was for.
-   *
-   * It appears only when there is something to act on: a previewed point, a
-   * row "+ Pietura" made and has not been answered yet, or a verdict about bad
-   * ground. A confirmed row stays active so that the next tap MOVES its place
-   * — but until that tap there is nothing to confirm and nothing to cancel,
-   * and a pair of buttons that do nothing is exactly what the rider said not
-   * to ship. The next tap brings them back with a preview under them.
-   */
-  const pickSlot = activeRow === null || !(preview || rowIsNew || offRoad) ? null : (
-    <div className="mt-2 space-y-2">
-      {/* The verdict on the tapped point, under the map and above the buttons.
-          Here rather than in a dialog because the rider is still looking at
-          the spot: the map stays on screen, the pin stays where he put it, and
-          the answer sits between what he did and what he can do about it.
-          `role="alert"` — it arrives after a press and replaces what Confirm
-          was about to do, which is exactly what a screen reader must be told
-          without being asked. */}
-      {offRoad && (
-        <div className="space-y-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2.5" role="alert">
-          <div className="flex gap-2 text-xs font-medium text-amber-900">
-            <TriangleAlert className="mt-px size-3.5 shrink-0" />
-            <span className="min-w-0 flex-1">{fi(t(locale, "pickOffRoadTitle"), { m: offRoad.distanceM })}</span>
-          </div>
-          {/* Move is offered only when the server said the road is near enough
-              to still be the same place (`canMove`, which is what `snappedTo`
-              being non-null here means). Cancel is always offered, and is the
-              only way out when it is not: a chip that cannot act must not be
-              drawn — the rider's rule. */}
-          <div className="flex items-center gap-2">
-            {offRoad.snappedTo && (
-              <button type="button" onClick={acceptOffRoadMove}
-                className="h-9 flex-1 rounded-full bg-[#f56300] px-3 text-xs font-semibold text-white transition hover:bg-[#d85600]">
-                {t(locale, "pickOffRoadMove")}
-              </button>
-            )}
-            <button type="button" onClick={() => setOffRoad(null)}
-              className={`h-9 rounded-full border border-amber-300 px-3 text-xs font-medium text-amber-900 transition hover:bg-amber-100 ${offRoad.snappedTo ? "shrink-0" : "flex-1"}`}>
-              {t(locale, "pickOffRoadCancel")}
-            </button>
-          </div>
-        </div>
-      )}
-      {/* The two ways out, under the map rather than over it: a primary button
-          on the map itself would be a thing to tap in the middle of a surface
-          whose whole job this minute is to receive taps. Confirm is dead until
-          there is a point to confirm — a rider who presses it before tapping
-          should be told by its state, not by nothing happening. While the
-          probe is in flight it is disabled and says so, because a press that
-          takes a second and shows nothing reads as a button that does not
-          work. */}
-      <div className="flex items-center gap-2">
-        <button type="button" onClick={confirmPick} disabled={!preview || checking || Boolean(offRoad)}
-          className="flex h-10 flex-1 items-center justify-center gap-1.5 rounded-full bg-[#f56300] text-sm font-semibold text-white transition hover:bg-[#d85600] disabled:opacity-40">
-          <Check className="size-4" />{checking ? t(locale, "pickOnMapChecking") : t(locale, "pickOnMapConfirm")}
-        </button>
-        <button type="button" onClick={cancelPicking}
-          className="h-10 shrink-0 rounded-full border border-stone-200 px-4 text-sm font-medium text-stone-600 transition hover:bg-stone-50">
-          {t(locale, "pickOnMapCancel")}
-        </button>
-      </div>
-    </div>
-  );
-
   return (
     <section className="flex flex-col overflow-hidden rounded-2xl border border-stone-200 bg-white md:h-[calc(100vh-7rem)]" aria-label={t(locale, "a11yRideInput")}>
       <div className="border-b border-stone-200 bg-[#faf9f6] px-4 py-3">
@@ -1082,7 +1095,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
         <ChoiceRow label={t(locale, "tripType")} value={tripType} onChange={(v) => { track("trip_type_changed", { to: v }); setTripType(v); }} choices={[{ value: "one_way", label: t(locale, "oneWay") }, { value: "round_trip", label: t(locale, "roundTrip") }]} />
 
         <RoutePlaces places={places} picked={picked} oneWay={tripType === "one_way"} busy={busy} onChange={reorder} onPick={setPick} onUseLocation={useMyLocation} locating={locating} near={anchor}
-          onPickOnMap={onPickModeChange ? startPicking : undefined} activeRow={mapShown ? activeRow : null} pickSlot={mapShown ? pickSlot : null} preview={preview} />
+          onPickOnMap={onPickModeChange ? startPicking : undefined} activeRow={mapShown ? activeRow : null} preview={preview} />
 
         {/* The map is worth a look when a place needs confirming, not on every
             visit — it is the tallest thing on the page and most rides are

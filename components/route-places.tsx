@@ -1,7 +1,5 @@
 "use client";
 
-
-import type { ReactNode } from "react";
 import { ChevronDown, ChevronUp, LocateFixed, MapPin, MapPinPlus, Plus, X } from "lucide-react";
 import { PlaceInput } from "@/components/place-input";
 import { track } from "@/lib/analytics";
@@ -111,7 +109,7 @@ export function addedStopIndex(list: string[], toDestination: boolean): number {
  * name the room it needs. Keyboard users keep the same moves: the handle is a
  * button and ArrowUp/ArrowDown on it move the row.
  */
-export function RoutePlaces({ places, picked, oneWay, busy, onChange, onPick, onUseLocation, locating, near, onPickOnMap, activeRow, pickSlot, preview }: {
+export function RoutePlaces({ places, picked, oneWay, busy, onChange, onPick, onUseLocation, locating, near, onPickOnMap, activeRow, preview }: {
   places: string[];
   /**
    * The first place already pinned in this ride. Every other row searches
@@ -142,20 +140,6 @@ export function RoutePlaces({ places, picked, oneWay, busy, onChange, onPick, on
    * the two places that say which.
    */
   activeRow?: number | null;
-  /**
-   * Apstiprināt / Atcelt for the active row, rendered directly under it.
-   *
-   * It goes *here*, inside the list, rather than under the whole form: the two
-   * ways out of a pick belong against the row they would answer. The map is no
-   * longer in this slot — it stays where it is mounted for as long as the
-   * rider is planning, because there is no idle mode for it to return to and
-   * moving it would remount MapLibre on every pin press.
-   *
-   * Absent when there is nothing to confirm or cancel: a confirmed row stays
-   * active so the next tap moves its place, and until that tap these buttons
-   * would do nothing.
-   */
-  pickSlot?: ReactNode;
   /**
    * The place under the marker, not yet committed to the row.
    *
@@ -355,8 +339,6 @@ export function RoutePlaces({ places, picked, oneWay, busy, onChange, onPick, on
               </span>
             )}
           />
-          {/* Apstiprināt / Atcelt, under the row they answer. */}
-          {activeRow === i && pickSlot}
         </div>
       ))}
 
