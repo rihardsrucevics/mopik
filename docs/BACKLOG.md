@@ -1087,3 +1087,26 @@ failed, **55 s** against the 60 s cap. Map-picked points are already checked
 at Confirm (`/api/routable-point`, ~230 ms); typed places are not. Probe
 each rider place for reachability before the search when the ride has vias
 or a finish, and refuse in a few seconds with the same chips.
+
+## 29. Correct a generated route on the map, not through the chat
+
+**Riders' feedback, 2026-09-24 (three reports).** After a route is
+generated they want to fix it on the map — ideally drag the line somewhere
+else, like Google Maps — and not by typing into the chat. If dragging the
+line is not feasible, the minimum is: **see the stops on the result map and
+add a stop there**, with the route re-drawn.
+
+**Where this stands.** The machinery is built and shipped but switched
+off: `FAST_REROUTE = false` in components/home-page.tsx gates
+`onEditRoute`; `lib/routing/reroute-leg.ts` (+ test) and
+`app/api/reroute-leg` re-route only the two legs around a moved/added
+stop and splice them into the existing geometry — seconds, not a 30 s
+search. Its ~640 UI lines were never exercised. Turn it on **after**
+adapting it to the planning map's one-active-row model (84b6a38): on the
+result map, mark = move the active stop or add one at the "+ Pietura"
+control, one hint line, Confirm/Cancel, Undo one step, and the panel says
+"labots ar roku" with the recomputed retraced %. "Drag the line" is that
+same operation with the grab point becoming a new stop. Full re-search stays
+as an explicit "Meklēt labāku apli". Related: a tap on the result map today
+shows a leaked violet pick marker that does nothing (being removed
+2026-09-24) — riders read it as exactly this feature.
