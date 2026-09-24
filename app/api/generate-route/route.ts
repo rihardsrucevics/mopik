@@ -101,6 +101,13 @@ const RequestSchema = z.object({
   debug: z.boolean().optional(),
 });
 
+/**
+ * The waypoint list each routed path was asked to pass through, for
+ * `debugCandidates` only: which via made a candidate's shape (item 28 traced
+ * an out-and-back to one this way). Weak, so nothing outlives its request.
+ */
+const routedThrough = new WeakMap<RoutePath, [number, number][]>();
+
 /** point offset perpendicular to the start→end line at fraction t, by `meters` */
 function perpendicularVia(
   a: { lat: number; lon: number },
@@ -462,6 +469,7 @@ async function buildCandidates(
       )
       .map(({ index }) => index);
     const path = await fetchRoutePath({ points, profileOptions: options, generatedViaIndices });
+    routedThrough.set(path, points);
     const stops = [...requiredVia, ...(destination ? [destination] : [])].map(p => [p.lon, p.lat] as [number, number]);
     // A place the profile cannot route to at all (a centre mapped onto a
     // footway) is reached as closely as the network allows; `fetchRoutePath`
@@ -469,14 +477,31 @@ async function buildCandidates(
     // rescued route is thrown away here before anything can use it.
     const stopTolerance = Math.max(300, (path.endpointMovedMeters ?? 0) + ENDPOINT_SNAP_MARGIN_M);
     if (!visitsRequiredStops(path.coordinates, stops, stopTolerance)) throw new Error("Route did not reach all required stops in order");
-    if (destination || intent.includeSightseeing) return path;
+    // Item 28: exact out-and-back excursions go on A-to-B rides too, not
+    // only on free loops. Measured on the rider's Circle K → Jelgava: a
+    // corridor via landed 16 m from the end of a dead-end service road and
+    // the ride went 1.26 km in and 1.26 km back; A-to-B rides had skipped
+    // this since the 2026-09-09 audit. What that audit protected is protected
+    // here instead, per spur: a spur that is the ride's visit to a
+    // rider-named stop or the destination stays.
+    //
+    // A sightseeing LOOP is still left alone. Its anchors are the sights, and
+    // pruning the rest reshuffled which shapes seed the mutation search:
+    // measured, the Sigulda pick went 2 % → 7 % repeated and Cēsis 3 % →
+    // 10 % (Kuldīga unchanged), each by riding further out and back to a sight.
+    if (!destination && intent.includeSightseeing) return path;
     let cleaned: RoutePath;
-    try { cleaned = pruneSpurs(path); }
+    try {
+      cleaned = pruneSpurs(path, {
+        protect: stops,
+        toleranceMeters: stopTolerance,
+        requireCircuit: !destination,
+      });
+    }
     catch (error) { if (requiredVia.length) return path; throw error; }
-    // `pruneSpurs` rebuilds the path, so the moved-endpoint note has to be
-    // carried over or the acceptance checks downstream lose the slack.
-    if (path.endpointMovedMeters !== undefined) cleaned.endpointMovedMeters = path.endpointMovedMeters;
-    // A requested visit may itself need an out-and-back. Never remove it.
+    if (cleaned === path) return path;
+    routedThrough.set(cleaned, points);
+    // Belt and braces: the order check sees the whole ride, the spur check one spur.
     return visitsRequiredStops(cleaned.coordinates, stops, stopTolerance) ? cleaned : path;
   };
 
@@ -2153,6 +2178,7 @@ export async function POST(req: NextRequest) {
           excessDrift: Math.round(excessDriftPercent(s)),
           acceptable: acceptable(s),
           shown: chosen.includes(s),
+          points: routedThrough.get(s.path),
         }))
       : undefined;
 

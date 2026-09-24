@@ -450,8 +450,10 @@ Read `docs/RIDER-AUDIT-2026-09-09.md` before continuing. Tourist POIs are now
 opt-in (`includeSightseeing`); riding quality is the purpose. Direction hints
 are retained independently of the endpoint and constrain every search pass.
 `preferForest` adds a continuous track/trail preference to ranking; generic
-gravel share is insufficient. Exact dead-end excursions are pruned only for
-free loops, retaining original edge tags and real access corridors. TET is
+gravel share is insufficient. Exact dead-end excursions are pruned on every
+ride since 2026-09-24 (backlog 28) — except sightseeing loops, where pruning
+measured worse — protecting rider-named stops and the destination, retaining
+original edge tags and real access corridors. TET is
 never inferred just from maximum forest. Tests: `npx tsx --test
 scripts/rider-regressions.test.ts`. These are an initial measured correction,
 not a finished forest-network planner. Do not restore mandatory tourist

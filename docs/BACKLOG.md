@@ -1088,6 +1088,57 @@ at Confirm (`/api/routable-point`, ~230 ms); typed places are not. Probe
 each rider place for reachability before the search when the ride has vias
 or a finish, and refuse in a few seconds with the same chips.
 
+## 28. ~~A→B rides "go somewhere, end, and come back"~~ — FIXED 2026-09-24 (not deployed)
+
+**Riders' reports, 2026-09-24.** The rider's GPX (Circle K, Pērnavas iela 7 →
+Jelgava, flexible, Grūti·Sports·Meži, one way, 88 km) has an exact
+out-and-back: trkpts 129–147 mirror around a tip at 56.93127, 23.87338 —
+1.26 km in and the same 1.26 km out. **Measured cause:** reproduced
+through the API (form plan, own BRouter, `debug: true`) as the candidate
+`via-2.2--1`, 87.8 km / 154 min, identical to the GPX. Its first waypoint is a
+**corridor offset via** (`perpendicularVia`, fraction 0.3, 2.2× reach, side
+−1) at 56.93140, 23.87346 — 16 m from the tip, which is the end of a
+`highway=service` stub off a grade2 track. Not TET, not a loop anchor, not a
+POI: every one of the 24 spurs found in the shown/alternative routes of
+these rides has a generated corridor via (`via-*`, `zig-*`, `sea-*`) as its
+nearest waypoint, 18 of them within 150 m of the tip. `pruneSpurs` never saw
+them: `if (destination || intent.includeSightseeing) return path;` skipped
+it for every A→B ride since the 2026-09-09 audit. **The overlap metric
+under-counts these:** it counts only the second pass, so the spur reads as
+1.26 km / 87.3 km = 1.45 % → "1 % atkārtoti", while 2.53 km (2.9 %) of the
+ride is the spur.
+
+**Fix.** `pruneSpurs` now runs on A→B rides too (with and without
+sightseeing), per spur: a spur whose closest approach to a rider-named via
+or the destination is within the stop tolerance *and* closer than anything
+the ride keeps is the visit and stays (trimmed to the stop if the spur runs
+on past it). Geometry is only removed, never re-routed; surviving segments
+keep their original edge tags; km, time, surface and overlap come from
+`classifyRoute` on the pruned path. Sightseeing *loops* stay unpruned: with
+sights protected, pruning the rest reshuffled the mutation seeds and the
+pick got worse (Sigulda 2 → 7 %, Cēsis 3 → 10 %, Kuldīga unchanged). No
+via-level guard: pruning removes the same geometry at no router cost, and
+6 of 24 tips were 300–3400 m from their via, so "approach overlaps
+departure" would not catch them reliably. Tests: `scripts/prune-spurs.test.ts`.
+
+| Ride (own BRouter, form plan) | before: shown direct · complex (km, repeated, spurs) | after | spurs in all shown + alternatives |
+|---|---|---|---|
+| Circle K → Jelgava, Adventure | 75.8 km 1 % 1.6 km · 99.1 km 3 % 6.7 km | 77.1 km 0 % 0 · 116.6 km 0 % 0 | 6 / 20.7 km → 0 |
+| the rider's candidate `via-2.2--1` | 87.8 km 1 %, 2.53 km spur | 85.3 km 0 % | — |
+| Circle K → Jelgava, Grants tūrists | 68.2 km 0 % · 82.2 km 0 % | 68.2 km 0 % · 88.7 km 0 % | 0 → 0 |
+| Jelgava → Kuldīga, Adventure | 218.6 km 2 % 10.0 km · 256.6 km 6 % 28.3 km | 208.5 km 0 % 0 · 234.7 km 0 % 0 | 9 / 68.5 km → 0 |
+| Jelgava → Kuldīga, Grants tūrists | 189.2 km 0 % 1.8 km · 215.2 km 0 % | 187.4 km 0 % 0 · 215.2 km 0 % | 1 / 1.8 km → 0 |
+| Rīga → Baldone, Adventure | 59.9 km 4 % 4.9 km · 122.2 km 0 % | 55.0 km 0 % 0 · 115.8 km 0 % | 8 / 21.0 km → 0 |
+| Sigulda 3 h loop, Adventure | 78.2 km 1 % · 96.7 km 0 % | identical | 0 → 0 |
+| Sigulda / Cēsis / Kuldīga 3 h loops, Grants tūrists | 148.3 2 % / 130.0 3 % / 143.3 2 % | identical | unchanged |
+| Circle K → farmstead via → Sigulda, Adventure | 146.3 km 2 % (3 spurs 5.0 km) · 136.4 km 13 % (4, 16.5 km) | 144.5 km 1 % · 109.0 km 2 % | every route keeps exactly one spur, its tip at the farmstead (0 m) |
+| Sigulda → farmstead via → Sigulda, 2 h | 60.2 km 8 % (2 spurs 4.9 km), one route | 54.3 km 4 % · 53.8 km 4 % | only the 3.2 km farmstead spur, kept |
+
+The farmstead is the end of `highway=service` way 118473891 (57.15945,
+24.80593, 739 m dead end). The old loop code pruned the round trip, lost the
+stop, and fell back to the unpruned path, generated spur included; now only
+the farmstead's spur stays.
+
 ## 29. Correct a generated route on the map, not through the chat
 
 **Riders' feedback, 2026-09-24 (three reports).** After a route is
