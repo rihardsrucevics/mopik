@@ -288,6 +288,13 @@ export type GeneratedRoute = {
   quality: RouteQuality;
   /** how much of the route retraces its own roads — the key quality measure */
   overlap: OverlapStats;
+  /**
+   * The longest out-and-back one of the rider's stops is still reached by,
+   * metres, once the generation tried to ride it through
+   * (`rideThroughStops`): a real dead end. Absent when every stop is ridden
+   * through.
+   */
+  stopDeadEndMeters?: number;
   /** named places the loop was planned around, in riding order */
   stops?: { name: string; category: string }[];
   profile: string;

@@ -22,6 +22,17 @@ export type PruneSpursOptions = {
    * ride has no circuit to lose, so it passes `false`.
    */
   requireCircuit?: boolean;
+  /**
+   * Also remove lollipops — a road ridden out to a loop and back again
+   * (`LOLLIPOP_STICK_MIN_M` or more of it) — where the loop exists only for
+   * waypoints the builder invented: every waypoint whose nearest approach is
+   * on the loop or its stick is one of `generatedViaIndices`, and there is at
+   * least one. A loop round a rider's stop or shaping point stays (it is
+   * `protect`ed as well), and so does one the router made on its own. The
+   * lollipop goes whole, loop included, and only when it is less than half
+   * the ride, so a teardrop out of a city is never mistaken for one.
+   */
+  lollipops?: { waypoints: Point[]; generatedViaIndices: number[] };
 };
 
 const DEFAULT_TOLERANCE_M = 300;
@@ -46,9 +57,20 @@ export const MIRROR_TOLERANCE_M = 25;
  * legs meet: the turn itself, a turning circle, or a short thin loop like the
  * one above. Beyond this the far end is a loop worth riding, and what leads
  * to it is an access corridor — which is left alone, as the exact test leaves
- * A-B-C-D-B-A alone.
+ * A-B-C-D-B-A alone — unless the loop is only there for generated vias
+ * (`PruneSpursOptions.lollipops`), when loop and corridor go together.
  */
 export const MIRROR_TIP_MAX_M = 300;
+
+/**
+ * The shortest road to a loop that, ridden in and out again, makes the loop a
+ * lollipop worth removing (2026-09-25). The rider's Rīga → Cinītes ride went
+ * 6.2 km east-west to a generated via at Berģi, rode a 10.7 km loop round it
+ * and came back the same 6.2 km: „kāpēc atkal ved pa to pašu ceļu atpakaļ, ja
+ * var braukt pa citiem ceļiem?” Below a kilometre the shared road is a
+ * junction's approach, and a loop there is cheaper kept than lost.
+ */
+export const LOLLIPOP_STICK_MIN_M = 1_000;
 
 /**
  * A near-mirror spur is cut only where both legs pass through the SAME vertex
@@ -101,6 +123,11 @@ export type SpurCut = {
   /** road removed, out and back together, in metres of geometry */
   meters: number;
   exact: boolean;
+  /**
+   * A lollipop: the road to the loop, one way, in metres. `tip` is then where
+   * the way back comes onto it, and `meters` includes the loop.
+   */
+  stickMeters?: number;
 };
 
 /**
@@ -170,16 +197,24 @@ export function planSpurCuts(path: RoutePath, options: PruneSpursOptions = {}): 
 
     // Pass 2, near mirrors: the first one along the ride, then round again,
     // because removing it can expose an exact mirror or an outer spur.
-    const near = nearMirrorCut(seq.map((i) => coords[i]), (a, b, tip) => {
+    const line = seq.map((i) => coords[i]);
+    const near = nearMirrorCut(line, (a, b, tip, stick) => {
       if (keptNear.has(seq[tip])) return false;
       if (protect.length && visitsProtected(coords, seq, a, b, protect, tolerance)) {
         keptNear.add(seq[tip]);
         return false;
       }
+      if (stick !== undefined && !lollipopOfGeneratedVias(line, a, b, options.lollipops!)) {
+        keptNear.add(seq[tip]);
+        return false;
+      }
       return true;
-    });
+    }, MIRROR_TOLERANCE_M, { lollipops: Boolean(options.lollipops) });
     if (near) {
-      cuts.push({ from: seq[near.a], to: seq[near.b], tip: seq[near.tip], meters: segMeters(near.a, near.b), exact: false });
+      cuts.push({
+        from: seq[near.a], to: seq[near.b], tip: seq[near.tip], meters: segMeters(near.a, near.b), exact: false,
+        ...(near.stickMeters !== undefined ? { stickMeters: near.stickMeters } : {}),
+      });
       seq = [...seq.slice(0, near.a + 1), ...seq.slice(near.b + 1)];
       changed = true;
     }
@@ -209,9 +244,10 @@ export function planSpurCuts(path: RoutePath, options: PruneSpursOptions = {}): 
  */
 export function nearMirrorCut(
   line: Point[],
-  accept: (a: number, b: number, tip: number) => boolean = () => true,
+  accept: (a: number, b: number, tip: number, stickMeters?: number) => boolean = () => true,
   tolerance = MIRROR_TOLERANCE_M,
-): { a: number; b: number; tip: number } | null {
+  opts: { lollipops?: boolean } = {},
+): { a: number; b: number; tip: number; stickMeters?: number } | null {
   if (line.length < 4) return null;
   const lat0 = line[0][1];
   const kx = 111195 * Math.cos((lat0 * Math.PI) / 180), ky = 111195;
@@ -279,12 +315,18 @@ export function nearMirrorCut(
     }
     k = last + 1;
     const tipGap = ss[k0] - ss[p0];
-    if (tipGap > MIRROR_TIP_MAX_M + gap) continue;
+    const stick = ss[last] - ss[k0];
+    // A far end longer than a turn is a loop, and the matched legs are the
+    // road to it ridden twice: a lollipop. Reported only when asked for, and
+    // only with a real stick (`LOLLIPOP_STICK_MIN_M`); the caller decides
+    // whether the loop at its end is worth that.
+    const lollipop = tipGap > MIRROR_TIP_MAX_M + gap;
+    if (lollipop && (!opts.lollipops || stick < LOLLIPOP_STICK_MIN_M)) continue;
     // The matched legs must be at least half as long as the far end they
     // lead to. Otherwise this is a small circuit whose two ends meet at an
     // acute junction — a block ridden round, measured on a 420 m residential
     // triangle in Sigulda — not a road ridden twice.
-    if (ss[last] - ss[k0] < Math.max(gap, tipGap / 2)) continue;
+    if (!lollipop && stick < Math.max(gap, tipGap / 2)) continue;
     // Vertices of the two legs: out from the partner of the outermost match
     // to the turn, back from the turn to the outermost match.
     const outFrom = seg[lastP], outTo = seg[p0] + 1;
@@ -300,6 +342,13 @@ export function nearMirrorCut(
     let removed = 0;
     for (let i = a + 1; i <= b; i++) removed += Math.hypot(xy[i][0] - xy[i - 1][0], xy[i][1] - xy[i - 1][1]);
     if (removed < 2 * gap) continue;
+    if (lollipop) {
+      // The turn of a lollipop is where the way back comes onto the stick:
+      // the loop is ridden before it, the stick again after it.
+      const tip = Math.max(a + 1, Math.min(b - 1, backFrom));
+      if (!accept(a, b, tip, stick)) continue;
+      return { a, b, tip, stickMeters: stick };
+    }
     // The turn: the vertex between the legs farthest from the base.
     let tip = a + 1, far = -1;
     for (let i = a + 1; i < b; i++) {
@@ -310,6 +359,37 @@ export function nearMirrorCut(
     return { a, b, tip };
   }
   return null;
+}
+
+/**
+ * Whether the lollipop between positions `a` and `b` of `line` is there only
+ * for vias the builder invented (see `PruneSpursOptions.lollipops`), and is
+ * less than half the ride.
+ */
+function lollipopOfGeneratedVias(
+  line: Point[], a: number, b: number,
+  vias: { waypoints: Point[]; generatedViaIndices: number[] },
+): boolean {
+  let inside = 0, total = 0;
+  for (let i = 1; i < line.length; i++) {
+    const d = haversineMeters(line[i - 1], line[i]);
+    total += d;
+    if (i > a && i <= b) inside += d;
+  }
+  if (inside * 2 >= total) return false;
+  const generated = new Set(vias.generatedViaIndices);
+  let own = 0;
+  for (let w = 1; w < vias.waypoints.length - 1; w++) {
+    let best = Infinity, at = -1;
+    for (let j = 0; j + 1 < line.length; j++) {
+      const d = segmentMeters(vias.waypoints[w], line[j], line[j + 1]);
+      if (d < best) { best = d; at = j; }
+    }
+    if (at < a || at >= b) continue;
+    if (!generated.has(w)) return false;
+    own++;
+  }
+  return own > 0;
 }
 
 /**
@@ -343,6 +423,10 @@ function visitsProtected(coords: Point[], seq: number[], a: number, b: number, p
  * used. Everything else the router said about the base path (a moved
  * endpoint, a stitched-together leg) is still true of the result.
  */
+export function rebuildPath(base: RoutePath, sources: RoutePath[], refs: [number, number][]): RoutePath {
+  return rebuild(base, sources, refs);
+}
+
 function rebuild(base: RoutePath, sources: RoutePath[], refs: [number, number][]): RoutePath {
   const edgeMaps = sources.map((path) => {
     const at = new Map<number, RouteEdge>();
@@ -557,8 +641,13 @@ export function acceptSpurLoop(params: {
   loopMeters: number;
   /** what the loop adds to the ride's `revisitedMeters` over the cut ride */
   addedRevisitMeters: number;
+  /**
+   * A lollipop's road to its loop, one way: the shared road the loop stops
+   * riding twice (`outAndBackMeters` then includes the loop itself).
+   */
+  sharedOneWayMeters?: number;
 }): boolean {
-  const oneWay = params.outAndBackMeters / 2;
+  const oneWay = params.sharedOneWayMeters ?? params.outAndBackMeters / 2;
   if (params.addedRevisitMeters > Math.min(LOOP_SHARED_MIN_M, oneWay / 2)) return false;
   const extra = params.loopMeters - params.skippedMeters - params.outAndBackMeters;
   return extra <= LOOP_EXTRA_PER_SHARED * oneWay;
@@ -603,7 +692,11 @@ export async function pruneOrLoopSpurs(
   // and the km the ride ends up with — how item 28 is measured.
   const done = (result: RoutePath, note = ""): RoutePath => {
     spurReports.set(result, report);
-    console.log(`spurs: ${report.cut} cut (${(report.cutMeters / 1000).toFixed(2)} km) → ${(result.distanceMeters / 1000).toFixed(1)} km${note}`);
+    const lollipops = top.filter((c) => c.stickMeters !== undefined);
+    const lollipopNote = lollipops.length
+      ? `, ${lollipops.length} a lollipop (${lollipops.map((c) => `${(c.meters / 1000).toFixed(1)} km, stick ${(c.stickMeters! / 1000).toFixed(1)} km`).join("; ")})`
+      : "";
+    console.log(`spurs: ${report.cut} cut (${(report.cutMeters / 1000).toFixed(2)} km${lollipopNote}) → ${(result.distanceMeters / 1000).toFixed(1)} km${note}`);
     return result;
   };
   const loop = options.loop;
@@ -612,7 +705,10 @@ export async function pruneOrLoopSpurs(
   const coords = path.coordinates;
   const generated = new Set(loop.generatedViaIndices);
   const eligible = top.filter((cut) => {
-    if (cut.meters / 2 < LOOP_SHARED_MIN_M || cut.meters / 2 > SPUR_LOOP_MAX_ONE_WAY_M) return false;
+    const oneWay = sharedOf(cut);
+    if (oneWay < LOOP_SHARED_MIN_M || oneWay > SPUR_LOOP_MAX_ONE_WAY_M) return false;
+    // A lollipop was cut only because its loop is there for generated vias.
+    if (cut.stickMeters !== undefined) return true;
     let nearest = -1, best = Infinity;
     loop.waypoints.forEach((w, i) => {
       const d = haversineMeters(w, coords[cut.tip]);
@@ -650,7 +746,7 @@ export async function pruneOrLoopSpurs(
   const variants: Variant[] = [];
   for (const cut of eligible) {
     if (!loop.budget.take(VARIANTS_PER_SPUR)) break;
-    const reach = cut.meters; // two spur lengths, one way each
+    const reach = 2 * sharedOf(cut); // two spur lengths, one way each
     const others = top.filter((c) => c !== cut);
     let r = cut.to;
     while (r < coords.length - 2 && cum[r] - cum[cut.to] < reach) r++;
@@ -701,7 +797,7 @@ export async function pruneOrLoopSpurs(
       for (let i = 1; i < f.length; i++) {
         const j = ride.get(key(f[i]));
         if (j === undefined) continue;
-        return { label: `back+${Math.round(((cum[j] - cum[cut.to]) / cut.meters) * 20) / 10}`, fenced, fencedFrom: 0, fencedTo: i,
+        return { label: `back+${Math.round(((cum[j] - cum[cut.to]) / (2 * sharedOf(cut))) * 20) / 10}`, fenced, fencedFrom: 0, fencedTo: i,
           replaceFrom: cut.tip + 1, replaceTo: j, skippedMeters: cum[j] - cum[cut.to] };
       }
       return { label: "back+2", fenced, fencedFrom: 0, fencedTo: f.length - 1, replaceFrom: cut.tip + 1, replaceTo: v.along, skippedMeters: cum[v.along] - cum[cut.to] };
@@ -710,7 +806,7 @@ export async function pruneOrLoopSpurs(
     for (let i = f.length - 2; i >= 0; i--) {
       const j = ride.get(key(f[i]));
       if (j === undefined) continue;
-      return { label: `in-${Math.round(((cum[cut.from] - cum[j]) / cut.meters) * 20) / 10}`, fenced, fencedFrom: i, fencedTo: f.length - 1,
+      return { label: `in-${Math.round(((cum[cut.from] - cum[j]) / (2 * sharedOf(cut))) * 20) / 10}`, fenced, fencedFrom: i, fencedTo: f.length - 1,
         replaceFrom: j, replaceTo: cut.tip - 1, skippedMeters: cum[cut.from] - cum[j] };
     }
     return { label: "in-2", fenced, fencedFrom: 0, fencedTo: f.length - 1, replaceFrom: v.along, replaceTo: cut.tip - 1, skippedMeters: cum[cut.from] - cum[v.along] };
@@ -765,16 +861,16 @@ export async function pruneOrLoopSpurs(
       const meters = lineMeters(candidate.coordinates);
       const added = Math.max(0, revisit - currentRevisit);
       const loopMeters = meters - currentMeters + splice.skippedMeters;
-      const over = loopMeters - splice.skippedMeters - cut.meters - LOOP_EXTRA_PER_SHARED * cut.meters / 2;
+      const over = loopMeters - splice.skippedMeters - cut.meters - LOOP_EXTRA_PER_SHARED * sharedOf(cut);
       if (!nearest || over + added < nearest.over + nearest.added) nearest = { over, added };
-      if (!acceptSpurLoop({ outAndBackMeters: cut.meters, skippedMeters: splice.skippedMeters, loopMeters, addedRevisitMeters: added })) return;
+      if (!acceptSpurLoop({ outAndBackMeters: cut.meters, skippedMeters: splice.skippedMeters, loopMeters, addedRevisitMeters: added, sharedOneWayMeters: cut.stickMeters })) return;
       // Least road ridden twice first (to 50 m), then the least extra riding.
       const score = Math.round(added / 50) * 1e7 + (meters - currentMeters);
       if (!best || score < best.score) best = { path: candidate, revisit, meters, score, splice };
     });
     const n = nearest as { over: number; added: number } | null;
     const won = best as { path: RoutePath; revisit: number; meters: number; splice: Splice } | null;
-    report.notes.push(`${Math.round(cut.meters / 2)} m ${won ? `looped ${won.splice.label}` : "cut"} (${answered} answered${n ? `, nearest ${Math.round(n.over)} m over bound, +${Math.round(n.added)} m ridden twice` : ""})`);
+    report.notes.push(`${cut.stickMeters !== undefined ? `lollipop ${Math.round(cut.meters)} m, stick ` : ""}${Math.round(sharedOf(cut))} m ${won ? `looped ${won.splice.label}` : "cut"} (${answered} answered${n ? `, nearest ${Math.round(n.over)} m over bound, +${Math.round(n.added)} m ridden twice` : ""})`);
     if (!won) continue;
     loops.set(cut, won.splice);
     current = won.path;
@@ -783,6 +879,11 @@ export async function pruneOrLoopSpurs(
     report.looped++;
   }
   return done(current, `; ${report.looped} of ${eligible.length} looped instead (${report.loopTried} tries, ${report.loopMs} ms): ${report.notes.join("; ")}`);
+}
+
+/** The road a cut stops riding twice, one way: a spur's half, a lollipop's stick. */
+function sharedOf(cut: SpurCut): number {
+  return cut.stickMeters ?? cut.meters / 2;
 }
 
 /** The cuts not inside another cut. */
