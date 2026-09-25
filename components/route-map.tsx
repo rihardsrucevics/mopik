@@ -3943,7 +3943,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
            With no row active the field is off and says what to do instead
            („Izvēlies rindu vai pievieno pieturu”); "+" stays, since adding a
            stop is one of the two answers. */
-        <div className="group flex items-center gap-1.5 max-md:relative max-md:gap-2 md:max-w-md">
+        <div className="group flex items-center gap-1.5 max-md:gap-2 md:max-w-md">
           <span role="status" className="sr-only">{controls.hint}</span>
           <PlaceInput
             className="min-w-0 flex-1"
@@ -3966,8 +3966,10 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
             compact
           />
           {/* ✓ / "+" and ↶: in the row on the desktop (`contents`); on a phone
-              a column on the right edge, bottom-up from just above the row,
-              primary on top. Only the full-screen map has it — inline the map
+              a column on the right edge, bottom-up from just above the header
+              column — the row, and over it the notice, the off-road verdict
+              or the move hint when one is up, which the column never covers
+              — primary on top. Only the full-screen map has it — inline the map
               is a preview (MapPanel). A disabled ✓ is not drawn on a phone
               either; the column grows from the bottom, so ↶ stays put. */}
           <div className="contents max-md:absolute max-md:bottom-full max-md:right-0 max-md:mb-2 max-md:flex max-md:flex-col max-md:gap-2">
