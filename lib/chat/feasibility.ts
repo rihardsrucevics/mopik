@@ -1,6 +1,7 @@
 import type { ChatQuickReply, RidePlan } from "./ride-plan";
 import type { UnplannableVerdict, UnreachableStop } from "@/lib/types";
 import type { UiLocale } from "@/lib/i18n/locale";
+import { STOP_TOLERANCE_M } from "@/lib/routing/routable-point";
 
 /**
  * Can the ride the rider described be ridden in the time they gave, on the
@@ -316,7 +317,9 @@ export function describeUnplannable(
  * always offer the next actions. Telling someone their stop is unreachable
  * and stopping there leaves them with a map and no move to make. So:
  *
- * - **Remove** is always offered. It is the one fix that always works.
+ * - **Remove** is offered for a stop or the finish. It is the one fix that
+ *   always works. A start cannot be removed, so it gets no such chip and the
+ *   sentence asks for another start instead (backlog 27).
  * - **Move to the nearest road** is offered only when the router actually
  *   found ground and it is close enough to still be the same place
  *   (`canMove`, decided by `lib/routing/routable-point.ts`, not here — the
@@ -337,26 +340,56 @@ export function describeUnreachableStop(
   const pick = <T,>(all: Record<UiLocale, T>): T => all[locale] ?? all.lv;
   const name = stop.name;
   const metres = stop.distanceM;
+  const role = stop.role;
 
-  // What is wrong, in the rider's words. The place is named because that is
-  // the one fact the old refusal was missing.
-  const problem = pick({
-    lv: `Pieturu „${name}” ar šo profilu nevar sasniegt — pavelc to uz ceļa vai izņem.`,
-    lt: `Sustojimo „${name}“ su šiuo profiliu pasiekti negalima — patrauk jį prie kelio arba pašalink.`,
-    et: `Peatust „${name}” selle profiiliga ei saa — lohista see tee peale või eemalda.`,
-    en: `The stop “${name}” cannot be reached with this profile — drag it onto a road or remove it.`,
+  // What is wrong, in the rider's words, naming the place *and its role*
+  // (backlog 27, 2026-09-25): the check now runs before the search on the
+  // start and the finish too, and "Pieturu „Ādaži”" about a start reads as
+  // if Mopik had misunderstood the ride.
+  const what = pick({
+    lv: { start: `Sākumpunktu „${name}”`, via: `Pieturu „${name}”`, destination: `Finišu „${name}”` },
+    lt: { start: `Pradžios taško „${name}“`, via: `Sustojimo „${name}“`, destination: `Finišo „${name}“` },
+    et: { start: `Alguspunkti „${name}”`, via: `Peatust „${name}”`, destination: `Finišit „${name}”` },
+    en: { start: `The start “${name}”`, via: `The stop “${name}”`, destination: `The finish “${name}”` },
+  })[role];
+  const cannot = pick({
+    lv: `${what} ar šo profilu nevar sasniegt`,
+    lt: `${what} su šiuo profiliu pasiekti negalima`,
+    et: `${what} selle profiiliga kätte ei saa`,
+    en: `${what} cannot be reached with this profile`,
   });
 
-  // How far the road is, when we measured it. A number turns "cannot" into
-  // something the rider can judge: 60 m is a mis-tap, 471 m is a farmstead.
-  const where =
+  // Why, when we measured it. A number turns "cannot" into something the
+  // rider can judge — 60 m is a mis-tap, 471 m is a farmstead — and the
+  // tolerance says why 471 m is not "close enough".
+  const why =
     metres === undefined
-      ? ""
+      ? "."
       : pick({
-          lv: `Tuvākais ceļš, pa kuru drīkst braukt, ir ~${metres} m nostāk.`,
-          lt: `Artimiausias kelias, kuriuo galima važiuoti, yra už ~${metres} m.`,
-          et: `Lähim tee, kus tohib sõita, on ~${metres} m eemal.`,
-          en: `The nearest road you may ride is ~${metres} m away.`,
+          lv: `: tuvākais ceļš, pa kuru drīkst braukt, ir ~${metres} m nostāk, bet maršrutam jāpienāk ${STOP_TOLERANCE_M} m robežās.`,
+          lt: `: artimiausias kelias, kuriuo galima važiuoti, yra už ~${metres} m, o maršrutas turi praeiti ne toliau kaip ${STOP_TOLERANCE_M} m nuo jo.`,
+          et: `: lähim tee, kus tohib sõita, on ~${metres} m eemal, aga marsruut peab sellest mööduma kuni ${STOP_TOLERANCE_M} m kauguselt.`,
+          en: `: the nearest road you may ride is ~${metres} m away, and the route has to come within ${STOP_TOLERANCE_M} m.`,
+        });
+
+  // A start cannot be taken out — a ride with no start has nowhere to begin,
+  // and `reviseUnreachableStop` rightly ignores that chip. So a start gets
+  // no "remove" chip (the rider's rule: never ship a chip that does nothing)
+  // and the sentence says what to do instead.
+  const canRemove = role !== "start";
+  const fix =
+    role === "start"
+      ? pick({
+          lv: "Norādi citu sākumpunktu vai atzīmē to kartē tuvāk ceļam.",
+          lt: "Nurodyk kitą pradžios tašką arba pažymėk jį žemėlapyje arčiau kelio.",
+          et: "Vali teine alguspunkt või märgi see kaardil teele lähemale.",
+          en: "Choose another start, or mark it on the map closer to a road.",
+        })
+      : pick({
+          lv: "Atzīmē to kartē tuvāk ceļam vai izņem.",
+          lt: "Pažymėk jį žemėlapyje arčiau kelio arba pašalink.",
+          et: "Märgi see kaardil teele lähemale või eemalda.",
+          en: "Mark it on the map closer to a road, or remove it.",
         });
 
   const ask = pick({
@@ -388,23 +421,26 @@ export function describeUnreachableStop(
     });
   }
 
-  // Remove is always available — the fix that cannot fail.
-  quickReplies.push({
-    label: pick({
-      lv: `Izņemt pieturu „${name}”`,
-      lt: `Pašalinti sustojimą „${name}“`,
-      et: `Eemalda peatus „${name}”`,
-      en: `Remove the stop “${name}”`,
-    }),
-    message: pick({
-      lv: `Izņem pieturu „${name}”.`,
-      lt: `Pašalink sustojimą „${name}“.`,
-      et: `Eemalda peatus „${name}”.`,
-      en: `Remove the stop “${name}”.`,
-    }),
-    action: "remove-stop",
-    stop,
-  });
+  // Remove, for a stop or the finish — the fix that cannot fail. Taking out
+  // the finish leaves a ride that ends wherever it gets to ("man vienalga").
+  if (canRemove) {
+    quickReplies.push({
+      label: pick({
+        lv: role === "destination" ? `Izņemt finišu „${name}”` : `Izņemt pieturu „${name}”`,
+        lt: role === "destination" ? `Pašalinti finišą „${name}“` : `Pašalinti sustojimą „${name}“`,
+        et: role === "destination" ? `Eemalda finiš „${name}”` : `Eemalda peatus „${name}”`,
+        en: role === "destination" ? `Remove the finish “${name}”` : `Remove the stop “${name}”`,
+      }),
+      message: pick({
+        lv: role === "destination" ? `Izņem finišu „${name}”.` : `Izņem pieturu „${name}”.`,
+        lt: role === "destination" ? `Pašalink finišą „${name}“.` : `Pašalink sustojimą „${name}“.`,
+        et: role === "destination" ? `Eemalda finiš „${name}”.` : `Eemalda peatus „${name}”.`,
+        en: role === "destination" ? `Remove the finish “${name}”.` : `Remove the stop “${name}”.`,
+      }),
+      action: "remove-stop",
+      stop,
+    });
+  }
 
-  return { message: [problem, where, ask].filter(Boolean).join(" "), quickReplies };
+  return { message: [cannot + why, fix, quickReplies.length ? ask : ""].filter(Boolean).join(" "), quickReplies };
 }

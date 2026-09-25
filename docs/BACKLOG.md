@@ -1080,7 +1080,9 @@ its name from the plan's first place and is right; the metadata is not.
 Fix the call sites in components/result-panel.tsx and lib/share/saved-rides.ts
 to pass the plan's start, keeping old codes decodable.
 
-## 27. Diagnose unreachable pins before the search, not after 55 s
+## 27. ~~Diagnose unreachable pins before the search, not after 55 s~~ — DONE 2026-09-25
+
+**Done 2026-09-25:** every rider place is probed at once before the search (`lib/routing/pre-search-reachability.ts`, ~0.1–0.4 s on brouter.mopik.eu); Pilskalni 2 as finish or stop is now refused in 0.2–0.5 s (was 13.6–18.2 s locally, 55 s in production), naming the place, its role and the 471 m.
 
 Measured 2026-09-20 in production: the ride with "Pilskalni 2" as finish
 (a farmstead behind `access=private`) now returns 200 with the stop named
