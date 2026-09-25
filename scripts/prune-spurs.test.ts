@@ -139,7 +139,8 @@ test("distance, time, surface and overlap are measured on what is left", () => {
 // šoseja ride, 1.62 km out and back through a forest near Zušu purvs, read 3 %.
 // ---------------------------------------------------------------------------
 
-import { acceptSpurLoop, nearMirrorCut, pruneOrLoopSpurs, revisitedMeters, SpurLoopBudget, type Nogo } from "../lib/routing/prune-spurs";
+import { readFileSync } from "node:fs";
+import { acceptSpurLoop, LOLLIPOP_STICK_MIN_M, nearMirrorCut, pruneOrLoopSpurs, revisitedMeters, SpurLoopBudget, type Nogo } from "../lib/routing/prune-spurs";
 
 /** A point `x` metres east and `y` metres north of 24.0 E, 57.0 N. */
 const m = (x: number, y: number): P => [24 + x / (111195 * Math.cos((57 * Math.PI) / 180)), 57 + y / 111195];
@@ -376,4 +377,103 @@ test("a loop that comes onto the ride early joins it there, and the ride keeps i
   const markers = looped.edges.map((e) => e.tags?.marker);
   assert.equal(markers.at(-1), String(nearMirrorRide(10).length - 1), "F→G is the ride's last edge");
   assert.equal(markers.filter((x) => x === "loop").length, 2, "only tip→(1500,1000)→D is the loop's");
+});
+
+// ---------------------------------------------------------------------------
+// Lollipops: a road ridden out to a loop and back again (2026-09-25)
+// ---------------------------------------------------------------------------
+
+/**
+ * The through road runs east along y = 0 from (0, 0) to (20000, 0). At (2000, 0)
+ * a stick goes `stick` metres north, a 4.5 km loop runs round a via, and the
+ * ride comes back down the same stick — out on x = 2000 every 100 m, back on
+ * x = 2008 every 70 m, the same road sampled differently, as the rider's GPX
+ * has it — and carries on east.
+ */
+function lollipopRide(stick: number) {
+  const road = (from: number, to: number) => ys(from, to, 500).map((x) => m(x, 0));
+  const base = m(2000, 0);
+  const out = ys(100, stick, 100).map((y) => m(2000, y));
+  const loop = [m(2750, stick), m(2750, stick + 1500), m(1250, stick + 1500), m(1250, stick)];
+  const back = ys(stick, 70, -70).map((y) => m(2008, y));
+  const line: P[] = [...road(0, 1500), base, ...out, ...loop, ...back, base, ...road(2500, 20000)];
+  return { line, base, via: m(2000, stick + 750), start: m(0, 0), end: m(20000, 0) };
+}
+const throughRoad = (): P[] => [...ys(0, 1500, 500).map((x) => m(x, 0)), m(2000, 0), ...ys(2500, 20000, 500).map((x) => m(x, 0))];
+
+test("a lollipop round a generated via goes whole, loop and stick, on an A-to-B ride", () => {
+  const { line, via, start, end } = lollipopRide(2000);
+  const path = pathOf(line);
+  assert.ok(revisitedMeters(line) > 1800, `${revisitedMeters(line)}`);
+  const lollipops = { waypoints: [start, via, end], generatedViaIndices: [1] };
+  const clean = pruneSpurs(path, { protect: [end], requireCircuit: false, lollipops });
+  assert.deepEqual(clean.coordinates, throughRoad());
+  assert.equal(revisitedMeters(clean.coordinates), 0);
+  // Without the option nothing changes: an access corridor to a circuit is
+  // still left alone where nobody said what the loop is for.
+  assert.equal(pruneSpurs(path, { protect: [end], requireCircuit: false }), path);
+});
+
+test("a lollipop stays when its loop is the rider's, the router's own, too short a stick, or most of the ride", () => {
+  const { line, via, start, end } = lollipopRide(2000);
+  const path = pathOf(line);
+  // The rider's stop in the loop: named, and protected.
+  assert.equal(pruneSpurs(path, { protect: [via, end], requireCircuit: false, lollipops: { waypoints: [start, via, end], generatedViaIndices: [] } }), path);
+  // A named waypoint in the loop keeps it even unprotected (a shaping point).
+  assert.equal(pruneSpurs(path, { protect: [end], requireCircuit: false, lollipops: { waypoints: [start, via, end], generatedViaIndices: [] } }), path);
+  // No waypoint in the loop at all: the router made it, nobody asked for it to go.
+  assert.equal(pruneSpurs(path, { protect: [end], requireCircuit: false, lollipops: { waypoints: [start, end], generatedViaIndices: [] } }), path);
+  // A stick under `LOLLIPOP_STICK_MIN_M` is a junction's approach.
+  const short = lollipopRide(LOLLIPOP_STICK_MIN_M - 200);
+  const shortPath = pathOf(short.line);
+  assert.equal(pruneSpurs(shortPath, { protect: [short.end], requireCircuit: false, lollipops: { waypoints: [short.start, short.via, short.end], generatedViaIndices: [1] } }), shortPath);
+  // A lollipop that is most of the ride is the ride (a teardrop out of town).
+  const long = lollipopRide(4000);
+  const tiny: P[] = [m(1990, 0), ...long.line.slice(long.line.indexOf(long.base), long.line.lastIndexOf(long.base) + 1), m(2010, 0)];
+  const tinyPath = pathOf(tiny);
+  assert.equal(pruneSpurs(tinyPath, { requireCircuit: false, lollipops: { waypoints: [tiny[0], long.via, tiny.at(-1)!], generatedViaIndices: [1] } }), tinyPath);
+});
+
+test("the rider's Berģi lollipop: 6.2 km ridden twice to a loop round a generated via is removed", () => {
+  // Rider's GPX of 2026-09-25, km 19.5–78 of Taaza Cinnamon → Gaujaslīču
+  // iela 22 (candidate via-0.35--1): east of Berģi the ride went 6.2 km west
+  // to the generated via, rode 10.7 km round it and came back the same 6.2 km.
+  const fixture = JSON.parse(readFileSync(new URL("./fixtures/lollipop-bergi-2026-09-25.json", import.meta.url), "utf8")) as { via: P; coordinates: P[] };
+  const line = fixture.coordinates;
+  const start = line[0], end = line.at(-1)!;
+  assert.ok(revisitedMeters(line) > 6000, `before: ${revisitedMeters(line)} m ridden twice`);
+  const clean = pruneSpurs(pathOf(line), { protect: [end], requireCircuit: false, lollipops: { waypoints: [start, fixture.via, end], generatedViaIndices: [1] } });
+  assert.ok(revisitedMeters(clean.coordinates) < 100, `after: ${revisitedMeters(clean.coordinates)} m ridden twice`);
+  // Only removed, never invented: every point of the result is one the ride had.
+  const had = new Set(line.map((p) => p.join(",")));
+  assert.ok(clean.coordinates.every((p) => had.has(p.join(","))));
+  assert.ok(lineMeters(clean.coordinates) < lineMeters(line) - 20_000, `${lineMeters(line)} → ${lineMeters(clean.coordinates)}`);
+  // The loop round the via went with its stick.
+  const nearest = Math.min(...clean.coordinates.map((p) => lineMeters([p, fixture.via])));
+  assert.ok(nearest > 2000, `${nearest}`);
+  // Before this pass the same ride kept all of it.
+  assert.equal(pruneSpurs(pathOf(line), { protect: [end], requireCircuit: false }).coordinates.length > line.length - 50, true);
+});
+
+test("a lollipop's loop is asked for like a spur's, and bounded by its stick", async () => {
+  // The fenced router finds nothing: the lollipop is cut whole, and the loop
+  // was asked for from where the way back comes onto the stick.
+  const { line, via, start, end } = lollipopRide(2000);
+  const calls: { points: P[]; nogos: Nogo[] }[] = [];
+  const cut = await pruneOrLoopSpurs(pathOf(line), {
+    protect: [end], requireCircuit: false,
+    lollipops: { waypoints: [start, via, end], generatedViaIndices: [1] },
+    loop: {
+      waypoints: [start, via, end], generatedViaIndices: [1], budget: new SpurLoopBudget(),
+      route: async (points, nogos) => { calls.push({ points, nogos }); throw new Error("no route"); },
+    },
+  });
+  assert.deepEqual(cut.coordinates, throughRoad());
+  assert.ok(calls.length > 0);
+  const turn = m(2008, 2000);
+  assert.ok(calls.every((c) => c.points.some((p) => lineMeters([p, turn]) < 80)), JSON.stringify(calls.map((c) => c.points)));
+  // The bound is the stick's: a loop may ride at most one stick more than the lollipop did.
+  const lollipop = 2 * 2000 + 4500;
+  assert.equal(acceptSpurLoop({ outAndBackMeters: lollipop, skippedMeters: 1000, loopMeters: 1000 + lollipop + 2000, addedRevisitMeters: 0, sharedOneWayMeters: 2000 }), true);
+  assert.equal(acceptSpurLoop({ outAndBackMeters: lollipop, skippedMeters: 1000, loopMeters: 1000 + lollipop + 2001, addedRevisitMeters: 0, sharedOneWayMeters: 2000 }), false);
 });

@@ -512,6 +512,11 @@ async function buildCandidates(
         protect: kept,
         toleranceMeters: stopTolerance,
         requireCircuit: !destination,
+        // A-to-B rides only: a road ridden out to a loop round a generated
+        // via and back again (the rider's 2026-09-25 Rīga → Cinītes ride,
+        // 6.2 km twice to a loop at Berģi). A free loop's anchors are all
+        // generated and its search already ranks retracing; left as it was.
+        ...(destination ? { lollipops: { waypoints: points, generatedViaIndices } } : {}),
         loop: spurLoopsFor({ ride: intent, profileOptions: options, waypoints: points, generatedViaIndices }),
       });
     }
