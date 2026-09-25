@@ -73,6 +73,8 @@ import type { RideEdit } from "@/components/ride-composer";
 import { MOVE_OFFER_MAX_M } from "@/lib/routing/routable-point";
 import { MAX_SHAPE_POINTS, MAX_STOPS } from "@/lib/chat/ride-limits";
 import { LoaderCircle } from "lucide-react";
+// „Labot” opens the phone map full screen first: inline it is a preview.
+import { openMapFullscreen } from "@/lib/map/fullscreen";
 
 type Retry = { stage: "chat"; messages: ChatMessage[]; plan: RidePlan | null } | { stage: "route"; messages: ChatMessage[]; plan: RidePlan };
 
@@ -1042,6 +1044,8 @@ export function HomePage() {
       detour: detour ?? null,
     });
     if (desktop) return;
+    // The card's „Pievienot” is on the map, and the inline map is a preview.
+    openMapFullscreen();
     requestAnimationFrame(() => {
       document.querySelector("[data-map-slot]")?.scrollIntoView({ behavior: "smooth", block: "center" });
     });
@@ -1910,7 +1914,7 @@ export function HomePage() {
                   onPickModeChange={changePickMode} pickPoint={pickPoint}
                   onMapControlsChange={setMapControls} mapShown={mapVisible} edit={editor} />
             : result && result.routes.length > 0 && !chatting
-              ? <ResultPanel routes={result.routes} selected={selected} onSelect={setSelected} plan={plan} avoidTowns={result.intent.avoidTowns ?? false} lucky={lucky} remoteLoop={result.remoteLoop} longerSuggestion={result.longerSuggestion} tolerancePercent={result.intent.distanceTolerancePercent} busy={phase !== "idle"} onSend={send} onBackToForm={() => setEntryMode("form")} map={mapInResult && mapVisible ? mapPanel : undefined} resolvedPlaces={routedPlaces} alternatives={result.alternatives} sparsePlaceData={result.sparsePlaceData} assembledFromSegments={result.assembledFromSegments} directLeg={showingDirect} offset={variantOffset} onOffsetChange={setVariantOffset} onShowPoi={showPoi} pois={routePois} poisLoading={poisLoading} poisFailed={poisFailed} onDetoursChange={setDetoursForMap} selectedPois={selectedPois} onToggleSelectPoi={toggleSelectPoi} onClearSelectedPois={clearSelectedPois} onCommitSelection={commitSelection} onSearchBetterLoop={searchBetterLoop} shapesDropped={Boolean(plan?.shapePoints?.length)} onSplicedChange={handleSplicedChange} override={edited ? shownRoute : null} edited={edited} rerouting={rerouting} editNote={editNote} onEdit={canEdit ? enterEdit : undefined} />
+              ? <ResultPanel routes={result.routes} selected={selected} onSelect={setSelected} plan={plan} avoidTowns={result.intent.avoidTowns ?? false} lucky={lucky} remoteLoop={result.remoteLoop} longerSuggestion={result.longerSuggestion} tolerancePercent={result.intent.distanceTolerancePercent} busy={phase !== "idle"} onSend={send} onBackToForm={() => setEntryMode("form")} map={mapInResult && mapVisible ? mapPanel : undefined} resolvedPlaces={routedPlaces} alternatives={result.alternatives} sparsePlaceData={result.sparsePlaceData} assembledFromSegments={result.assembledFromSegments} directLeg={showingDirect} offset={variantOffset} onOffsetChange={setVariantOffset} onShowPoi={showPoi} pois={routePois} poisLoading={poisLoading} poisFailed={poisFailed} onDetoursChange={setDetoursForMap} selectedPois={selectedPois} onToggleSelectPoi={toggleSelectPoi} onClearSelectedPois={clearSelectedPois} onCommitSelection={commitSelection} onSearchBetterLoop={searchBetterLoop} shapesDropped={Boolean(plan?.shapePoints?.length)} onSplicedChange={handleSplicedChange} override={edited ? shownRoute : null} edited={edited} rerouting={rerouting} editNote={editNote} onEdit={canEdit ? () => { openMapFullscreen(); enterEdit(); } : undefined} />
               : <RoutePrompt messages={messages} plan={plan} hasRoute={Boolean(route)} phase={phase} quickReplies={quickReplies} lucky={lucky && !route} onSend={send} onBackToForm={() => setEntryMode("form")} originCode={origin?.code ?? null} onAction={(reply) => { if (reply.action === "retry") { retryLast(); return; } if (reply.action === "drop-stops" || reply.action === "easier-profile") { void retryChanged(reply.action); return; } if (reply.action === "direct-leg") { showDirectLeg(); return; } if (reply.action === "remove-stop" || reply.action === "move-stop") { if (reply.stop) reviseUnreachableStop(reply.stop, reply.action === "move-stop" ? "move" : "remove"); return; } setChatting(false); setQuickReplies([]); }} onCancel={cancel} />}
           {/* A ride that came from editing another one. Asked once, here,
               because only the rider knows whether the original is still

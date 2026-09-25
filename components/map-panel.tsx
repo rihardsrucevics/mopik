@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { Maximize2, Minimize2 } from "lucide-react";
 import { track } from "@/lib/analytics";
 import { useLocale } from "@/lib/i18n/use-locale";
 import { t } from "@/lib/i18n/messages";
+import { mapPanelMounted, setMapFullscreen, useMapFullscreen } from "@/lib/map/fullscreen";
 
 /**
  * The map with its full-screen control. Wherever a map is shown — the planner,
@@ -15,14 +16,22 @@ import { t } from "@/lib/i18n/messages";
  */
 export function MapPanel({ children, className = "", expandedClassName = "" }: {
   children: ReactNode;
-  /** Height and frame while inline; the component owns the expanded state. */
+  /** Height and frame while inline; full screen is `lib/map/fullscreen`. */
   className?: string;
   /** Optional desktop-only overrides applied while expanded. */
   expandedClassName?: string;
 }) {
   const [locale] = useLocale();
-  const [expanded, setExpanded] = useState(false);
+  // Shared, not local: an action outside the panel („Labot”, a row's pin
+  // button) opens it, and „Labot” remounts it on the way (lib/map/fullscreen).
+  const expanded = useMapFullscreen();
   const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => mapPanelMounted(), []);
+  // While a mark waits for ✓ or ✕ the map stays full screen (rider,
+  // 2026-09-25: closing it must not lose the mark silently). The map says so
+  // with `data-map-pending`; the close button is then not drawn, and Escape
+  // is the map's own ✕ — the next Escape closes.
+  const pendingMark = () => Boolean(rootRef.current?.querySelector("[data-map-pending]"));
 
   // How tall the map's legend currently is, published as `--map-legend` so the
   // full-screen button can sit directly above it on a narrow screen.
@@ -67,7 +76,7 @@ export function MapPanel({ children, className = "", expandedClassName = "" }: {
     if (!expanded) return;
     const previous = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setExpanded(false); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !pendingMark()) setMapFullscreen(false); };
     window.addEventListener("keydown", onKey);
     return () => { document.body.style.overflow = previous; window.removeEventListener("keydown", onKey); };
   }, [expanded]);
@@ -91,7 +100,15 @@ export function MapPanel({ children, className = "", expandedClassName = "" }: {
     // suggestion uses it to scroll the map into view on a phone, where it can
     // easily be above the fold the rider is reading.
     <div ref={rootRef} data-map-slot="true" data-map-expanded={expanded ? "true" : undefined}
-      className={expanded ? `fixed inset-0 z-40 flex flex-col bg-[#faf9f6] ${expandedClassName}` : `relative ${className}`}>
+      //
+      // On a phone the inline map is a preview (rider, 2026-09-25): nothing is
+      // edited on it. The map's own controls (`data-map-chrome`, MapLibre's
+      // zoom stack) are not drawn, and one button over the whole map opens it
+      // full screen — a tap anywhere, with „Atvērt karti” saying so. The
+      // button takes every gesture, so no mark, drag or pin tap reaches the
+      // map, and a swipe over it scrolls the page. `isolate` keeps the map's
+      // own z-indices inside the preview's box.
+      className={expanded ? `group/panel fixed inset-0 z-40 flex flex-col bg-[#faf9f6] ${expandedClassName}` : `relative ${className} max-md:isolate max-md:[&_.maplibregl-ctrl-top-right]:hidden max-md:[&_[data-map-chrome]]:hidden`}>
       {/* The map must fill the fixed layer itself. Inside the composer's flex
           column a plain child of `fixed inset-0` collapsed to zero height,
           which took the close button (positioned against it) down to 0 x 0 px
@@ -106,11 +123,21 @@ export function MapPanel({ children, className = "", expandedClassName = "" }: {
           hidden, and the button falls back to the bare corner — as it does if
           the variable never gets set. `size-10` is the 40 px tap target and is
           not negotiable; the offset moves the button, never its size. */}
-      <button type="button" onClick={() => setExpanded((v) => { if (!v) track("map_fullscreen"); return !v; })}
-        aria-label={t(locale, expanded ? "mapExitFullscreen" : "mapFullscreen")}
-        className="absolute bottom-[calc(0.75rem+var(--map-legend,0px))] left-3 flex size-10 items-center justify-center rounded-full border border-stone-200 bg-white/95 text-stone-700 shadow-sm backdrop-blur md:hidden">
-        {expanded ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
-      </button>
+      {expanded ? (
+        <button type="button" onClick={() => setMapFullscreen(false)}
+          aria-label={t(locale, "mapExitFullscreen")}
+          className="absolute bottom-[calc(0.75rem+var(--map-legend,0px))] left-3 flex size-14 items-center justify-center rounded-full border border-stone-200 bg-white/95 text-stone-700 shadow-sm backdrop-blur group-has-[[data-map-pending]]/panel:hidden md:hidden">
+          <Minimize2 className="size-5" />
+        </button>
+      ) : (
+        <button type="button" onClick={() => { track("map_fullscreen"); setMapFullscreen(true); }}
+          aria-label={t(locale, "mapFullscreen")}
+          className="absolute inset-0 z-30 flex items-end justify-center pb-3 md:hidden">
+          <span className="flex items-center gap-2 rounded-full border border-stone-200 bg-white/95 px-4 py-2.5 text-sm font-semibold text-stone-800 shadow-md backdrop-blur">
+            <Maximize2 aria-hidden="true" className="size-4" />{t(locale, "mapOpenPreview")}
+          </span>
+        </button>
+      )}
     </div>
   );
 }

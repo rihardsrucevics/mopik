@@ -18,6 +18,9 @@ import type { ResolvedPlace } from "@/lib/chat/places";
 import { placeRoles, type PlaceRoles } from "@/lib/map/place-roles";
 import type { ShapeEdit } from "@/lib/routing/reroute-leg";
 import { stepShape, type ShapePending } from "@/lib/map/shape-pending";
+// On a phone the inline map is a preview: a row's pin and "+ Pietura" open it
+// full screen first (rider, 2026-09-25).
+import { openMapFullscreen } from "@/lib/map/fullscreen";
 import { MAX_SHAPE_POINTS, MAX_STOPS } from "@/lib/chat/ride-limits";
 import { neighboursAlong, pointActions, selectionLive, type PointSelection } from "@/lib/map/point-selection";
 import {
@@ -2125,7 +2128,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
             }
           }}
           onUseLocation={edit ? undefined : useMyLocation} locating={locating} near={anchor}
-          onPickOnMap={onPickModeChange ? startPicking : undefined} activeRow={mapShown ? activeRow : null} preview={preview}
+          onPickOnMap={onPickModeChange ? (i) => { openMapFullscreen(); startPicking(i); } : undefined} activeRow={mapShown ? activeRow : null} preview={preview}
           onFocusRow={focusRow}
           // A row moved, removed or inserted: the picks follow their names
           // (`reorder`) and the active row follows its place (`followRow`) —
@@ -2150,7 +2153,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
           // Every way of adding a stop activates the new row (rider,
           // 2026-09-25): with the map on screen the form's link is the map's
           // "+", exactly.
-          onAddStop={edit || mapLive ? addStopFromMap : undefined} />
+          onAddStop={edit || mapLive ? () => { openMapFullscreen(); addStopFromMap(); } : undefined} />
 
         {/* The map is worth a look when a place needs confirming, not on every
             visit — it is the tallest thing on the page and most rides are
