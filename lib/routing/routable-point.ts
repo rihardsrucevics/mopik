@@ -158,5 +158,13 @@ export async function checkRoutablePoint(params: {
   const leg: [Point, Point] = params.from
     ? [params.from, params.point]
     : probeLegFor(params.point);
-  return judgeSnap(params.point, await params.probe(leg));
+  const first = judgeSnap(params.point, await params.probe(leg));
+  // A leg from another place that the router neither routed nor refused says
+  // nothing about this pin — measured on Ķekava → Mežavairogi, "no track
+  // found" for the pair while the pin alone snapped 243 m onto a road. Asked
+  // again on its own, the pin gets a verdict rather than "could not check".
+  if (params.from && !first.ok && first.reason === "probe-failed") {
+    return judgeSnap(params.point, await params.probe(probeLegFor(params.point)));
+  }
+  return first;
 }

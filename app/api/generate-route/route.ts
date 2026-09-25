@@ -36,7 +36,7 @@ import {
 } from "@/lib/routing/fetch-route-probe";
 import { buildMotoProfileOptions, type MotoProfileOptions } from "@/lib/routing/moto-profile";
 import { buildCostingOptions, profileName } from "@/lib/routing/profiles";
-import { pruneSpurs } from "@/lib/routing/prune-spurs";
+import { pruneOrLoopSpurs, pruneSpurs, spurLoopsFor } from "@/lib/routing/prune-spurs";
 import { joinPaths } from "@/lib/routing/join-paths";
 import { loopRank, meetsRideLimits } from "@/lib/routing/score";
 import { classifyRoute } from "@/lib/routing/classify";
@@ -492,10 +492,14 @@ async function buildCandidates(
     if (!destination && intent.includeSightseeing) return path;
     let cleaned: RoutePath;
     try {
-      cleaned = pruneSpurs(path, {
+      // A spur that turned at a via this builder invented is offered as a
+      // loop through that country first, the cut only when no loop is cheap
+      // (item 28, `pruneOrLoopSpurs`); the ride shares one request allowance.
+      cleaned = await pruneOrLoopSpurs(path, {
         protect: stops,
         toleranceMeters: stopTolerance,
         requireCircuit: !destination,
+        loop: spurLoopsFor({ ride: intent, profileOptions: options, waypoints: points, generatedViaIndices }),
       });
     }
     catch (error) { if (requiredVia.length) return path; throw error; }
@@ -2235,10 +2239,23 @@ export async function POST(req: NextRequest) {
         );
       }
 
+      // No single place is to blame. Say what was tried, in a shape the page
+      // can put into the rider's language and answer with real ways out
+      // (`noRoute`): without stops, or on an easier profile — never only
+      // "try again", which asks the same question twice. "Precizē ilgumu" is
+      // left out of a flexible ride, where no amount of time is the answer.
+      // The router's own reason goes to the log and to `debug`: before
+      // 2026-09-25 the plan path dropped it, and "no track found" on every
+      // candidate was invisible.
+      const flexible = body.plan?.budget.mode === "flexible";
+      console.warn(`every candidate failed (${settled.length} tried): ${firstError}`);
       return NextResponse.json(
         {
-          error: body.plan ? "Neizdevās atrast maršrutu, kas izpilda pieturvietas un norādītās robežas. Precizē ilgumu vai prasības čatā." : `All route candidates failed: ${firstError}`,
-          ...(debugCandidates ? { debugCandidates } : {}),
+          error: body.plan
+            ? `Neizdevās atrast maršrutu, kas izpilda pieturvietas un norādītās robežas.${flexible ? "" : " Precizē ilgumu vai prasības čatā."}`
+            : `All route candidates failed: ${firstError}`,
+          ...(body.plan ? { noRoute: { tried: settled.length, stops: requiredVia.length, flexible } } : {}),
+          ...(debugCandidates ? { debugCandidates, firstError } : {}),
         },
         { status: body.plan ? 422 : 502 }
       );

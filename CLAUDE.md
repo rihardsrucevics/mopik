@@ -40,11 +40,12 @@ again moves it, "+ Pietura" on the map adds a row and activates it, one
 the place search bound to the active row. Latvian copy never says
 "piesit" (rider's rule); the finish pin is red (chequered flag reversed).
 
-**Fast incremental re-route is code-complete but OFF:** `FAST_REROUTE =
-false` in components/home-page.tsx gates `onEditRoute`; `lib/routing/
-reroute-leg.ts` + test and `app/api/reroute-leg` are inert and shipped.
-Before turning it on, make it follow the active-row model (mark = move the
-active stop) and verify the ~640 UI lines — none of it has been exercised.
+**Fast incremental re-route is ON since 2026-09-24 (backlog 29, not yet
+deployed):** "Labot" on the result is edit mode — the composer with
+`edit` (`RideEdit`), wired by `mapWiring({ editing })`; each commit goes
+`planEdit` → `/api/reroute-leg` → `applyRuns` → `snapToLine` in
+`lib/routing/reroute-leg.ts`. `FAST_REROUTE` and the tap-the-line /
+drag-to-reroute code it gated are deleted.
 
 **Backlog 26/27 are the next small fixes:** the share code's `startLabel`
 is the first *stop* (pre-existing; GPX already works around it), and

@@ -1,11 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { ChevronDown, ChevronUp, Map as MapIcon, Sparkles } from "lucide-react";
-import type { MapPendingMark } from "@/components/route-map";
+import { Check, ChevronDown, ChevronUp, Map as MapIcon, Sparkles } from "lucide-react";
+import type { MapControls } from "@/components/route-map";
 import { RidePlan } from "@/lib/chat/ride-plan";
 import { composeRidePlan, placesFromPlan } from "@/lib/chat/compose-plan";
-import { RoutePlaces, addStop, addedStopIndex, defaultActiveRow, rowLabel, MAX_ROWS } from "@/components/route-places";
+import { planLine } from "@/lib/map/plan-line";
+import { emptyUndo, popRedo, popUndo, pushUndo, type UndoStack } from "@/lib/map/undo-stack";
+import { RoutePlaces, addStop, addedStopIndex, defaultActiveRow, followRow, rowAfterConfirm, rowLabel, MAX_ROWS } from "@/components/route-places";
 import { useLocale } from "@/lib/i18n/use-locale";
 import { t, messages, type MessageKey } from "@/lib/i18n/messages";
 import { track } from "@/lib/analytics";
@@ -100,7 +102,65 @@ function ProfileLine({ profile, onChange }: { profile: RideProfile; onChange: (p
   );
 }
 
-export function RideComposer({ initialPlan, initialPlaces, profile, onProfileChange, busy, onGenerate, onUseChat, onPlacesChange, map, mapShown: mapOnPage = false, onPickModeChange, pickPoint, geolocated, onMapControlsChange }: {
+/**
+ * The picks re-keyed to a new row list, by name.
+ *
+ * Reordering or removing moves the rows; the coordinates must follow their
+ * row, so each pick travels with the name it was made for. An emptied row
+ * keeps none: matching is by name, and "" must never inherit the pick of some
+ * other blank row. A function of its own because the edit needs the answer in
+ * the same press that changes the rows, before the state has re-rendered.
+ */
+function rekeyPicked(
+  places: string[],
+  picked: Record<number, ResolvedPlace | null>,
+  next: string[],
+): Record<number, ResolvedPlace | null> {
+  const byName = new Map<string, ResolvedPlace>();
+  for (const [i, p] of Object.entries(picked)) {
+    const name = places[Number(i)]?.trim().toLowerCase();
+    if (p && name) byName.set(name, p);
+  }
+  return Object.fromEntries(next.map((name, i) => {
+    const key = name.trim().toLowerCase();
+    return [i, key ? byName.get(key) ?? null : null];
+  }));
+}
+
+/**
+ * The form as the editor of a ride that has already been generated.
+ *
+ * "Labot" on the result swaps the panel for these same rows — the rider asked
+ * to correct a ride on the map rather than through the chat, and the rows,
+ * the active-row rules and the map's header are exactly the tools planning
+ * already gave him. What differs is only what a change *does*: here each
+ * committed change re-routes the ride at once, so the page hears about every
+ * one (`onCommit`) instead of waiting for Generate.
+ */
+export type RideEdit = {
+  /**
+   * The ride's places as rows, read when the editor opens and again whenever
+   * `token` changes — after an undo, or when a change could not be routed and
+   * the ride kept the places it had. Rows that disagreed with the ride on the
+   * map would be the one thing an editor must never show.
+   */
+  seed: { names: string[]; picked: Record<number, ResolvedPlace>; roundTrip: boolean; token: number; active?: number };
+  /** A change the rider committed: a Confirm, a pick from a list, ✕ on a stop, an arrow. */
+  onCommit: (rows: { names: string[]; picked: Record<number, ResolvedPlace | null> }) => void;
+  /** "Pabeigt labošanu": back to the result panel, keeping the edits. */
+  onDone: () => void;
+  /** "Atcelt labošanu": back to the result panel with every edit of this session dropped. */
+  onCancel: () => void;
+  /** The edited ride's numbers, Undo and the full search — the page's to draw. */
+  status: ReactNode;
+  /** A stretch is being re-routed; nothing new is committed until it lands. */
+  rerouting: boolean;
+  /** One step back in the edit history — the map header's ↶ and Ctrl/Cmd+Z. */
+  canUndo: boolean;
+  onUndo: () => void;
+};
+
+export function RideComposer({ initialPlan, initialPlaces, profile, onProfileChange, busy: busyProp, onGenerate, onUseChat, onPlacesChange, map, mapShown: mapOnPage = false, onPickModeChange, pickPoint, onMapControlsChange, edit }: {
   initialPlan: RidePlan | null;
   /**
    * Coordinates the plan arrived with, matched to its rows by name. A ride
@@ -164,6 +224,10 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     at: { lat: number; lon: number } | null;
     /** Where to put the draggable marker at once, when the row already has a place. */
     marker: { lat: number; lon: number } | null;
+    /** The marker is a new gesture (a dragged pin) and its spot needs naming. */
+    lookup?: boolean;
+    /** The ride's places, to frame together when `at` is far from the view. */
+    fit?: { lat: number; lon: number }[];
   }) => void;
   /**
    * The point the rider last tapped or dragged to, with a token that changes
@@ -173,12 +237,6 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
    * would leave the row on the place he had dragged to.
    */
   pickPoint?: { lat: number; lon: number; token: number } | null;
-  /**
-   * A position the map's own geolocate button obtained. Remembered here for
-   * the same reason the crosshair's is: the next row's pick mode can then open
-   * on the rider without a second permission prompt.
-   */
-  geolocated?: { lat: number; lon: number } | null;
   /**
    * Everything the map's own header bar shows while the rider is planning:
    * the one hint line, the button that makes a new stop, and the place field
@@ -194,36 +252,23 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
    * unmounting reports: a map with no active row would otherwise keep a header
    * describing a form that has gone.
    */
-  onMapControlsChange?: (controls: {
-    /** "Atzīmē kartē → „Līdz”" — what the next tap does, always present. */
-    hint: string;
-    /** The bar over the bottom of the map while a mark is pending — Confirm /
-     *  Cancel, or the off-road verdict — and null otherwise. */
-    pending: MapPendingMark | null;
-    /** Make a new stop row and hand it to the map. Null at the cap. */
-    onAddStop: (() => void) | null;
-    /** Why the button is dead, shown as its tooltip at the cap. */
-    addStopLabel: string;
-    addStopFullLabel: string;
-    /** The active row's own text and its place, for the header's search field. */
-    search: {
-      value: string;
-      confirmed: ResolvedPlace | null;
-      onChange: (value: string) => void;
-      onPick: (place: ResolvedPlace | null) => void;
-      /** Bias the search around a place the ride already has. */
-      near: { lat: number; lon: number } | null;
-      placeholder: string;
-    };
-  } | null) => void;
+  onMapControlsChange?: (controls: MapControls | null) => void;
+  /** Present when the form is editing a generated ride; see `RideEdit`. */
+  edit?: RideEdit;
 }) {
   const [locale] = useLocale();
-  const [places, setPlaces] = useState<string[]>(placesFromPlan(initialPlan));
+  // While a stretch is being re-routed the rows hold still: a second change
+  // committed on top of one in flight would be routed against a line that is
+  // about to be replaced.
+  const busy = busyProp || Boolean(edit?.rerouting);
+  const [places, setPlaces] = useState<string[]>(() => (edit ? edit.seed.names : placesFromPlan(initialPlan)));
   // One way is the default: it is the ride that needs both rows, so the form
   // reads "No … Līdz …" on open. A plan being edited keeps the shape it had —
   // `returnToStart` is explicit on every stored plan, so only a genuinely
   // absent plan falls through to the default.
-  const [tripType, setTripType] = useState<"round_trip" | "one_way">(initialPlan?.returnToStart === true ? "round_trip" : "one_way");
+  const [tripType, setTripType] = useState<"round_trip" | "one_way">(
+    (edit ? edit.seed.roundTrip : initialPlan?.returnToStart === true) ? "round_trip" : "one_way",
+  );
   const [durationMode, setDurationMode] = useState<"flexible" | "hours">(initialPlan?.budget.mode === "duration" ? "hours" : "flexible");
   // The chips and the field are two ways to say the same thing, never mirrored
   // into each other: a rider who wants 2.5 h should type it, not first delete a
@@ -235,7 +280,8 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   const [hours, setHours] = useState(initialHours && !PRESETS.includes(initialHours) ? String(initialHours) : "");
   const [error, setError] = useState<string | null>(null);
   // Phone only: the map is opened on request, and stays open once it is.
-  const [mapOpen, setMapOpen] = useState(false);
+  // Open from the start when editing: the map is what the editor is for.
+  const [mapOpen, setMapOpen] = useState(Boolean(edit));
   /**
    * Is a planning map actually in front of the rider?
    *
@@ -270,24 +316,37 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
    * forest crossroads has no name to type, and "Līdz" is as often such a place
    * as "No" is.
    *
-   * **Never null.** It is seeded with `defaultActiveRow` — the first empty
-   * row, start first — and only ever moves because of something the rider did:
-   * a pin button, "+ Pietura", a pick, or opening the map again. Deriving it
-   * live from "the first empty row" was tried and moved under him: typing the
-   * first letter of a name made that row non-empty, the rule handed the map to
-   * the next one, and the field he was typing into emptied itself one
-   * keystroke in. `activeRow` above only clamps it to a row that still exists,
-   * for the case where the rider removes the row the map was answering.
+   * **Null when every row is filled** (since 2026-09-25). The old invariant —
+   * "while the map is open exactly one row is active" — kept a finished row
+   * listening, and the rider's next mark, meant for the stop he had just
+   * added, moved his finish instead. A filled row now answers the map only
+   * when he activates it: its pin button, its field, or dragging its pin.
+   * With none active a mark does nothing and the header says so.
+   *
+   * It is seeded with `defaultActiveRow` — the first empty row, start first —
+   * and otherwise moves only because of something the rider did: a pin
+   * button, a field, "+", a Confirm (`rowAfterConfirm`), or opening the map
+   * again. Deriving it live from "the first empty row" was tried and moved
+   * under him: typing the first letter of a name made that row non-empty, the
+   * rule handed the map to the next one, and the field he was typing into
+   * emptied itself one keystroke in. `activeRow` below only clamps it to a
+   * row that still exists, for the case where the rider removes the row the
+   * map was answering.
+   *
+   * Editing a finished ride opens with none: every row is filled, and which
+   * place he came to correct is his to say.
    */
-  const [chosenRow, setChosenRow] = useState(() => defaultActiveRow(placesFromPlan(initialPlan)));
+  const [chosenRow, setChosenRow] = useState<number | null>(() =>
+    defaultActiveRow(edit ? edit.seed.names : placesFromPlan(initialPlan)));
   const mapShown = map ? mapOpen : mapOnPage;
   /**
-   * The one row the map is answering, or none because the map is closed.
-   *
-   * **While the planning map is open, exactly one row is active.** That is the
-   * whole invariant, and it holds here by construction: `chosenRow` is never
-   * null, so the only thing that can make this null is the map not being on
-   * screen at all.
+   * Whether the map is on screen and answering the form at all — the header
+   * is drawn whenever this is true, with a row active or not.
+   */
+  const mapLive = mapShown && Boolean(onPickModeChange);
+  /**
+   * The one row the map is answering: none when the map is closed, or when
+   * the rider has confirmed his way through every row (`chosenRow` null).
    *
    * The clamp is for the one case the rider can cause and nothing else
    * handles: removing the row the map was answering. The index would then
@@ -299,7 +358,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
    * map, which answers no row. An active ring, a hint or a Confirm there would
    * promise a tap that goes nowhere.
    */
-  const activeRow = !mapShown || !onPickModeChange ? null : Math.min(chosenRow, Math.max(places.length - 1, 0));
+  const activeRow = !mapLive || chosenRow === null ? null : Math.min(chosenRow, Math.max(places.length - 1, 0));
   const [locating, setLocating] = useState(false);
   /**
    * Whether the active row was created by "+ Pietura" and has never been
@@ -314,6 +373,46 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
    * tap must leave that place standing.
    */
   const [rowIsNew, setRowIsNew] = useState(false);
+  /**
+   * Editing: a point of the drawn line grabbed to be moved (rider's sketch,
+   * 2026-09-25). It has become a new, blank stop row (`row`, "new" like any
+   * "+" row) whose mark is where the point goes; `at` is where on the line it
+   * was taken, which the edit uses to put the stop into the ride there.
+   */
+  const [grab, setGrab] = useState<{ row: number; at: { lat: number; lon: number } } | null>(null);
+  /**
+   * Batch adding (rider, 2026-09-25): with an empty stop row active, every
+   * mark on the map adds another pending stop instead of replacing the last,
+   * and one „Apstiprināt visas” takes them all. Each is a row at once (its
+   * name fills in as the reverse lookup answers), in click order from the
+   * empty row on — before the finish on a one-way ride — and the map does not
+   * move while the batch grows. Planning checks each with the routable-point
+   * probe in the background; editing, the one re-route the batch makes is the
+   * check, as it is for a single mark.
+   */
+  type BatchItem = {
+    id: number; row: number; lat: number; lon: number;
+    place: ResolvedPlace | null;
+    check: "checking" | "ok" | "off-road";
+    snappedTo?: { lat: number; lon: number } | null;
+    distanceM?: number;
+  };
+  const [batch, setBatch] = useState<BatchItem[]>([]);
+  /** The pending stop the rider pressed: the next mark or drag moves it. */
+  const [batchSel, setBatchSel] = useState<number | null>(null);
+  const batchIdRef = useRef(0);
+  const batchRef = useRef(batch);
+  useEffect(() => { batchRef.current = batch; }, [batch]);
+  // The profile the probes and the plan use: a plan the chat has modified
+  // carries its own, otherwise the rider's remembered one (see `changeProfile`).
+  const [profileOverride, setProfileOverride] = useState<RideProfile | null>(null);
+  const effectiveProfile = profileOverride ?? (initialPlan ? profileFromPlan(initialPlan) : profile);
+
+  /** Planning's undo stack (edit mode's is the page's ride history). */
+  type Snapshot = { names: string[]; picked: Record<number, ResolvedPlace | null> };
+  const [undo, setUndo] = useState<UndoStack<Snapshot>>(emptyUndo);
+  /** Asks the map to show every pin once, after a batch is confirmed. */
+  const [fitAsk, setFitAsk] = useState(0);
 
   /**
    * Name a point, wherever it came from.
@@ -348,8 +447,6 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     navigator.geolocation.getCurrentPosition(
       async ({ coords }) => {
         const { latitude: lat, longitude: lon } = coords;
-        // Remembered so pick mode can open on the rider without asking again.
-        setLastFix({ lat, lon });
         const found = await nameForPoint(lat, lon);
         const place: ResolvedPlace = found ?? { name: `${lat.toFixed(4)}, ${lon.toFixed(4)}`, label: t(locale, "myLocation"), lat, lon };
         setPlaces((prev) => prev.map((p, i) => (i === 0 ? place.name : p)));
@@ -375,6 +472,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   // Picked places by row index. Typing again clears the pick, so a changed
   // name is geocoded rather than silently kept at the old coordinates.
   const [picked, setPicked] = useState<Record<number, ResolvedPlace | null>>(() => {
+    if (edit) return { ...edit.seed.picked };
     if (!initialPlaces?.length) return {};
     // Matched by name rather than by position: the plan's rows and the routed
     // places can differ in length (a round trip repeats its start).
@@ -390,32 +488,95 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   // Reordering moves the rows; the coordinates must follow their row, so the
   // picks are re-keyed by matching name rather than by the old index.
   const reorder = (next: string[]) => {
-    const byName = new Map<string, ResolvedPlace>();
-    for (const [i, p] of Object.entries(picked)) {
-      const name = places[Number(i)]?.trim().toLowerCase();
-      if (p && name) byName.set(name, p);
-    }
     setPlaces(next);
-    // An emptied row keeps no coordinates: matching is by name, and "" must
-    // never inherit the pick of some other blank row.
-    setPicked(Object.fromEntries(next.map((name, i) => {
-      const key = name.trim().toLowerCase();
-      return [i, key ? byName.get(key) ?? null : null];
-    })));
+    setPicked(rekeyPicked(places, picked, next));
   };
 
   /**
-   * The last position the device gave us in this session.
+   * Tell the page the rows changed in a way the ride must follow.
    *
-   * Kept so pick mode can centre on the rider without asking again: the
-   * permission prompt is the expensive part, and a rider who has already
-   * answered it once should not be asked a second time to see the same map.
-   * Never *requested* from here — only remembered when the crosshair or the
-   * map's own geolocate button has already obtained it.
+   * Only while editing, and only for the changes that are changes to the ride
+   * — a place committed, a stop removed or moved. The rows are handed over as
+   * this press leaves them, computed here rather than read back from state
+   * that has not re-rendered yet.
    */
-  const [lastFix, setLastFix] = useState<{ lat: number; lon: number } | null>(null);
-  // The map's geolocate button is the other way a fix arrives. Same shelf.
-  useEffect(() => { if (geolocated) setLastFix(geolocated); }, [geolocated]);
+  const commitRows = (names: string[], nextPicked: Record<number, ResolvedPlace | null>) => {
+    edit?.onCommit({ names, picked: nextPicked });
+  };
+
+  /**
+   * Planning: record the rows as they are, before a committed change replaces
+   * them — a Confirm, a batch, a field's pick, a row removed or moved. Edit
+   * mode keeps its own history on the page, with the line.
+   */
+  const remember = (before: Snapshot = { names: places, picked }) => { if (!edit) setUndo((u) => pushUndo(u, before)); };
+  /** Put a snapshot back: the rows, their places, and nothing pending. */
+  const restore = (snap: Snapshot) => {
+    setPlaces(snap.names);
+    setPicked(snap.picked);
+    setPreview(null);
+    setOffRoad(null);
+    setMapQuery(null);
+    setGrab(null);
+    setBatch([]);
+    setBatchSel(null);
+    setRowIsNew(false);
+    setChosenRow(defaultActiveRow(snap.names));
+  };
+  /** The map header's ↶ outside a batch, and Ctrl/Cmd+Z. */
+  const undoStep = () => {
+    if (edit) { if (edit.canUndo && !edit.rerouting) { track("route_edit_undone", { how: "header" }); edit.onUndo(); } return; }
+    const back = popUndo(undo, { names: places, picked });
+    if (!back) return;
+    track("plan_undone", {});
+    setUndo(back.stack);
+    restore(back.value);
+  };
+  /** Shift+Ctrl/Cmd+Z, planning only: edit mode's history is one-way. */
+  const redoStep = () => {
+    if (edit) return;
+    const forward = popRedo(undo, { names: places, picked });
+    if (!forward) return;
+    setUndo(forward.stack);
+    restore(forward.value);
+  };
+
+  /**
+   * The active row when it is a ghost: made by "+" (the map's or the form's)
+   * or by a Confirm that opened the next stop row (`rowAfterConfirm`), never
+   * confirmed, and still empty. The form must never keep one — the rider
+   * asked for a place, not for a blank row to find the ✕ of.
+   */
+  const ghostRow = rowIsNew && activeRow !== null && !places[activeRow]?.trim() ? activeRow : null;
+  /**
+   * Let go of the ghost row, if there is one, before the map answers
+   * `target` instead: it is removed silently, and the index `target` has
+   * once it is gone comes back. Everything that hands the map to another row
+   * goes through this — a pin button, a field, a dragged pin, a search pick.
+   */
+  const leaveGhost = (target: number | null): number | null => {
+    if (ghostRow === null || ghostRow === target) return target;
+    reorder(places.filter((_, i) => i !== ghostRow));
+    setRowIsNew(false);
+    setGrab(null);
+    return target === null ? null : followRow(target, { kind: "remove", at: ghostRow });
+  };
+  /**
+   * Open the pick flow for a row a handler has just made active, with the
+   * marker and the view that handler knows. Flagged, because the effect that
+   * notices "a row is active" (see `picking`) would otherwise run right after
+   * and re-open it with nothing — throwing away the dragged pin's drop point
+   * or the row's own place the handler had just put under the marker.
+   */
+  const pickOpenedRef = useRef(false);
+  const openPick = (open: { at: { lat: number; lon: number } | null; marker: { lat: number; lon: number } | null; lookup?: boolean; fit?: { lat: number; lon: number }[] }) => {
+    pickOpenedRef.current = true;
+    onPickModeChange?.(true, open);
+  };
+
+
+  // No "last fix" is kept any more: it only ever said where to point the map
+  // for an empty row, and an empty row no longer moves the map (2026-09-25).
 
   /**
    * The rows' own text, read from inside the point handler.
@@ -440,6 +601,19 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
    * The row shows this as a preview; "Apstiprināt" is what makes it the ride's.
    */
   const [preview, setPreview] = useState<ResolvedPlace | null>(null);
+  /**
+   * What the rider is typing into the map's search field, for the row it was
+   * typed for — kept apart from the row itself.
+   *
+   * The field used to *be* the row: every keystroke rewrote the row's text and
+   * dropped its place, so a search started and abandoned had already cost the
+   * row its coordinates, and a pick then committed with nothing to confirm.
+   * The rider typed an address for „Caur (1)”, saw "✓ Nākotnes iela 2", and
+   * could not tell whether the ride now went there. Now the field is a search:
+   * the text is its own, and only a pick does anything — the same preview,
+   * marker and Confirm a mark on the map gets.
+   */
+  const [mapQuery, setMapQuery] = useState<{ row: number; text: string } | null>(null);
 
   /**
    * A point arrived from the map — a tap in pick mode, or a drag of the marker
@@ -453,6 +627,8 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
    * re-picking a row must not make it collide with its own old name.
    */
   const token = pickPoint?.token ?? null;
+  /** Set while the map's marks go to the batch (see `batchMode`). */
+  const batchPointRef = useRef<((lat: number, lon: number) => void) | null>(null);
   /**
    * The gesture whose lookup has answered. While it trails `token`, a point
    * is under the marker and its name is still on the way — the map's bar is
@@ -468,6 +644,13 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     // the rider a different word for the spot he has not yet moved.
     if (!pickPoint || pickPoint.token === 0 || row === null) return;
     const { lat, lon, token: asked } = pickPoint;
+    // Batch adding: the mark is another pending stop (or moves the selected
+    // one), named in the background — not the single preview below.
+    if (batchPointRef.current) {
+      batchPointRef.current(lat, lon);
+      setNamedToken(asked);
+      return;
+    }
     let cancelled = false;
     void (async () => {
       try {
@@ -542,8 +725,23 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   const cancelPicking = () => {
     const row = activeRow;
     endPicking();
+    setGrab(null);
     setOffRoad(null);
-    if (rowIsNew && row !== null) {
+    setMapQuery(null);
+    if (edit) {
+      // Editing, the rows must say what the ride is. Whatever was typed or
+      // picked and not confirmed — a "+" row, a name in a field — goes, and
+      // the rows are the ride's places again.
+      setPlaces(edit.seed.names);
+      setPicked({ ...edit.seed.picked });
+      // A new row has gone with the rest; any other row stays active.
+      setChosenRow((r) => (r === null || rowIsNew ? null : Math.min(r, edit.seed.names.length - 1)));
+      openPick({ at: null, marker: null });
+      return;
+    }
+    // Only while it is still blank: a name typed into it made it a row of
+    // the ride, and Escape must not throw that away.
+    if (rowIsNew && row !== null && !places[row]?.trim()) {
       // Through `reorder`, not `setPlaces`, so the other rows' coordinates are
       // re-keyed to their new indices — the row being dropped is blank and
       // carries none.
@@ -552,8 +750,8 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
       // question it would have asked had that row never existed.
       setChosenRow(defaultActiveRow(places.filter((_, i) => i !== row)));
     }
-    // The violet marker goes with the pick it belonged to.
-    onPickModeChange?.(true, { at: null, marker: null });
+    // The pending marker goes with the pick it belonged to.
+    openPick({ at: null, marker: null });
   };
 
   /**
@@ -581,18 +779,55 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
      * 4. Nothing, and the map keeps the bounds it has.
      */
     const own = picked[index] ?? null;
-    const at = own ?? confirmed[0] ?? lastFix ?? null;
+    // Only the row's own place moves the map (rider, 2026-09-25: activating a
+    // filled row shows where it is; an empty row leaves the map alone).
+    const at = own;
+    const target = leaveGhost(index);
     // Only the row's own place seeds a marker. Another row's place, or the
     // rider's own position, says where to *look* — putting a draggable pin on
     // it would be Mopik answering a question it was not asked, and one tap on
     // Apstiprināt away from planting the finish on top of the start.
     setPreview(own);
-    setChosenRow(index);
+    setMapQuery(null);
+    setChosenRow(target);
     setRowIsNew(isNew);
     setMapOpen(true);
     setError(null);
     setOffRoad(null);
-    onPickModeChange?.(true, { at, marker: own ? { lat: own.lat, lon: own.lon } : null });
+    openPick({ at, marker: own ? { lat: own.lat, lon: own.lon } : null });
+  };
+
+  /**
+   * Tapping into a row's field while the map is open points the map at that
+   * row, as its pin button does — the rider tapped into „Līdz” and expected
+   * the next mark to go there. Lighter than the button: the map is not flown
+   * anywhere (he is about to type) and no marker is seeded, so nothing waits
+   * for a Confirm he did not ask for. A mark pending on another row is let go.
+   */
+  const focusRow = (index: number, opts: { refocus?: boolean } = {}) => {
+    if (!mapLive || index === activeRow) return;
+    let target: number | null = index;
+    if (edit && (preview || offRoad)) {
+      // Editing, Cancel puts the rows back to the ride's — a "+" row above
+      // this one goes with it.
+      cancelPicking();
+      if (rowIsNew && activeRow !== null && activeRow < index) target = index - 1;
+    } else {
+      target = leaveGhost(index);
+    }
+    setPreview(null);
+    setMapQuery(null);
+    setRowIsNew(false);
+    setOffRoad(null);
+    setChosenRow(target);
+    // The row's own place, if it has one, is shown — the map eases to it only
+    // when it is not already in view (see the map's `pickCenter`). No marker:
+    // he is about to type, not to drag.
+    const own = picked[index] ?? null;
+    openPick({ at: own ? { lat: own.lat, lon: own.lon } : null, marker: null });
+    // A ghost above this row has gone, so the field under the rider's finger
+    // now holds the row below it: keep the focus on the row he tapped.
+    if (opts.refocus !== false && target !== index) requestAnimationFrame(() => (document.querySelector(`[data-place-row="${target}"] input`) as HTMLInputElement | null)?.focus());
   };
 
   /**
@@ -635,6 +870,14 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     // which silently emptied the stop the rider had just confirmed. The
     // handler is rebuilt every render, so `places` here is always current.
     const current = places;
+    // An unused new stop row is already waiting (a Confirm opened it, or "+"
+    // was pressed twice): that row is the answer, not a second blank one.
+    if (ghostRow !== null) {
+      setPreview(null);
+      setMapQuery(null);
+      openPick({ at: null, marker: null });
+      return;
+    }
     // The cap the form's own button obeys. The map's button is disabled at the
     // cap, so this is the second lock rather than the first.
     if (current.length >= MAX_ROWS) return;
@@ -647,31 +890,76 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     // its own, so the map stays where the rider left it and his next tap lands
     // on the ground he is already looking at.
     setPreview(null);
+    setMapQuery(null);
     setChosenRow(row);
     setRowIsNew(true);
     setMapOpen(true);
     setError(null);
     setOffRoad(null);
-    onPickModeChange?.(true, { at: null, marker: null });
+    openPick({ at: null, marker: null });
+  };
+
+  /**
+   * A place found by name, shown the way a mark on the map is: under the
+   * pending marker, previewed in its row, waiting for Confirm.
+   *
+   * A search pick used to commit at once — "there is nothing to Confirm, the
+   * rider chose a named place from a list". In edit mode that meant the ride
+   * re-routed with nothing on the map saying so, and a place picked from a
+   * list is exactly as likely to be the wrong "Nākotnes iela 2" as a tap is to
+   * be the wrong yard. One way to commit, whichever way the place was found.
+   * The marker can be dragged to correct it, like any other mark.
+   */
+  const previewPlace = (row: number, place: ResolvedPlace) => {
+    if (busy) return;
+    setMapQuery(null);
+    // Another row's list: a ghost row the map was answering goes first. The
+    // active row's own "new" flag stays — a place previewed in it is still
+    // not confirmed, and Cancel must still be able to take the row away.
+    const target = row === activeRow ? row : leaveGhost(row);
+    if (row !== activeRow) setRowIsNew(false);
+    setChosenRow(target);
+    setOffRoad(null);
+    setError(null);
+    setMapOpen(true);
+    setPreview(place);
+    // Token 0: the name is the list's own, so no reverse lookup re-derives it.
+    openPick({ at: { lat: place.lat, lon: place.lon }, marker: { lat: place.lat, lon: place.lon } });
   };
 
   /**
    * Put the previewed place in its row. The commit itself.
    *
-   * **The row stays active.** This is the rule that makes one mode possible:
-   * after Confirm the hint still names the same row, so the next tap *moves*
-   * the place just confirmed — new preview, new Confirm — instead of meaning
-   * something else. Leaving the map here is what created the invisible second
-   * mode in the first place, where a tap on a map that looked exactly the same
-   * created a row nobody had asked for.
+   * **Confirming ends the editing of that pin** (rider, 2026-09-25). What the
+   * map answers next is `rowAfterConfirm`'s: after the start, the finish if
+   * it is empty; after a stop, a new empty stop row right after it — so stop
+   * after stop is mark, Confirm, mark, Confirm — and after the finish, or
+   * once every row is filled, no row at all. The 2026-09-24 rule ("stay on
+   * this row when all are filled") kept a finished pin listening, and the
+   * mark meant for a stop he had just added moved his finish. A pin is
+   * edited again only when he activates it.
    *
-   * The preview is cleared because it has become the row's real answer, and
-   * `rowIsNew` with it: a confirmed stop is part of the ride, so Cancel on a
-   * later tap must leave it standing rather than deleting it.
+   * The preview is cleared because it has become the row's real answer. The
+   * row a stop's Confirm opens is "new" (`rowIsNew`): Cancel takes it away,
+   * and it is dropped silently if he goes elsewhere without using it.
    */
   const commitPick = (row: number, place: ResolvedPlace) => {
-    setPlaces((prev) => prev.map((p, i) => (i === row ? place.name : p)));
-    setPick(row, place);
+    // Chosen explicitly, from the rows as this press leaves them — the state
+    // has not re-rendered yet, and deriving "first empty" live is what once
+    // moved the active row under the rider's thumb while he typed.
+    const filled = places.map((p, i) => (i === row ? place.name : p));
+    // A grabbed line point carries where it was grabbed, and — being a move
+    // of the line rather than the next stop of a list — opens no new row.
+    const grabbed = grab && grab.row === row ? grab : null;
+    const committed: ResolvedPlace = grabbed ? { ...place, grabbedAt: [grabbed.at.lon, grabbed.at.lat] } as ResolvedPlace : place;
+    const nextPicked = { ...picked, [row]: committed };
+    const after = grabbed ? { rows: filled, active: null, inserted: null } : rowAfterConfirm(filled, row, tripType === "one_way");
+    setGrab(null);
+    remember();
+    setPlaces(after.rows);
+    setPicked(nextPicked);
+    commitRows(filled, nextPicked);
+    setMapQuery(null);
     // The same shelf a dropdown pick goes on, for the same reason the
     // crosshair's place goes there: a spot found once should be offered by
     // name the next time, from the sofa, with no map open.
@@ -680,18 +968,13 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     setOffRoad(null);
     setPreview(null);
     setRowIsNew(false);
-    // **Pinned, not left to the default.** This row was empty a moment ago, so
-    // the default rule ("the first empty row") would hand the map to the next
-    // one the instant the name landed — and the rider's second tap, aimed at
-    // correcting the pin he is looking at, would drop a place into a row he
-    // had not asked about. Confirming is what makes a row *chosen*.
-    setChosenRow(row);
-    // The violet "being decided" marker goes, and the row's own role pin —
-    // green start, red finish, numbered stop — appears under it. The row stays
-    // active, so this re-opens the same pick mode with nothing to drag rather
-    // than closing it: `at: null` keeps the map exactly where the rider is
-    // looking, which is at the pin that just landed.
-    onPickModeChange?.(true, { at: null, marker: null });
+    setChosenRow(after.active);
+    // The pending "being decided" marker goes, and the row's own role pin —
+    // green start, red finish, numbered stop — appears under it. With a next
+    // row the pick flow stays open with nothing to drag (`at: null` keeps the
+    // map where the rider is looking); with none, the `picking` effect closes
+    // it and a mark does nothing until he activates a row.
+    if (after.active !== null) openPick({ at: null, marker: null });
   };
 
   /**
@@ -718,6 +1001,11 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     // An answer already on screen is the rider's to act on; pressing Confirm
     // again asks the same question and would get the same answer.
     if (offRoad) return;
+    // Editing a generated ride, the re-route IS the check: it routes to the
+    // point with the same endpoint rescue the probe uses and says how far it
+    // had to move it, so probing first would only put a second round trip in
+    // front of the line the rider is waiting for.
+    if (edit) { commitPick(row, place); return; }
     setChecking(true);
     void (async () => {
       try {
@@ -804,6 +1092,259 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     })();
   };
 
+  /**
+   * A ride pin dragged on the edit map: that pin's row becomes the active one
+   * and the spot it was dropped on becomes its mark — named, previewed and
+   * waiting for Confirm, exactly as a tap with that row active would be. A
+   * drag is a quicker way to say "this place, over there", not a commit of
+   * its own: a pin let go a few metres off is corrected by dragging again,
+   * and Cancel or Escape takes it back.
+   *
+   * The map knows a pin by its role and its number; the row is worked out
+   * here, where the rows are. A stop's number counts the filled stop rows in
+   * order, which is how `placeRoles` numbered them for the map.
+   */
+  /**
+   * A point of the drawn line grabbed on the map (edit mode). The rows go back
+   * to the ride's — whatever was pending is let go, and the active row with
+   * it: the line click wins — and a blank stop row is put in where the point
+   * lies along the line (`slot` stops before it), active and "new", so Cancel
+   * or Escape takes it away again. The next mark is where the point goes.
+   */
+  const grabLine = ({ lat, lon, slot }: { lat: number; lon: number; slot: number }) => {
+    if (!edit || busy || edit.rerouting) return;
+    const names = edit.seed.names;
+    const oneWay = tripType === "one_way";
+    const last = names.length - 1;
+    if (names.length >= MAX_ROWS) return;
+    // The row of the slot-th stop, or — past the last stop — before the
+    // finish (one way) or at the end (round trip).
+    let seen = 0;
+    let at = oneWay ? last : names.length;
+    for (let i = 1; i <= (oneWay ? last - 1 : last); i++) {
+      if (!edit.seed.picked[i]) continue;
+      if (seen === slot) { at = i; break; }
+      seen++;
+    }
+    track("route_line_grabbed", { slot });
+    setPlaces([...names.slice(0, at), "", ...names.slice(at)]);
+    setPicked(Object.fromEntries(Object.entries(edit.seed.picked).map(([k, v]) => [Number(k) >= at ? Number(k) + 1 : Number(k), v])));
+    setPreview(null);
+    setOffRoad(null);
+    setMapQuery(null);
+    setChosenRow(at);
+    setRowIsNew(true);
+    setGrab({ row: at, at: { lat, lon } });
+    openPick({ at: null, marker: null });
+  };
+  /** Whether a row is a stop — neither the start nor a one-way ride's finish. */
+  const isStopRow = (i: number) => i > 0 && !(tripType === "one_way" && i === places.length - 1);
+  /**
+   * The routable-point probe for one place in one row, on the ride's profile
+   * — the check `confirmPick` makes, for a pending stop of a batch. Resolves
+   * to the verdict or null when the check could not be made (a pin we could
+   * not check is let through, as at Confirm).
+   */
+  const probeRow = async (row: number, place: ResolvedPlace): Promise<{ ok: boolean; snappedTo?: { lat: number; lon: number } | null; distanceM?: number } | null> => {
+    try {
+      const plan = composeRidePlan({
+        places: places.map((p, i) => (i === row ? place.name : p === "…" ? "" : p)),
+        tripType, durationMode,
+        hours: hours.trim() ? Number(hours.replace(",", ".")) : preset ?? 4,
+        profile: effectiveProfile,
+      });
+      const probePlan: RidePlan = plan.returnToStart || plan.destinationPlace?.trim() ? plan : { ...plan, destinationAny: true };
+      const other = confirmed.find((p) => p.lat !== place.lat || p.lon !== place.lon);
+      const response = await fetch("/api/routable-point", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lat: place.lat, lon: place.lon, plan: probePlan, ...(other ? { from: { lat: other.lat, lon: other.lon } } : {}) }),
+      });
+      if (!response.ok) return null;
+      const data = (await response.json()) as { ok: boolean; snappedTo?: { lat: number; lon: number }; distanceM?: number; reason?: string; canMove?: boolean };
+      if (data.ok || data.reason !== "too-far-from-road") return { ok: true };
+      return { ok: false, snappedTo: data.canMove && data.snappedTo ? data.snappedTo : null, distanceM: Math.round(data.distanceM ?? 0) };
+    } catch {
+      return null;
+    }
+  };
+  /** Name a pending stop, then (planning) check it — both in the background. */
+  const settleBatchItem = (id: number, lat: number, lon: number) => {
+    void (async () => {
+      const found = await nameForPoint(lat, lon);
+      const item = batchRef.current.find((b) => b.id === id);
+      if (!item || item.lat !== lat || item.lon !== lon) return; // moved or dropped since
+      const taken = placesRef.current.filter((_, i) => i !== item.row);
+      const place = pickedPlace(found, lat, lon, taken, t(locale, "pickedOnMap"));
+      setBatch((items) => items.map((b) => (b.id === id ? { ...b, place } : b)));
+      setPlaces((rows) => rows.map((p, i) => (i === item.row ? place.name : p)));
+      if (edit) { setBatch((items) => items.map((b) => (b.id === id ? { ...b, check: "ok" } : b))); return; }
+      const verdict = await probeRow(item.row, place);
+      const still = batchRef.current.find((b) => b.id === id);
+      if (!still || still.lat !== lat || still.lon !== lon) return;
+      setBatch((items) => items.map((b) => (b.id === id
+        ? { ...b, check: !verdict || verdict.ok ? "ok" : "off-road", snappedTo: verdict?.snappedTo ?? null, distanceM: verdict?.distanceM }
+        : b)));
+    })();
+  };
+  /** Rows after `at` move down one, and their places with them. */
+  const shiftPicked = (from: Record<number, ResolvedPlace | null>, at: number, by: 1 | -1) =>
+    Object.fromEntries(Object.entries(from).flatMap(([k, v]) => {
+      const i = Number(k);
+      if (by === -1 && i === at) return [];
+      return [[i >= at + (by === -1 ? 1 : 0) ? i + by : i, v]];
+    })) as Record<number, ResolvedPlace | null>;
+  /**
+   * A mark on the map while an empty stop row is active or a batch is open:
+   * the selected pending stop moves there, or another pending stop is added
+   * after the last — never a camera move (the map's `batchMode`).
+   */
+  const addToBatch = (lat: number, lon: number) => {
+    if (batchSel !== null) { moveBatchItem(batchSel, lat, lon); setBatchSel(null); return; }
+    const id = ++batchIdRef.current;
+    if (batch.length === 0) {
+      if (activeRow === null) return;
+      const row = activeRow;
+      batchRef.current = [{ id, row, lat, lon, place: null, check: "checking" }];
+      setBatch(batchRef.current);
+      setPlaces((rows) => rows.map((p, i) => (i === row ? "…" : p)));
+      track("batch_stop_marked", { n: 1 });
+      settleBatchItem(id, lat, lon);
+      return;
+    }
+    if (places.length >= MAX_ROWS) return;
+    const at = batch[batch.length - 1].row + 1;
+    setPlaces([...places.slice(0, at), "…", ...places.slice(at)]);
+    setPicked(shiftPicked(picked, at, 1));
+    batchRef.current = [...batch, { id, row: at, lat, lon, place: null, check: "checking" }];
+    setBatch(batchRef.current);
+    setChosenRow(at);
+    track("batch_stop_marked", { n: batch.length + 1 });
+    settleBatchItem(id, lat, lon);
+  };
+  const moveBatchItem = (id: number, lat: number, lon: number) => {
+    const item = batch.find((b) => b.id === id);
+    if (!item) return;
+    batchRef.current = batch.map((b) => (b.id === id ? { ...b, lat, lon, place: null, check: "checking" as const, snappedTo: null } : b));
+    setBatch(batchRef.current);
+    setPlaces((rows) => rows.map((p, i) => (i === item.row ? "…" : p)));
+    settleBatchItem(id, lat, lon);
+  };
+  /** One pending stop out of the batch — its ✕, or ↶ for the last one. */
+  const dropBatchItem = (id: number) => {
+    const item = batch.find((b) => b.id === id);
+    if (!item) return;
+    setBatchSel(null);
+    if (batch.length === 1) {
+      // The empty row the batch started in stays, empty and active.
+      batchRef.current = [];
+      setBatch([]);
+      setPlaces((rows) => rows.map((p, i) => (i === item.row ? "" : p)));
+      return;
+    }
+    setPlaces(places.filter((_, i) => i !== item.row));
+    setPicked(shiftPicked(picked, item.row, -1));
+    batchRef.current = batch.filter((b) => b.id !== id).map((b) => (b.row > item.row ? { ...b, row: b.row - 1 } : b));
+    setBatch(batchRef.current);
+    setChosenRow(batchRef.current[batchRef.current.length - 1].row);
+  };
+  /** ✕ on the header while a batch is open: every pending stop goes. */
+  const discardBatch = () => {
+    track("batch_discarded", { n: batch.length });
+    const rows = batch.map((b) => b.row);
+    const first = rows[0];
+    batchRef.current = [];
+    setBatch([]);
+    setBatchSel(null);
+    if (edit) { cancelPicking(); return; }
+    const kept = places.filter((_, i) => !rows.includes(i) || i === first).map((p, i) => (i === first ? "" : p));
+    let nextPicked = picked;
+    for (const r of [...rows].reverse()) if (r !== first) nextPicked = shiftPicked(nextPicked, r, -1);
+    if (rowIsNew) {
+      // A "+" row the batch started in goes with it, as Cancel takes it.
+      setPlaces(kept.filter((_, i) => i !== first));
+      setPicked(shiftPicked(nextPicked, first, -1));
+      setRowIsNew(false);
+      setChosenRow(defaultActiveRow(kept.filter((_, i) => i !== first)));
+    } else {
+      setPlaces(kept);
+      setPicked(nextPicked);
+    }
+  };
+  /** „Apstiprināt visas”: every pending stop becomes its row's place at once. */
+  const confirmBatch = () => {
+    if (!batch.length || batch.some((b) => !b.place || b.check !== "ok")) return;
+    const names = places.map((p, i) => batch.find((b) => b.row === i)?.place?.name ?? p);
+    const nextPicked = { ...picked };
+    for (const b of batch) nextPicked[b.row] = b.place;
+    // The step back is to before the batch: its rows gone again, the empty
+    // row it started in empty again — one undo takes the whole batch.
+    const rowsOf = batch.map((b) => b.row);
+    let beforePicked = picked;
+    for (const r of [...rowsOf].reverse()) if (r !== rowsOf[0]) beforePicked = shiftPicked(beforePicked, r, -1);
+    remember({
+      names: places.filter((_, i) => !rowsOf.includes(i) || i === rowsOf[0]).map((p, i) => (i === rowsOf[0] ? "" : p)),
+      picked: beforePicked,
+    });
+    setPlaces(names);
+    setPicked(nextPicked);
+    for (const b of batch) rememberPlace(b.place!);
+    track("batch_confirmed", { n: batch.length });
+    batchRef.current = [];
+    setBatch([]);
+    setBatchSel(null);
+    setRowIsNew(false);
+    setChosenRow(defaultActiveRow(names));
+    // Editing, the whole batch is one change: one request re-routes every
+    // stretch it touches (`add-stops`). Planning, the map shows every pin once.
+    commitRows(names, nextPicked);
+    if (!edit) setFitAsk((n) => n + 1);
+  };
+  /** The row a map pin belongs to — see `dragPin` for how stops are counted. */
+  const rowOfPin = (role: "start" | "via" | "finish", index: number): number => {
+    const oneWay = tripType === "one_way";
+    const last = places.length - 1;
+    if (role === "start") return 0;
+    if (role === "finish") return oneWay ? last : -1;
+    let seen = -1;
+    for (let i = 1; i <= (oneWay ? last - 1 : last); i++) {
+      if (picked[i]) seen++;
+      if (seen === index) return i;
+    }
+    return -1;
+  };
+  /**
+   * A ride pin pressed on the map: its row becomes the active one, exactly as
+   * if its field had been focused (`focusRow`) — the ring, the header, the
+   * raised pin. A mark pending on another row is let go first, as focusing
+   * another field lets it go: the press is the rider changing his mind about
+   * which place he is correcting. The pin itself does not move; a mark or a
+   * drag does that next.
+   */
+  const pressPin = (role: "start" | "via" | "finish", index: number) => {
+    if (busy) return;
+    const row = rowOfPin(role, index);
+    if (row < 0) return;
+    track("map_pin_pressed", { role });
+    focusRow(row, { refocus: false });
+  };
+  const dragPin = (role: "start" | "via" | "finish", index: number, at: { lat: number; lon: number }) => {
+    if (busy) return;
+    const row = rowOfPin(role, index);
+    if (row < 0) return;
+    track("route_edit_pin_dragged", { role });
+    const target = leaveGhost(row);
+    setPreview(null);
+    setMapQuery(null);
+    setChosenRow(target);
+    setRowIsNew(false);
+    setOffRoad(null);
+    setError(null);
+    // A fresh gesture, so the lookup names the spot — unlike the seed a pin
+    // press leaves, whose name the row already knows.
+    openPick({ at: null, marker: at, lookup: true });
+  };
+
   /** "Pārvietot uz tuvāko ceļu": commit the road the router found, not the tap. */
   const acceptOffRoadMove = () => {
     if (!offRoad?.snappedTo) return;
@@ -814,6 +1355,31 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     // it here would tell him he had picked something else.
     commitPick(row, { ...place, lat: snappedTo.lat, lon: snappedTo.lon });
   };
+
+  /**
+   * The rows again from the ride, when the page says the ride has changed
+   * under them: an undo, or an edit the router refused, which leaves the ride
+   * with the places it had. The row the map answers stays where the rider
+   * left it, clamped to the rows that exist.
+   */
+  // Adjusted during render rather than in an effect — React's own pattern for
+  // state that resets when a prop changes: an effect would paint one frame of
+  // the old rows over the new ride first.
+  const [seenSeed, setSeenSeed] = useState(edit?.seed.token);
+  if (edit && edit.seed.token !== seenSeed) {
+    setSeenSeed(edit.seed.token);
+    setPreview(null);
+    setOffRoad(null);
+    setGrab(null);
+    const names = edit.seed.names;
+    setPlaces(names);
+    setPicked({ ...edit.seed.picked });
+    setRowIsNew(false);
+    setBatch([]);
+    setBatchSel(null);
+    // No row stays none; a row the rows moved under follows its place.
+    setChosenRow((row) => (row === null ? null : Math.min(edit.seed.active ?? row, names.length - 1)));
+  }
 
   /**
    * Tell the page whether a row is active at all.
@@ -831,14 +1397,20 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   const picking = activeRow !== null;
   useEffect(() => {
     if (!picking) { onPickModeChange?.(false); return; }
+    // A handler that made the row active has already opened the flow with the
+    // marker it knows (`openPick`); opening it again here would drop that.
+    if (pickOpenedRef.current) return;
     // No `at`, no `marker`: the map stays where the rider left it and the
-    // violet pin is only ever placed by something he did.
+    // pending marker is only ever placed by something he did.
     onPickModeChange?.(true, { at: null, marker: null });
     // The parent's callback is an inline arrow, rebuilt every render; listing
     // it would re-open pick mode on every keystroke in the form and throw away
     // the marker under the rider's finger.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [picking]);
+  // The flag is for the one commit its handler caused; every commit clears it
+  // after the effect above has read it.
+  useEffect(() => { pickOpenedRef.current = false; });
 
   /**
    * Hand the map's own header bar everything it shows.
@@ -872,6 +1444,29 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   const rowsKey = places.join(String.fromCharCode(0));
   const activeValue = activeRow === null ? "" : (preview ? preview.name : places[activeRow] ?? "");
   const activeConfirmed = activeRow === null ? null : (preview ?? picked[activeRow] ?? null);
+  /** The active row's own confirmed place — its pin is the one the map raises. */
+  const activeOwn = activeRow === null ? null : picked[activeRow] ?? null;
+  /**
+   * The dashed line joining the pins in riding order, planning only — a
+   * generated ride draws the real line, and edit mode has it (`planLine`).
+   */
+  const planRows = places.map((_, i) => (picked[i] ? [picked[i]!.lon, picked[i]!.lat] as [number, number] : null));
+  const basePath = edit ? null : planLine({
+    rows: planRows,
+    roundTrip: tripType === "round_trip",
+    pending: activeRow !== null && preview && !batch.length ? { row: activeRow, point: [preview.lon, preview.lat] } : null,
+  });
+  // A batch's pending stops slot in as one lighter chain: from the place
+  // before the first to the place after the last, through each in turn.
+  const planPath = !basePath || !batch.length ? basePath : (() => {
+    const first = batch[0].row, last = batch[batch.length - 1].row;
+    const prev = [...planRows.slice(0, first)].reverse().find(Boolean) ?? null;
+    let next = planRows.slice(last + 1).find(Boolean) ?? null;
+    if (!next && tripType === "round_trip") next = planRows[0];
+    const chain = [...(prev ? [prev] : []), ...batch.map((b) => [b.lon, b.lat] as [number, number]), ...(next ? [next] : [])];
+    return { ...basePath, pending: chain.length >= 2 ? chain : null };
+  })();
+  const planKey = planPath ? JSON.stringify(planPath) : "";
   /**
    * The pending mark's handlers, always the latest render's.
    *
@@ -884,11 +1479,24 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
    * the ref is synced further down, after `effectiveProfile` exists, because
    * `confirmPick` reads it.
    */
-  const pendingHandlers = useRef<{ confirm: () => void; cancel: () => void; move: () => void; dismiss: () => void } | null>(null);
+  const pendingHandlers = useRef<{
+    confirm: () => void; cancel: () => void; move: () => void; dismiss: () => void;
+    pinDrag: (role: "start" | "via" | "finish", index: number, at: { lat: number; lon: number }) => void;
+    type: (value: string) => void;
+    pickFound: (place: ResolvedPlace) => void;
+    addStop: () => void;
+    pinPress: (role: "start" | "via" | "finish", index: number) => void;
+    lineGrab: (grab: { lat: number; lon: number; slot: number }) => void;
+    confirmBatch: () => void; discardBatch: () => void; undoBatch: () => void;
+    selectBatch: (id: number) => void; moveBatch: (id: number, at: { lat: number; lon: number }) => void; dropBatch: (id: number) => void;
+    moveSelectedToRoad: () => void; dropSelected: () => void;
+    undo: () => void;
+  } | null>(null);
   /**
-   * What the map's bottom bar shows, or null when no mark is pending.
+   * What the map's header shows in place of "+" — Confirm and Cancel — or
+   * null when no mark is pending.
    *
-   * **Pending = a point is under the violet marker and not yet committed**, or
+   * **Pending = a point is under the pending marker and not yet committed**, or
    * the router has just said that point is off the road. A confirmed row stays
    * active so the next tap moves its place, but until that tap there is
    * nothing to confirm or cancel, and a pair of buttons that do nothing is
@@ -903,19 +1511,50 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
    * its Cancel.
    */
   const naming = activeRow !== null && token !== null && token !== 0 && namedToken !== token;
+  /**
+   * Batch adding is on while an empty stop row is active (and no single mark,
+   * search pick or grabbed line point is pending), or once a batch has
+   * started. Then a mark adds a pending stop (`addToBatch`) and the map keeps
+   * its camera still.
+   */
+  const batchActive = batch.length > 0;
+  const batchReady = !batchActive && !grab && !preview && !offRoad && activeRow !== null && isStopRow(activeRow) && !places[activeRow]?.trim();
+  const batchMode = batchActive || batchReady;
+  // Synced after each commit; the mark that the next render brings reads it.
+  useEffect(() => { batchPointRef.current = batchMode ? addToBatch : null; });
+  const selectedItem = batchSel === null ? null : batch.find((b) => b.id === batchSel) ?? null;
+  const batchKey = batch.map((b) => `${b.id}:${b.row}:${b.lat},${b.lon}:${b.place?.name ?? ""}:${b.check}`).join("|") + `|${batchSel ?? ""}|${batchReady ? 1 : 0}`;
   const pendingKey = activeRow === null || !(preview || offRoad || naming)
     ? ""
-    : [preview?.lat, preview?.lon, checking, naming, offRoad?.distanceM ?? "", offRoad?.snappedTo ? 1 : 0].join("|");
+    : [preview?.lat, preview?.lon, checking, naming, offRoad?.distanceM ?? "", offRoad?.snappedTo ? 1 : 0, edit?.rerouting ? 1 : 0].join("|");
   useEffect(() => {
-    if (activeRow === null) { onMapControlsChange?.(null); return; }
-    const pending = !pendingKey ? null : {
+    if (!mapLive) { onMapControlsChange?.(null); return; }
+    // The batch's own pending state: Confirm all, ↶ the last, ✕ all — and,
+    // for a selected pending stop the probe found off the road, the verdict.
+    const stopsBefore = batchActive ? places.slice(1, batch[0].row).filter((_, j) => picked[j + 1] && !picked[j + 1]?.kind).length : 0;
+    const batchPending = !batchActive ? null : {
+      confirmLabel: t(locale, "batchConfirmAll"),
+      onConfirm: batch.some((b) => !b.place || b.check !== "ok") || edit?.rerouting ? null : () => pendingHandlers.current?.confirmBatch(),
+      cancelLabel: t(locale, "batchDiscard"),
+      onCancel: () => pendingHandlers.current?.discardBatch(),
+      undo: { label: t(locale, "batchUndoLast"), onUndo: () => pendingHandlers.current?.undoBatch() },
+      offRoad: selectedItem && selectedItem.check === "off-road" ? {
+        title: fi(t(locale, "pickOffRoadTitle"), { m: selectedItem.distanceM ?? 0 }),
+        moveLabel: t(locale, "pickOffRoadMove"),
+        onMove: selectedItem.snappedTo ? () => pendingHandlers.current?.moveSelectedToRoad() : null,
+        dismissLabel: t(locale, "batchDropOne"),
+        onDismiss: () => pendingHandlers.current?.dropSelected(),
+      } : null,
+    };
+    const batchCount = batch.length === 1 ? t(locale, "batchCountOne") : fi(t(locale, "batchCountMany"), { n: batch.length });
+    const pending = batchPending ?? (!pendingKey ? null : {
       confirmLabel: checking ? t(locale, "pickOnMapChecking") : t(locale, "pickOnMapConfirm"),
       // Null while the probe is in flight: the button is then disabled and
       // says so, because a press that takes a second and shows nothing reads
       // as a button that does not work.
       // …and while the tapped point is still being named: there is nothing
       // yet for Confirm to commit.
-      onConfirm: checking || naming || !preview ? null : () => pendingHandlers.current?.confirm(),
+      onConfirm: checking || naming || !preview || edit?.rerouting ? null : () => pendingHandlers.current?.confirm(),
       cancelLabel: t(locale, "pickOnMapCancel"),
       onCancel: () => pendingHandlers.current?.cancel(),
       offRoad: !offRoad ? null : {
@@ -928,65 +1567,73 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
         dismissLabel: t(locale, "pickOffRoadCancel"),
         onDismiss: () => pendingHandlers.current?.dismiss(),
       },
-    };
+    });
     onMapControlsChange?.({
       pending,
-      hint: fi(t(locale, "mapActiveRowHint"), { label: activeLabel }),
+      // With no row active the header says what to do instead — pick a row or
+      // add a stop — and the field is off: a name found there would have no
+      // row to go to.
+      hint: batchActive ? batchCount : grab ? t(locale, "mapGrabHint") : activeRow === null ? t(locale, "mapNoActiveRow") : fi(t(locale, "mapActiveRowHint"), { label: activeLabel }),
+      rowLabel: activeRow === null || batchActive ? undefined : activeLabel,
+      // The pin the active row's mark will become, and a stop's number: one
+      // more than the filled, numbered stops above it — the order the map
+      // numbers stops in (sights carry a glyph, not a number).
+      pendingPin: activeRow === null || batchActive ? undefined : activeRow === 0
+        ? { role: "start" as const, number: null }
+        : tripType === "one_way" && activeRow === places.length - 1
+          ? { role: "finish" as const, number: null }
+          : { role: "via" as const, number: 1 + places.slice(1, activeRow).filter((_, j) => picked[j + 1] && !picked[j + 1]?.kind).length },
       // Null at the cap rather than a handler that returns: the button is then
       // disabled and says why, and a control that does nothing is never shipped.
-      onAddStop: atCap ? null : addStopFromMap,
+      // Through the ref like the other handlers: whether a blank new row is
+      // already waiting (`ghostRow`) can change without the rows changing.
+      onAddStop: atCap ? null : () => pendingHandlers.current?.addStop(),
       addStopLabel: t(locale, "mapAddStop"),
       addStopFullLabel: t(locale, "mapAddStopFull"),
       search: {
-        value: activeValue,
-        confirmed: activeConfirmed,
-        // Typing in the map's field is typing in the row, exactly as in the
-        // form: the same `onChange`, so a name typed here is geocoded at
-        // generation time even if the rider never picks from the list. A
-        // preview under the marker is replaced the moment he types, because he
-        // has stopped answering with the map and started answering with words.
-        onChange: (value: string) => {
-          setPreview(null);
-          setPlaces((prev) => prev.map((p, i) => (i === activeRow ? value : p)));
-          setPick(activeRow, null);
-          // Typing is choosing the row, too. Without this the first letter
-          // fills the row, the default rule ("the first empty row") sees it is
-          // no longer empty and hands the map to the next one — and the field
-          // the rider is typing into empties itself under his thumb, one
-          // keystroke in. Measured on "Rigas": row 0 held it, the field went
-          // blank and the hint had moved to „Līdz”.
-          setChosenRow(activeRow);
-        },
-        // A pick from the dropdown is the row's answer at once — the same
-        // `onPick` path the form's field takes, tick and recent places
-        // included. There is nothing to Confirm: the rider chose a named place
-        // from a list, which is not the "did I hit the right yard" question
-        // that tapping a map asks.
-        onPick: (place: ResolvedPlace | null) => {
-          if (!place) { setPick(activeRow, null); return; }
-          track("place_picked", { row: activeRow, start: activeRow === 0 });
-          setPreview(null);
-          setPlaces((prev) => prev.map((p, i) => (i === activeRow ? place.name : p)));
-          setPick(activeRow, place);
-          setRowIsNew(false);
-          setOffRoad(null);
-          // The same pinning a Confirm does, and for the same reason: filling
-          // this row must not hand the map to the next empty one behind the
-          // rider's back while he is still looking at what he just chose.
-          setChosenRow(activeRow);
-          // Take the map to it, and clear the violet marker: the row now holds
-          // a place chosen by name, and a draggable pin left on the last tap
-          // would be a second, older answer to the same row.
-          onPickModeChange?.(true, { at: { lat: place.lat, lon: place.lon }, marker: null });
-        },
+        value: batchActive ? "" : mapQuery && mapQuery.row === activeRow ? mapQuery.text : activeValue,
+        confirmed: batchActive ? null : activeConfirmed,
+        // Typing searches; it does not touch the row. See `mapQuery`. A mark
+        // or a preview already under the marker goes: the rider has stopped
+        // answering with the map and started answering with words.
+        onChange: (value: string) => pendingHandlers.current?.type(value),
+        // A pick is a mark by name: marker, preview, Confirm — `previewPlace`.
+        onPick: (place: ResolvedPlace | null) => { if (place) pendingHandlers.current?.pickFound(place); },
         near: anchor,
-        placeholder: t(locale, "mapSearchPlaceholder"),
+        // The hint line's words live here now (backlog 30): the field's tag
+        // names the row, and the placeholder says a mark on the map fills it
+        // as well as a name typed here.
+        // A batch has no field to type into — its count is the field's words
+        // (and the cap, once it is reached).
+        placeholder: batchActive ? (atCap ? t(locale, "mapAddStopFull") : batchCount) : grab ? t(locale, "mapGrabHint") : activeRow === null ? t(locale, "mapNoActiveRow") : t(locale, "mapSearchHint"),
+        disabled: activeRow === null || batchActive,
       },
+      // The ride's own pins answer the form in planning as in edit mode
+      // (rider, 2026-09-25): a press makes that pin's row active, a drag makes
+      // the drop point its mark.
+      onPinDrag: (role: "start" | "via" | "finish", index: number, at: { lat: number; lon: number }) => pendingHandlers.current?.pinDrag(role, index, at),
+      onPinPress: (role: "start" | "via" | "finish", index: number) => pendingHandlers.current?.pinPress(role, index),
+      activePlace: activeOwn ? { lat: activeOwn.lat, lon: activeOwn.lon } : null,
+      planLine: planPath,
+      // Batch adding: the pending stops, drawn by the map as dashed numbered
+      // pins it can select and drag; the camera stays still while it is on.
+      batchMode,
+      batch: batch.map((b, k) => ({ id: b.id, lat: b.lat, lon: b.lon, number: stopsBefore + k + 1, selected: b.id === batchSel, failing: b.check === "off-road" })),
+      onBatchSelect: (id: number) => pendingHandlers.current?.selectBatch(id),
+      onBatchMove: (id: number, at: { lat: number; lon: number }) => pendingHandlers.current?.moveBatch(id, at),
+      onBatchDrop: (id: number) => pendingHandlers.current?.dropBatch(id),
+      fitToken: fitAsk,
+      // ↶ outside a batch: planning's own stack, or the edit history.
+      undo: { label: t(locale, "mapUndo"), onUndo: (edit ? edit.canUndo : undo.past.length > 0) ? () => pendingHandlers.current?.undo() : null },
+      // Edit mode: the drawn line can be grabbed and moved.
+      // Not while a batch is open: its marks may land on the line too, and
+      // they are stops of the batch, not points of the line to move.
+      ...(edit ? { onLineGrab: batchActive ? undefined : (g: { lat: number; lon: number; slot: number }) => pendingHandlers.current?.lineGrab(g), grab: grab?.at ?? null } : {}),
     });
     // The parent's callback is an inline arrow and is rebuilt every render;
     // listing it would re-report the same controls on every keystroke.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeRow, activeLabel, atCap, activeValue, activeConfirmed, anchor, locale, tripType, rowsKey, pendingKey]);
+  }, [mapLive, activeRow, activeLabel, atCap, activeValue, activeConfirmed, anchor, locale, tripType, rowsKey, pendingKey, mapQuery, activeOwn?.lat, activeOwn?.lon, planKey, grab?.at.lat, grab?.at.lon, batchKey, fitAsk, undo.past.length, edit?.canUndo]);
   // Nothing is offered once the form is gone. Without this the page would keep
   // drawing a map header for a form the rider has left.
   useEffect(() => () => onMapControlsChange?.(null),
@@ -994,7 +1641,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     []);
   // And no row is waiting once the form is gone. Generating unmounts the form,
   // and without this the page's "a row is waiting" flag stayed up under the
-  // result — every tap on the finished ride then dropped the violet marker,
+  // result — every tap on the finished ride then dropped the pick marker (violet, then),
   // with no row, hint or Confirm for it to answer to. The page also gates the
   // pick flow on the view (`lib/map/map-wiring.ts`); this keeps the flag
   // itself honest for anything else that reads it.
@@ -1013,15 +1660,33 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   // row "Līdz" had been — `activeRow` did not change, the listener was not
   // rebuilt, and Escape ran an older closure that still believed the row was
   // one the ride already had. It left the ghost row it exists to remove.
+  //
+  // The listener now calls through a ref rebuilt every render, so it can
+  // never run an older closure again — and it carries two more keys:
+  // - Escape in a batch deselects a pending stop first, then drops the batch.
+  // - Ctrl/Cmd+Z undoes the last committed change (Shift: redo, planning
+  //   only), but never while the focus is in a field, where typing keeps the
+  //   browser's own undo (rider, 2026-09-25).
+  const keyRef = useRef<(e: KeyboardEvent) => void>(() => {});
+  const onKeyDown = (e: KeyboardEvent) => {
+    const target = e.target as HTMLElement | null;
+    const typing = Boolean(target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable));
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z" && !typing && mapLive) {
+      e.preventDefault();
+      if (e.shiftKey) redoStep(); else undoStep();
+      return;
+    }
+    if (e.key !== "Escape") return;
+    if (batchSel !== null) { setBatchSel(null); return; }
+    if (batch.length) { discardBatch(); return; }
+    if (activeRow !== null) cancelPicking();
+  };
+  useEffect(() => { keyRef.current = onKeyDown; });
   useEffect(() => {
-    if (activeRow === null) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") cancelPicking(); };
+    const onKey = (e: KeyboardEvent) => keyRef.current(e);
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-    // `cancelPicking` itself is rebuilt every render; listing it would
-    // re-attach the listener on every keystroke in the form.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeRow, rowIsNew, preview, rowsKey]);
+  }, []);
 
   // The rows as roles, which is what the map is actually asking about. Keyed
   // on the role of each row and not merely on the coordinates, so moving a
@@ -1049,8 +1714,8 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   // dead on the way back from a result: the click updated the remembered
   // profile, the plan re-rendered over it, and nothing moved. The plan only
   // seeds the choice; a click made here wins until the plan itself changes.
-  const [profileOverride, setProfileOverride] = useState<RideProfile | null>(null);
-  const effectiveProfile = profileOverride ?? (initialPlan ? profileFromPlan(initialPlan) : profile);
+  // (`profileOverride` and `effectiveProfile` are declared further up, before
+  // the batch's probe that reads them.)
   const changeProfile = (next: RideProfile) => {
     setProfileOverride(next);
     onProfileChange(next);
@@ -1058,32 +1723,63 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   // The map's pending-bar handlers, current as of this render (see
   // `pendingHandlers`). After `effectiveProfile`, which `confirmPick` reads.
   useEffect(() => {
-    pendingHandlers.current = { confirm: confirmPick, cancel: cancelPicking, move: acceptOffRoadMove, dismiss: () => setOffRoad(null) };
+    pendingHandlers.current = {
+      confirm: confirmPick, cancel: cancelPicking, move: acceptOffRoadMove, dismiss: () => setOffRoad(null), pinDrag: dragPin, addStop: addStopFromMap, pinPress: pressPin, lineGrab: grabLine,
+      confirmBatch, discardBatch,
+      undoBatch: () => { const last = batch[batch.length - 1]; if (last) dropBatchItem(last.id); },
+      selectBatch: (id: number) => setBatchSel((sel) => (sel === id ? null : id)),
+      moveBatch: (id: number, at: { lat: number; lon: number }) => { moveBatchItem(id, at.lat, at.lon); setBatchSel(null); },
+      dropBatch: dropBatchItem,
+      moveSelectedToRoad: () => { if (selectedItem?.snappedTo) { moveBatchItem(selectedItem.id, selectedItem.snappedTo.lat, selectedItem.snappedTo.lon); setBatchSel(null); } },
+      dropSelected: () => { if (selectedItem) dropBatchItem(selectedItem.id); },
+      undo: undoStep,
+      type: (value: string) => {
+        if (activeRow === null) return;
+        setMapQuery({ row: activeRow, text: value });
+        if (preview || pickPoint) { setPreview(null); onPickModeChange?.(true, { at: null, marker: null }); }
+      },
+      pickFound: (place: ResolvedPlace) => {
+        if (activeRow === null) return;
+        track("place_picked", { row: activeRow, start: activeRow === 0 });
+        previewPlace(activeRow, place);
+      },
+    };
   });
 
   const submit = () => {
-    const filled = places.map((p) => p.trim()).filter(Boolean);
+    // A blank new stop row the rider never used is not part of the ride: it
+    // is dropped here rather than trusted to be skipped downstream.
+    // Pending stops of a batch never confirmed are not part of it either.
+    const pendingRows = new Set(batch.map((b) => b.row));
+    const rows = ghostRow === null && !pendingRows.size ? places : places.filter((_, i) => i !== ghostRow && !pendingRows.has(i));
+    const filled = rows.map((p) => p.trim()).filter(Boolean);
     // Name the field that is missing. "Norādi vismaz vienu vietu" was shown to
     // a rider who had filled in "Līdz" and left "No" empty — technically about
     // the count, but read as a lie about the field he had just typed into.
-    if (!places[0]?.trim()) { setError(t(locale, "errNoStart")); return; }
+    if (!rows[0]?.trim()) { setError(t(locale, "errNoStart")); return; }
     // An empty "Līdz" is a real answer — "man vienalga", the same ride the
     // lucky mode already handles — so only a one-way request with nothing but
     // a start is refused: there is no direction to send it in.
     if (tripType === "one_way" && filled.length < 2) { setError(t(locale, "errNoDestination")); return; }
     const value = hours.trim() ? Number(hours.replace(",", ".")) : preset ?? NaN;
     if (durationMode === "hours" && (!Number.isFinite(value) || value < 0.5 || value > 16)) { setError(t(locale, "errHours")); return; }
-    const plan = composeRidePlan({ places, tripType, durationMode, hours: value, profile: effectiveProfile });
+    const plan = composeRidePlan({ places: rows, tripType, durationMode, hours: value, profile: effectiveProfile });
     setError(null);
+    if (rows !== places) leaveGhost(null);
     onGenerate(plan, Object.values(picked).filter((p): p is ResolvedPlace => p !== null));
   };
 
   return (
     <section className="flex flex-col overflow-hidden rounded-2xl border border-stone-200 bg-white md:h-[calc(100vh-7rem)]" aria-label={t(locale, "a11yRideInput")}>
       <div className="border-b border-stone-200 bg-[#faf9f6] px-4 py-3">
-        <div className="mb-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#bd4b00]">{t(locale, "composerEyebrow")}</div>
-        <h2 className="text-lg font-semibold tracking-tight">{t(locale, "composerTitle")}</h2>
-        <p className="mt-1 hidden text-xs text-stone-500 md:block">{t(locale, "composerHint")}</p>
+        <div className="mb-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#bd4b00]">{t(locale, edit ? "editEyebrow" : "composerEyebrow")}</div>
+        <h2 className="text-lg font-semibold tracking-tight">{t(locale, edit ? "editTitle" : "composerTitle")}</h2>
+        <p className={`mt-1 text-xs text-stone-500 ${edit ? "" : "hidden md:block"}`}>{t(locale, edit ? "editHint" : "composerHint")}</p>
+        {/* The ride as it now stands, and the way back one step. Here, in the
+            header, because on a phone the rows and the map fill the screen
+            below it and the numbers the last Confirm changed must be in view
+            without scrolling. */}
+        {edit && <div className="mt-2">{edit.status}</div>}
       </div>
 
       {/* Scrolls inside the fixed-height column when the profile panel is
@@ -1092,10 +1788,60 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
         {/* Trip type first: it decides what the last row means — a waypoint on
             the way home, or the finish. Asking for places before knowing the
             shape of the ride is asking the rider to guess. */}
-        <ChoiceRow label={t(locale, "tripType")} value={tripType} onChange={(v) => { track("trip_type_changed", { to: v }); setTripType(v); }} choices={[{ value: "one_way", label: t(locale, "oneWay") }, { value: "round_trip", label: t(locale, "roundTrip") }]} />
+        {/* Not while editing: a one-way ride turned into a loop is a different
+            ride, and that is a search, not a correction. */}
+        {!edit && <ChoiceRow label={t(locale, "tripType")} value={tripType} onChange={(v) => { track("trip_type_changed", { to: v }); setTripType(v); }} choices={[{ value: "one_way", label: t(locale, "oneWay") }, { value: "round_trip", label: t(locale, "roundTrip") }]} />}
 
-        <RoutePlaces places={places} picked={picked} oneWay={tripType === "one_way"} busy={busy} onChange={reorder} onPick={setPick} onUseLocation={useMyLocation} locating={locating} near={anchor}
-          onPickOnMap={onPickModeChange ? startPicking : undefined} activeRow={mapShown ? activeRow : null} preview={preview} />
+        <RoutePlaces places={places} picked={picked} oneWay={tripType === "one_way"} busy={busy} onChange={reorder}
+          onPick={(i, place) => {
+            // Editing, a place picked in a row's own list is a mark by name:
+            // previewed on the map, committed (and re-routed) on Confirm.
+            if (edit && place) { previewPlace(i, place); return; }
+            if (place) remember();
+            setPick(i, place);
+            // Planning, it commits at once — and the map shows it (rider,
+            // 2026-09-25: "Sigulda" picked in „Līdz” left the map on Rīga).
+            // The row becomes the active one, so its pin is the raised one,
+            // and the map re-frames the places it has, the new one included.
+            if (place && mapLive) {
+              const target = leaveGhost(i);
+              setRowIsNew(false);
+              setPreview(null);
+              setChosenRow(target);
+              // Shown the way a map-search pick is: eased to when near, the
+              // whole ride framed when it is far (`fit`) — an explicit pick,
+              // so even a view the rider panned himself gives way to it.
+              const others = places.map((_, j) => (j === i ? null : picked[j])).filter((p): p is ResolvedPlace => Boolean(p));
+              openPick({ at: { lat: place.lat, lon: place.lon }, marker: null, fit: [...others, place].map((p) => ({ lat: p.lat, lon: p.lon })) });
+            }
+          }}
+          onUseLocation={edit ? undefined : useMyLocation} locating={locating} near={anchor}
+          onPickOnMap={onPickModeChange ? startPicking : undefined} activeRow={mapShown ? activeRow : null} preview={preview}
+          onFocusRow={focusRow}
+          // A row moved, removed or inserted: the picks follow their names
+          // (`reorder`) and the active row follows its place (`followRow`) —
+          // the ring, the filled pin and the map's hint all read `activeRow`,
+          // so moving the one index moves all three together. Editing, the
+          // change is also a change to the ride.
+          onStructure={(next, change) => {
+            const nextPicked = rekeyPicked(places, picked, next);
+            // A row removed or moved is a change to the ride; a blank row
+            // inserted is not, until something is put in it.
+            if (change.kind !== "insert") remember();
+            reorder(next);
+            // A row the form's own "+" inserted is the new active row — the
+            // same as the map's "+" (`addStopFromMap` covers the case where
+            // the map is on screen; this is the closed phone map). Any other
+            // change: the active row follows its place, and none stays none.
+            setRowIsNew(false);
+            setChosenRow((row) => (change.kind === "insert" ? change.at : row === null ? null : followRow(row, change) ?? defaultActiveRow(next)));
+            if (edit) commitRows(next, nextPicked);
+          }}
+          fixedEnds={Boolean(edit)}
+          // Every way of adding a stop activates the new row (rider,
+          // 2026-09-25): with the map on screen the form's link is the map's
+          // "+", exactly.
+          onAddStop={edit || mapLive ? addStopFromMap : undefined} />
 
         {/* The map is worth a look when a place needs confirming, not on every
             visit — it is the tallest thing on the page and most rides are
@@ -1114,14 +1860,22 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
             a map that moved would remount MapLibre on every pin press. What
             the moving map was for, saying which field is being answered, the
             ringed row and the map's own hint line now do. */}
-        {map && (
+        {/* Editing, the map is the tool rather than a thing to glance at, so it
+            is simply there — no toggle to find first. */}
+        {map && edit && <div className="md:hidden">{map}</div>}
+        {map && !edit && (
           <div className="md:hidden">
             {/* Opening the map asks "which row is unanswered?" again — the
                 rider may have filled several in the form since he last looked
                 at it, and the row that was active then is not the question he
                 has now. Closing it changes nothing: the choice is harmless
                 while nothing is listening to it. */}
-            <button type="button" onClick={() => setMapOpen((v) => { if (!v) { track("form_map_opened"); setChosenRow(defaultActiveRow(places)); } return !v; })} aria-expanded={mapOpen}
+            <button type="button" onClick={() => {
+                if (mapOpen) { leaveGhost(null); setMapOpen(false); return; }
+                track("form_map_opened");
+                setChosenRow(defaultActiveRow(places));
+                setMapOpen(true);
+              }} aria-expanded={mapOpen}
               className="inline-flex items-center gap-1.5 text-xs font-medium text-[#bd4b00]">
               <MapIcon className="size-3.5" />
               {mapOpen ? t(locale, "hideMap") : t(locale, "showOnMap")}
@@ -1133,8 +1887,8 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
           </div>
         )}
 
-        <ChoiceRow label={t(locale, "duration")} value={durationMode} onChange={setDurationMode} choices={[{ value: "flexible", label: t(locale, "flexible") }, { value: "hours", label: t(locale, "exact") }]} />
-        {durationMode === "hours" && (
+        {!edit && <ChoiceRow label={t(locale, "duration")} value={durationMode} onChange={setDurationMode} choices={[{ value: "flexible", label: t(locale, "flexible") }, { value: "hours", label: t(locale, "exact") }]} />}
+        {!edit && durationMode === "hours" && (
           <div className="flex items-stretch gap-1.5" role="group" aria-label={t(locale, "a11yHours")}>
             {/* The usual days as one tap each; the field is for everything else. */}
             {PRESETS.map((h) => {
@@ -1154,15 +1908,36 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
           </div>
         )}
 
-        <ProfileLine profile={effectiveProfile} onChange={changeProfile} />
+        {/* The profile is the ride's own while editing: every re-routed stretch
+            is routed on it, and changing it would be asking for a new search. */}
+        {!edit && <ProfileLine profile={effectiveProfile} onChange={changeProfile} />}
 
         {error && <p role="alert" className="text-xs text-red-700">{error}</p>}
 
         {/* Pushed to the bottom on the desktop so the column is used and the
             action is where a form's action belongs. */}
         <div className="md:mt-auto" />
-        <button type="button" onClick={submit} disabled={busy} className="flex h-12 w-full shrink-0 items-center justify-center gap-2 rounded-full bg-[#f56300] text-sm font-semibold text-white transition hover:bg-[#d85600] disabled:opacity-50"><Sparkles className="size-4" />{t(locale, "generate")}</button>
-        <button type="button" onClick={onUseChat} disabled={busy} className="w-full text-center text-xs text-stone-500 underline decoration-stone-300 underline-offset-4 hover:text-stone-800">{t(locale, "orUseChat")}</button>
+        {edit ? (
+          // One row: keeping the edits is the primary act, dropping them all
+          // the outlined one beside it. Each as wide as its words (Estonian's
+          // "Lõpeta muutmine | Tühista muutmine" is the longest pair), a
+          // point smaller below 400 px so the pair shares the row at 375; on a
+          // narrower screen the second wraps under the first rather than
+          // being cut to an ellipsis.
+          <div className="flex shrink-0 flex-wrap gap-2">
+            <button type="button" onClick={edit.onDone} disabled={edit.rerouting} className="flex h-12 flex-auto items-center justify-center gap-1.5 whitespace-nowrap rounded-full bg-stone-900 px-3 text-sm font-semibold text-white transition hover:bg-stone-800 disabled:opacity-50 max-[399px]:text-[13px]">
+              <Check className="size-4 shrink-0" />{t(locale, "editDone")}
+            </button>
+            <button type="button" onClick={edit.onCancel} disabled={edit.rerouting} className="flex h-12 flex-auto items-center justify-center whitespace-nowrap rounded-full border border-stone-300 px-3 text-sm font-medium text-stone-700 transition hover:bg-stone-50 disabled:opacity-50 max-[399px]:text-[13px]">
+              {t(locale, "editCancel")}
+            </button>
+          </div>
+        ) : (
+          <>
+            <button type="button" onClick={submit} disabled={busy} className="flex h-12 w-full shrink-0 items-center justify-center gap-2 rounded-full bg-[#f56300] text-sm font-semibold text-white transition hover:bg-[#d85600] disabled:opacity-50"><Sparkles className="size-4" />{t(locale, "generate")}</button>
+            <button type="button" onClick={onUseChat} disabled={busy} className="w-full text-center text-xs text-stone-500 underline decoration-stone-300 underline-offset-4 hover:text-stone-800">{t(locale, "orUseChat")}</button>
+          </>
+        )}
       </div>
     </section>
   );

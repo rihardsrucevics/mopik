@@ -74,11 +74,22 @@ const COORDINATES_KEY: MessageKey = "kindCoordinates";
  * not whatever a geocoder guesses later. Typing without picking still works —
  * the API then geocodes the name.
  */
-export function PlaceInput({ value, onChange, onPick, placeholder, icon, label, className, trailing, near, confirmed, compact = false }: {
+export function PlaceInput({ value, onChange, onPick, placeholder, icon, label, className, trailing, near, confirmed, compact = false, leading, onFocus, disabled = false, title, placement = "below" }: {
   value: string;
   onChange: (value: string) => void;
   onPick: (place: ResolvedPlace | null) => void;
   placeholder?: string;
+  /** Off, with the placeholder saying why — the map's field when no row is
+   *  active, where a name found would have nowhere to go. */
+  disabled?: boolean;
+  /** The field's tooltip. */
+  title?: string;
+  /**
+   * Where the suggestions open. "above-on-phone": upward below the `md`
+   * breakpoint, for the map's field, which sits at the bottom of a phone map;
+   * capped in height there so the list stays on the map.
+   */
+  placement?: "below" | "above-on-phone";
   icon?: ReactNode;
   label?: ReactNode;
   className?: string;
@@ -119,6 +130,14 @@ export function PlaceInput({ value, onChange, onPick, placeholder, icon, label, 
    * must reach the row exactly as one chosen in the form does.
    */
   compact?: boolean;
+  /**
+   * Something that belongs before the name inside a compact field — the map
+   * header puts the active row's tag here („Līdz”), so the field says which
+   * row it fills without a hint line of its own above the map.
+   */
+  leading?: ReactNode;
+  /** The field took focus — the form uses it to point the map at this row. */
+  onFocus?: () => void;
 }) {
   const [locale] = useLocale();
   const m = messages(locale);
@@ -234,10 +253,11 @@ export function PlaceInput({ value, onChange, onPick, placeholder, icon, label, 
 
   return (
     <div className={`relative ${className ?? ""}`}>
-      <label className={`flex items-center gap-2 border focus-within:border-[#f56300] ${compact ? "h-10 rounded-full border-[#ececf0] bg-white/95 px-3 shadow-sm backdrop-blur" : "rounded-xl border-stone-200 px-3 py-2"}`}>
+      <label className={`flex items-center gap-2 border focus-within:border-[#f56300] ${compact ? `h-10 rounded-full border-[#ececf0] bg-white/95 shadow-sm backdrop-blur ${leading ? "pl-1.5 pr-3" : "px-3"}` : "rounded-xl border-stone-200 px-3 py-2"}`}>
         {/* Compact: the tick sits inside the frame, before the name, because
             there is no label row for it to ride on. Same green, same meaning —
             this field is resolved to a place the ride knows. */}
+        {compact && leading}
         {compact && isConfirmed && <Check aria-hidden="true" className="size-3.5 shrink-0 text-[#16a34a]" />}
         <span className="min-w-0 flex-1">
         {/* The confirmation rides on the label's own line. It used to be a
@@ -264,7 +284,7 @@ export function PlaceInput({ value, onChange, onPick, placeholder, icon, label, 
           aria-controls={listId}
           aria-autocomplete="list"
           onChange={(e) => { onChange(e.target.value); onPick(null); setOpen(true); }}
-          onFocus={() => { refreshRecentPlaces(); setOpen(true); }}
+          onFocus={() => { refreshRecentPlaces(); setOpen(true); onFocus?.(); }}
           onBlur={() => setTimeout(() => setOpen(false), 120)}
           onKeyDown={(e) => {
             if (!show) return;
@@ -273,8 +293,10 @@ export function PlaceInput({ value, onChange, onPick, placeholder, icon, label, 
             else if (e.key === "Enter" && active >= 0) { e.preventDefault(); pick(listed[active]); }
             else if (e.key === "Escape") setOpen(false);
           }}
-          className={`w-full bg-transparent font-medium outline-none ${compact ? "text-sm" : "mt-1 text-base md:text-sm"}`}
+          className={`w-full bg-transparent font-medium outline-none disabled:cursor-default ${compact ? "text-sm" : "mt-1 text-base md:text-sm"}`}
           placeholder={placeholder}
+          disabled={disabled}
+          title={title}
         />
         {/* Only the part of the label the name does not already say: "Cēsis ·
             Cēsu novads" becomes "Cēsu novads". A picked place that adds
@@ -285,7 +307,7 @@ export function PlaceInput({ value, onChange, onPick, placeholder, icon, label, 
         {trailing}
       </label>
       {show && (
-        <ul id={listId} role="listbox" className="absolute left-0 right-0 top-full z-20 mt-1 overflow-hidden rounded-xl border border-stone-200 bg-white shadow-lg">
+        <ul id={listId} role="listbox" className={`absolute left-0 right-0 top-full z-20 mt-1 overflow-hidden rounded-xl border border-stone-200 bg-white shadow-lg ${placement === "above-on-phone" ? "max-md:top-auto max-md:bottom-full max-md:mt-0 max-md:mb-1 max-md:max-h-52 max-md:overflow-y-auto" : ""}`}>
           {listed.map((s, i) => (
             <li key={`${s.label}-${s.lat}`} role="option" aria-selected={i === active}
               onMouseDown={(e) => { e.preventDefault(); pick(s); }}

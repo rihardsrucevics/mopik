@@ -191,6 +191,15 @@ export type MessageKey =
   | "chatFewerVersions"
   | "chatTooLong"
   | "chatRetry"
+  /**
+   * Every candidate failed and no single place is to blame (2026-09-25). Says
+   * what was tried and is answered by real ways out — without the stops, or
+   * on an easier profile — never by "try again" alone.
+   */
+  | "chatNoRoute"
+  | "chatNoRouteTime"
+  | "chatDropStops"
+  | "chatEasierProfile"
   | "chatShowAnyway"
   | "chatLessOverlap"
   | "chatLessOverlapMsg"
@@ -395,14 +404,33 @@ export type MessageKey =
    *
    * One hint line, always present, always naming the row the next tap answers
    * — `pickOnMapHint` says the same thing in a sentence, this is the short
-   * form the map has room for. Then the button that makes a new stop row and
-   * hands it to the map, with the cap's explanation as its tooltip, and the
-   * placeholder of the search field that fills the same row by name.
+   * form the map has room for, read out by a screen reader since backlog 30
+   * folded the visible hint into the field (`mapSearchHint`). Then the button
+   * that makes a new stop row and hands it to the map — its words are the
+   * round "+"'s tooltip — with the cap's explanation.
    */
   | "mapActiveRowHint"
+  /**
+   * The header when no row is active — every row confirmed (2026-09-25). A
+   * mark on the map then does nothing, so the header says what does.
+   */
+  | "mapNoActiveRow"
+  /** Edit mode: a point of the line was grabbed; the next mark is where it goes. */
+  | "mapGrabHint"
+  /** The map header's ↶ outside a batch (planning and edit mode). */
+  | "mapUndo"
+  /** Batch adding (2026-09-25): the header while pending stops wait. */
+  | "batchConfirmAll"
+  | "batchDiscard"
+  | "batchUndoLast"
+  | "batchCountOne"
+  | "batchCountMany"
+  | "batchDropOne"
+  /** The map-data credit beside the TET switch, and its ⓘ's name. */
+  | "mapCredit"
+  | "mapCreditToggle"
   | "mapAddStop"
   | "mapAddStopFull"
-  | "mapSearchPlaceholder"
   /**
    * Including the ticked sights without re-planning, and correcting the ride
    * on the result map.
@@ -410,24 +438,52 @@ export type MessageKey =
    * Two things the rider asked for on the same day: ticking a sight and
    * *keeping* it must not cost a generation, and a correction made on the map
    * must appear in the time of two short legs. Both produce a ride Mopik did
-   * not search for, so both are labelled — `resEdited` is the kicker, and
-   * `resSearchBetter` is the full search offered beside it, never instead of
-   * it. `resEditRetraced` is the honest half: an incremental edit can raise
-   * the repeated share and the rider is shown that, never shielded from it.
+   * not search for, so both are labelled — `resEditedKicker` (below) is the
+   * kicker, carrying the recomputed repeated share because an edit can raise
+   * it, and `resSearchBetter` is the full search offered beside it, never
+   * instead of it.
    */
   | "resAddSelected"
   | "resAddSelectedHint"
   | "resSearchBetter"
   | "resSearchBetterHint"
-  | "resEdited"
   | "resEditedHint"
-  | "resEditRetraced"
   | "resEditUndo"
   | "resEditRouting"
   | "resEditFailed"
   | "resEditMoved"
-  | "tapRouteToAddStop"
   | "mapDragStopHint"
+  /**
+   * Editing a generated ride on its own map ("Labot").
+   *
+   * The result's fourth action, the editor's header and its way out, and the
+   * two refusals an edit can meet: a row with no place under it, and a loop
+   * that would have nothing left once its only stop goes. `resEditedKicker`
+   * carries the recomputed retraced share in the kicker itself, because it is
+   * the one figure an edit can quietly make worse. `mapSearchHint` is the
+   * map field's placeholder, which is also where the old hint line now lives.
+   */
+  | "resEdit"
+  | "resEditAria"
+  | "resEditedKicker"
+  | "editEyebrow"
+  | "editTitle"
+  | "editHint"
+  | "editDone"
+  | "editCancel"
+  | "editDeadEnd"
+  /** An edit whose new line would not join the ride; refused, the ride kept. */
+  | "editBrokenLine"
+  /**
+   * The out-and-back an edit kept because the search for another way ran out
+   * of time — said as what the line does, never as "a dead end", which it has
+   * not been shown to be.
+   */
+  | "editSameWayBack"
+  | "resSearchBetterLink"
+  | "editNeedsPlace"
+  | "editNoRide"
+  | "mapSearchHint"
   /**
    * The words on the ride's two end pins.
    *
@@ -718,6 +774,10 @@ const lv: Messages = {
   chatFewerVersions: "Šis apvidus meklējas lēni, tāpēc paspēju izmēģināt {tried} versijas {planned} vietā.",
   chatTooLong: "Saruna sasniegusi šīs versijas garuma robežu. Sāc jaunu braucienu.",
   chatRetry: "Mēģināt vēlreiz",
+  chatNoRoute: "Neizdevās atrast maršrutu caur visām vietām: izmēģināju {n} variantus, un neviens ar šo profilu līdz galam netika.",
+  chatNoRouteTime: "Var palīdzēt arī garāks ilgums.",
+  chatDropStops: "Izņemt pieturas un mēģināt",
+  chatEasierProfile: "Vieglāks profils",
   chatShowAnyway: "Rādīt trasi tāpat",
   chatLessOverlap: "Mazāk atkārtojumu",
   chatLessOverlapMsg: "Mazāk atkārtojumu, atpakaļ pa citiem ceļiem.",
@@ -943,23 +1003,45 @@ const lv: Messages = {
   pickedOnMap: "izvēlēts kartē",
   pickOnMapConfirm: "Apstiprināt",
   pickOnMapChecking: "Pārbaudu…",
-  mapActiveRowHint: "Atzīmē kartē → „{label}”",
+  mapActiveRowHint: "Atzīmē kartē vai meklē → „{label}”",
+  mapNoActiveRow: "Izvēlies rindu vai pievieno pieturu",
+  mapGrabHint: "Atzīmē kartē, kur pārvietot šo maršruta punktu",
+  mapUndo: "Atsaukt",
+  batchConfirmAll: "Apstiprināt visas",
+  batchDiscard: "Atmest visas",
+  batchUndoLast: "Noņemt pēdējo",
+  batchCountOne: "1 jauna pietura",
+  batchCountMany: "{n} jaunas pieturas",
+  batchDropOne: "Noņemt šo pieturu",
+  mapCredit: "© OpenStreetMap contributors",
+  mapCreditToggle: "Kartes dati",
   mapAddStop: "+ Pietura",
   mapAddStopFull: "Vairāk pieturu pievienot nevar",
-  mapSearchPlaceholder: "Meklē vietu…",
   resAddSelected: "Pievienot izvēlētos",
   resAddSelectedHint: "Atzīmētās vietas paliek maršrutā — bez jaunas meklēšanas.",
   resSearchBetter: "Meklēt labāku apli ar šīm pieturām",
   resSearchBetterHint: "Pārplāno visu braucienu no jauna. Var atrast tīrāku apli, bet aizņem ~20–30 s.",
-  resEdited: "Labots ar roku",
   resEditedHint: "Šo maršrutu izlaboji tu, nevis Mopik meklēšana.",
-  resEditRetraced: "Atkārtotie ceļi pārrēķināti: {pct} %",
-  resEditUndo: "Atsaukt labojumu",
+  resEditUndo: "Atsaukt pēdējo labojumu",
   resEditRouting: "Pārrēķinu posmu…",
   resEditFailed: "Šeit neizdevās izbraukt — maršruts palika iepriekšējais.",
   resEditMoved: "Punkts pārvietots {m} m uz tuvāko ceļu.",
-  tapRouteToAddStop: "Uzspied uz maršruta, lai pievienotu pieturu",
-  mapDragStopHint: "Pieturu var pavilkt uz citu vietu",
+  mapDragStopHint: "Pavelc uz citu vietu, lai pārvietotu",
+  resEdit: "Labot",
+  resEditAria: "Labot maršrutu kartē",
+  resEditedKicker: "Labots ar roku · {pct} % atkārtojas",
+  editEyebrow: "Labošana",
+  editTitle: "Labo braucienu kartē",
+  editHint: "Izvēlies rindu, atzīmē kartē jauno vietu un apstiprini — pārzīmējas tikai posms ap to.",
+  editDone: "Pabeigt labošanu",
+  editCancel: "Atcelt labošanu",
+  editDeadEnd: "Pietura ir strupceļā — atpakaļ pa to pašu ceļu {km} km.",
+  editBrokenLine: "Šo labojumu neizdevās savienot ar maršrutu vienā līnijā — maršruts palika, kāds bija.",
+  editSameWayBack: "Uz pieturu un atpakaļ pa to pašu ceļu {km} km — citu ceļu laikus atrast neizdevās.",
+  resSearchBetterLink: "Meklēt labāku apli ar šīm pieturām →",
+  editNeedsPlace: "Šai rindai vajag vietu — atzīmē to kartē vai izvēlies no saraksta.",
+  editNoRide: "Bez šīs pieturas no apļa nekas nepaliek — pievieno citu vai meklē jaunu apli.",
+  mapSearchHint: "Atzīmē vai meklē…",
   mapStart: "Starts",
   mapFinish: "Finišs",
   pickOffRoadTitle: "Šeit ar šo profilu nevar piebraukt. Tuvākais ceļš ir ~{m} m nostāk.",
@@ -973,7 +1055,7 @@ const lv: Messages = {
   hideMap: "Paslēpt karti",
   duration: "Ilgums",
   flexible: "Brīvs",
-  exact: "Konkrēts",
+  exact: "Limitēts",
   yourProfile: "Tavs profils",
   change: "Mainīt",
   close: "Aizvērt",
@@ -1188,6 +1270,10 @@ const lt: Messages = {
   chatFewerVersions: "Ši vietovė ieškoma lėtai, todėl spėjau išbandyti {tried} versijas vietoj {planned}.",
   chatTooLong: "Pokalbis pasiekė šios versijos ilgio ribą. Pradėk naują maršrutą.",
   chatRetry: "Bandyti dar kartą",
+  chatNoRoute: "Nepavyko rasti maršruto per visas vietas: išbandžiau {n} variantus, ir nė vienas su šiuo profiliu neišėjo iki galo.",
+  chatNoRouteTime: "Gali padėti ir ilgesnė trukmė.",
+  chatDropStops: "Pašalinti sustojimus ir bandyti",
+  chatEasierProfile: "Lengvesnis profilis",
   chatShowAnyway: "Rodyti trasą vis tiek",
   chatLessOverlap: "Mažiau kartojimosi",
   chatLessOverlapMsg: "Mažiau kartojimosi, atgal kitais keliais.",
@@ -1379,23 +1465,45 @@ const lt: Messages = {
   pickedOnMap: "pasirinkta žemėlapyje",
   pickOnMapConfirm: "Patvirtinti",
   pickOnMapChecking: "Tikrinu…",
-  mapActiveRowHint: "Pažymėkite žemėlapyje → „{label}“",
+  mapActiveRowHint: "Pažymėkite žemėlapyje arba ieškokite → „{label}“",
+  mapNoActiveRow: "Pasirinkite eilutę arba pridėkite sustojimą",
+  mapGrabHint: "Pažymėkite žemėlapyje, kur perkelti šį maršruto tašką",
+  mapUndo: "Atšaukti",
+  batchConfirmAll: "Patvirtinti visus",
+  batchDiscard: "Atmesti visus",
+  batchUndoLast: "Pašalinti paskutinį",
+  batchCountOne: "1 naujas sustojimas",
+  batchCountMany: "{n} nauji sustojimai",
+  batchDropOne: "Pašalinti šį sustojimą",
+  mapCredit: "© OpenStreetMap contributors",
+  mapCreditToggle: "Žemėlapio duomenys",
   mapAddStop: "+ Sustojimas",
   mapAddStopFull: "Daugiau sustojimų pridėti negalima",
-  mapSearchPlaceholder: "Ieškoti vietos…",
   resAddSelected: "Pridėti pažymėtas",
   resAddSelectedHint: "Pažymėtos vietos lieka maršrute — be naujos paieškos.",
   resSearchBetter: "Ieškoti geresnio rato su šiais sustojimais",
   resSearchBetterHint: "Iš naujo suplanuoja visą maršrutą. Gali rasti švaresnį ratą, bet užtrunka ~20–30 s.",
-  resEdited: "Taisyta ranka",
   resEditedHint: "Šį maršrutą pataisei tu, o ne Mopik paieška.",
-  resEditRetraced: "Kartojami keliai perskaičiuoti: {pct} %",
-  resEditUndo: "Atšaukti pataisymą",
+  resEditUndo: "Atšaukti paskutinį pataisymą",
   resEditRouting: "Perskaičiuoju atkarpą…",
   resEditFailed: "Čia nepavyko pravažiuoti — maršrutas liko ankstesnis.",
   resEditMoved: "Taškas perkeltas {m} m iki artimiausio kelio.",
-  tapRouteToAddStop: "Spustelėk maršrutą, kad pridėtum sustojimą",
-  mapDragStopHint: "Sustojimą galima nutempti kitur",
+  mapDragStopHint: "Nutempkite kitur, kad perkeltumėte",
+  resEdit: "Taisyti",
+  resEditAria: "Taisyti maršrutą žemėlapyje",
+  resEditedKicker: "Taisyta ranka · {pct} % kartojasi",
+  editEyebrow: "Taisymas",
+  editTitle: "Taisykite maršrutą žemėlapyje",
+  editHint: "Pasirinkite eilutę, pažymėkite naują vietą žemėlapyje ir patvirtinkite — perbraižoma tik atkarpa aplink ją.",
+  editDone: "Baigti taisyti",
+  editCancel: "Atšaukti taisymą",
+  editDeadEnd: "Sustojimas yra akligatvyje — atgal tuo pačiu keliu {km} km.",
+  editBrokenLine: "Šio pataisymo nepavyko sujungti su maršrutu viena linija — maršrutas liko toks, koks buvo.",
+  editSameWayBack: "Į sustojimą ir atgal tuo pačiu keliu {km} km — kito kelio laiku rasti nepavyko.",
+  resSearchBetterLink: "Ieškoti geresnio rato su šiais sustojimais →",
+  editNeedsPlace: "Šiai eilutei reikia vietos — pažymėkite ją žemėlapyje arba pasirinkite iš sąrašo.",
+  editNoRide: "Be šio sustojimo iš rato nieko nelieka — pridėkite kitą arba ieškokite naujo rato.",
+  mapSearchHint: "Žymėkite ar ieškokite…",
   mapStart: "Startas",
   mapFinish: "Finišas",
   pickOffRoadTitle: "Čia su šiuo profiliu privažiuoti negalima. Artimiausias kelias yra už ~{m} m.",
@@ -1409,7 +1517,7 @@ const lt: Messages = {
   hideMap: "Slėpti žemėlapį",
   duration: "Trukmė",
   flexible: "Laisva",
-  exact: "Konkreti",
+  exact: "Ribotas",
   yourProfile: "Tavo profilis",
   change: "Keisti",
   close: "Uždaryti",
@@ -1628,6 +1736,10 @@ const et: Messages = {
   chatFewerVersions: "Selles piirkonnas on otsing aeglane, seega jõudsin proovida {tried} versiooni {planned} asemel.",
   chatTooLong: "Vestlus jõudis selle versiooni pikkuse piirini. Alusta uut sõitu.",
   chatRetry: "Proovi uuesti",
+  chatNoRoute: "Kõiki kohti läbivat marsruuti ei leitud: proovisin {n} varianti ja ükski ei jõudnud selle profiiliga lõpuni.",
+  chatNoRouteTime: "Aidata võib ka pikem kestus.",
+  chatDropStops: "Eemalda peatused ja proovi",
+  chatEasierProfile: "Kergem profiil",
   chatShowAnyway: "Näita rada niikuinii",
   chatLessOverlap: "Vähem kordusi",
   chatLessOverlapMsg: "Vähem kordusi, tagasi teisi teid.",
@@ -1819,23 +1931,45 @@ const et: Messages = {
   pickedOnMap: "valitud kaardil",
   pickOnMapConfirm: "Kinnita",
   pickOnMapChecking: "Kontrollin…",
-  mapActiveRowHint: "Märgi kaardil → „{label}“",
+  mapActiveRowHint: "Märgi kaardil või otsi → „{label}“",
+  mapNoActiveRow: "Vali rida või lisa peatus",
+  mapGrabHint: "Märgi kaardil, kuhu see marsruudi punkt viia",
+  mapUndo: "Võta tagasi",
+  batchConfirmAll: "Kinnita kõik",
+  batchDiscard: "Loobu kõigist",
+  batchUndoLast: "Eemalda viimane",
+  batchCountOne: "1 uus peatus",
+  batchCountMany: "{n} uut peatust",
+  batchDropOne: "Eemalda see peatus",
+  mapCredit: "© OpenStreetMap contributors",
+  mapCreditToggle: "Kaardi andmed",
   mapAddStop: "+ Peatus",
   mapAddStopFull: "Rohkem peatusi lisada ei saa",
-  mapSearchPlaceholder: "Otsi kohta…",
   resAddSelected: "Lisa valitud",
   resAddSelectedHint: "Märgitud kohad jäävad marsruuti — ilma uue otsinguta.",
   resSearchBetter: "Otsi parem ring nende peatustega",
   resSearchBetterHint: "Planeerib kogu sõidu uuesti. Võib leida puhtama ringi, kuid võtab ~20–30 s.",
-  resEdited: "Käsitsi muudetud",
   resEditedHint: "Selle marsruudi parandasid sina, mitte Mopiku otsing.",
-  resEditRetraced: "Korduvad teed arvutatud uuesti: {pct} %",
-  resEditUndo: "Võta muudatus tagasi",
+  resEditUndo: "Võta viimane muudatus tagasi",
   resEditRouting: "Arvutan lõiku ümber…",
   resEditFailed: "Siia ei õnnestunud sõita — marsruut jäi endiseks.",
   resEditMoved: "Punkt nihutati {m} m lähima teeni.",
-  tapRouteToAddStop: "Puuduta marsruuti, et lisada peatus",
-  mapDragStopHint: "Peatust saab lohistada mujale",
+  mapDragStopHint: "Lohista mujale, et nihutada",
+  resEdit: "Muuda",
+  resEditAria: "Muuda marsruuti kaardil",
+  resEditedKicker: "Käsitsi muudetud · {pct} % kordub",
+  editEyebrow: "Muutmine",
+  editTitle: "Paranda sõitu kaardil",
+  editHint: "Vali rida, märgi kaardil uus koht ja kinnita — ümber joonistatakse ainult lõik selle ümber.",
+  editDone: "Lõpeta muutmine",
+  editCancel: "Tühista muutmine",
+  editDeadEnd: "Peatus on umbteel — tagasi sama teed {km} km.",
+  editBrokenLine: "Seda muudatust ei õnnestunud marsruudiga üheks jooneks ühendada — marsruut jäi endiseks.",
+  editSameWayBack: "Peatusesse ja tagasi sama teed {km} km — teist teed ei õnnestunud õigel ajal leida.",
+  resSearchBetterLink: "Otsi parem ring nende peatustega →",
+  editNeedsPlace: "Sellel real peab olema koht — märgi see kaardile või vali loendist.",
+  editNoRide: "Ilma selle peatuseta ei jää ringist midagi järele — lisa teine või otsi uus ring.",
+  mapSearchHint: "Märgi või otsi…",
   mapStart: "Start",
   mapFinish: "Finiš",
   pickOffRoadTitle: "Siia selle profiiliga sõita ei saa. Lähim tee on ~{m} m eemal.",
@@ -1849,7 +1983,7 @@ const et: Messages = {
   hideMap: "Peida kaart",
   duration: "Kestus",
   flexible: "Vaba",
-  exact: "Täpne",
+  exact: "Piiratud",
   yourProfile: "Sinu profiil",
   change: "Muuda",
   close: "Sulge",
@@ -2064,6 +2198,10 @@ const en: Messages = {
   chatFewerVersions: "Searching is slow in this terrain, so I managed to try {tried} versions instead of {planned}.",
   chatTooLong: "This conversation has reached the length limit of this version. Start a new ride.",
   chatRetry: "Try again",
+  chatNoRoute: "Couldn't find a route through every place: I tried {n} versions and none got all the way on this profile.",
+  chatNoRouteTime: "A longer duration may help too.",
+  chatDropStops: "Drop the stops and try",
+  chatEasierProfile: "Easier profile",
   chatShowAnyway: "Show the track anyway",
   chatLessOverlap: "Less overlap",
   chatLessOverlapMsg: "Less overlap, back on other roads.",
@@ -2253,23 +2391,45 @@ const en: Messages = {
   pickedOnMap: "picked on the map",
   pickOnMapConfirm: "Confirm",
   pickOnMapChecking: "Checking…",
-  mapActiveRowHint: "Mark on the map → \"{label}\"",
+  mapActiveRowHint: "Mark on the map or search → \"{label}\"",
+  mapNoActiveRow: "Pick a row or add a stop",
+  mapGrabHint: "Mark on the map where to move this point of the route",
+  mapUndo: "Undo",
+  batchConfirmAll: "Confirm all",
+  batchDiscard: "Discard all",
+  batchUndoLast: "Remove the last",
+  batchCountOne: "1 new stop",
+  batchCountMany: "{n} new stops",
+  batchDropOne: "Drop this stop",
+  mapCredit: "© OpenStreetMap contributors",
+  mapCreditToggle: "Map data",
   mapAddStop: "+ Stop",
   mapAddStopFull: "No room for another stop",
-  mapSearchPlaceholder: "Search for a place…",
   resAddSelected: "Add the ticked places",
   resAddSelectedHint: "The ticked places stay in the ride — no new search.",
   resSearchBetter: "Search for a better loop with these stops",
   resSearchBetterHint: "Plans the whole ride again. It can find a cleaner loop, but takes ~20–30 s.",
-  resEdited: "Edited by hand",
   resEditedHint: "You corrected this route, not a Mopik search.",
-  resEditRetraced: "Repeated roads recomputed: {pct} %",
-  resEditUndo: "Undo the edit",
+  resEditUndo: "Undo last change",
   resEditRouting: "Re-routing the leg…",
   resEditFailed: "Could not ride to there — the route is unchanged.",
   resEditMoved: "The point was moved {m} m to the nearest road.",
-  tapRouteToAddStop: "Tap the route to add a stop",
-  mapDragStopHint: "A stop can be dragged somewhere else",
+  mapDragStopHint: "Drag it somewhere else to move it",
+  resEdit: "Edit",
+  resEditAria: "Edit the route on the map",
+  resEditedKicker: "Edited by hand · {pct} % retraced",
+  editEyebrow: "Editing",
+  editTitle: "Fix the ride on the map",
+  editHint: "Pick a row, mark the new spot on the map and confirm — only the stretch around it is re-routed.",
+  editDone: "Done editing",
+  editCancel: "Discard edits",
+  editDeadEnd: "The stop is on a dead end — back the same way for {km} km.",
+  editBrokenLine: "This change couldn't be joined into one line with the route — the route stays as it was.",
+  editSameWayBack: "To the stop and back the same way for {km} km — no other way was found in time.",
+  resSearchBetterLink: "Find a better loop with these stops →",
+  editNeedsPlace: "This row needs a place — mark it on the map or pick one from the list.",
+  editNoRide: "Without this stop nothing is left of the loop — add another or search for a new one.",
+  mapSearchHint: "Mark or search…",
   mapStart: "Start",
   mapFinish: "Finish",
   pickOffRoadTitle: "You cannot ride here with this profile. The nearest road is ~{m} m away.",
@@ -2283,7 +2443,7 @@ const en: Messages = {
   hideMap: "Hide map",
   duration: "Duration",
   flexible: "Flexible",
-  exact: "Exact",
+  exact: "Limited",
   yourProfile: "Your profile",
   change: "Change",
   close: "Close",

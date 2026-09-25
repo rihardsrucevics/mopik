@@ -44,17 +44,23 @@ export function MapPanel({ children, className = "", expandedClassName = "" }: {
   useEffect(() => {
     const root = rootRef.current;
     if (!root) return;
-    const legend = root.querySelector<HTMLElement>("[data-map-legend]");
-    if (!legend) return;
+    // Looked up on every measurement, not once: the map (and its legend) can
+    // mount after this runs — on the desktop it did, the variable was never
+    // set, and the TET switch sat on top of the legend's second row (rider,
+    // 2026-09-25). A mutation observer catches the legend arriving.
+    let watched: HTMLElement | null = null;
+    const observer = new ResizeObserver(() => apply());
     const apply = () => {
-      const h = legend.offsetParent === null ? 0 : legend.getBoundingClientRect().height;
+      const legend = root.querySelector<HTMLElement>("[data-map-legend]");
+      if (legend && legend !== watched) { watched = legend; observer.observe(legend); }
+      const h = !legend || legend.offsetParent === null ? 0 : legend.getBoundingClientRect().height;
       root.style.setProperty("--map-legend", h ? `${h + 8}px` : "0px");
     };
     apply();
-    const observer = new ResizeObserver(apply);
-    observer.observe(legend);
     observer.observe(root);
-    return () => observer.disconnect();
+    const mutations = new MutationObserver(() => apply());
+    mutations.observe(root, { childList: true, subtree: true });
+    return () => { observer.disconnect(); mutations.disconnect(); };
   }, [expanded, locale]);
 
   useEffect(() => {

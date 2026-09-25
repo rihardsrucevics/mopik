@@ -100,6 +100,32 @@ export function waySpeedKmh(tags: Record<string, string>): number {
 }
 
 /**
+ * Moving speed for a drawn segment, from the classes it carries — the same
+ * table read through what reaches the client, which has segments (road class,
+ * surface, track grade) and no OSM tags.
+ *
+ * Used where a stretch of an already-timed ride has to be priced on its own:
+ * an edit throws a stretch away, and the time it takes with it must be that
+ * stretch's time, not its share of the ride's average — measured, a 6 km
+ * trail spur added and removed again left the ride 12 minutes slower than it
+ * started, because the spur was taken out at the average and put in at trail
+ * speed. Only the ratios between segments matter there.
+ */
+export function segmentSpeedKmh(props: { roadClass: string; surface: string; trackGrade?: string }): number {
+  if (props.surface === "sand") return SPEED.sand;
+  if (props.roadClass === "trail") return SPEED.trail;
+  if (props.roadClass === "track") {
+    const grade = ({ grade1: SPEED.trackGrade1, grade2: SPEED.trackGrade2, grade3: SPEED.trackGrade3, grade4: SPEED.trackGrade4, grade5: SPEED.trackGrade5 } as Record<string, number>)[props.trackGrade ?? ""] ?? SPEED.trackUntagged;
+    return ["ground", "dirt"].includes(props.surface) ? Math.min(grade, SPEED.soft) : grade;
+  }
+  if (["ground", "dirt"].includes(props.surface)) return SPEED.soft;
+  if (props.surface === "gravel") return SPEED.gravelRoad;
+  if (props.surface === "compacted") return SPEED.compactedRoad;
+  if (props.surface === "asphalt") return SPEED.asphaltMinor;
+  return SPEED.unknown;
+}
+
+/**
  * Riding time for a routed path, from its per-way tags plus a penalty per
  * junction turn. Falls back to a flat average when the router returned no
  * tag detail.

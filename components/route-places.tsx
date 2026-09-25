@@ -58,27 +58,56 @@ export function addStop(list: string[], toDestination: boolean): string[] {
 export const MAX_ROWS = 6;
 
 /**
+ * Whether a row's pin button is drawn on the desktop (≥ 768 px).
+ *
+ * Off since 2026-09-25, the rider's call: on the desktop the map is always
+ * beside the form, and focusing a field — a click, or Tab from the keyboard —
+ * already makes its row the active one, flies the map to its pin and rings
+ * the row, so the button was a second control for the same thing. On a phone
+ * it stays: there it activates a row without opening the keyboard, and opens
+ * the map. He may want it back — set this to true; nothing else changes.
+ */
+export const ROW_PIN_BUTTON_ON_DESKTOP = false;
+
+/**
  * Which row the map answers when it opens with none chosen.
  *
- * The planning map always has exactly one active row — a tap means "this point
- * → that row" and nothing else — so opening the map has to pick one, and the
- * choice has to be the one the rider would have made himself.
+ * **The first empty row, start first** — a rider who opens the map on a blank
+ * form is going to point at where he is setting off from; one who has named a
+ * start is answering the next unanswered question.
  *
- * **The first empty row, start first.** A rider who opens the map on a blank
- * form is going to point at where he is setting off from; a rider who has
- * already named a start and opens it again is answering the next unanswered
- * question. Falling through to row 0 when every row is full is deliberate: the
- * start is the row most often corrected, and "the map is answering something"
- * is never allowed to be false.
+ * **None when every row is filled.** This used to fall back to the start, so
+ * "the map is answering something" was never false — and every mark after the
+ * last Confirm quietly moved a place the rider had finished with. His report
+ * (2026-09-25): start and finish confirmed, "+ Pievienot pieturvietu", a mark
+ * on the map — and the finish moved, because it was still the active row. A
+ * filled row is edited again only when he asks for it: its pin button, its
+ * field, or dragging its pin. Until then a mark does nothing and the header
+ * says what to do.
  *
  * Takes the row *text* rather than the picks, because a name typed without
- * being pinned is still an answer to that row — the API geocodes it — and
- * treating it as empty would send the rider back to a question he has already
- * answered.
+ * being pinned is still an answer to that row — the API geocodes it.
  */
-export function defaultActiveRow(places: string[]): number {
+export function defaultActiveRow(places: string[]): number | null {
   const empty = places.findIndex((p) => !p.trim());
-  return empty === -1 ? 0 : empty;
+  return empty === -1 ? null : empty;
+}
+
+/**
+ * The active row once a place has been confirmed in `row`: the first empty
+ * row — the finish after the start — or none at all (rider, 2026-09-25).
+ *
+ * A confirmed stop used to open the next stop row by itself, so stop after
+ * stop was mark, Confirm, mark, Confirm. Batch adding replaced that: with an
+ * empty stop row active every mark adds another pending stop and one Confirm
+ * takes them all (see the composer's `batch`), so the row a Confirm made was
+ * a blank the rider then had to get rid of. `rows` must already hold the
+ * confirmed place; `inserted` is kept in the answer for its callers and is
+ * always null now.
+ */
+export function rowAfterConfirm(rows: string[], row: number, oneWay: boolean): { rows: string[]; active: number | null; inserted: number | null } {
+  void row; void oneWay;
+  return { rows, active: defaultActiveRow(rows), inserted: null };
 }
 
 /**
@@ -92,6 +121,48 @@ export function defaultActiveRow(places: string[]): number {
 export function addedStopIndex(list: string[], toDestination: boolean): number {
   if (list.length < 2) return list.length;
   return toDestination ? list.length - 1 : 1;
+}
+
+/**
+ * What a structural change did to the rows: a row moved, one was removed or
+ * inserted, or one was emptied in place (the two base rows are never removed).
+ */
+export type RowChange =
+  | { kind: "move"; from: number; to: number }
+  | { kind: "remove"; at: number }
+  | { kind: "insert"; at: number }
+  | { kind: "clear"; at: number };
+
+/**
+ * Where a row index points after a structural change — the same remapping
+ * `reorder` does for the picked coordinates, for the one row the map answers.
+ *
+ * The active row is an index, and the rows are a list the arrows reorder.
+ * Left alone, the index stayed where it was while the place moved away from
+ * it: the rider activated a stop, pressed ↓, and the ring and the map's hint
+ * moved on to whichever row slid into the old slot — a different place,
+ * answering the next mark. The active row is a *place*, so it follows it.
+ *
+ * Null when the change removed the row itself; the composer then falls back
+ * to the default rule, exactly as it does when a "+ Pietura" row is cancelled.
+ */
+export function followRow(index: number, change: RowChange): number | null {
+  switch (change.kind) {
+    case "move": {
+      const { from, to } = change;
+      if (index === from) return to;
+      if (from < index && to >= index) return index - 1;
+      if (from > index && to <= index) return index + 1;
+      return index;
+    }
+    case "remove":
+      if (change.at === index) return null;
+      return change.at < index ? index - 1 : index;
+    case "insert":
+      return change.at <= index ? index + 1 : index;
+    case "clear":
+      return index;
+  }
 }
 
 /**
@@ -109,7 +180,7 @@ export function addedStopIndex(list: string[], toDestination: boolean): number {
  * name the room it needs. Keyboard users keep the same moves: the handle is a
  * button and ArrowUp/ArrowDown on it move the row.
  */
-export function RoutePlaces({ places, picked, oneWay, busy, onChange, onPick, onUseLocation, locating, near, onPickOnMap, activeRow, preview }: {
+export function RoutePlaces({ places, picked, oneWay, busy, onChange, onPick, onUseLocation, locating, near, onPickOnMap, activeRow, preview, onStructure, fixedEnds = false, onAddStop, onFocusRow }: {
   places: string[];
   /**
    * The first place already pinned in this ride. Every other row searches
@@ -159,6 +230,34 @@ export function RoutePlaces({ places, picked, oneWay, busy, onChange, onPick, on
    * region under the name.
    */
   picked: Record<number, ResolvedPlace | null>;
+  /**
+   * A row removed or moved, as opposed to a row typed into.
+   *
+   * Both reach `onChange` when this is absent, which is right for a form
+   * being composed: nothing happens until Generate. Editing a generated ride
+   * is different — a stop taken out or moved is a change to the ride itself,
+   * re-routed at once — and typing a letter is not. So the edit passes this
+   * and hears about exactly the changes it has to act on.
+   */
+  onStructure?: (next: string[], change: RowChange) => void;
+  /**
+   * The start and the finish cannot be removed, only moved.
+   *
+   * On a generated ride being edited, ✕ on the start would leave a ride with
+   * nowhere to begin, and on the finish one with nowhere to end — two
+   * controls with no ride behind them. A place there is changed by marking a
+   * new one, which the pin button does.
+   */
+  fixedEnds?: boolean;
+  /**
+   * What the form's own "+ Pievienot pieturvietu" does. Absent: add a blank
+   * row, as composing always has. The edit passes the map's "+ Pietura", so
+   * both buttons make a row and hand it to the map — a blank row nobody is
+   * answering would be a stop the ride cannot have.
+   */
+  onAddStop?: () => void;
+  /** A row's field took focus — while the map is open, that row becomes active. */
+  onFocusRow?: (index: number) => void;
 }) {
 
 
@@ -173,7 +272,19 @@ export function RoutePlaces({ places, picked, oneWay, busy, onChange, onPick, on
     const next = [...places];
     const [row] = next.splice(from, 1);
     next.splice(to, 0, row);
-    onChange(next);
+    if (onStructure) onStructure(next, { kind: "move", from, to });
+    else onChange(next);
+    // Focus goes with the row, not with the slot. The rows are keyed by
+    // position, so the arrow just pressed would otherwise keep focus in the
+    // row that slid into the old slot — its field then wears the orange
+    // focus border, and two rows look active at once: the rider's report.
+    const dir = to > from ? "down" : "up";
+    requestAnimationFrame(() => {
+      const row = document.querySelector<HTMLElement>(`[data-place-row="${to}"]`);
+      const same = row?.querySelector<HTMLButtonElement>(`[data-move="${dir}"]:not(:disabled)`);
+      const other = row?.querySelector<HTMLButtonElement>(`[data-move]:not(:disabled)`);
+      (same ?? other)?.focus();
+    });
   };
 
   // "No" and "Līdz" name the two rows the form always offers; anything added
@@ -200,7 +311,7 @@ export function RoutePlaces({ places, picked, oneWay, busy, onChange, onPick, on
       onClick={() => onPickOnMap(i)}
       aria-label={`${t(locale, "pickOnMap")}: ${label(i)}`}
       title={t(locale, "pickOnMap")}
-      className={`flex size-8 shrink-0 items-center justify-center rounded-lg transition disabled:opacity-40 ${activeRow === i ? "bg-[#f56300] text-white" : "text-[#bd4b00] hover:bg-stone-100"}`}
+      className={`flex size-8 shrink-0 items-center justify-center rounded-lg transition disabled:opacity-40 ${ROW_PIN_BUTTON_ON_DESKTOP ? "" : "md:hidden"} ${activeRow === i ? "bg-[#f56300] text-white" : "text-[#bd4b00] hover:bg-stone-100"}`}
     >
       <MapPinPlus className="size-4" />
     </button>
@@ -217,16 +328,21 @@ export function RoutePlaces({ places, picked, oneWay, busy, onChange, onPick, on
   // deleting the row, so the form never falls back to a single field the rider
   // has to expand again.
   const remove = (i: number) => {
-    // Only `onChange`. It re-keys the picked coordinates against the new list
+    // Only `onChange` (or `onStructure`, which is the same list reported as a
+    // change to the ride). It re-keys the picked coordinates against the new list
     // (see `reorder` in the composer), so following it with `onPick(i, null)`
     // wrote a null at an index that now belongs to a different row — the
     // coordinates of an untouched place were dropped, and the rows and the
     // picks disagreed about how many places the ride had.
     if (places.length <= MIN_ROWS) {
-      onChange(places.map((p, j) => (j === i ? "" : p)));
+      const next = places.map((p, j) => (j === i ? "" : p));
+      if (onStructure) onStructure(next, { kind: "clear", at: i });
+      else onChange(next);
       return;
     }
-    onChange(places.filter((_, j) => j !== i));
+    const next = places.filter((_, j) => j !== i);
+    if (onStructure) onStructure(next, { kind: "remove", at: i });
+    else onChange(next);
   };
 
   return (
@@ -236,7 +352,7 @@ export function RoutePlaces({ places, picked, oneWay, busy, onChange, onPick, on
         // other column and there is no slot under the field, so this ring is
         // the only thing saying which of three identical fields the map is
         // currently answering.
-        <div key={i} className={activeRow === i ? "rounded-xl ring-2 ring-[#f56300]/40" : undefined}>
+        <div key={i} data-place-row={i} className={activeRow === i ? "rounded-xl ring-2 ring-[#f56300]/40" : undefined}>
           <PlaceInput
             // While this row is being picked the field reads the marker's own
             // place. It is a preview and nothing more: the ride still holds
@@ -244,6 +360,7 @@ export function RoutePlaces({ places, picked, oneWay, busy, onChange, onPick, on
             value={activeRow === i && preview ? preview.name : place}
             onChange={(v) => onChange(places.map((p, j) => (j === i ? v : p)))}
             onPick={(p) => { if (p) track("place_picked", { row: i, start: i === 0 }); onPick(i, p); }}
+            onFocus={onFocusRow ? () => onFocusRow(i) : undefined}
             confirmed={activeRow === i && preview ? preview : picked[i] ?? null}
             near={near}
             icon={<MapPin className="size-3" />}
@@ -258,7 +375,7 @@ export function RoutePlaces({ places, picked, oneWay, busy, onChange, onPick, on
                   asks on the tap. Filled, it offers to clear: every other row
                   had a ✕ and this one did not, so the one field a rider most
                   often changes was the one he had to select-all and delete. */}
-              {place.trim() ? (
+              {fixedEnds ? null : place.trim() ? (
                 <button
                   type="button"
                   disabled={busy}
@@ -303,6 +420,7 @@ export function RoutePlaces({ places, picked, oneWay, busy, onChange, onPick, on
                     <button
                       type="button"
                       disabled={busy || i <= 1}
+                      data-move="up"
                       onClick={() => move(i, i - 1, "tap")}
                       aria-label={`${t(locale, "moveUp")}: ${place || "—"}`}
                       className="flex size-8 items-center justify-center rounded-lg text-stone-400 transition hover:bg-stone-100 hover:text-stone-700 disabled:opacity-20"
@@ -312,6 +430,7 @@ export function RoutePlaces({ places, picked, oneWay, busy, onChange, onPick, on
                     <button
                       type="button"
                       disabled={busy || i >= places.length - 1}
+                      data-move="down"
                       onClick={() => move(i, i + 1, "tap")}
                       aria-label={`${t(locale, "moveDown")}: ${place || "—"}`}
                       className="flex size-8 items-center justify-center rounded-lg text-stone-400 transition hover:bg-stone-100 hover:text-stone-700 disabled:opacity-20"
@@ -325,7 +444,7 @@ export function RoutePlaces({ places, picked, oneWay, busy, onChange, onPick, on
                     added but not yet typed into still has to be removable,
                     and without this it could only be left empty. The two base
                     rows keep the old rule: nothing to clear, nothing to show. */}
-                {(place.trim() || places.length > MIN_ROWS) && (
+                {!(fixedEnds && oneWay && i === places.length - 1) && (place.trim() || places.length > MIN_ROWS) && (
                   <button
                     type="button"
                     disabled={busy}
@@ -364,7 +483,12 @@ export function RoutePlaces({ places, picked, oneWay, busy, onChange, onPick, on
           new empty row the last one — which on a one-way ride *is* the
           destination, so adding a stop silently threw the finish away. On a
           round trip the last row is already a waypoint, so the end is right. */}
-      <button type="button" onClick={() => onChange(addStop(places, oneWay))} disabled={busy || places.length >= MAX_ROWS}
+      <button type="button" onClick={() => {
+          if (onAddStop) { onAddStop(); return; }
+          const next = addStop(places, oneWay);
+          if (onStructure) onStructure(next, { kind: "insert", at: addedStopIndex(places, oneWay) });
+          else onChange(next);
+        }} disabled={busy || places.length >= MAX_ROWS}
         className="inline-flex items-center gap-1 self-start text-xs font-medium text-[#bd4b00] disabled:opacity-40">
         <Plus className="size-3.5" />{oneWay ? t(locale, "addStop") : t(locale, "addPlace")}
       </button>

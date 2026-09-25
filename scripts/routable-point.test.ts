@@ -146,3 +146,34 @@ test("checkRoutablePoint invents a leg when the ride has no other place", async 
   assert.deepEqual(legs[0][1], PILSKALNI);
   assert.notDeepEqual(legs[0][0], PILSKALNI);
 });
+
+test("a leg from another place that the router neither routes nor refuses is asked again on the pin's own", async () => {
+  // Ķekava → Mežavairogi (2026-09-25): "no track found" for the pair, while
+  // the finish alone snapped 243 m onto a road. "Could not check" from the
+  // pair must not be the pin's verdict when the pin can be checked alone.
+  const kekava: Point = [24.233653, 56.8261827];
+  const legs: [Point, Point][] = [];
+  const verdict = await checkRoutablePoint({
+    point: PILSKALNI,
+    from: kekava,
+    probe: async (leg) => {
+      legs.push(leg);
+      return legs.length === 1 ? { ok: false, refused: false } : { ok: true, end: PILSKALNI };
+    },
+  });
+  assert.equal(legs.length, 2);
+  assert.deepEqual(legs[0], [kekava, PILSKALNI]);
+  assert.notDeepEqual(legs[1][0], kekava, "the second leg is the synthetic one beside the pin");
+  assert.equal(verdict.ok, true);
+});
+
+test("a refusal from another place is a verdict and is not asked again", async () => {
+  let calls = 0;
+  const verdict = await checkRoutablePoint({
+    point: PILSKALNI,
+    from: [24.8746566, 57.2572652],
+    probe: async () => { calls++; return { ok: false, refused: true }; },
+  });
+  assert.equal(calls, 1);
+  assert.equal(verdict.ok, false);
+});

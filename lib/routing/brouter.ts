@@ -2,6 +2,7 @@ import { buildMotoProfile, type MotoProfileOptions } from "./moto-profile";
 import { haversineMeters, type Point } from "@/lib/geo/geometry";
 import { joinPaths } from "./join-paths";
 import { recallLeg } from "./fetch-route-probe";
+import { probeLegFor, STOP_TOLERANCE_M } from "./routable-point";
 import type { RoutePath, RouteEdge } from "@/lib/types";
 
 /**
@@ -262,6 +263,14 @@ export async function fetchRoutePath(params: {
    * empty means every point is the rider's, which is the old behaviour.
    */
   generatedViaIndices?: number[];
+  /**
+   * The first and last point must not move (`/api/reroute-leg`, 2026-09-25):
+   * they are the cuts in a ride the edit keeps, and a stretch that starts or
+   * ends anywhere else draws as a gap and a stray stub. The rescues then move
+   * only the rider's places in between; a refused end fails the request, and
+   * the page falls back to routing the whole span between places.
+   */
+  pinnedEnds?: boolean | { start?: boolean; end?: boolean };
 }): Promise<RoutePath> {
   if (params.points.length < 2) throw new Error("A route needs at least 2 points");
   if (params.points.length > MAX_LOCATIONS) {
@@ -316,6 +325,9 @@ export async function fetchRoutePath(params: {
       .map((i) => pointKey(params.points[i]))
   );
 
+  let endsSnapped = false;
+  const pinStart = params.pinnedEnds === true || (typeof params.pinnedEnds === "object" && Boolean(params.pinnedEnds.start));
+  const pinEnd = params.pinnedEnds === true || (typeof params.pinnedEnds === "object" && Boolean(params.pinnedEnds.end));
   for (let drop = 0; ; drop++) {
     const lonlats = points.map(([lon, lat]) => `${lon},${lat}`).join("|");
     const url =
@@ -326,6 +338,26 @@ export async function fetchRoutePath(params: {
       return await requestPath(url);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+
+      // "no track found": BRouter could not match the ends to one network.
+      // Measured on the rider's Ķekava → … → Mežavairogi (2026-09-25): the
+      // start matched a grass path that only touches forbidden footways and
+      // the finish a track cut off by a driveway. Each routes on its own and
+      // with its own snap; the two in one request failed every candidate, and
+      // the ride was refused with a generic message. So the ends are replaced
+      // once by where the router itself puts a rider asked to come there
+      // (`snapEndpoint`, cached per point — a generation asks for the same
+      // two ends in every candidate) and the request is tried again.
+      if (/no track found/.test(message) && !endsSnapped && !(pinStart && pinEnd)) {
+        endsSnapped = true;
+        const last = points.length - 1;
+        const [a, b] = await Promise.all([pinStart ? null : snapEndpoint(points[0], profileId), pinEnd ? null : snapEndpoint(points[last], profileId)]);
+        if (a || b) {
+          points = [a ?? points[0], ...points.slice(1, last), b ?? points[last]];
+          continue;
+        }
+        throw err;
+      }
 
       // A start or destination can geocode onto a way this profile forbids —
       // Ērgļi's Photon coordinate sits on a `highway=footway`, which costs
@@ -350,7 +382,7 @@ export async function fetchRoutePath(params: {
           const rescued = await rescueGeneratedVias(points, generated, profileId);
           if (rescued) return rescued;
         }
-        const nudged = await routeWithNudgedEndpoints(points, profileId, generated);
+        const nudged = await routeWithNudgedEndpoints(points, profileId, generated, { start: pinStart, end: pinEnd });
         if (nudged) return nudged;
         // The same error also means "this leg is too long for the public
         // instance" — see `routeInSegments`. Nudging cannot help there, so
@@ -389,7 +421,7 @@ export async function fetchRoutePath(params: {
         // points may be *deleted*, and a 3-point round trip (start, stop,
         // start) allows zero — which is exactly the item 20 shape, so the old
         // `drop >= maxDrops` guard threw before a named via could be rescued.
-        const nudged = await routeWithNudgedEndpoints(points, profileId, generated);
+        const nudged = await routeWithNudgedEndpoints(points, profileId, generated, { start: pinStart, end: pinEnd });
         if (nudged) return nudged;
         throw err;
       }
@@ -643,7 +675,8 @@ function offsetPoint([lon, lat]: Point, bearingDeg: number, meters: number): Poi
 async function routeWithNudgedEndpoints(
   points: Point[],
   profileId: string,
-  generated: Set<string> = new Set()
+  generated: Set<string> = new Set(),
+  pinned: { start: boolean; end: boolean } = { start: false, end: false },
 ): Promise<RoutePath | null> {
   const last = points.length - 1;
   const request = async (candidate: Point[]) => {
@@ -660,8 +693,8 @@ async function routeWithNudgedEndpoints(
 
   // A replacement already found for either endpoint is used straight away:
   // the first candidate of a generation pays for the search, the rest do not.
-  const cachedStart = nudgeCache.get(nudgeKey(profileId, points[0]));
-  const cachedEnd = nudgeCache.get(nudgeKey(profileId, points[last]));
+  const cachedStart = pinned.start ? undefined : nudgeCache.get(nudgeKey(profileId, points[0]));
+  const cachedEnd = pinned.end ? undefined : nudgeCache.get(nudgeKey(profileId, points[last]));
   if (cachedStart || cachedEnd) {
     const settled = await request([
       cachedStart ?? points[0],
@@ -696,7 +729,8 @@ async function routeWithNudgedEndpoints(
     .filter(({ point, index }) => index > 0 && index < last && !generated.has(pointKey(point)))
     .map(({ index }) => [index, `via ${index}`] as const);
 
-  for (const [index, label] of [[last, "end"] as const, [0, "start"] as const, ...namedMiddle]) {
+  const ends = [...(pinned.end ? [] : [[last, "end"] as const]), ...(pinned.start ? [] : [[0, "start"] as const])];
+  for (const [index, label] of [...ends, ...namedMiddle]) {
     for (const meters of NUDGE_RADII_M) {
       for (const bearing of NUDGE_BEARINGS_DEG) {
         const moved = offsetPoint(points[index], bearing, meters);
@@ -818,6 +852,42 @@ async function routeInSegments(points: Point[], profileId: string): Promise<Rout
 }
 
 /**
+ * Where the router puts a rider asked to come to `point` on this profile — a
+ * short synthetic leg's end (`probeLegFor`) — or null when that is the point
+ * itself, too far to still be the rider's place (`STOP_TOLERANCE_M`), or
+ * could not be measured. Cached by profile and point: the rescue that uses it
+ * runs in every candidate of a generation, and they all share their ends.
+ */
+const endpointSnaps = new Map<string, Promise<Point | null>>();
+function snapEndpoint(point: Point, profileId: string): Promise<Point | null> {
+  const key = `${profileId}|${pointKey(point)}`;
+  const cached = endpointSnaps.get(key);
+  if (cached) return cached;
+  const measured = (async (): Promise<Point | null> => {
+    try {
+      const lonlats = probeLegFor(point).map(([lon, lat]) => `${lon},${lat}`).join("|");
+      const url =
+        `${baseUrl()}/brouter?lonlats=${encodeURIComponent(lonlats)}` +
+        `&profile=${encodeURIComponent(profileId)}&alternativeidx=0&format=geojson`;
+      const res = await fetch(url, { headers: authHeaders(), signal: AbortSignal.timeout(2_500) });
+      if (!res.ok) return null;
+      const data = (await res.json()) as { features?: BrouterFeature[] };
+      const coordinates = data.features?.[0]?.geometry.coordinates;
+      const end = coordinates?.[coordinates.length - 1];
+      if (!end) return null;
+      const snapped: Point = [end[0], end[1]];
+      const moved = haversineMeters(point, snapped);
+      return moved >= 1 && moved <= STOP_TOLERANCE_M ? snapped : null;
+    } catch {
+      return null;
+    }
+  })();
+  endpointSnaps.set(key, measured);
+  if (endpointSnaps.size > 500) endpointSnaps.delete(endpointSnaps.keys().next().value!);
+  return measured;
+}
+
+/**
  * Where does BRouter actually put the rider when asked to route to `to`?
  *
  * The measurement behind `lib/routing/routable-point.ts`. A point the profile
@@ -868,6 +938,33 @@ export async function probeSnapPoint(params: {
   } catch {
     return { ok: false, refused: false };
   }
+}
+
+/**
+ * A route that keeps out of given circles — BRouter's `nogos`, one
+ * `lon,lat,radius` per circle, which the 1.7.10 server takes as hard no-go
+ * areas.
+ *
+ * For the one caller that needs it: an edit whose two new legs chose the same
+ * road in and out of a stop (`/api/reroute-leg`), asking for the way back
+ * again with the way in fenced off. Deliberately without `fetchRoutePath`'s
+ * rescue machinery: every point here was just routed without the fences, so a
+ * refusal means "there is no other way", which is the answer being asked for,
+ * and a nudge ring would only spend requests disguising it.
+ */
+export async function fetchRouteAvoiding(params: {
+  points: Point[];
+  profileOptions: MotoProfileOptions;
+  nogos: { lon: number; lat: number; radius: number }[];
+}): Promise<RoutePath> {
+  const profileId = await uploadProfile(params.profileOptions);
+  const lonlats = params.points.map(([lon, lat]) => `${lon},${lat}`).join("|");
+  const nogos = params.nogos.map((n) => `${n.lon.toFixed(6)},${n.lat.toFixed(6)},${Math.round(n.radius)}`).join("|");
+  const url =
+    `${baseUrl()}/brouter?lonlats=${encodeURIComponent(lonlats)}` +
+    `&profile=${encodeURIComponent(profileId)}&alternativeidx=0&format=geojson` +
+    (nogos ? `&nogos=${encodeURIComponent(nogos)}` : "");
+  return requestPath(url);
 }
 
 async function requestPath(url: string): Promise<RoutePath> {

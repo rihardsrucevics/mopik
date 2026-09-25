@@ -1,5 +1,153 @@
 # Mopik — progress log
 
+## 2026-09-24 — Backlog 29 and 30: correct a ride on its map, and a one-row map header
+
+**"Labot"** on the result swaps the panel for the form's rows over the ride's
+own map (edit mode, same page). The rows are the planning map's: pin button
+= active row, a mark goes there, marking again moves it, "+" adds a stop row,
+the map's search fills the active row, Confirm/Cancel/Escape as in planning;
+ride pins can also be dragged, which marks that pin's row. Every commit
+re-routes only the stretch around the changed place and splices it:
+
+| edit | what is re-routed (`planEdit`) |
+|---|---|
+| move a stop | ±3 km around where it was (2x the move when larger), capped at the places either side |
+| move the start / finish | from the new end 3 km (or 2x the move) into the ride; a loop's start re-routes both ends |
+| add a stop | ±3 km around where the line passes nearest, placed in the list where the line meets it |
+| remove a stop | its spur (if ridden in and out) plus 3 km each way — the same stretch adding it re-routes |
+| anything else (arrows) | the whole stretch between the first and last changed place |
+
+Measured on our BRouter, Sigulda → Cēsis (51 km), Confirm → new numbers on
+screen, warm: move finish 0.44 s, add stop 0.23 s, move stop (drag) 0.36 s,
+move start 0.24 s, remove stop 0.32 s (earlier run: 0.57 / 0.30 / 0.49 /
+0.28 s); desktop move finish 0.26 s. "Meklēt labāku apli ar šīm pieturām"
+(the explicit full search) 4.9 s and 6.5 s.
+
+Two things found by verifying, both fixed: a stop marked in a field was
+reached from a track end 373 m away without a word, and the full search then
+refused the ride ("nevar sasniegt"). Each changed place is now measured
+against the new line (`snapToLine`): moved onto it and said ("Punkts
+pārvietots 282 m uz tuvāko ceļu"), refused beyond 500 m. And removing a stop
+by routing "place before → place after" straight turned the search's 55 km
+ride into a 59 km router line; removal is windowed like addition now. Kept
+stretches are timed by segment speed (`segmentSpeedKmh`), not by distance
+share. Numbers, surfaces, gates and unverified km are recomputed from the
+spliced segments; the landscape figures are hidden on an edited ride (they
+cannot be re-measured on the client). Share, save and GPX read the edited
+ride (`asGeneratedRoute`); GPX after an edit carried `1 · Lūciņi` as `<wpt>`.
+Sights kept on an edited ride splice on top of the edit (no search).
+
+**Backlog 30:** one header row — the field (row tag + "Atzīmē vai meklē…"
+placeholder as the hint) and a round "+" ("+ Pietura" tooltip); TET on the
+bottom row. At 375 px the top band on the 341 px planning map went 127 →
+53 px. `FAST_REROUTE`, the tap-the-line "add a stop here" card button and
+the old drag-to-reroute path are deleted.
+
+**An added or moved stop is ridden through, not out and back (rider's GPX,
+2026-09-25).** "Vasara 46" on Rīga → Annužas 1 was the tip of a mirrored
+6.03 km spur. `/api/reroute-leg` now routes a stop's two halves, measures
+their shared road (`sharedRoad`, the retraced figure's own key) and, past
+300 m, re-routes each half with the other's road fenced off (`nogos`, one
+60 m circle per 200 m, at most 80); the least-retraced pair wins if it adds
+at most as much as the shared road it removes (`LOOP_EXTRA_PER_SHARED` = 1,
+i.e. ≤ 1.5x the out-and-back). On the rider's ride
+(`scripts/measure-edit-loop.ts`): before 65.6 km, 9 % retraced, 6.03 km
+spur; after 60.9 km, 3 %, no spur — the fenced approach was 4.8 km shorter.
+Server 0.15-0.23 s warm; in the browser Confirm → numbers 0.6 s at 375 px.
+When nothing qualifies the note says "Pietura ir strupceļā — atpakaļ pa to
+pašu ceļu N km"; when the search ran out of time (a stop ~80 km off the
+line: 326 fences had made a URL nginx refused with 414, read as "dead
+end") it says only that the way back is the way in. The whole search is
+held to 4.5 s from the request's start.
+
+Found while verifying: the map header's "+" hid itself on its own focus
+(`focus-within`) between mousedown and mouseup, so a mouse click never
+reached it; a search pick's `easeTo` was cancelled by the pan that keeps
+the pin clear of the Confirm bar, leaving the pin in the map's corner; and
+a re-created map kept the dead geolocate control in its ref (dev crash
+"reading 'off'" on leaving edit mode). The result's three numbers no longer
+wrap ("≈ 1 h 17 min" at 375 px).
+
+## 2026-09-25 — Confirm beside the field, one active row or none, and a refusal that names what it tried
+
+**Confirm/Cancel live in the map header** (rider, desktop: the bar sat
+bottom-right while the search pill was top-left). While a mark is pending the
+round "+" becomes „✓ Apstiprināt” and „✕” in the same row (below 400 px the
+Confirm is its tick alone, labelled for screen readers); the off-road verdict
+is a small panel right under the header; the bottom bar is gone, and the
+marker is panned clear of the header instead of the bar.
+
+**The active row after Confirm** (rider: start and finish confirmed, „+
+Pievienot pieturvietu”, a mark — and the finish moved). `defaultActiveRow`
+returns null when every row is filled, and `rowAfterConfirm` decides what is
+next: start → the finish if empty; a stop → a new empty stop row right after
+it (before the finish), active, "new" — Escape removes it, and it is dropped
+silently when the rider goes to another row, closes the map or generates; the
+finish → the first empty row or none. With none active a mark does nothing,
+the field is off and the header says „Izvēlies rindu vai pievieno pieturu”; a
+row is edited again only by its pin button, its field or dragging its pin.
+The form's link and the map's "+" are one handler. Edit mode opens with no
+active row and puts the new stop row back after the re-routed ride reseeds.
+
+**Ķekava → Tulamori → Kārkli → Klaņģu kalns → Mežavairogi was refused with
+the generic message** (Grūti·Sports·Meži, flexible). Cause, measured: every
+candidate got BRouter's `400 no track found at pass=0` — the start pin matched
+a grass path that only touches forbidden footways and the finish a track cut
+off by a driveway; each routes alone and with its own snap (68 m / 243 m),
+the pair in one request never. A5 was not a factor. `fetchRoutePath` rescued
+only "re-tracking track" and islands; the unreachable-stop diagnosis probed
+the finish *from the start*, got the same "no track found", filed it as
+"could not check" and named nothing. Now `fetchRoutePath` replaces the ends
+once by their own snaps on "no track found" (cached per point), and
+`checkRoutablePoint` asks again with the synthetic leg when a leg from
+another place neither routes nor refuses. Before: 422 in 4.5 s. After: 200 in
+27 s, 33.7 km / 18 % and 59.3 km / 13 % (the variant with both stops on A5:
+30.6 / 41.4 km). When no place is to blame the page now says how many
+versions were tried and offers „Izņemt pieturas un mēģināt” and „Vieglāks
+profils” (known roads only, one grade and one trail step easier) beside the
+retry; "Precizē ilgumu" is dropped for a flexible ride, and the router's
+reason is logged.
+
+**Later the same day, the map as a planning surface** (rider tested each step):
+the phone's header row is at the bottom with the full-screen button (TET and
+a hand-made ⓘ credit at the top; the suggestions open upward); the desktop
+hides the per-row pin buttons (`ROW_PIN_BUTTON_ON_DESKTOP`); activating a
+filled row eases the map to its pin only when it is off-screen and raises
+the pin; clicking or dragging a ride pin activates its row, in planning too;
+a field's pick shows the place; the planning pins are joined by a dashed
+line in riding order (`lib/map/plan-line.ts`); "Konkrēts" is "Limitēts".
+**Batch adding:** with an empty stop row active every mark adds a pending
+stop (numbered, dashed, selectable, draggable, ✕ on the selected one) and
+the camera does not move (measured: centre and zoom identical over three
+marks); „Apstiprināt visas” commits them at once. Planning probes each in
+the background (two of three field pins came back off-road; move-to-road /
+drop per pin). Edit mode sends one `/api/reroute-leg` with a run per stretch
+(`add-stops` in `planEdit`): three stops, one request, 0.31 s on the server,
+0.74 s Confirm → numbers. The auto-created next stop row is gone — batches
+made it redundant. **Line grab** (edit mode): click the line, then the new
+spot, or drag the line with the mouse (touch: click-then-click only); the
+point becomes a stop entering where it was grabbed (`grabbedAt`), 0.31 s
+click path, 1.9 s drag path with a loop search. **One undo stack** (~20
+steps, `lib/map/undo-stack.ts`; edit history is a stack too): ↶ beside "+",
+Ctrl/Cmd+Z outside fields, Shift for redo in planning; a batch is one step.
+
+**The broken edit line (rider, 375 px, blocking).** Cause: the map drew
+`spliced ?? ride`, and the spliced preview (ticked sights) was reported up
+by the result panel. Pressing „Labot” unmounted that panel in the same
+commit, so its "nothing ticked any more" never arrived: the edit map kept
+drawing the pre-edit ride with a sight's detour spliced in — the detour's
+spur was the "orphan hook", and the new stops sat off that stale line, hence
+the gap between 2 and 3. A second path to the same picture: on an edited
+ride (new id) the panel spliced the old ride's detours, whose entry/exit are
+distances along the OLD line, for one render. Fixed: `enterEdit` drops the
+preview; the edit map never draws one; detours are used only for the ride
+they were routed for (`forRoute`); a splice with a break is logged and not
+drawn. And the invariant is now enforced on every edit (`spliceIsSound`:
+one line, joins ≤ 30 m, every place in order): a broken splice re-routes
+the whole span between unchanged places (`spanRun`) or is refused with a
+note; `/api/reroute-leg` pins every run's cut ends (`pinnedEnds` — no nudge,
+no end snap may move them) and drops loop variants whose halves do not meet.
+
 ## 2026-09-15 — Item 11g: a refused leg must not be defended like a rider's own place
 
 Item 11e left this as the next job and named a cost: six candidates on
@@ -3269,6 +3417,15 @@ gtag is on the page. Without the key it is a no-op. Events, all client-side:
 | `beer_popup` / `beer_click` | thank-you shown / Revolut tapped | link |
 | `feedback_sent` | feedback dialog | with_email, length |
 | `map_fullscreen` | phone map expanded | — |
+| `route_edit_opened` / `route_edit_finished` | "Labot" / "Pabeigt labošanu" (2026-09-24) | km, stops / edited |
+| `route_edited` | an edit re-routed and spliced | how (move-start, move-stop, move-finish, add-stop, remove-stop, reorder), ms, runs, km_delta, repeated_before, repeated_after |
+| `route_edit_pin_dragged` | a ride pin dragged in edit mode | role |
+| `route_edit_undone` / `route_edit_failed` | undo / an edit that could not be routed | how / reason |
+| `search_better_loop` | the explicit full search | pois, after_edit |
+| `route_no_route` / `route_no_route_retry` | every candidate failed with no place to blame / a way out chosen (2026-09-25) | tried, stops / how (drop-stops, easier-profile) |
+| `map_pin_pressed` / `route_line_grabbed` | a ride pin clicked to activate its row / a point of the line grabbed (edit) | role / slot |
+| `batch_stop_marked` / `batch_confirmed` / `batch_discarded` | batch adding on the map | n |
+| `plan_undone` | ↶ or Ctrl/Cmd+Z in planning | — |
 
 Done via the PostHog MCP (2026-09-12): project key in Vercel production
 (`NEXT_PUBLIC_POSTHOG_KEY`), session replay + console capture on, timezone

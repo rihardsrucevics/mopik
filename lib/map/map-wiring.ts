@@ -30,6 +30,13 @@
  * tap does. The composer offers no pin buttons in that state for the same
  * reason; making it a real planning map is a separate job.
  *
+ * The one other view that earns them is **edit mode** ("Labot" on a result):
+ * the same rows, the same active-row rules and the same header, over the
+ * generated ride. A tap there moves or adds a place in the ride, and the
+ * panel beside it says so — it is a view the rider entered on purpose, with a
+ * way out ("Pabeigt labošanu") and a row the tap answers. The result map
+ * outside it keeps a tap for the road cards.
+ *
  * The shared-ride page (which is also where a saved ride opens) never passes
  * any of these props to its map, so it has nothing to switch off.
  */
@@ -40,11 +47,15 @@ export type MapView = {
   hasResult: boolean;
   /** Whether the composer reports a row the map is answering. */
   rowActive: boolean;
+  /** "Labot" was pressed on the result and not yet finished. */
+  editing?: boolean;
 };
 
 export type MapWiring = {
   /** The rider is composing a ride, not reading one. */
   planning: boolean;
+  /** The rider is correcting a generated ride on its own map. */
+  editing: boolean;
   /** A tap marks a place for the active row: `onPickPoint`, the violet
    *  marker, `pickCenter` and the geolocate control that hangs from them. */
   pick: boolean;
@@ -52,7 +63,10 @@ export type MapWiring = {
   header: boolean;
 };
 
-export function mapWiring({ entryMode, hasResult, rowActive }: MapView): MapWiring {
+export function mapWiring({ entryMode, hasResult, rowActive, editing = false }: MapView): MapWiring {
   const planning = entryMode === "form" && !hasResult;
-  return { planning, pick: planning && rowActive, header: planning };
+  // Edit mode needs a ride to edit; without one the flag is left over and
+  // means nothing.
+  const edit = editing && hasResult;
+  return { planning, editing: edit, pick: (planning || edit) && rowActive, header: planning || edit };
 }

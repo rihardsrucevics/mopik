@@ -41,6 +41,14 @@ export type DetourState = {
   loading: boolean;
   /** The request ran out of time with POIs left; those rows stay pending. */
   partial: boolean;
+  /**
+   * The ride these detours were routed for. A detour's entry and exit are
+   * distances along THAT line; spliced into any other — an edited ride has a
+   * new id — they cut it in the wrong places and leave a gap and a stray spur
+   * (the rider's broken line, 2026-09-25). Consumers use `byPoi` only while
+   * this matches the ride on screen.
+   */
+  forRoute: string | null;
 };
 
 /**
@@ -72,7 +80,7 @@ export function useDetourPrefetch(params: {
   nearby: { id: string; lat: number; lon: number }[] | null;
 }): DetourState {
   const { routeId, geometry, durationSeconds, plan, nearby } = params;
-  const [state, setState] = useState<DetourState>({ byPoi: {}, loading: false, partial: false });
+  const [state, setState] = useState<DetourState>({ byPoi: {}, loading: false, partial: false, forRoute: null });
 
   // The POI list as a stable key, so a parent that rebuilds the array every
   // render cannot become a reason to re-route eight legs.
@@ -97,7 +105,7 @@ export function useDetourPrefetch(params: {
     if (!list.length) return;
 
     // A new ride: nothing learned about the previous one applies.
-    setState({ byPoi: {}, loading: true, partial: false });
+    setState({ byPoi: {}, loading: true, partial: false, forRoute: routeId });
     const controller = new AbortController();
 
     fetch("/api/detour", {
@@ -115,20 +123,22 @@ export function useDetourPrefetch(params: {
       .then((data: { detours?: DetourResult[]; partial?: boolean }) => {
         const byPoi: Record<string, DetourResult> = {};
         for (const d of data.detours ?? []) byPoi[d.poiId] = d;
-        setState({ byPoi, loading: false, partial: Boolean(data.partial) });
+        setState({ byPoi, loading: false, partial: Boolean(data.partial), forRoute: routeId });
       })
       .catch((err: unknown) => {
         if (controller.signal.aborted || (err instanceof DOMException && err.name === "AbortError")) return;
         // A prefetch that fails is not worth a message of its own: the rows
         // simply keep offering "Optimizēt maršrutu", which is what they did
         // before this feature existed. Nothing the rider was promised is lost.
-        setState({ byPoi: {}, loading: false, partial: false });
+        setState({ byPoi: {}, loading: false, partial: false, forRoute: routeId });
       });
 
     return () => controller.abort();
   }, [routeId, poiKey]);
 
-  return state;
+  // Never another ride's detours, not even for the one render before the
+  // effect above has cleared them.
+  return state.forRoute === routeId ? state : { byPoi: {}, loading: Boolean(routeId && poiKey), partial: false, forRoute: routeId };
 }
 
 /**

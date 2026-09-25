@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { addStop, addedStopIndex, defaultActiveRow, MAX_ROWS } from "../components/route-places";
+import { addStop, addedStopIndex, defaultActiveRow, followRow, rowAfterConfirm, MAX_ROWS } from "../components/route-places";
 
 /**
  * Which row the planning map answers, and which row "+ Pietura" makes.
@@ -10,11 +10,11 @@ import { addStop, addedStopIndex, defaultActiveRow, MAX_ROWS } from "../componen
  * state nothing on screen reported. The model that replaced it rests on two
  * rules, and both are arithmetic that has to be right before any pixel is:
  *
- * 1. **Exactly one row is active while the map is open**, defaulting to the
- *    first empty row. If this can return "no row" the invariant is a lie and a
- *    tap lands nowhere; if it prefers a filled row over an empty one, the
- *    rider who opened the map to answer his next question is handed the
- *    previous one instead.
+ * 1. **The active row is the first empty row, or none.** If it prefers a
+ *    filled row over an empty one, the rider who opened the map to answer his
+ *    next question is handed the previous one instead — and since 2026-09-25
+ *    a form with every row filled has no active row at all: a finished place
+ *    is edited again only when the rider activates it.
  * 2. **"+ Pietura" inserts where `addStop` inserts and activates that row.**
  *    Get the index wrong and the button quietly puts the rider's next tap into
  *    his finish, or into a stop he had already named — which is the class of
@@ -42,19 +42,46 @@ test("whitespace is not an answer", () => {
   assert.equal(defaultActiveRow(["  ", "Cēsis"]), 0);
 });
 
-test("a full form still answers — with the start", () => {
-  // The rule may never return "no row": the map is open, a tap is about to
-  // land, and it must have somewhere to go. The start is the row most often
-  // corrected, so it is the one worth falling back to.
-  assert.equal(defaultActiveRow(["Rīga", "Cēsis"]), 0);
-  assert.equal(defaultActiveRow(["Rīga", "Sigulda", "Cēsis"]), 0);
+test("a full form has no active row", () => {
+  // The rider's report (2026-09-25): start and finish confirmed, and the next
+  // mark on the map moved the finish, because the old rule fell back to a
+  // filled row. A finished place is edited only when he activates it.
+  assert.equal(defaultActiveRow(["Rīga", "Cēsis"]), null);
+  assert.equal(defaultActiveRow(["Rīga", "Sigulda", "Cēsis"]), null);
 });
 
-test("the default is always a row the form actually has", () => {
+test("the default is a row the form actually has, or none", () => {
   for (const places of [["", ""], ["Rīga", ""], ["Rīga", "Cēsis"], ["Rīga", "Sigulda", "Valmiera", "Cēsis"]]) {
     const row = defaultActiveRow(places);
-    assert.ok(row >= 0 && row < places.length, `${row} is a row of ${places.length}`);
+    assert.ok(row === null || (row >= 0 && row < places.length), `${row} is a row of ${places.length}`);
   }
+});
+
+test("after the start is confirmed the finish is next; after the finish, nothing", () => {
+  // Confirm start → „Līdz”.
+  assert.deepEqual(rowAfterConfirm(["Rīga", ""], 0, true), { rows: ["Rīga", ""], active: 1, inserted: null });
+  // Confirm finish → no active row: the header says to pick a row or add a stop.
+  assert.deepEqual(rowAfterConfirm(["Rīga", "Cēsis"], 1, true), { rows: ["Rīga", "Cēsis"], active: null, inserted: null });
+  // Correcting a start later, with every row filled, does not invent a stop.
+  assert.equal(rowAfterConfirm(["Rīga", "Sigulda", "Cēsis"], 0, true).active, null);
+  // A finish confirmed while another row is still empty hands the map that row.
+  assert.equal(rowAfterConfirm(["", "Cēsis"], 1, true).active, 0);
+});
+
+test("a confirmed stop opens no new row: batch adding took that job", () => {
+  // With an empty stop row active, marks add pending stops in a batch and one
+  // Confirm takes them all, so a Confirm no longer invents the next row.
+  assert.deepEqual(rowAfterConfirm(["Rīga", "Sigulda", "Cēsis"], 1, true), { rows: ["Rīga", "Sigulda", "Cēsis"], active: null, inserted: null });
+  // An empty row still waiting is next — stop or finish.
+  assert.equal(rowAfterConfirm(["Rīga", "Sigulda", "", "Cēsis"], 1, true).active, 2);
+  assert.equal(rowAfterConfirm(["Rīga", "Sigulda", ""], 1, true).active, 2);
+  assert.equal(rowAfterConfirm(["Rīga", "Sigulda"], 1, false).active, null);
+});
+
+test("at the row cap, with the finish still empty, the finish is next", () => {
+  assert.equal(rowAfterConfirm(["Rīga", "A", "B", "C", "D", ""], 4, true).active, 5);
+  assert.equal(rowAfterConfirm(["Rīga", "A", "B", "C", "D", "Cēsis"], 4, true).active, null);
+  assert.equal(["Rīga", "A", "B", "C", "D", "Cēsis"].length, MAX_ROWS);
 });
 
 for (const oneWay of [true, false]) {
@@ -126,4 +153,34 @@ test("the button is the only door, and it stops at the same cap the form does", 
   const full = Array.from({ length: MAX_ROWS }, (_, i) => `Vieta ${i}`);
   assert.equal(full.length >= MAX_ROWS, true, "six rows is the cap");
   assert.equal(addStop(["Rīga", "Cēsis"], true).length <= MAX_ROWS, true);
+});
+
+test("the active row follows its place when the arrows move it", () => {
+  // The rider's report: stop at row 2 active, ↓ pressed — the ring stayed on
+  // row 2, which now held a different place. The active row is the place.
+  assert.equal(followRow(2, { kind: "move", from: 2, to: 3 }), 3, "moved down, followed");
+  assert.equal(followRow(3, { kind: "move", from: 3, to: 2 }), 2, "moved up, followed");
+  // Twice up from row 3: 3 → 2 → 1.
+  const once = followRow(3, { kind: "move", from: 3, to: 2 })!;
+  assert.equal(followRow(once, { kind: "move", from: once, to: once - 1 }), 1);
+  // Another row moving past the active one shifts it by one, the way the
+  // list itself shifts.
+  assert.equal(followRow(2, { kind: "move", from: 3, to: 2 }), 3, "the row below moved up past it");
+  assert.equal(followRow(2, { kind: "move", from: 1, to: 2 }), 1, "the row above moved down past it");
+  assert.equal(followRow(1, { kind: "move", from: 2, to: 3 }), 1, "a move elsewhere leaves it alone");
+});
+
+test("the active row follows its place when a row is removed or inserted", () => {
+  assert.equal(followRow(3, { kind: "remove", at: 1 }), 2, "a row above removed");
+  assert.equal(followRow(1, { kind: "remove", at: 3 }), 1, "a row below removed");
+  assert.equal(followRow(2, { kind: "remove", at: 2 }), null, "its own row removed: the default rule decides");
+  assert.equal(followRow(2, { kind: "insert", at: 1 }), 3, "a stop inserted above it");
+  assert.equal(followRow(2, { kind: "insert", at: 2 }), 3, "inserted at its index pushes it down");
+  assert.equal(followRow(1, { kind: "insert", at: 2 }), 1, "inserted below it");
+  assert.equal(followRow(1, { kind: "clear", at: 1 }), 1, "a base row emptied in place stays");
+  // `addStop` on a one-way ride inserts before the finish: an active finish
+  // moves down with the finish.
+  const rows = ["Rīga", "Sigulda", "Cēsis"];
+  assert.equal(followRow(2, { kind: "insert", at: addedStopIndex(rows, true) }), 3);
+  assert.equal(addStop(rows, true)[3], "Cēsis");
 });

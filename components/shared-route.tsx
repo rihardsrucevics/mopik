@@ -6,7 +6,7 @@ import { useLocale } from "@/lib/i18n/use-locale";
 import { messages } from "@/lib/i18n/messages";
 import { fi } from "@/lib/i18n/format";
 import { ArrowUp, Download } from "lucide-react";
-import { RouteActionRow } from "@/components/action-row";
+import { DetailsCard, RouteActionRow } from "@/components/action-row";
 import { RouteMap } from "@/components/route-map";
 // The gate glyph is defined once, next to the panel row that first used it —
 // see the note there for why a door and not a roadworks barrier.
@@ -429,12 +429,17 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
           )}
           <p className="mt-2 text-[11px] text-stone-500">{fi(m.shRepeatedNote, { pct: share.repeatedPercent })}</p>
           <button type="button" onClick={downloadGpx} className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-full bg-[#f56300] text-sm font-semibold text-white transition hover:bg-[#d85600]"><Download className="size-4" />{m.resDownloadGpx}</button>
-          <RouteActionRow saved={saved} onToggleSave={toggleSave} onShare={shareRoute} copied={copied} details={details} onToggleDetails={() => setDetails(!details)} />
+          <RouteActionRow saved={saved} onToggleSave={toggleSave} onShare={shareRoute} copied={copied} />
           {copied && (
             <p role="status" className="mopik-fade-in mt-2 rounded-lg bg-stone-900 px-3 py-2 text-xs text-white">{m.resLinkCopied}</p>
           )}
-          {details && d && (
-            <div className="mt-3 space-y-3 rounded-xl border border-stone-200 p-3">
+          {/* "Detaļas" as a collapsible row under the actions, shaped like
+              "Apskates vietas" below it — the planner's order. Only where the
+              code carries the breakdown, so the row never opens onto nothing. */}
+          {d && (
+          <DetailsCard open={details} onToggle={() => setDetails(!details)} className="mt-3">
+          {d && (
+            <div className="space-y-3">
               <div>
                 <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-stone-400">{m.resRoadsHeading}</div>
                 <Row label={m.resMixRoad} value={`${d.roadKm} km · ${pct(d.roadKm)} %`} /><Row label={m.resMixTrack} value={`${d.trackKm} km · ${pct(d.trackKm)} %`} /><Row label={m.resMixTrail} value={`${d.trailKm} km · ${pct(d.trailKm)} %`} icon="🔥" />
@@ -472,6 +477,8 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
                 </div>
               )}
             </div>
+          )}
+          </DetailsCard>
           )}
           {/* Ieteikumi as its own block, below the route card — the same shape
               the planner has, because the rider asked for the two pages to be

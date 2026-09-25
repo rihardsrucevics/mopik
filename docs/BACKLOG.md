@@ -1139,7 +1139,102 @@ The farmstead is the end of `highway=service` way 118473891 (57.15945,
 stop, and fell back to the unpruned path, generated spur included; now only
 the farmstead's spur stays.
 
-## 29. Correct a generated route on the map, not through the chat
+### 28b. Near-mirror spurs, and a loop instead of the cut — 2026-09-25 (not deployed)
+
+**Rider's GPX, 2026-09-25** (Daugavgrīvas iela 4A → Mālpils šoseja 10, one
+way, flexible, Grūti·Sports·Meži, 53 km, panel "3 % atkārtoti"): 1.49 km
+ridden back at 35.2 → 36.7 km in the forest near Zušu purvs, drawn as two
+lines a few metres apart. **Measured cause:** reproduced through the API as
+candidate `via-1-1`, 52.8 km, the rider's ride to the decimal; its corridor
+via #2 (57.05775, 24.26869) is 57 m from the tip. The spur is 1.62 km each
+way: 1.35 km over *identical* vertices (unclassified/track, sand), then the
+last ~300 m out on OSM way 996563529 and back on the parallel way 996563531,
+8–17 m apart (both `track grade5 sand`). The tip is not a dead end —
+996563531 runs on into the track network north-east — so snapping the via
+onto a through-way does not help: routed with the via as generated, on the
+tip vertex, 150 m NE on the network and 400 m E on a through track, the
+candidate kept 1.6–1.9 km ridden twice every time. `pruneSpurs` needed an
+exact mirror at the tip and found none.
+
+**Fix, `lib/routing/prune-spurs.ts`.**
+- *Near mirrors:* after the exact pass, a second pass matches the way back
+  to the way out, sampled every 5 m: an earlier point within 25 m
+  (`MIRROR_TOLERANCE_M`), heading the other way (> 120°), more than 50 m
+  back along the ride. A run of such matches with a short far end
+  (≤ 300 m, `MIRROR_TIP_MAX_M`) and legs at least half as long as that far
+  end is a spur. It is cut only where both legs pass through the same vertex
+  (≤ 1.5 m), so no road is invented; a hairpin whose legs never share a
+  vertex, two carriageways 30–60 m apart, and a 420 m residential block
+  ridden round (measured on the farmstead ride) are left alone. Protection
+  as before: a near-mirror spur that is the visit to a rider's stop or the
+  destination is kept whole. Exact and near passes repeat until neither
+  finds anything.
+- *Loop instead of cut* (`pruneOrLoopSpurs`, at the A→B/free-loop prune
+  call in `buildCandidates`): for a cut spur of 300 m–5 km one way whose
+  nearest waypoint is a GENERATED via, two fenced requests at once
+  (BRouter `nogos` via `nogosAlong`, `fetchRouteAvoiding`, as edit mode):
+  the way back from the tip with the way in fenced off, towards the ride two
+  spur lengths past the base, cut where it first comes onto the ride; and
+  the mirror from two lengths before the base to the tip. Accepted
+  (`acceptSpurLoop`) only when it adds ≤ min(300 m, ¼ of the out-and-back)
+  to the ride's geometric revisit and its stretch is ≤ 1.5 × the removed
+  out-and-back plus the ride it replaces (edit mode's
+  `LOOP_EXTRA_PER_SHARED`); least road ridden twice wins, then shortest.
+  Otherwise the cut stays. Per ride: 16 requests (8 spurs), only in the
+  first 20 s, 1.5 s per request. Rider stops never get here (their spur is
+  protected before anything is cut).
+- **Cost measured:** the first version (6, then 4 requests per spur, 24–64
+  per ride, 2.5 s each) pushed the rider's ride from 35 s to 41–51 s and
+  twice into the 50 s budget (3 of 23 candidates dropped); with loops off
+  the same code ran 36.6 s. Our BRouter has one CPU: every fenced request is
+  time the candidates wait for. Two requests per spur cover the four
+  rejoin variants that won (back ×1 12, back ×2 4, in ×1 6, in ×2 4 of 26).
+
+**Table** (own BRouter, form plan, Grūti·Sports·Meži, in-process harness;
+before = `cb5fe7f`, runs interleaved; shown direct · complex; "revisited" =
+the geometric detector, 20 m samples, a point within 25 m of one ≥ 300 m
+back):
+
+| Ride | before: km, panel %, revisited | after | spurs of the shown pick (after) | time before → after |
+|---|---|---|---|---|
+| **Daugavgrīvas iela 4A → Mālpils šoseja 10** | 52.8 km 3 % 1.6 km · 52.1 km 0 % 0.1 km | **51.5 km 0 % 0.1 km** · 84.2 km 0 % 0 km | direct: 2 cut (3.38 km), the rider's 1.62 km spur **looped** (back ×2); complex: 2 cut, allowance spent | 34.5 → 37.3 s |
+| Circle K (Pērnavas 7) → Jelgava | 77.1 km 0 % 0.1 · 116.6 km 0 % 0.1 | 77.1 km 0 % 0.1 · **87.5 km 0 % 0.4** | complex is a new pick: a 2.3 km spur looped, +263 m ridden twice | 23.2 → 23.1 s |
+| Jelgava → Kuldīga | 208.5 km 0 % 0 · 234.7 km 0 % 0 | identical | direct: 2 cut, neither loop cheap | 10.1 → 11.3 s |
+| Rīga → Baldone | 55.0 km 0 % 0 · 115.8 km 0 % 0.1 | identical | direct: 1 cut (2.46 km, loop not cheap) | 17.5 → 18.9 s |
+| Sigulda 3 h round trip | 78.2 km 1 % 0.4 · 96.7 km 0 % 0.5 | identical | 4 / 3 cut, allowance spent | 19.7 → 21.4 s |
+| Circle K → farmstead → Sigulda | 144.5 km 1 % 1.6 · 109.0 km 2 % 2.4 | 144.5 km 1 % 1.6 · 108.3 km 2 % 1.6 | farmstead spur kept in both; 3 / 5 others cut | 49.6 → 50.8 s (both at the budget; after dropped 3 of 27) |
+
+The rider's ride also offered a 58.0 km alternative at 7 % (an 8.7 km
+near-mirror out-and-back); after, all six routes it returns read 0 % and
+≤ 0.1 km revisited. Over the whole pool of that ride 8 spurs got loop
+attempts (the allowance) and 3 were taken, the shown one among them. Sigulda's alternatives changed (a 49.9 km 14 %
+loop now appears as the 5th alternative); the two shown picks did not.
+
+**Overlap figure — not changed, deliberately.** For the rider's ride the
+panel read 3 % (second pass only, vertex pairs: 2.5 %); counting both passes
+it is 5.0 %; the geometric detector says 3.0 % (1.6 km); the whole
+out-and-back is 3.24 km = 6.2 %. After: 0 % on every definition. Counting both
+passes roughly doubles every figure (Sigulda 0.5 → 1.0 %, farmstead complex
+2.2 → 4.1 %) and every threshold that reads it (the 15/20 % offers,
+`insideBest − 10`, the rider's own `maxRepeatedPercent`) would silently
+tighten by half; `classify.ts` and edit mode's `recomputeOverlap` must change
+together. That is a rider decision, not a side effect of this fix. Tests:
+`scripts/prune-spurs.test.ts` (19).
+
+## 29. ~~Correct a generated route on the map, not through the chat~~ — DONE 2026-09-24 (not deployed)
+
+**Done:** "Labot" on the result swaps the panel for the form's rows over
+the ride's own map — same active-row rules, pin buttons, "+", the map's
+search, Confirm/Cancel/Escape — and ride pins can be dragged (the drop
+becomes the active row's mark, Confirm commits). Every commit re-routes
+only the stretch around the changed place (`planEdit`) through
+`/api/reroute-leg` and splices it (`applyRuns`); km, time, surfaces and
+retraced % are recomputed from the spliced line. A place the line only
+comes near is moved onto it and the rider is told by how much; beyond
+500 m the edit is refused. Undo one step; "Labots ar roku · N %" kicker;
+"Meklēt labāku apli ar šīm pieturām" is the explicit full search. Share,
+save and GPX carry the edited ride. Measured Confirm → new numbers on our
+BRouter, warm: 0.2–0.6 s for every edit kind. `FAST_REROUTE` is gone.
 
 **Riders' feedback, 2026-09-24 (three reports).** After a route is
 generated they want to fix it on the map — ideally drag the line somewhere
@@ -1162,7 +1257,17 @@ as an explicit "Meklēt labāku apli". Related: a tap on the result map today
 shows a leaked violet pick marker that does nothing (being removed
 2026-09-24) — riders read it as exactly this feature.
 
-## 30. The planning map's header is cramped
+## 30. ~~The planning map's header is cramped~~ — DONE 2026-09-24 (not deployed)
+
+**Done:** one header row — the field (its tag names the active row, its
+placeholder "Atzīmē vai meklē…" is the hint; the full sentence stays a
+screen-reader status) and a round "+" whose tooltip is "+ Pietura". The
+field takes the whole row, over the zoom buttons, while it has focus. TET
+moved to the bottom row beside the full-screen button (above the legend
+on the desktop). Measured at 375 px on the 309 x 341 px planning map: the
+top band went from 127 px (37 % of the height) to 53 px (16 %), so the
+clear map below it went 214 → 288 px (63 % → 84 %). The ride is framed
+clear of the header and, where it shows, the legend.
 
 **Rider, 2026-09-24, screenshot at phone width.** Since 84b6a38 the map's
 top-left corner stacks three things — the search pill ("Erdmaņi" with its
@@ -1175,3 +1280,15 @@ placeholder or shown only while a mark is pending), TET moved to the
 bottom row with the legend or into the layers control, and the whole thing
 must not hide the start pin that the map centres on. Measure the map area
 left visible at 375 px before/after.
+
+## 31. Photos from Mopik rides in the loader's banner slot
+
+**Rider, 2026-09-25.** The loader already sells one frame to an advert
+(`components/route-loader.tsx`, `advertSlot`, shown 3 s in for 2.4 s). In
+future that slot — or the whole wait, which can run to a minute — could
+show random photos from rides planned with Mopik. Needs: a source (riders
+upload from a saved/shared ride, or an Instagram #mopik feed the rider
+curates), consent and moderation before anything is shown, a small CDN'd
+set so the loader never waits on an image, and alt text. Ties in with the
+paused loading-animation work (a minute-long, layered scene) — decide both
+together.

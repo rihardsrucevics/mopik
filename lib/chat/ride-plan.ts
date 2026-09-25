@@ -68,7 +68,11 @@ export type ChatMessage = z.infer<typeof ChatMessageSchema>;
 export type ChatQuickReply = {
   label: string;
   message: string;
-  action?: "show-routes" | "retry" | "direct-leg" | "remove-stop" | "move-stop";
+  /**
+   * `drop-stops` / `easier-profile` (2026-09-25): the ways out of a ride no
+   * candidate could route, when no single place is to blame.
+   */
+  action?: "show-routes" | "retry" | "direct-leg" | "remove-stop" | "move-stop" | "drop-stops" | "easier-profile";
   /** which place the action edits, for `remove-stop` / `move-stop` */
   stop?: UnreachableStop;
 };

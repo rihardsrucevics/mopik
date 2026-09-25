@@ -15,6 +15,14 @@ export type AnalyticsEvent =
   | "route_generated"        // routes arrived; props: versions, km, minutes, repeated, budget…
   | "route_infeasible"       // nothing fits the time; props: requested/minimum minutes
   | "route_unplannable"      // probe says the ride is too hard to search; props: leg_km, reason
+  | "route_no_route"         // every candidate failed, no place to blame; props: tried, stops
+  | "map_pin_pressed"        // a ride pin clicked to make its row active; props: role
+  | "route_line_grabbed"     // edit mode: a point of the drawn line grabbed to move; props: slot
+  | "batch_stop_marked"      // a pending stop added to a batch on the map; props: n (its place in the batch)
+  | "batch_confirmed"        // „Apstiprināt visas”; props: n
+  | "batch_discarded"        // ✕ on an open batch; props: n
+  | "plan_undone"            // ↶ / Ctrl+Z in planning
+  | "route_no_route_retry"   // a way out of that chosen; props: how (drop-stops, easier-profile)
   | "direct_leg_shown"       // rider took the direct-road offer (item 7b); props: km, minutes
   | "generation_cancelled"   // "Atcelt" on the loader; props: case (first_from_form → back to the form | later → stays in the chat)
   | "overlap_chat_shown"     // best version retraces > 20 %
@@ -51,10 +59,14 @@ export type AnalyticsEvent =
   | "suggestion_shown"        // "Kartē" in Ieteikumi: the map flew to a suggestion without changing the ride; props: kind
   | "detour_previewed"       // a sight was ticked and its detour spliced into the drawn line; props: pois, delta_km
   | "sights_committed"       // "Pievienot izvēlētos": the spliced ride became the ride, with no search; props: pois, delta_km, ms — is the instant path actually the one riders take?
-  | "search_better_loop"     // the full search asked for explicitly, with the ticked sights as vias; props: pois — how often is a cleaner loop worth 20-30 s?
-  | "route_edited"           // a correction on the result map; props: how (drag|tap), ms, repeated_before, repeated_after — does an edit make retracing worse, and do riders keep it?
-  | "route_edit_undone"      // the edit was reverted; props: how — the honest read on whether the corrections are good
-  | "route_edit_failed"      // the leg could not be routed through the new point; props: reason
+  | "search_better_loop"     // the full search asked for explicitly, with the ride's (possibly edited) places and any ticked sights as vias; props: pois, after_edit — how often is a cleaner loop worth 30-60 s?
+  | "route_edit_opened"      // "Labot" on the result: edit mode on the same page; props: km, stops — do riders correct rides on the map?
+  | "route_edit_finished"    // "Pabeigt labošanu"; props: edited — did the edits survive the session?
+  | "route_edit_cancelled"   // "Atcelt labošanu": every edit of the session dropped; props: edited (whether there was anything to drop)
+  | "route_edit_pin_dragged" // a ride pin dragged in edit mode, which marks that row; props: role (start|via|finish) — is dragging found, or is marking?
+  | "route_edited"           // an edit re-routed and spliced; props: how (move-start|move-stop|move-finish|add-stop|remove-stop|reorder), ms (commit → line), runs, km_delta, repeated_before, repeated_after — is it under 5 s, and does it make retracing worse?
+  | "route_edit_undone"      // the last edit was reverted; props: how — the honest read on whether the corrections are good
+  | "route_edit_failed"      // the stretch could not be routed through the new point; props: reason (status|network|degenerate|no-place)
   | "trip_type_changed"       // props: to (one_way|round_trip) — is the new default right?
   | "ride_edit_opened"        // "Rediģēt formā" on a shared or saved ride; props: from, saved
   | "shared_correction_sent" // "Ko mainīt?" typed on a shared ride's page; props: length, saved

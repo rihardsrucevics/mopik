@@ -3,9 +3,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { Check, MapPinPlus, TriangleAlert } from "lucide-react";
+import { Check, Info, Plus, TriangleAlert, Undo2, X } from "lucide-react";
 import { RouteSegmentProperties } from "@/lib/types";
-import { haversineMeters } from "@/lib/geo/geometry";
+import { haversineMeters, type Point } from "@/lib/geo/geometry";
+import { cumulative, pointAtDistance } from "@/lib/routing/detour";
+import { nearestAlong } from "@/lib/routing/reroute-leg";
 import { useLocale } from "@/lib/i18n/use-locale";
 import { messages } from "@/lib/i18n/messages";
 import { fi } from "@/lib/i18n/format";
@@ -47,7 +49,7 @@ maplibregl.setWorkerUrl("/maplibre-gl-worker.mjs");
  *   type a name he already knows — and a pick here fills the row exactly as a
  *   pick in the form does, tick and recent places included.
  * - `pending` is the bar at the bottom of the map: Confirm / Cancel for the
- *   point under the violet marker, or the router's verdict that it is off the
+ *   point under the pending marker, or the router's verdict that it is off the
  *   road with its own Move / Cancel. Present only while a mark is pending —
  *   marked, not yet confirmed. It lives on the map because that is where the
  *   rider's eyes and thumb are while he marks; under the row in the form it
@@ -75,14 +77,39 @@ export type MapPendingMark = {
     dismissLabel: string;
     onDismiss: () => void;
   } | null;
+  /** A batch's ↶: take the last pending stop away. Drawn between ✓ and ✕. */
+  undo?: { label: string; onUndo: () => void };
 };
 
 export type MapControls = {
+  /** "Atzīmē kartē → „Līdz”" — read out whenever the active row changes. */
   hint: string;
+  /** The active row's own name („Līdz”, „Caur (1)”), shown as the field's tag. */
+  rowLabel?: string;
+  /**
+   * What the pending mark will become: the start's green pin, the finish's
+   * red one, or a stop's orange disc with the number it will wear. The mark
+   * looks like its future pin from the moment it lands — see the marker
+   * effect for how "not yet confirmed" stays readable.
+   */
+  pendingPin?: { role: "start" | "finish" | "via"; number: number | null };
   pending: MapPendingMark | null;
   onAddStop: (() => void) | null;
   addStopLabel: string;
   addStopFullLabel: string;
+  /**
+   * The ride's own pins may be dragged — edit mode only. A dragged pin does
+   * not move by itself: its row becomes the active one and the drop point its
+   * mark, previewed and waiting for Confirm like any other. `index` counts
+   * the numbered stops from 0; it is 0 for the two ends.
+   */
+  onPinDrag?: (role: "start" | "via" | "finish", index: number, at: { lat: number; lon: number }) => void;
+  /**
+   * A ride pin clicked: its row becomes the active one, as if its field had
+   * been focused — no card, and the pin does not move (rider, 2026-09-25:
+   * switching from the finish to the start meant going back to the form).
+   */
+  onPinPress?: (role: "start" | "via" | "finish", index: number) => void;
   search: {
     value: string;
     confirmed: ResolvedPlace | null;
@@ -90,7 +117,37 @@ export type MapControls = {
     onPick: (place: ResolvedPlace | null) => void;
     near: { lat: number; lon: number } | null;
     placeholder: string;
+    /** No row is active: the field is off and its placeholder says what to do. */
+    disabled?: boolean;
   };
+  /** The active row's own confirmed place, whose pin is raised on the map. */
+  activePlace?: { lat: number; lon: number } | null;
+  /** Planning: the pins joined in riding order, and a pending mark's slot. */
+  planLine?: { confirmed: [number, number][]; pending: [number, number][] | null } | null;
+  /**
+   * Edit mode: a point on the drawn line was grabbed — a click on it, or a
+   * press and drag (rider's sketch, 2026-09-25). `at` is on the line; `slot`
+   * is how many of the ride's stops lie before it along the line, which is
+   * where the new stop goes in the form.
+   */
+  onLineGrab?: (grab: { lat: number; lon: number; slot: number }) => void;
+  /** The grabbed point while it waits for its new spot: a dot on the line. */
+  grab?: { lat: number; lon: number } | null;
+  /**
+   * Batch adding (2026-09-25): while it is on, the single pending marker is
+   * not drawn and nothing moves the camera; the batch's pending stops are
+   * drawn here instead — dashed numbered pins that can be selected (a press),
+   * dragged, and dropped (the ✕ a selected one carries).
+   */
+  batchMode?: boolean;
+  batch?: { id: number; lat: number; lon: number; number: number; selected: boolean; failing: boolean }[];
+  onBatchSelect?: (id: number) => void;
+  onBatchMove?: (id: number, at: { lat: number; lon: number }) => void;
+  onBatchDrop?: (id: number) => void;
+  /** Changes when every pin should be shown once — after a batch Confirm. */
+  fitToken?: number;
+  /** ↶ outside a batch; `onUndo` null when there is nothing to take back. */
+  undo?: { label: string; onUndo: (() => void) | null };
 };
 
 type Props = {
@@ -240,7 +297,7 @@ type Props = {
    * village legible, and the bounds the map happened to be showing are about
    * a different question.
    */
-  pickCenter?: { lat: number; lon: number; token: number } | null;
+  pickCenter?: { lat: number; lon: number; token: number; fit?: { lat: number; lon: number }[] } | null;
   /**
    * A fix the map's own geolocate button obtained, handed back so the form can
    * reuse it rather than prompting again for the next row.
@@ -253,45 +310,6 @@ type Props = {
    * See `MapControls` for what is in it and why the map draws all three.
    */
   controls?: MapControls | null;
-  /**
-   * Correcting the ride from the result map, which is the rider's second ask:
-   * *"I want to make corrections to the offered route through the map and
-   * quickly see the new route on the map, not wait for a full re-generation."*
-   *
-   * Two gestures, and deliberately no third:
-   *
-   * - **A tap on the drawn line** adds a via there (`viaIndex: null`). On the
-   *   line rather than near it, because the result map's empty space already
-   *   means "put the card away" and a tap that sometimes dismissed and
-   *   sometimes re-routed would be the same gesture doing two things. The line
-   *   is queried with the same `TAP_SLOP_PX` box the segment card uses, so it
-   *   is as tappable as the card already is at phone width.
-   * - **A drag of a numbered stop** moves it (`viaIndex` = its position).
-   *   Markers only, and the stop's own marker at that: MapLibre's marker drag
-   *   is its own implementation, not a gesture we synthesise, which is why
-   *   this is not the drag-and-drop CLAUDE.md rules out for the *form's* rows
-   *   — that rule is about reordering a list of DOM rows on iOS Safari, and
-   *   three attempts at it failed. Dragging a pin on a map is what the picked
-   *   point already does here, working, today.
-   *
-   * A tap on the line that does NOT re-route still opens the segment card, as
-   * it always has: the card is how a rider inspects a road and the edit must
-   * not cost him that. Which one happens is decided by the modifier-free rule
-   * below — see `onClick`.
-   */
-  onEditRoute?: (params: {
-    how: "drag" | "tap";
-    at: { lat: number; lon: number };
-    /** null = a new via tapped onto the line; otherwise the stop being moved */
-    viaIndex: number | null;
-    label?: string;
-  }) => void;
-  /**
-   * A leg is being re-routed. The stop markers stop accepting drags for its
-   * duration — a second edit spliced onto a line that is about to be replaced
-   * would be computed against geometry nobody is looking at any more.
-   */
-  editingRoute?: boolean;
 };
 
 const EMPTY: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
@@ -655,6 +673,13 @@ const GATE_MARKER_MAX = 30;
  * turning back and a stop is the rider's own answer, while a gate is a thing to
  * expect. Below both, and it never grows: a gate pill holds one glyph.
  */
+/**
+ * Below the `md` breakpoint — the one the page's map layout already uses. On a
+ * phone the planning (and edit) header row sits at the bottom of the map, in
+ * the thumb's reach, and TET at the top (rider, 2026-09-25).
+ */
+const PHONE_QUERY = "(max-width: 767px)";
+
 function gateElement(title: string): HTMLElement {
   const el = document.createElement("button");
   el.type = "button";
@@ -1262,22 +1287,6 @@ function segmentInfoHtml(
   locale: UiLocale,
   props: SegmentProps,
   meters: number,
-  /**
-   * The ride can be corrected here, so the card offers a stop at this point.
-   *
-   * On the card rather than on the tap itself, and this was the decision worth
-   * measuring. A tap on the line already means "tell me about this road", and
-   * a gesture that sometimes inspects and sometimes re-routes is the same
-   * finger doing two things — on a phone, where the line is 5 px under an 8 px
-   * slop box, the rider would have no way of aiming at one rather than the
-   * other. A button on the card that the tap already opens is unambiguous,
-   * needs no new gesture, and is a 30 px target instead of a 5 px one.
-   *
-   * It also keeps CLAUDE.md's rule that a correction is always the rider's own
-   * tap: nothing about the ride changes until he presses a button that says
-   * what it will do.
-   */
-  canAddStop = false,
 ): string {
   const grade = gradeBucket(props.trackGrade);
 
@@ -1361,18 +1370,6 @@ function segmentInfoHtml(
         // `<details>` when the warning has an explanation to expand).
         flags.join("") +
         `</div>`
-      : "") +
-    // "Add a stop here". `data-add-stop` is how the effect finds it once
-    // MapLibre has parsed the markup — the popup's DOM is not ours to hold a
-    // React ref inside, which is the same reason the focus card's own button
-    // is found by `data-add`.
-    (canAddStop
-      ? `<button type="button" data-add-stop="1" ` +
-        `style="margin-top:4px;width:100%;display:flex;align-items:center;` +
-        `justify-content:center;gap:4px;height:30px;border-radius:15px;` +
-        `border:1px solid #f5630040;background:#fff;color:#f56300;` +
-        `font-size:12px;font-weight:600;cursor:pointer;padding:0 10px">` +
-        `${esc(m.tapRouteToAddStop)}</button>`
       : "") +
     `</div>`
   );
@@ -1858,7 +1855,7 @@ const SURFACE_COLOR_EXPR: maplibregl.ExpressionSpecification = [
   SURFACE_COLORS.unknown,
 ];
 
-export function RouteMap({ segments, start, destination, via, focus, onFocusCleared, onFocusToggle, selectedPois, routePois, showTet, onToggleTet, showSights, onToggleSights, onShowPoi, onPickPoint, pickedPoint, onPickedPointMove, pickCenter, onGeolocated, controls, onEditRoute, editingRoute = false }: Props) {
+export function RouteMap({ segments, start, destination, via, focus, onFocusCleared, onFocusToggle, selectedPois, routePois, showTet, onToggleTet, showSights, onToggleSights, onShowPoi, onPickPoint, pickedPoint, onPickedPointMove, pickCenter, onGeolocated, controls }: Props) {
   const [locale] = useLocale();
   const m = messages(locale);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1944,22 +1941,61 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
   const onGeolocatedRef = useRef(onGeolocated);
   useEffect(() => { onGeolocatedRef.current = onGeolocated; }, [onGeolocated]);
   /**
-   * Correcting the ride, through a ref for the reason every other callback
-   * here is: the handlers are attached once per `segments` change and a
-   * closure over the prop would keep calling the version that existed when the
-   * line was drawn — which, for an edit, is the version that would splice into
-   * the ride *before* the previous edit.
+   * A ride pin dragged in edit mode, through a ref for the reason every other
+   * callback here is: the markers are built once per ride change, and a
+   * closure over the prop would keep calling the handler that existed when
+   * they were — one that still believes the rows are as they were then.
+   *
+   * `pinsDraggable` is the plain flag, and it is in the marker effect's deps:
+   * entering edit mode has to rebuild the pins as draggable, and leaving it
+   * has to pin them down again.
    */
-  const onEditRouteRef = useRef(onEditRoute);
-  useEffect(() => { onEditRouteRef.current = onEditRoute; }, [onEditRoute]);
-  const editingRouteRef = useRef(editingRoute);
-  useEffect(() => { editingRouteRef.current = editingRoute; }, [editingRoute]);
+  const pinDragRef = useRef(controls?.onPinDrag);
+  useEffect(() => { pinDragRef.current = controls?.onPinDrag; }, [controls?.onPinDrag]);
+  const pinPressRef = useRef(controls?.onPinPress);
+  useEffect(() => { pinPressRef.current = controls?.onPinPress; }, [controls?.onPinPress]);
+  /** When a pin drag last ended: the click that ends a drag is not a press. */
+  const dragEndedAtRef = useRef(0);
+  const viaRef = useRef(via);
+  useEffect(() => { viaRef.current = via; }, [via]);
+  const lineGrabRef = useRef(controls?.onLineGrab);
+  useEffect(() => { lineGrabRef.current = controls?.onLineGrab; }, [controls?.onLineGrab]);
+  /** A grab is waiting for its spot: the next click is that spot, not a new grab. */
+  const grabbingRef = useRef(false);
+  useEffect(() => { grabbingRef.current = Boolean(controls?.grab); }, [controls?.grab]);
+  /** Draws the grab's dashed connector, from the line to the spot (see its effect). */
+  const connectorRef = useRef<(to: { lat: number; lon: number } | null) => void>(() => {});
+  const pinsDraggable = Boolean(controls?.onPinDrag);
+  /**
+   * Where the planning (or edit) map's places may be framed: clear of the
+   * header row — at the top on the desktop, at the bottom on a phone — of TET
+   * and, where it shows, the legend under it (measured; it took the start pin
+   * at 1280 px when this was a flat 64 px).
+   */
+  const planPadding = (): maplibregl.PaddingOptions | number => {
+    if (!hasHeaderRef.current) return 64;
+    const legend = containerRef.current?.parentElement?.querySelector<HTMLElement>("[data-map-legend]");
+    const legendH = legend && legend.offsetParent !== null ? legend.getBoundingClientRect().height + 8 : 0;
+    return window.matchMedia(PHONE_QUERY).matches
+      ? { top: 56, bottom: 72 + legendH, left: 48, right: 72 }
+      : { top: 80, bottom: 56 + legendH, left: 64, right: 64 };
+  };
+  /** The rider has panned or zoomed this map himself (see its listener). */
+  const userMovedRef = useRef(false);
+  /** This map instance has framed a ride at least once. */
+  const framedRef = useRef(false);
+  /** Header height to keep clear when framing the ride, while there is a header. */
+  const hasHeaderRef = useRef(false);
+  useEffect(() => { hasHeaderRef.current = Boolean(controls); }, [controls]);
   /** The draggable marker for the picked point, kept out of the route's markers. */
   const pickedMarkerRef = useRef<maplibregl.Marker | null>(null);
   /** The "where am I" button, added only while a row is being picked. */
   const geolocateRef = useRef<maplibregl.GeolocateControl | null>(null);
-  /** The pending-mark bar, measured to keep the violet marker out from under it. */
-  const pendingBarRef = useRef<HTMLDivElement | null>(null);
+  /** The header (and the off-road verdict under it), measured to keep the
+   *  pending marker out from under them. */
+  const headerRef = useRef<HTMLDivElement | null>(null);
+  /** The map-data credit beside TET is open (see the TET switch). */
+  const [creditOpen, setCreditOpen] = useState(false);
   /** The map exists. State, not a ref, because effects have to re-run on it. */
   const [ready, setReady] = useState(false);
   /**
@@ -2008,7 +2044,12 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
       // is exactly the row the legend and the full-screen button share. As a
       // collapsed ⓘ it is ~24 px in the corner, the legend can run to within
       // a gutter of it, and the credit is still one tap away.
-      attributionControl: { compact: true },
+      // Our own ⓘ beside the TET switch instead (see there). MapLibre's
+      // compact control kept landing where something else was — along the
+      // bottom edge, over the TET corner, as an empty white box under the zoom
+      // stack — and its wrapper would not take the look of the buttons around
+      // it. The credit is the same words, one tap away.
+      attributionControl: false,
     });
 
     map.addControl(new maplibregl.NavigationControl(), "top-right");
@@ -2168,6 +2209,9 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
       syncRef.current();
     });
 
+    // A pan or zoom the rider made himself (an `originalEvent` — ours have
+    // none): the planning map's framing leaves his view alone from then on.
+    map.on("movestart", (e) => { if ((e as { originalEvent?: Event }).originalEvent) userMovedRef.current = true; });
     mapRef.current = map;
     // A ref alone cannot wake the effects that need the map: this component
     // mounts with `mapRef` empty, and the pick-mode effects run for the first
@@ -2178,12 +2222,57 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
     return () => {
       map.remove();
       mapRef.current = null;
+      // `map.remove()` has already removed the geolocate control with it. A
+      // ref still holding it made the next map skip adding its own, and the
+      // next `removeControl` crash on the dead one ("reading 'off'") — seen
+      // on leaving edit mode after the map had been re-created in dev.
+      geolocateRef.current = null;
       loadedRef.current = false;
       setReady(false);
     };
   }, []);
 
   useEffect(() => {
+    /**
+     * Let a ride pin be dragged, in edit mode.
+     *
+     * The pin goes straight back where it was when the finger lifts, and the
+     * drop point becomes the pending mark for that pin's row instead: named,
+     * waiting for Confirm, cancellable. A pin that stayed where it was
+     * dropped while the line still ran through its old spot would be a
+     * marker and a route disagreeing — the one thing an edit must never show
+     * — and a drag let go a few metres off is exactly what the preview is for.
+     *
+     * `dragend` alone: MapLibre moves the marker under the finger by itself,
+     * and a request per pointer sample would be hundreds per drag. This is
+     * MapLibre's own marker drag, the one the pending mark has always had — not
+     * the DOM drag-and-drop for reordering rows that failed on iOS Safari three
+     * times, which is still ruled out.
+     */
+    const pinDraggable = (marker: maplibregl.Marker, home: [number, number], role: "start" | "via" | "finish", index: number) => {
+      marker.on("dragend", () => {
+        dragEndedAtRef.current = performance.now();
+        const { lat, lng } = marker.getLngLat();
+        marker.setLngLat(home);
+        pinDragRef.current?.(role, index, { lat, lon: lng });
+      });
+    };
+    /**
+     * A press on a ride pin while the map answers the form: that pin's row
+     * becomes active. Returns whether it was taken, so a pin with no form to
+     * answer keeps its card. The map's own click, which follows from the same
+     * gesture, is told to let it through (`sightClickAtRef`) — otherwise it
+     * would mark this very spot for the row that was active before.
+     */
+    const pressPin = (event: MouseEvent, role: "start" | "via" | "finish", index: number): boolean => {
+      const press = pinPressRef.current;
+      if (!press) return false;
+      event.stopPropagation();
+      sightClickAtRef.current = event.timeStamp;
+      if (performance.now() - dragEndedAtRef.current < 400) return true;
+      press(role, index);
+      return true;
+    };
     const syncData = () => {
       const map = mapRef.current;
       if (!map || !loadedRef.current) return;
@@ -2220,9 +2309,12 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
       const key = segments?.features?.length
         ? `${segments.features.length}:${JSON.stringify(segments.features[0].geometry.coordinates[0] ?? [])}:${JSON.stringify(segments.features[segments.features.length - 1].geometry.coordinates.at(-1) ?? [])}`
         : null;
+      // Not in edit mode: an edited stretch is a correction to a ride already
+      // on screen, and drawing the whole ride in again from the start would
+      // present it as a new one.
       if (key && key !== revealedRef.current) {
         revealedRef.current = key;
-        revealRoute(map);
+        if (!pinsDraggable) revealRoute(map);
       }
 
       if (map.getLayer("tet-line")) {
@@ -2248,9 +2340,11 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
       markerRef.current?.remove();
       markerRef.current = null;
       if (start) {
-        markerRef.current = new maplibregl.Marker({ color: START_PIN_COLOR })
+        markerRef.current = new maplibregl.Marker({ color: START_PIN_COLOR, draggable: pinsDraggable })
           .setLngLat([start.lon, start.lat])
           .addTo(map);
+        if (pinsDraggable) pinDraggable(markerRef.current, [start.lon, start.lat], "start", 0);
+        markerRef.current.getElement().addEventListener("click", (event) => { pressPin(event, "start", 0); });
         endpointDecorationsRef.current.push(
           new maplibregl.Marker({
             // The place's own name where there is one, so the tooltip and the
@@ -2269,9 +2363,11 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
         // geometry, same anchor, same tip on the coordinate. No element of our
         // own, so there is no box to clip the teardrop and no `anchor` to get
         // wrong — see `FINISH_PIN_COLOR` for why the chequers went.
-        destMarkerRef.current = new maplibregl.Marker({ color: FINISH_PIN_COLOR })
+        destMarkerRef.current = new maplibregl.Marker({ color: FINISH_PIN_COLOR, draggable: pinsDraggable })
           .setLngLat([destination.lon, destination.lat])
           .addTo(map);
+        if (pinsDraggable) pinDraggable(destMarkerRef.current, [destination.lon, destination.lat], "finish", 0);
+        destMarkerRef.current.getElement().addEventListener("click", (event) => { pressPin(event, "finish", 0); });
         endpointDecorationsRef.current.push(
           new maplibregl.Marker({
             element: endpointLabelElement({ title: destination.label ?? m.mapFinish, label: m.mapFinish }),
@@ -2363,6 +2459,9 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
         // would cost. A typed stop carries no mark and is never hidden.
         if (entry) el.dataset.sight = "1";
         el.addEventListener("click", (event) => {
+          // Answering the form, a press makes this stop's row active instead
+          // of opening its card (`pressPin`).
+          if (pressPin(event, "via", i)) return;
           // Same reason the badges stop it: otherwise the click reaches the
           // map and opens the segment card underneath this one.
           event.stopPropagation();
@@ -2373,61 +2472,81 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
             .addTo(map);
         });
         /**
-         * A stop the rider can drag to somewhere better.
-         *
-         * Offered only on a result map that accepts edits (`onEditRoute`), so
-         * a shared ride or a composing map keeps its pins fixed. The move is
-         * reported on `dragend` alone: each one is two BRouter legs, and a
-         * request per pointer sample would be a few hundred per drag. The
-         * marker follows the finger regardless, because MapLibre moves it
-         * itself — what waits for the release is the routing.
-         *
-         * This is not the drag-and-drop CLAUDE.md rules out. That rule is
-         * about reordering the form's DOM rows on iOS Safari, where three
-         * attempts failed and a tap was the working answer. This is MapLibre's
-         * own marker drag, the same implementation the picked point has used
-         * successfully since pick mode shipped.
+         * A stop the rider can drag to somewhere better — wherever the map
+         * answers the form (planning and edit mode), so a shared ride and a
+         * plain result keep their pins fixed.
+         * See `pinDraggable` for what a drag does and does not do.
          */
-        const draggable = Boolean(onEditRouteRef.current);
-        const marker = new maplibregl.Marker({ element: el, draggable })
+        const marker = new maplibregl.Marker({ element: el, draggable: pinsDraggable })
           .setLngLat([place.lon, place.lat])
           .addTo(map);
-        if (draggable) {
+        if (pinsDraggable) {
           el.style.cursor = "grab";
           el.title = `${place.label} — ${m.mapDragStopHint}`;
-          marker.on("dragend", () => {
-            // Re-read the ref rather than closing over the prop: by the time a
-            // drag ends, an earlier edit may have replaced the handler.
-            if (editingRouteRef.current) {
-              // A leg is already being routed. Put the pin back where the ride
-              // still has it rather than leaving it somewhere the line does
-              // not go — a marker that has moved and a line that has not is
-              // the one thing this feature must never show.
-              marker.setLngLat([place.lon, place.lat]);
-              return;
-            }
-            const { lat, lng } = marker.getLngLat();
-            onEditRouteRef.current?.({ how: "drag", at: { lat, lon: lng }, viaIndex: i });
-          });
+          pinDraggable(marker, [place.lon, place.lat], "via", i);
         }
         return marker;
       });
 
       if (segments && segments.features.length > 0) {
-        const bounds = new maplibregl.LngLatBounds();
-        for (const f of segments.features) {
-          for (const c of f.geometry.coordinates) bounds.extend(c as [number, number]);
+        // In edit mode the view is the rider's: he is zoomed in on the place
+        // he is correcting, and every Confirm re-framing the whole ride would
+        // throw him back out of it — so it is framed once, when this map first
+        // draws it (on a phone the map moves into the editor and starts
+        // afresh), and then left alone. Anywhere else a new line is framed,
+        // clear of the header when there is one, so the start pin is never
+        // under it.
+        if (!pinsDraggable || !framedRef.current) {
+          framedRef.current = true;
+          const bounds = new maplibregl.LngLatBounds();
+          for (const f of segments.features) {
+            for (const c of f.geometry.coordinates) bounds.extend(c as [number, number]);
+          }
+          // With a header the top-right corner also carries the geolocate
+          // button under the zoom stack, which covered a finish pin at 375 px.
+          // At the bottom, wherever the legend is shown (the desktop, full
+          // screen) it and the TET switch above it take ~100 px of the corner
+          // a ride is often framed into — measured, they covered the start pin
+          // at 1280 px.
+          const header = hasHeaderRef.current;
+          const legend = containerRef.current?.parentElement?.querySelector<HTMLElement>("[data-map-legend]");
+          const legendH = legend && legend.offsetParent !== null ? legend.getBoundingClientRect().height + 48 : 0;
+          // On a phone the header row is at the bottom, on the full-screen
+          // button's line (see the header), and TET is at the top: the ride
+          // is framed clear of those instead.
+          const phoneHeader = header && window.matchMedia(PHONE_QUERY).matches;
+          map.fitBounds(bounds, {
+            padding: phoneHeader
+              ? { top: 56, bottom: 48 + legendH + 56, left: 48, right: 72 }
+              : { top: header ? 72 : 48, bottom: 48 + legendH, left: 48, right: header ? 72 : 48 },
+            duration: 800,
+          });
         }
-        map.fitBounds(bounds, { padding: 48, duration: 800 });
-      } else if (start || (via && via.length)) {
+      } else if (start || destination || (via && via.length)) {
         // No route yet — frame the places the rider has confirmed, so the map
         // answers "is this the right Valmiera?" before a generation is spent.
-        const pins = [...(start ? [start] : []), ...(via ?? [])];
-        if (pins.length === 1) map.easeTo({ center: [pins[0].lon, pins[0].lat], zoom: 11, duration: 600 });
-        else if (pins.length > 1) {
+        // The finish too: a finish picked in the form's own field was left
+        // off-screen, and the rider could not see where his ride ended
+        // (2026-09-25).
+        //
+        // Only when a pin is out of view, and never after the rider has
+        // panned or zoomed the map himself since the last time it was framed
+        // (rider, 2026-09-25): a confirmed place off-screen is shown, a view
+        // he chose is left alone, and a Confirm with every pin in sight no
+        // longer throws the map out to zoom 11.
+        const pins = [...(start ? [start] : []), ...(via ?? []), ...(destination ? [destination] : [])];
+        const view = map.getBounds();
+        const outOfView = pins.some((p) => !view.contains([p.lon, p.lat]));
+        if (!outOfView || userMovedRef.current) {
+          // Left as it is.
+        } else if (pins.length === 1) {
+          map.easeTo({ center: [pins[0].lon, pins[0].lat], zoom: Math.max(map.getZoom(), 11), duration: 600 });
+        } else if (pins.length > 1) {
           const bounds = new maplibregl.LngLatBounds();
           for (const p of pins) bounds.extend([p.lon, p.lat]);
-          map.fitBounds(bounds, { padding: 64, maxZoom: 12, duration: 700 });
+          // Clear of the header row — at the top on the desktop, at the
+          // bottom on a phone — so no pin is framed under it.
+          map.fitBounds(bounds, { padding: planPadding(), maxZoom: 12, duration: 700 });
         }
       }
     };
@@ -2436,76 +2555,168 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
     syncData();
     // `locale` is in the list so switching language re-labels the badges that
     // are already on the map, rather than waiting for the next generation.
-  }, [segments, start, destination, via, showTet, locale]);
+  }, [segments, start, destination, via, showTet, locale, pinsDraggable]);
 
   /**
-   * The picked point, as a marker the rider can drag.
-   *
-   * Its own colour — violet, against the green start, the red finish and the
-   * white sight pills — because it is a fourth kind of thing: a point that is
-   * being *decided*, not yet one of the ride's places. As soon as the row is
-   * filled the ordinary start/finish/stop marker appears under it and this one
-   * goes away with the pick mode that created it.
-   *
-   * `dragend` only. The reverse lookup behind a move is a network request, and
-   * one per pointer sample would be a few hundred requests per drag; the rider
-   * sees the marker follow his finger either way, because MapLibre moves it
-   * itself.
+   * The active row's own pin, raised: larger, on top, with a slow orange ring
+   * — so a rider who taps into „Caur (2)” in the form sees which pin that is
+   * (rider, 2026-09-25). Found by its coordinates among the ride's own pins,
+   * and re-applied whenever they are rebuilt (same deps as above, declared
+   * after, so it runs after them). The other pins stay as they are.
    */
+  const activePlace = controls?.activePlace ?? null;
+  const activeKey = activePlace ? `${activePlace.lat},${activePlace.lon}` : "";
+  useEffect(() => {
+    const markers = [markerRef.current, destMarkerRef.current, ...viaMarkersRef.current].filter((x): x is maplibregl.Marker => Boolean(x));
+    const undo: (() => void)[] = [];
+    for (const marker of markers) {
+      const { lat, lng } = marker.getLngLat();
+      if (!activePlace || Math.abs(lat - activePlace.lat) > 1e-6 || Math.abs(lng - activePlace.lon) > 1e-6) continue;
+      const el = marker.getElement();
+      // MapLibre owns the element's transform, so the scale goes on what is
+      // inside a default pin (its SVG) and the ring on the element itself.
+      const inner = el.querySelector("svg") as SVGElement | null;
+      const disc = !inner;
+      // Above the other pins (a numbered stop is 2 already); the pending
+      // marker, also 3 and added later, still paints on top of it.
+      const wasZ = el.style.zIndex;
+      el.style.zIndex = "3";
+      el.dataset.activePin = "1";
+      if (inner) { inner.style.transformOrigin = "50% 100%"; inner.style.transform = "scale(1.2)"; }
+      const ring = el.animate(
+        disc
+          ? [{ boxShadow: "0 0 0 0 rgba(245,99,0,0.55)" }, { boxShadow: "0 0 0 8px rgba(245,99,0,0)" }]
+          : [{ filter: "drop-shadow(0 0 0 rgba(245,99,0,0.8))" }, { filter: "drop-shadow(0 0 6px rgba(245,99,0,0.9))" }],
+        { duration: 1100, iterations: Infinity, direction: disc ? "normal" : "alternate" },
+      );
+      undo.push(() => { ring.cancel(); el.style.zIndex = wasZ; delete el.dataset.activePin; if (inner) inner.style.transform = ""; });
+    }
+    return () => { for (const u of undo) u(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeKey, segments, start, destination, via, showTet, locale, pinsDraggable]);
+
+  /**
+   * The pending mark — a point marked and not yet confirmed — as a marker the
+   * rider can drag.
+   *
+   * It wears the pin it will become: the green start, the red finish, or the
+   * orange stop disc with the number that row will get. It used to be a violet
+   * pin of its own, "a fourth kind of thing", and the rider found that
+   * illogical: he was marking the finish and saw something that was neither a
+   * finish nor anything else on the map. What says "not yet" instead is the
+   * way it is drawn — see-through and slowly pulsing, and a stop's disc with a
+   * dashed edge — so a pending finish and a confirmed finish sit side by side
+   * as the same pin, one of them still undecided.
+   *
+   * Rebuilt when the role or the number changes (the rider points the map at
+   * another row), moved otherwise. `dragend` only: the reverse lookup behind a
+   * move is a network request, and one per pointer sample would be a few
+   * hundred requests per drag; MapLibre moves the marker under the finger
+   * either way.
+   */
+  const pendingPin = controls?.pendingPin ?? null;
+  const pendingPinKey = pendingPin ? `${pendingPin.role}:${pendingPin.number ?? ""}` : "none";
+  const pendingPinKeyRef = useRef<string | null>(null);
+  const batchMode = Boolean(controls?.batchMode);
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    if (!pickedPoint) { pickedMarkerRef.current?.remove(); pickedMarkerRef.current = null; return; }
-    if (!pickedMarkerRef.current) {
-      const marker = new maplibregl.Marker({ color: "#7c3aed", draggable: true });
+    // In batch mode the marks are the batch's own pins (see below).
+    if (!pickedPoint || batchMode) {
+      pickedMarkerRef.current?.remove();
+      pickedMarkerRef.current = null;
+      pendingPinKeyRef.current = null;
+      return;
+    }
+    if (!pickedMarkerRef.current || pendingPinKeyRef.current !== pendingPinKey) {
+      pickedMarkerRef.current?.remove();
+      const role = pendingPin?.role ?? "via";
+      const marker = role === "via"
+        ? new maplibregl.Marker({ element: numberedStopElement(m.mapStop, pendingPin?.number ?? 1), draggable: true })
+        : new maplibregl.Marker({ color: role === "start" ? START_PIN_COLOR : FINISH_PIN_COLOR, draggable: true });
+      const el = marker.getElement();
+      el.dataset.pending = role;
       // Above the ride's own pins. The moment a tap fills the row, the start
       // (or finish) marker appears at exactly the same coordinates and — being
-      // added later — paints on top: measured, the violet marker was completely
-      // hidden behind the green one and there was nothing left to drag. The
-      // picked point is the thing being decided, so it wins while it exists.
-      marker.getElement().style.zIndex = "2";
+      // added later — paints on top: measured, the pending marker was
+      // completely hidden behind the green one and there was nothing left to
+      // drag. The point being decided wins while it exists.
+      el.style.zIndex = "3";
+      if (role === "via") el.style.borderStyle = "dashed";
+      // Opacity only: MapLibre owns this element's transform.
+      el.animate([{ opacity: 0.5 }, { opacity: 0.9 }], { duration: 900, iterations: Infinity, direction: "alternate", easing: "ease-in-out" });
       marker.on("dragend", () => {
         const { lat, lng } = marker.getLngLat();
         onPickedPointMoveRef.current?.({ lat, lon: lng });
       });
+      // A grabbed line point's connector follows the mark while it is dragged.
+      marker.on("drag", () => {
+        const { lat, lng } = marker.getLngLat();
+        connectorRef.current({ lat, lon: lng });
+      });
       pickedMarkerRef.current = marker;
+      pendingPinKeyRef.current = pendingPinKey;
     }
     pickedMarkerRef.current.setLngLat([pickedPoint.lon, pickedPoint.lat]).addTo(map);
     // The coordinates, not the object. The parent rebuilds it on every reverse
     // lookup, and an identity dependency would re-run `setLngLat` for a point
-    // that has not moved — harmless here, but it is the coordinates that this
-    // effect is actually about and the list should say so.
+    // that has not moved.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, pickedPoint?.lat, pickedPoint?.lon]);
+  }, [ready, pickedPoint?.lat, pickedPoint?.lon, pendingPinKey, batchMode]);
 
   /**
-   * Keep the violet marker clear of the pending bar.
+   * Keep the pending marker clear of the header.
    *
-   * The bar sits over the bottom of the map, and the marker lands wherever the
-   * rider tapped — so a tap low on a 42dvh phone map put the pin, or most of
-   * it, behind Confirm: he could not see what he was confirming. When the
-   * marker's tip is under the bar (or its body would be), the map is panned
-   * up just enough to stand it clear. Only then: a pin already in view is
-   * left exactly where the finger put it.
+   * Confirm and Cancel live in the header now, beside the field (rider,
+   * 2026-09-25: on the desktop the bar sat bottom-right while the search was
+   * top-left, and a searched address had no Confirm anywhere near it). The
+   * marker lands wherever the rider tapped, and a tap high on a phone map put
+   * the pin behind the header — he could not see what he was confirming. So
+   * when the marker's body is under the header (or the off-road verdict below
+   * it, about twice as tall), the map is panned down just enough to stand it
+   * clear. Only then: a pin already in view is left where the finger put it.
    *
-   * Keyed on what the bar shows as well as on the point, because the bar comes
-   * a moment after the tap — it waits for the reverse lookup that names the
-   * point — and it is only then that there is anything to be covered by; and
-   * because the off-road verdict replaces Confirm / Cancel with a card about
-   * twice as tall, which covered a pin the shorter bar had left in view
-   * (measured at 400 px).
+   * Keyed on what the header shows as well as on the point: the verdict comes
+   * a moment after Confirm and is the taller of the two.
    */
   const pendingShown = !controls?.pending ? "" : controls.pending.offRoad ? "verdict" : "confirm";
   useEffect(() => {
     const map = mapRef.current;
-    const bar = pendingBarRef.current;
+    const header = headerRef.current;
     const box = containerRef.current?.getBoundingClientRect();
-    if (!ready || !map || !bar || !box || !pickedPoint) return;
-    const barTop = bar.getBoundingClientRect().top - box.top;
-    const tip = map.project([pickedPoint.lon, pickedPoint.lat]).y;
-    const clearance = 12;
-    if (tip <= barTop - clearance) return;
-    map.panBy([0, tip - (barTop - clearance)], { duration: 300 });
+    // Never while a batch grows: the camera moves only when the rider moves it.
+    if (!ready || !map || !header || !box || !pickedPoint || !pendingShown || batchMode) return;
+    const clear = () => {
+      const el = pickedMarkerRef.current?.getElement();
+      if (!el) return;
+      const clearance = 12;
+      const rows = header.getBoundingClientRect();
+      const marker = el.getBoundingClientRect();
+      // On a phone the header row is at the bottom: the marker must stand
+      // above it, so the map is panned up instead of down.
+      if (window.matchMedia(PHONE_QUERY).matches) {
+        const rowsTop = rows.top - box.top;
+        const markerBottom = marker.bottom - box.top;
+        if (markerBottom <= rowsTop - clearance) return;
+        map.panBy([0, markerBottom - (rowsTop - clearance)], { duration: 300 });
+        return;
+      }
+      const headerBottom = rows.bottom - box.top;
+      const markerTop = marker.top - box.top;
+      if (markerTop >= headerBottom + clearance) return;
+      map.panBy([0, markerTop - (headerBottom + clearance)], { duration: 300 });
+    };
+    // A place picked from the search arrives with its own `easeTo` (see
+    // `pickCenter`), and the header's buttons change while that is still
+    // running. Measured before either waited: the pin was judged where the
+    // map *started*, and `panBy` cancelled the ease — the search pick was left
+    // in the map's corner at the old zoom. So a moving map is judged where it
+    // stops.
+    if (map.isMoving()) {
+      map.once("moveend", clear);
+      return () => { map.off("moveend", clear); };
+    }
+    clear();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, pendingShown, pickedPoint?.lat, pickedPoint?.lon]);
 
@@ -2547,6 +2758,164 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
   }, [ready, onPickPoint]);
 
   /**
+   * The planning line: the confirmed pins joined straight, in riding order,
+   * thin and dashed under the pins, and a pending mark's slot lighter still
+   * (`lib/map/plan-line.ts`). One source, two layers; empty when there is
+   * nothing to join, and never on a result or in edit mode, where the ride's
+   * own line says it.
+   */
+  const planLineKey = controls?.planLine ? JSON.stringify(controls.planLine) : "";
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const line = controls?.planLine ?? null;
+    const apply = () => {
+      const features: GeoJSON.Feature<GeoJSON.LineString, { kind: string }>[] = [];
+      if (line?.confirmed.length) features.push({ type: "Feature", properties: { kind: "confirmed" }, geometry: { type: "LineString", coordinates: line.confirmed } });
+      if (line?.pending?.length) features.push({ type: "Feature", properties: { kind: "pending" }, geometry: { type: "LineString", coordinates: line.pending } });
+      const data: GeoJSON.FeatureCollection<GeoJSON.LineString, { kind: string }> = { type: "FeatureCollection", features };
+      const source = map.getSource("plan-line") as maplibregl.GeoJSONSource | undefined;
+      if (source) { source.setData(data); return; }
+      map.addSource("plan-line", { type: "geojson", data });
+      map.addLayer({ id: "plan-line", type: "line", source: "plan-line", filter: ["==", ["get", "kind"], "confirmed"],
+        layout: { "line-cap": "round", "line-join": "round" },
+        paint: { "line-color": "#c2410c", "line-width": 2, "line-opacity": 0.6, "line-dasharray": ["literal", [2, 3]] } });
+      map.addLayer({ id: "plan-line-pending", type: "line", source: "plan-line", filter: ["==", ["get", "kind"], "pending"],
+        layout: { "line-cap": "round", "line-join": "round" },
+        paint: { "line-color": "#c2410c", "line-width": 2, "line-opacity": 0.35, "line-dasharray": ["literal", [0.5, 2]] } });
+    };
+    if (loadedRef.current) apply();
+    else { map.once("load", apply); return () => { map.off("load", apply); }; }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, planLineKey]);
+
+  /**
+   * A grabbed line point: a small white-bordered dot on the line where it was
+   * taken, and a thin dashed connector from it to where it is going — the
+   * pending mark, or the pointer while the line is being dragged. The dot is a
+   * marker (above the line, like the pins); the connector a GeoJSON line.
+   */
+  const grabMarkerRef = useRef<maplibregl.Marker | null>(null);
+  const grabAt = controls?.grab ?? null;
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    if (!grabAt) {
+      grabMarkerRef.current?.remove();
+      grabMarkerRef.current = null;
+    } else {
+      if (!grabMarkerRef.current) {
+        const el = document.createElement("div");
+        el.style.cssText = "width:14px;height:14px;border-radius:7px;background:#2563eb;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,0.35);pointer-events:none";
+        grabMarkerRef.current = new maplibregl.Marker({ element: el });
+      }
+      grabMarkerRef.current.setLngLat([grabAt.lon, grabAt.lat]).addTo(map);
+    }
+    const draw = (to: { lat: number; lon: number } | null) => {
+      const data: GeoJSON.FeatureCollection<GeoJSON.LineString> = {
+        type: "FeatureCollection",
+        features: grabAt && to ? [{ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: [[grabAt.lon, grabAt.lat], [to.lon, to.lat]] } }] : [],
+      };
+      if (!loadedRef.current) return;
+      const source = map.getSource("grab-line") as maplibregl.GeoJSONSource | undefined;
+      if (source) { source.setData(data); return; }
+      map.addSource("grab-line", { type: "geojson", data });
+      map.addLayer({ id: "grab-line", type: "line", source: "grab-line",
+        layout: { "line-cap": "round" },
+        paint: { "line-color": "#2563eb", "line-width": 2, "line-opacity": 0.8, "line-dasharray": ["literal", [1.5, 2]] } });
+    };
+    connectorRef.current = draw;
+    draw(pickedPoint ?? null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, grabAt?.lat, grabAt?.lon, pickedPoint?.lat, pickedPoint?.lon]);
+
+  /**
+   * The batch's pending stops, drawn as dashed numbered pins in the stop
+   * colour (the look a single pending stop has). A press selects one — ringed,
+   * with a small ✕ that drops it alone — and the next mark or a drag moves
+   * it; a pin the routable probe refused wears an amber edge. Rebuilt from the
+   * list each time it changes: a batch is a handful of pins.
+   */
+  const batchMarkersRef = useRef<maplibregl.Marker[]>([]);
+  const batchSelectRef = useRef(controls?.onBatchSelect);
+  const batchMoveRef = useRef(controls?.onBatchMove);
+  const batchDropRef = useRef(controls?.onBatchDrop);
+  useEffect(() => { batchSelectRef.current = controls?.onBatchSelect; batchMoveRef.current = controls?.onBatchMove; batchDropRef.current = controls?.onBatchDrop; });
+  const batchPins = controls?.batch ?? [];
+  const batchPinsKey = batchPins.map((b) => `${b.id}:${b.lat},${b.lon}:${b.number}:${b.selected ? 1 : 0}:${b.failing ? 1 : 0}`).join("|");
+  useEffect(() => {
+    const map = mapRef.current;
+    for (const marker of batchMarkersRef.current) marker.remove();
+    batchMarkersRef.current = [];
+    if (!map || !ready) return;
+    batchMarkersRef.current = batchPins.map((b) => {
+      const el = numberedStopElement(m.mapStop, b.number);
+      el.dataset.pending = "via";
+      el.dataset.batch = String(b.id);
+      el.style.borderStyle = "dashed";
+      el.style.zIndex = b.selected ? "4" : "3";
+      el.style.cursor = "grab";
+      if (b.failing) el.style.borderColor = "#f59e0b";
+      if (b.selected) el.style.boxShadow = "0 0 0 4px rgba(245,99,0,0.35), 0 1px 3px rgba(0,0,0,0.32)";
+      else el.animate([{ opacity: 0.55 }, { opacity: 0.95 }], { duration: 900, iterations: Infinity, direction: "alternate", easing: "ease-in-out" });
+      el.addEventListener("click", (event) => {
+        event.stopPropagation();
+        sightClickAtRef.current = event.timeStamp;
+        if (performance.now() - dragEndedAtRef.current < 400) return;
+        batchSelectRef.current?.(b.id);
+      });
+      if (b.selected) {
+        // The selected pin's own ✕: drop just this one.
+        const drop = document.createElement("button");
+        drop.type = "button";
+        drop.setAttribute("aria-label", m.batchDropOne);
+        drop.title = m.batchDropOne;
+        drop.textContent = "×";
+        drop.style.cssText = "position:absolute;top:-10px;right:-12px;width:18px;height:18px;border-radius:9px;background:#1c1917;color:#fff;font-size:13px;line-height:18px;text-align:center;border:1.5px solid #fff;padding:0;cursor:pointer";
+        drop.addEventListener("click", (event) => {
+          event.stopPropagation();
+          sightClickAtRef.current = event.timeStamp;
+          batchDropRef.current?.(b.id);
+        });
+        el.style.position = "relative";
+        el.appendChild(drop);
+      }
+      const marker = new maplibregl.Marker({ element: el, draggable: true }).setLngLat([b.lon, b.lat]).addTo(map);
+      marker.on("dragend", () => {
+        dragEndedAtRef.current = performance.now();
+        const { lat, lng } = marker.getLngLat();
+        batchMoveRef.current?.(b.id, { lat, lon: lng });
+      });
+      return marker;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, batchPinsKey, locale]);
+
+  /**
+   * After a batch is confirmed: every pin shown once, if one is off-screen —
+   * the one camera move a batch makes, and only when it is needed.
+   */
+  const fitToken = controls?.fitToken ?? 0;
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || !fitToken) return;
+    // A moment later, from the pins themselves: the confirmed stops reach this
+    // map as props a render or two after the token does.
+    const timer = setTimeout(() => {
+      const pins = [markerRef.current, destMarkerRef.current, ...viaMarkersRef.current]
+        .filter((x): x is maplibregl.Marker => Boolean(x))
+        .map((x) => x.getLngLat());
+      if (pins.length < 2) return;
+      const view = map.getBounds();
+      if (pins.every((p) => view.contains(p))) return;
+      const bounds = new maplibregl.LngLatBounds();
+      for (const p of pins) bounds.extend(p);
+      map.fitBounds(bounds, { padding: planPadding(), maxZoom: 13, duration: 700 });
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [ready, fitToken]);
+
+  /**
    * Take the map to where the row's place already is when pick mode opens.
    *
    * Zoom 14, not the ride's bounds: a rider correcting a pin needs to see
@@ -2555,8 +2924,33 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
    */
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !pickCenter) return;
-    map.easeTo({ center: [pickCenter.lon, pickCenter.lat], zoom: Math.max(map.getZoom(), 14), duration: 700 });
+    const box = containerRef.current?.getBoundingClientRect();
+    if (!map || !pickCenter || !box) return;
+    const phone = window.matchMedia(PHONE_QUERY).matches;
+    // Left where it is when the place is already comfortably in view — clear
+    // of the edges and of the header row (top on the desktop, bottom on a
+    // phone). Activating a row is "show me where this is", not "zoom me in",
+    // and a rider who has framed the ride himself keeps his frame (rider,
+    // 2026-09-25). Otherwise eased to it at village zoom, nudged away from
+    // the header row so the pin does not land under it.
+    const at = map.project([pickCenter.lon, pickCenter.lat]);
+    const rows = headerRef.current?.getBoundingClientRect();
+    const margin = 48;
+    const topEdge = !phone && rows ? rows.bottom - box.top + 12 : margin;
+    const bottomEdge = phone && rows ? rows.top - box.top - 12 : box.height - margin;
+    const inView = at.x >= margin && at.x <= box.width - margin && at.y >= topEdge + 24 && at.y <= bottomEdge;
+    if (inView && map.getZoom() >= 10) return;
+    // Far from the view (more than a view's width or height away) with other
+    // places in the ride: frame them all, so the rider sees where the new
+    // place sits in his ride rather than a village street with no context.
+    const far = at.x < -box.width || at.x > 2 * box.width || at.y < -box.height || at.y > 2 * box.height;
+    if (far && pickCenter.fit && pickCenter.fit.length > 1) {
+      const bounds = new maplibregl.LngLatBounds();
+      for (const p of pickCenter.fit) bounds.extend([p.lon, p.lat]);
+      map.fitBounds(bounds, { padding: planPadding(), maxZoom: 14, duration: 800 });
+      return;
+    }
+    map.easeTo({ center: [pickCenter.lon, pickCenter.lat], zoom: Math.max(map.getZoom(), 14), offset: [0, phone ? -40 : 30], duration: 700 });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, pickCenter?.token]);
 
@@ -2938,27 +3332,11 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
         : lineMeters(source?.geometry.coordinates ?? []);
 
       infoPopupRef.current?.remove();
-      const canAddStop = Boolean(onEditRouteRef.current);
       const popup = new maplibregl.Popup({ offset: 12, maxWidth: "260px", closeButton: true })
         .setLngLat(lngLat)
-        .setHTML(segmentInfoHtml(m, locale, props, meters, canAddStop))
+        .setHTML(segmentInfoHtml(m, locale, props, meters))
         .addTo(map);
       infoPopupRef.current = popup;
-      // The card's "add a stop here". Bound after `addTo`, which is when
-      // MapLibre has parsed the markup and the element exists. The point is
-      // the card's own anchor — where the rider tapped the line — rather than
-      // the segment's midpoint: he aimed at a place, and the stop belongs
-      // where he aimed.
-      if (canAddStop) {
-        popup.getElement()?.querySelector<HTMLButtonElement>("[data-add-stop]")
-          ?.addEventListener("click", (event) => {
-            event.stopPropagation();
-            if (editingRouteRef.current) return;
-            const at = maplibregl.LngLat.convert(lngLat);
-            popup.remove();
-            onEditRouteRef.current?.({ how: "tap", at: { lat: at.lat, lon: at.lng }, viaIndex: null });
-          });
-      }
       // The card and the highlight are one gesture: the rider should see which
       // line the numbers belong to. Keyed on the segment so tapping the same
       // one again closes both.
@@ -3000,6 +3378,10 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
       // returns before the segment lookup on purpose — a rider aiming at a
       // forest track is aiming at the drawn line as often as not, and opening
       // that road's card would both cover the point and leave the row empty.
+      // Edit mode: a click on the drawn line grabs that point of it — it wins
+      // over an active row (rider, 2026-09-25). The next click is where it
+      // goes, and that one reaches the pick below as the new stop's mark.
+      if (lineGrabRef.current && !grabbingRef.current && grabLineAt(e.point, e.lngLat)) return;
       const pick = onPickPointRef.current;
       if (pick) { pick({ lat: e.lngLat.lat, lon: e.lngLat.lng }); return; }
       const feature = featureAt(e.point);
@@ -3022,8 +3404,71 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
       openCard(e.lngLat, id, props);
     };
 
+    /**
+     * The drawn line under `point`, if any, grabbed there: the point is moved
+     * onto the line itself and the stops before it counted along it, and the
+     * form is told (`onLineGrab`). Only the route's own layers count — a pin,
+     * a sight or a badge is a marker above the canvas and never reaches here.
+     */
+    const grabLineAt = (point: maplibregl.Point, lngLat: maplibregl.LngLat): boolean => {
+      const grab = lineGrabRef.current;
+      if (!grab || !featureAt(point)) return false;
+      const line: Point[] = featuresRef.current.flatMap((f, i) => (f.geometry.coordinates as Point[]).slice(i === 0 ? 0 : 1));
+      if (line.length < 2) return false;
+      const cum = cumulative(line);
+      const near = nearestAlong([lngLat.lng, lngLat.lat], line, cum);
+      const on = pointAtDistance(line, cum, near.alongMeters).point;
+      const slot = (viaRef.current ?? []).filter((v) => nearestAlong([v.lon, v.lat], line, cum).alongMeters < near.alongMeters).length;
+      grab({ lat: on[1], lon: on[0], slot });
+      return true;
+    };
+
+    /**
+     * Press on the line and drag: the same grab in one gesture. Only a press
+     * that lands on the route layer starts it — `preventDefault` there stops
+     * the map panning — and anywhere else the map pans as it always has. The
+     * drag draws the connector live; letting go is the new spot's mark, which
+     * then waits for Confirm like any other. Mouse only: on a touch screen a
+     * press on a line is also the start of a swipe, and taking it would stop
+     * the rider scrolling the map; there the line is grabbed by a tap.
+     */
+    let lineDrag: { start: maplibregl.Point; lngLat: maplibregl.LngLat; grabbed: boolean; last: maplibregl.LngLat } | null = null;
+    const onMouseDown = (e: maplibregl.MapMouseEvent) => {
+      if (!lineGrabRef.current || grabbingRef.current || e.originalEvent.button !== 0 || !featureAt(e.point)) return;
+      e.preventDefault();
+      lineDrag = { start: e.point, lngLat: e.lngLat, grabbed: false, last: e.lngLat };
+    };
+    const onDragMove = (e: maplibregl.MapMouseEvent) => {
+      if (!lineDrag) return;
+      lineDrag.last = e.lngLat;
+      if (!lineDrag.grabbed && lineDrag.start.dist(e.point) > 5) {
+        lineDrag.grabbed = grabLineAt(lineDrag.start, lineDrag.lngLat);
+      }
+      if (lineDrag.grabbed) connectorRef.current({ lat: e.lngLat.lat, lon: e.lngLat.lng });
+    };
+    const onMouseUp = (e: maplibregl.MapMouseEvent) => {
+      const drag = lineDrag;
+      lineDrag = null;
+      if (!drag?.grabbed) return;
+      // The click MapLibre may still send for this release is not a new grab.
+      sightClickAtRef.current = e.originalEvent.timeStamp;
+      const to = { lat: e.lngLat.lat, lon: e.lngLat.lng };
+      // The form opens the new row on the grab; its pick handler arrives a
+      // render later, and the release can beat it.
+      let tries = 0;
+      const deliver = () => {
+        const pick = onPickPointRef.current;
+        if (pick && grabbingRef.current) { pick(to); return; }
+        if (++tries < 40) setTimeout(deliver, 25);
+      };
+      deliver();
+    };
+
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { clearHighlight(); clearFocus(); } };
 
+    map.on("mousedown", onMouseDown);
+    map.on("mousemove", onDragMove);
+    map.on("mouseup", onMouseUp);
     map.on("mousemove", onMouseMove);
     map.on("mouseout", hideHover);
     map.on("click", onClick);
@@ -3031,6 +3476,9 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
     map.on("movestart", hideHover);
     window.addEventListener("keydown", onKey);
     return () => {
+      map.off("mousedown", onMouseDown);
+      map.off("mousemove", onDragMove);
+      map.off("mouseup", onMouseUp);
       map.off("mousemove", onMouseMove);
       map.off("mouseout", hideHover);
       map.off("click", onClick);
@@ -3071,105 +3519,156 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
         className="pointer-events-none absolute left-0 top-0 z-10 grid items-center justify-items-start gap-x-2 gap-y-1 whitespace-nowrap rounded-md bg-white/95 px-2 py-1 text-[11px] font-medium leading-none text-foreground shadow-sm backdrop-blur"
       />
 
-      {/* Everything that sits over the top of the map, in one column: the
-          planning header first (the hint, "+ Pietura" and the place field),
-          then the layer switches.
+      {/* Everything that sits over the top of the map: the planning (and edit)
+          header, or — on a result — the sights switch.
 
-          One box rather than several corners, because `left-3 right-14` is the
-          one rule that keeps every top overlay clear of the zoom controls at
-          every width, and the planning header has to obey it too. */}
-      <div className="absolute left-3 right-14 top-3 flex flex-col gap-2">
+          `left-3 right-14` is the one rule that keeps every top overlay clear
+          of the zoom controls at every width. The header breaks it on purpose
+          while its field has focus (`has-[input:focus]:right-3`): the rider is
+          typing a name, not zooming, and the dropdown under the field needs
+          the width. The field's focus, not `focus-within`: pressing "+"
+          focuses the button itself, and `focus-within` then hid it under the
+          pointer between mousedown and mouseup — measured, the release landed
+          on the field's label and the click never reached the button. */}
+      {/* Above the bottom row (TET, the pending bar) while the field has
+          focus: its dropdown runs down over them. */}
+      {/* On a phone (below `md`) the header row goes to the bottom of the map,
+          where the thumb is (rider, 2026-09-25): ONE row with the full-screen
+          button — which MapPanel draws at the left of exactly this line, above
+          the legend (`--map-legend`, 0 px on the inline strip) — then the
+          field, then ✓ / "+" and ✕. The off-road verdict stacks above it
+          (`flex-col-reverse`). TET takes the top-left; the ⓘ credit is under
+          the zoom stack, top-right. */}
+      <div ref={headerRef} className={`absolute left-3 top-3 flex flex-col gap-2 ${controls ? "right-14 z-10 has-[input:focus]:right-3 has-[input:focus]:z-30 max-md:top-auto max-md:left-[3.75rem] max-md:right-3 max-md:bottom-[calc(0.75rem+var(--map-legend,0px))] max-md:flex-col-reverse max-md:z-20" : "right-14"}`}>
       {controls && (
-        /* The planning header. At 375 px this is two lines of ~34 px and the
-           map keeps the rest of its height — measured; a field of the form's
-           own size (a label row plus a 16 px input) took 64 px and left the
-           map barely taller than the header. So the field is the compact
-           PlaceInput: no label, one line, the tick and the region moving into
-           the dropdown's own rows instead of above the input.
+        /* The header, in ONE row — backlog 30. The rider's screenshot at
+           375 px showed three stacked pills (the field, "+ Pietura", the hint)
+           with TET under them: 127 px of a 341 px map, the top third, gone.
 
-           The search and the button share the first line, the hint has the
-           second to itself. The hint is the thing the rider reads on every
-           tap, so it is never the thing that gets truncated by a long place
-           name beside it. */
-        <div className="flex flex-col gap-1.5">
-          <div className="flex items-center gap-1.5">
-            <PlaceInput
-              className="min-w-0 flex-1"
-              value={controls.search.value}
-              onChange={controls.search.onChange}
-              onPick={controls.search.onPick}
-              confirmed={controls.search.confirmed}
-              near={controls.search.near}
-              placeholder={controls.search.placeholder}
-              compact
-            />
-            {/* Disabled at the cap and saying why, rather than absent: a
-                button that comes and goes is a control the rider cannot learn
-                the position of, and the question the dead button raises ("why
-                can I not add another?") is exactly what its tooltip answers.
-                It never does nothing — at the cap it is `disabled`, so the
-                press does not land at all. */}
+           Now: the field, whose leading tag names the row the map answers and
+           whose placeholder says what a mark does ("Atzīmē kartē vai meklē…"),
+           and beside it either a round "+" that makes a new stop — the words
+           "+ Pietura" are its tooltip and its name for a screen reader — or,
+           while a mark is pending, Confirm and Cancel. They used to be a bar
+           at the bottom of the map; on the desktop that put Confirm in the
+           far corner from the field the rider had just searched in (rider,
+           2026-09-25). The full hint is the `role="status"` a screen reader
+           hears whenever the active row changes, and the field's tooltip.
+
+           With no row active the field is off and says what to do instead
+           („Izvēlies rindu vai pievieno pieturu”); "+" stays, since adding a
+           stop is one of the two answers. */
+        <div className="group flex items-center gap-1.5 md:max-w-md">
+          <span role="status" className="sr-only">{controls.hint}</span>
+          <PlaceInput
+            className="min-w-0 flex-1"
+            value={controls.search.value}
+            onChange={controls.search.onChange}
+            onPick={controls.search.onPick}
+            confirmed={controls.search.confirmed}
+            near={controls.search.near}
+            placeholder={controls.search.placeholder}
+            disabled={controls.search.disabled}
+            title={controls.hint}
+            // At the bottom of a phone map the suggestions open upward, over
+            // the map, instead of off its lower edge.
+            placement="above-on-phone"
+            leading={controls.rowLabel ? (
+              <span aria-hidden="true" className="shrink-0 rounded-full bg-[#fff3ea] px-2 py-0.5 text-[11px] font-semibold text-[#bd4b00]">
+                {controls.rowLabel}
+              </span>
+            ) : undefined}
+            compact
+          />
+          {controls.pending && !controls.pending.offRoad ? (
+            /* Not hidden while the field has focus, unlike "+": a place just
+               picked from the field's list is exactly when Confirm is needed,
+               and the field may still hold the focus. On a phone the Confirm
+               is its tick alone at every width (its words are its name and
+               tooltip), so the field keeps room for the place's name. */
+            <>
+              <button type="button" onClick={controls.pending.onConfirm ?? undefined} disabled={!controls.pending.onConfirm}
+                aria-label={controls.pending.confirmLabel} title={controls.pending.confirmLabel}
+                className="flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-full bg-[#f56300] px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#d85600] disabled:opacity-60 max-md:w-10 max-md:px-0">
+                <Check aria-hidden="true" className="size-4 shrink-0" /><span className="max-md:hidden">{controls.pending.confirmLabel}</span>
+              </button>
+              {controls.pending.undo && (
+                <button type="button" onClick={controls.pending.undo.onUndo}
+                  aria-label={controls.pending.undo.label} title={controls.pending.undo.label}
+                  className="flex size-10 shrink-0 items-center justify-center rounded-full border border-[#ececf0] bg-white/95 text-stone-700 shadow-sm backdrop-blur transition-colors hover:bg-white">
+                  <Undo2 aria-hidden="true" className="size-4" />
+                </button>
+              )}
+              <button type="button" onClick={controls.pending.onCancel}
+                aria-label={controls.pending.cancelLabel} title={controls.pending.cancelLabel}
+                className="flex size-10 shrink-0 items-center justify-center rounded-full border border-[#ececf0] bg-white/95 text-stone-700 shadow-sm backdrop-blur transition-colors hover:bg-white">
+                <X aria-hidden="true" className="size-5" />
+              </button>
+            </>
+          ) : (
+            /* Disabled at the cap and saying why, rather than absent: a button
+               that comes and goes is a control the rider cannot learn the
+               position of. It never does nothing — at the cap it is
+               `disabled`, so the press does not land at all. Hidden while the
+               field has focus, which is when the field takes the whole row. */
             <button
               type="button"
               onClick={controls.onAddStop ?? undefined}
-              disabled={!controls.onAddStop}
+              disabled={!controls.onAddStop || Boolean(controls.pending)}
               title={controls.onAddStop ? controls.addStopLabel : controls.addStopFullLabel}
               aria-label={controls.onAddStop ? controls.addStopLabel : controls.addStopFullLabel}
-              className="h-10 shrink-0 rounded-full border border-[#ececf0] bg-white/95 px-3 text-xs font-semibold text-[#bd4b00] shadow-sm backdrop-blur transition-colors hover:bg-white disabled:text-stone-400 disabled:hover:bg-white/95"
+              className="flex size-10 shrink-0 items-center justify-center rounded-full border border-[#ececf0] bg-white/95 text-[#bd4b00] shadow-sm backdrop-blur transition-colors hover:bg-white disabled:text-stone-400 disabled:hover:bg-white/95 group-has-[input:focus]:hidden"
             >
-              {controls.addStopLabel}
+              <Plus aria-hidden="true" className="size-5" />
             </button>
-          </div>
-          {/* The one hint line. It says what the next tap does and names the
-              row it does it to, for as long as the map is being planned on —
-              every other hint the map used to carry has gone, because a map
-              with two instructions on it is a map where a tap means whichever
-              one the rider happened to read. */}
-          <span
-            role="status"
-            className="flex items-center gap-1.5 self-start rounded-full border border-[#f56300]/30 bg-[#fff3ea]/95 px-3 py-1.5 text-xs font-medium text-[#bd4b00] shadow-sm backdrop-blur"
-          >
-            <MapPinPlus aria-hidden="true" className="size-3.5 shrink-0" />
-            {controls.hint}
-          </span>
+          )}
+          {/* ↶: one step back — planning's changes, or the edit history —
+              beside "+", disabled when there is nothing to take back. The
+              batch has its own ↶ while it is open (above). */}
+          {controls.undo && !controls.pending && (
+            <button type="button" onClick={controls.undo.onUndo ?? undefined} disabled={!controls.undo.onUndo}
+              aria-label={controls.undo.label} title={controls.undo.label}
+              className="flex size-10 shrink-0 items-center justify-center rounded-full border border-[#ececf0] bg-white/95 text-stone-700 shadow-sm backdrop-blur transition-colors hover:bg-white disabled:text-stone-300 disabled:hover:bg-white/95 group-has-[input:focus]:hidden">
+              <Undo2 aria-hidden="true" className="size-4" />
+            </button>
+          )}
         </div>
       )}
-      {/* The map's two layer switches, in one row.
-          `flex-wrap` because "Vaatamisväärsused" beside TET is wider than a
-          375 px phone: the second switch drops onto its own line rather than
-          running under the zoom controls on the right. */}
-      <div className="flex flex-wrap items-center gap-2">
-      <button
-        type="button"
-        onClick={() => onToggleTet(!showTet)}
-        className="flex items-center gap-2 rounded-full border border-[#ececf0] bg-white/95 px-3 py-1.5 text-xs font-medium text-foreground shadow-sm backdrop-blur transition-colors hover:bg-white"
-      >
-        <span
-          className="inline-block h-[3px] w-4 rounded-full"
-          style={{ background: TET_COLOR, opacity: showTet ? 0.9 : 0.3 }}
-        />
-        TET
-        <span
-          className={`flex h-4 w-7 items-center rounded-full p-0.5 transition-colors ${
-            showTet ? "justify-end bg-[#f56300]" : "justify-start bg-[#e9e9eb]"
-          }`}
-        >
-          <span className="h-3 w-3 rounded-full bg-white shadow-sm" />
-        </span>
-      </button>
-      {/* The sights switch: the same pill, the same row, the same colours —
-          the rider asked for one control style on the map, and two switches
-          that looked different would read as two different kinds of thing.
-          Its swatch is a miniature of the mark it governs (a white pill with
-          a stone border) rather than a colour sample, because what it turns on
-          is a shape, not a line colour.
+      {/* The off-road verdict, directly under the header it answers: the pin
+          stays where he put it and the answer sits beside the Confirm he just
+          pressed. `role="alert"`: it arrives after a press and replaces what
+          Confirm was about to do. */}
+      {controls?.pending?.offRoad && (
+        <div role="alert" className="space-y-2 rounded-2xl border border-amber-300 bg-amber-50/95 p-2.5 shadow-md backdrop-blur md:max-w-md">
+          <div className="flex gap-2 text-xs font-medium text-amber-900">
+            <TriangleAlert aria-hidden="true" className="mt-px size-3.5 shrink-0" />
+            <span className="min-w-0 flex-1">{controls.pending.offRoad.title}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            {controls.pending.offRoad.onMove && (
+              <button type="button" onClick={controls.pending.offRoad.onMove}
+                className="h-9 flex-1 rounded-full bg-[#f56300] px-3 text-xs font-semibold text-white transition hover:bg-[#d85600]">
+                {controls.pending.offRoad.moveLabel}
+              </button>
+            )}
+            <button type="button" onClick={controls.pending.offRoad.onDismiss}
+              className={`h-9 rounded-full border border-amber-300 bg-white/80 px-3 text-xs font-medium text-amber-900 transition hover:bg-amber-100 ${controls.pending.offRoad.onMove ? "shrink-0" : "flex-1"}`}>
+              {controls.pending.offRoad.dismissLabel}
+            </button>
+          </div>
+        </div>
+      )}
+      {/* The sights switch, where it has always been on a result. Not while
+          the header is up: planning has no ride and so no sights, and in edit
+          mode a tap is a mark for the active row — a second row of controls
+          over the map would bring back the clutter the header just shed.
 
           Only once there is a route. Sights are the ones a *ride* passes or
-          runs near, so with no route there are none to show and the switch
-          governed nothing — it sat over the map a rider was using to choose a
-          starting point, promising something it could not deliver. TET stays:
-          where the trail runs is worth knowing before the ride exists. */}
-      {segments && segments.features.length > 0 && (
+          runs near, so with no route there are none to show. Its swatch is a
+          miniature of the mark it governs (a white pill with a stone border),
+          because what it turns on is a shape, not a line colour. */}
+      {!controls && segments && segments.features.length > 0 && (
+      <div className="flex flex-wrap items-center gap-2">
       <button
         type="button"
         onClick={() => onToggleSights(!showSights)}
@@ -3194,69 +3693,53 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
           <span className="h-3 w-3 rounded-full bg-white shadow-sm" />
         </span>
       </button>
+      </div>
       )}
       </div>
-      </div>
-      {/* The pending mark's bar: Confirm / Cancel, or the off-road verdict
-          with its Move / Cancel. Only while a point is marked and not yet
-          confirmed, and only on the planning map — `controls` is never handed
-          to a result map.
-
-          Above everything else at the bottom. On a phone it spans the map and
-          sits over the full-screen button, which MapPanel stacks over the
-          legend (`--map-legend` is its measured height, 0 px on the inline
-          strip where the legend is hidden) — 0.75 rem inset + 2.5 rem button
-          + 0.5 rem gap. On the desktop there is no full-screen button, so it
-          goes straight above the legend, at the right, where it clears both
-          the legend in the left corner and the attribution under it.
-
-          `pointer-events-none` on the wrapper and `auto` on what is drawn:
-          the gaps between the buttons are map, and a tap there marks the map
-          as it would anywhere else. The marker is kept clear of it by the
-          effect above. */}
-      {controls?.pending && (
-        <div
-          ref={pendingBarRef}
-          className="pointer-events-none absolute bottom-[calc(3.75rem+var(--map-legend,0px))] left-3 right-3 z-20 md:bottom-[calc(0.75rem+var(--map-legend,0px))] md:left-auto md:w-[22rem]"
+      {/* The TET switch, on the bottom row — backlog 30 moved it off the top,
+          where it sat under the header and hid the corner the ride is framed
+          into. On a phone it sits beside the full-screen button (same inset,
+          lifted over the legend with it in full screen); on the desktop,
+          where that button does not exist, directly above the legend in the
+          same corner. */}
+      {/* The TET switch and, right of it on the same line, the map-data
+          credit — an ⓘ that opens "© OpenStreetMap contributors" inside the
+          map (rider, 2026-09-25). One positioned group, so the two always sit
+          together wherever TET goes: the top-left on a phone while the header
+          row is at the bottom, beside the full-screen button on a phone
+          result, above the legend on the desktop. */}
+      <div className={`absolute bottom-[calc(1.125rem+var(--map-legend,0px))] left-[3.75rem] z-10 flex max-w-[calc(100%-4.5rem)] items-center gap-1.5 md:bottom-[calc(0.75rem+var(--map-legend,0px))] md:left-3 ${controls ? "max-md:bottom-auto max-md:left-3 max-md:top-3" : ""}`}>
+      <button
+        type="button"
+        onClick={() => onToggleTet(!showTet)}
+        aria-pressed={showTet}
+        className="flex h-[30px] shrink-0 items-center gap-2 rounded-full border border-[#ececf0] bg-white/95 px-3 text-xs font-medium text-foreground shadow-sm backdrop-blur transition-colors hover:bg-white"
+      >
+        <span
+          className="inline-block h-[3px] w-4 rounded-full"
+          style={{ background: TET_COLOR, opacity: showTet ? 0.9 : 0.3 }}
+        />
+        TET
+        <span
+          className={`flex h-4 w-7 items-center rounded-full p-0.5 transition-colors ${
+            showTet ? "justify-end bg-[#f56300]" : "justify-start bg-[#e9e9eb]"
+          }`}
         >
-          {controls.pending.offRoad ? (
-            /* The verdict, where the rider is looking: the pin stays where he
-               put it and the answer sits over the map beside it. Its own card
-               takes taps — it is a thing to read, not a gap in the bar.
-               `role="alert"`: it arrives after a press and replaces what
-               Confirm was about to do. */
-            <div role="alert" className="pointer-events-auto space-y-2 rounded-2xl border border-amber-300 bg-amber-50/95 p-2.5 shadow-md backdrop-blur">
-              <div className="flex gap-2 text-xs font-medium text-amber-900">
-                <TriangleAlert aria-hidden="true" className="mt-px size-3.5 shrink-0" />
-                <span className="min-w-0 flex-1">{controls.pending.offRoad.title}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                {controls.pending.offRoad.onMove && (
-                  <button type="button" onClick={controls.pending.offRoad.onMove}
-                    className="h-9 flex-1 rounded-full bg-[#f56300] px-3 text-xs font-semibold text-white transition hover:bg-[#d85600]">
-                    {controls.pending.offRoad.moveLabel}
-                  </button>
-                )}
-                <button type="button" onClick={controls.pending.offRoad.onDismiss}
-                  className={`h-9 rounded-full border border-amber-300 bg-white/80 px-3 text-xs font-medium text-amber-900 transition hover:bg-amber-100 ${controls.pending.offRoad.onMove ? "shrink-0" : "flex-1"}`}>
-                  {controls.pending.offRoad.dismissLabel}
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2">
-              <button type="button" onClick={controls.pending.onConfirm ?? undefined} disabled={!controls.pending.onConfirm}
-                className="pointer-events-auto flex h-10 flex-1 items-center justify-center gap-1.5 rounded-full bg-[#f56300] text-sm font-semibold text-white shadow-md transition hover:bg-[#d85600] disabled:opacity-60">
-                <Check aria-hidden="true" className="size-4" />{controls.pending.confirmLabel}
-              </button>
-              <button type="button" onClick={controls.pending.onCancel}
-                className="pointer-events-auto h-10 shrink-0 rounded-full border border-stone-200 bg-white/95 px-4 text-sm font-medium text-stone-700 shadow-md backdrop-blur transition hover:bg-white">
-                {controls.pending.cancelLabel}
-              </button>
-            </div>
-          )}
-        </div>
+          <span className="h-3 w-3 rounded-full bg-white shadow-sm" />
+        </span>
+      </button>
+      <button type="button" onClick={() => setCreditOpen((v) => !v)} aria-expanded={creditOpen}
+        aria-label={m.mapCreditToggle} title={m.mapCreditToggle}
+        className="flex size-[30px] shrink-0 items-center justify-center rounded-full border border-[#ececf0] bg-white/95 text-stone-700 shadow-sm backdrop-blur transition-colors hover:bg-white">
+        <Info aria-hidden="true" className="size-4" />
+      </button>
+      {creditOpen && (
+        <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer"
+          className="min-w-0 truncate rounded-full border border-[#ececf0] bg-white/95 px-3 py-1.5 text-[11px] text-stone-700 shadow-sm backdrop-blur hover:underline">
+          {m.mapCredit}
+        </a>
       )}
+      </div>
       {/* Bottom of the map, clear of the full-screen button in the corner.
           At the top-left it covered the corner the route is usually framed
           into. Down here it sits over the edge of the frame, clear of the TET

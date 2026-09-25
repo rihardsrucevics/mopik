@@ -36,7 +36,7 @@ test("the chat before any result does not pick", () => {
 
 test("planning with an active row picks and shows the header", () => {
   assert.deepEqual(mapWiring({ entryMode: "form", hasResult: false, rowActive: true }), {
-    planning: true, pick: true, header: true,
+    planning: true, editing: false, pick: true, header: true,
   });
 });
 
@@ -45,6 +45,21 @@ test("planning with the map closed shows the header but does not pick", () => {
   // here — the map that would draw it is not on screen — and is keyed on the
   // view so it and the pick flow cannot disagree while the map is open.
   assert.deepEqual(mapWiring({ entryMode: "form", hasResult: false, rowActive: false }), {
-    planning: true, pick: false, header: true,
+    planning: true, editing: false, pick: false, header: true,
   });
+});
+
+test("edit mode on a result picks and shows the header, like planning", () => {
+  // "Labot": the form's rows over the generated ride. A mark answers the
+  // active row there exactly as it does while planning.
+  assert.deepEqual(mapWiring({ entryMode: "chat", hasResult: true, rowActive: true, editing: true }), {
+    planning: false, editing: true, pick: true, header: true,
+  });
+});
+
+test("an edit flag with no ride on screen is left over and wires nothing", () => {
+  const w = mapWiring({ entryMode: "chat", hasResult: false, rowActive: true, editing: true });
+  assert.equal(w.editing, false);
+  assert.equal(w.pick, false);
+  assert.equal(w.header, false);
 });
