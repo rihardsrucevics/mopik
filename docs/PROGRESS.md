@@ -3424,6 +3424,7 @@ gtag is on the page. Without the key it is a no-op. Events, all client-side:
 | `search_better_loop` | the explicit full search | pois, after_edit |
 | `route_no_route` / `route_no_route_retry` | every candidate failed with no place to blame / a way out chosen (2026-09-25) | tried, stops / how (drop-stops, easier-profile) |
 | `map_pin_pressed` / `route_line_grabbed` | a ride pin clicked to activate its row / a point of the line grabbed (edit) | role / slot |
+| `shape_point_pressed` / `map_point_move` / `map_stop_removed` | a shaping point tapped (its sheet opens) / „Pārvietot” on a point's sheet / „Izņemt” on a tapped stop's sheet (2026-09-25) | — / kind / — |
 | `batch_stop_marked` / `batch_confirmed` / `batch_discarded` | batch adding on the map | n |
 | `plan_undone` | ↶ or Ctrl/Cmd+Z in planning | — |
 

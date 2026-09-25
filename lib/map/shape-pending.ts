@@ -33,6 +33,8 @@ export type ShapePending =
 export type ShapeEvent =
   | { type: "grab"; at: { lat: number; lon: number } }
   | { type: "mark"; at: { lat: number; lon: number } }
+  /** „Pārvietot” on a dot's sheet, then a mark: dot `index` waits at `at` for ✓. */
+  | { type: "move"; index: number; at: { lat: number; lon: number } }
   | { type: "confirm" }
   | { type: "cancel" }
   | { type: "remove" }
@@ -48,6 +50,8 @@ export function stepShape(
   switch (event.type) {
     case "grab":
       return { pending: { kind: "add", at: event.at, to: null }, picking: true, commit: null };
+    case "move":
+      return { pending: { kind: "move", index: event.index, to: event.at }, picking: true, commit: null };
     case "mark":
       if (pending?.kind !== "add") return { pending, picking: false, commit: null };
       return { pending: { ...pending, to: event.at }, picking: true, commit: null };

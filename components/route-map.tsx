@@ -8,14 +8,17 @@ import { RouteSegmentProperties } from "@/lib/types";
 import { haversineMeters, type Point } from "@/lib/geo/geometry";
 import { cumulative, pointAtDistance } from "@/lib/routing/detour";
 import { nearestAlong } from "@/lib/routing/reroute-leg";
+import { LINE_HOLD_MS, TAP_SETTLE_MS, lineDragStep, type LineDragEvent, type LineDragState } from "@/lib/map/line-drag";
 import { useLocale } from "@/lib/i18n/use-locale";
 import { messages } from "@/lib/i18n/messages";
 import { fi } from "@/lib/i18n/format";
 import type { UiLocale } from "@/lib/i18n/locale";
 import { POI_KIND, stopNumbers, type RoutePoi, type RoutePois } from "@/lib/poi/kinds";
 import { PlaceInput } from "@/components/place-input";
+import { MapPointSheet, type MapPointSheetModel } from "@/components/map-point-sheet";
 import type { ResolvedPlace } from "@/lib/chat/places";
 import { nearestUnder } from "@/lib/map/pin-hit";
+import { neighboursAlong } from "@/lib/map/point-selection";
 
 /** A ride pin as built, with what pressing it means. */
 type PinTarget = { el: HTMLElement; role: "start" | "via" | "finish"; index: number };
@@ -135,8 +138,8 @@ export type MapControls = {
   /** Planning: the pins joined in riding order, and a pending mark's slot. */
   planLine?: { confirmed: [number, number][]; pending: [number, number][] | null } | null;
   /**
-   * Edit mode: a point on the drawn line was grabbed — a click on it, or a
-   * press and drag (rider's sketch, 2026-09-25). `at` is on the line; `slot`
+   * Edit mode: a point on the drawn line was grabbed — by a deliberate drag
+   * of the line only, never a tap (lib/map/line-drag.ts). `at` is on the line; `slot`
    * is how many of the ride's stops lie before it along the line, which is
    * where the new stop goes in the form.
    */
@@ -145,8 +148,9 @@ export type MapControls = {
   grab?: { lat: number; lon: number } | null;
   /**
    * Edit mode: the ride's shaping points („maršruta punkti”, 2026-09-25) —
-   * small white dots with a dark edge on the line, no number. A press opens
-   * a small popover at it: „Izņemt” / „Padarīt par pieturu”. A confirmed dot
+   * small white dots with a dark edge on the line, no number. A press
+   * selects it (`onShapePress` → `selectedPoint` + `pointSheet`): moved by
+   * the next mark, removed, or made a stop from the sheet. A confirmed dot
    * does not drag (rider, 2026-09-25: one that still followed the finger
    * after ✓ read as a point left half-edited, and its drag broke the line).
    * Never on a plain result or a shared ride, where the line already shows
@@ -154,16 +158,24 @@ export type MapControls = {
    */
   shapePoints?: { lat: number; lon: number }[];
   onShapeDrag?: (index: number, at: { lat: number; lon: number }) => void;
-  shapeMenu?: {
-    /** The dot's own name, tooltip and screen-reader label. */
-    label: string;
-    removeLabel: string;
-    promoteLabel: string;
-    onRemove: (index: number) => void;
-    /** Null at the stop cap: the button is then disabled and says why. */
-    onPromote: ((index: number) => void) | null;
-    promoteFullLabel: string;
-  };
+  onShapePress?: (index: number) => void;
+  /** The dot's own name, tooltip and screen-reader label. */
+  shapeLabel?: string;
+  /**
+   * The point the rider tapped — a ride pin or a shaping point — drawn with a
+   * steady ring until the selection ends (✓, ✕, „Izņemt”, the sheet's ✕).
+   */
+  selectedPoint?: { lat: number; lon: number } | null;
+  /** What can be done to the selected point, right there (`MapPointSheet`). */
+  pointSheet?: MapPointSheetModel | null;
+  /**
+   * Edit mode, while a point is being moved or placed: thin dashed straight
+   * lines from `candidate` to the places before and after it in riding order —
+   * `neighbours` when the caller knows them (a stop's rows), else found along
+   * the drawn line from `origin` (a shaping point: its old place, or where the
+   * line was grabbed). Follows a dragged pending marker live.
+   */
+  movePreview?: { origin?: { lat: number; lon: number } | null; neighbours?: { lat: number; lon: number }[]; candidate: { lat: number; lon: number } | null } | null;
   /**
    * Batch adding (2026-09-25): while it is on, the single pending marker is
    * not drawn and nothing moves the camera; the batch's pending stops are
@@ -1640,6 +1652,36 @@ function shapeDotElement(title: string, pending = false): HTMLElement {
 }
 
 /**
+ * The ring under a finger that holds the route line (see lib/map/line-drag.ts):
+ * "the line is yours now — drag it". Not a point yet; it goes when the finger
+ * lifts or the drag makes the point.
+ */
+function lineHoldElement(): HTMLElement {
+  const el = document.createElement("div");
+  el.setAttribute("aria-hidden", "true");
+  el.dataset.lineHold = "1";
+  el.style.cssText = "width:36px;height:36px;border-radius:50%;pointer-events:none;border:3px solid #f56300;background:rgba(245,99,0,0.2);box-shadow:0 0 0 4px rgba(255,255,255,0.85)";
+  return el;
+}
+
+/**
+ * The steady ring around the point the rider has tapped (see the selection
+ * effect): 52 px, a 4 px orange edge on a white halo, under the pin. A slow
+ * outer pulse on top unless the rider asked for reduced motion — the ring
+ * itself never moves, so the selection is readable either way.
+ */
+function selectionRingElement(): HTMLElement {
+  const el = document.createElement("div");
+  el.setAttribute("aria-hidden", "true");
+  el.dataset.selectionRing = "1";
+  el.style.cssText = "width:52px;height:52px;border-radius:50%;pointer-events:none;z-index:1;border:4px solid #f56300;background:rgba(245,99,0,0.16)";
+  if (!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+    el.style.animation = "mopik-focus-pulse 1.6s ease-out infinite";
+  }
+  return el;
+}
+
+/**
  * A sight the ride passes or runs near, drawn without the rider asking.
  *
  * The rider's distinction, in his own words: "on your way" must read
@@ -2025,6 +2067,11 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
   useEffect(() => { grabbingRef.current = Boolean(controls?.grab); }, [controls?.grab]);
   /** Draws the grab's dashed connector, from the line to the spot (see its effect). */
   const connectorRef = useRef<(to: { lat: number; lon: number } | null) => void>(() => {});
+  /** The tapped point's sheet, read by the map's click (a tap closes an open menu). */
+  const pointSheetRef = useRef(controls?.pointSheet);
+  useEffect(() => { pointSheetRef.current = controls?.pointSheet; });
+  /** Redraws the move preview to a candidate, live while a mark is dragged (see its effect). */
+  const movePreviewRef = useRef<(to: { lat: number; lon: number } | null) => void>(() => {});
   const pinsDraggable = Boolean(controls?.onPinDrag);
   /**
    * Where the planning (or edit) map's places may be framed: clear of the
@@ -2722,10 +2769,12 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
         const { lat, lng } = marker.getLngLat();
         onPickedPointMoveRef.current?.({ lat, lon: lng });
       });
-      // A grabbed line point's connector follows the mark while it is dragged.
+      // A grabbed line point's connector, and the move preview, follow the
+      // mark while it is dragged.
       marker.on("drag", () => {
         const { lat, lng } = marker.getLngLat();
         connectorRef.current({ lat, lon: lng });
+        movePreviewRef.current({ lat, lon: lng });
       });
       pickedMarkerRef.current = marker;
       pendingPinKeyRef.current = pendingPinKey;
@@ -2903,6 +2952,57 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
   }, [ready, grabAt?.lat, grabAt?.lon, pickedPoint?.lat, pickedPoint?.lon]);
 
   /**
+   * The move preview (`MapControls.movePreview`): straight, thin, dark grey
+   * and finely dashed on a white edge — unlike the ridden line, the planning
+   * line (orange) and the grab's connector (blue), and unlike the straight
+   * segment a ride may one day carry (backlog 35), which will be drawn as
+   * part of the ride. The neighbours are resolved once per preview; the
+   * candidate end is redrawn live through `movePreviewRef`.
+   */
+  const movePreview = controls?.movePreview ?? null;
+  const movePreviewKey = movePreview ? JSON.stringify(movePreview) : "";
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const mp = movePreview;
+    let ends: [number, number][] = [];
+    if (mp?.neighbours) ends = mp.neighbours.map((p) => [p.lon, p.lat]);
+    else if (mp?.origin) {
+      const line: Point[] = featuresRef.current.flatMap((f, i) => (f.geometry.coordinates as Point[]).slice(i === 0 ? 0 : 1));
+      if (line.length >= 2) {
+        const cum = cumulative(line);
+        const along = (p: { lat: number; lon: number }) => nearestAlong([p.lon, p.lat], line, cum).alongMeters;
+        const same = (a: { lat: number; lon: number }, b: { lat: number; lon: number } | null) => Boolean(b) && Math.abs(a.lat - b!.lat) < 1e-7 && Math.abs(a.lon - b!.lon) < 1e-7;
+        // Every place the line runs through, the moving point itself left out
+        // (a dot being moved is drawn at its candidate spot).
+        const anchors = [start, ...(via ?? []), ...(controls?.shapePoints ?? []), destination]
+          .filter((p): p is { lat: number; lon: number } => Boolean(p))
+          .filter((p) => !same(p, mp.origin ?? null) && !same(p, mp.candidate))
+          .map((p) => ({ point: [p.lon, p.lat] as [number, number], along: along(p) }));
+        ends = neighboursAlong(anchors, along(mp.origin), !destination);
+      }
+    }
+    const draw = (to: { lat: number; lon: number } | null) => {
+      const c: [number, number] | null = to ? [to.lon, to.lat] : null;
+      const features: GeoJSON.Feature<GeoJSON.LineString>[] = !c ? [] : ends.map((e) => ({ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: [e, c] } }));
+      const data: GeoJSON.FeatureCollection<GeoJSON.LineString> = { type: "FeatureCollection", features };
+      if (!loadedRef.current) return;
+      const source = map.getSource("move-preview") as maplibregl.GeoJSONSource | undefined;
+      if (source) { source.setData(data); return; }
+      map.addSource("move-preview", { type: "geojson", data });
+      map.addLayer({ id: "move-preview-edge", type: "line", source: "move-preview",
+        layout: { "line-cap": "round" },
+        paint: { "line-color": "#ffffff", "line-width": 4, "line-opacity": 0.7 } });
+      map.addLayer({ id: "move-preview", type: "line", source: "move-preview",
+        layout: { "line-cap": "butt" },
+        paint: { "line-color": "#44403c", "line-width": 1.5, "line-opacity": 0.95, "line-dasharray": ["literal", [2, 2]] } });
+    };
+    movePreviewRef.current = draw;
+    draw(mp?.candidate ?? null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, movePreviewKey, segments]);
+
+  /**
    * The batch's pending stops, drawn as dashed numbered pins in the stop
    * colour (the look a single pending stop has). A press selects one — ringed,
    * with a small ✕ that drops it alone — and the next mark or a drag moves
@@ -2966,59 +3066,29 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
 
   /**
    * The ride's shaping points, edit mode only (see `MapControls.shapePoints`).
-   * Rebuilt when the list changes — a ride has a handful. A press opens the
-   * popover, and marks the gesture as its own (`sightClickAtRef`), so the
-   * map's own click does not grab the line under the dot as well. Dots do
-   * not drag (see where the marker is made).
+   * Rebuilt when the list changes — a ride has a handful. A press selects
+   * it (`onShapePress` — the point sheet and the ring), and marks the gesture
+   * as its own (`sightClickAtRef`), so the map's own click does not also land
+   * on the line under the dot. Dots do not drag (see where the marker is made).
    */
   const shapeMarkersRef = useRef<maplibregl.Marker[]>([]);
-  const shapePopupRef = useRef<maplibregl.Popup | null>(null);
-  const shapeMenuRef = useRef(controls?.shapeMenu);
-  useEffect(() => { shapeMenuRef.current = controls?.shapeMenu; });
+  const shapePressRef = useRef(controls?.onShapePress);
+  useEffect(() => { shapePressRef.current = controls?.onShapePress; });
   const shapeDots = controls?.shapePoints ?? [];
-  const shapeDotsKey = shapeDots.map((p) => `${p.lat},${p.lon}`).join("|") + `|${controls?.shapeMenu?.onPromote ? 1 : 0}|${controls?.shapeMenu?.label ?? ""}`;
+  const shapeDotsKey = shapeDots.map((p) => `${p.lat},${p.lon}`).join("|") + `|${controls?.shapeLabel ?? ""}`;
   useEffect(() => {
     const map = mapRef.current;
     for (const marker of shapeMarkersRef.current) marker.remove();
     shapeMarkersRef.current = [];
-    shapePopupRef.current?.remove();
-    shapePopupRef.current = null;
     if (!map || !ready) return;
-    const menu = shapeMenuRef.current;
     shapeMarkersRef.current = shapeDots.map((p, i) => {
-      const el = shapeDotElement(menu?.label ?? "");
+      const el = shapeDotElement(controls?.shapeLabel ?? "");
       el.addEventListener("click", (event) => {
         event.stopPropagation();
         sightClickAtRef.current = event.timeStamp;
         if (performance.now() - dragEndedAtRef.current < 400) return;
-        const current = shapeMenuRef.current;
-        if (!current) return;
-        shapePopupRef.current?.remove();
         infoPopupRef.current?.remove();
-        const box = document.createElement("div");
-        box.style.cssText = "display:flex;flex-direction:column;gap:6px;padding:2px 0";
-        const button = (label: string, onPress: (() => void) | null, title?: string) => {
-          const b = document.createElement("button");
-          b.type = "button";
-          b.textContent = label;
-          if (title) b.title = title;
-          b.disabled = !onPress;
-          b.style.cssText = "height:32px;padding:0 12px;border-radius:9999px;border:1px solid #e7e5e4;background:#fff;font:inherit;font-size:12px;font-weight:600;color:#1c1917;cursor:pointer;text-align:left" + (onPress ? "" : ";opacity:0.45;cursor:not-allowed");
-          b.addEventListener("click", (e) => {
-            e.stopPropagation();
-            sightClickAtRef.current = e.timeStamp;
-            shapePopupRef.current?.remove();
-            onPress?.();
-          });
-          return b;
-        };
-        box.appendChild(button(current.removeLabel, () => shapeMenuRef.current?.onRemove(i)));
-        const promote = current.onPromote;
-        box.appendChild(button(current.promoteLabel, promote ? () => shapeMenuRef.current?.onPromote?.(i) : null, promote ? undefined : current.promoteFullLabel));
-        shapePopupRef.current = new maplibregl.Popup({ offset: 14, closeButton: false, maxWidth: "220px", className: "mopik-shape-menu" })
-          .setLngLat([p.lon, p.lat])
-          .setDOMContent(box)
-          .addTo(map);
+        shapePressRef.current?.(i);
       });
       // Not draggable (rider, 2026-09-25). A confirmed dot that still
       // followed the finger read as a point left half-edited, and on a phone
@@ -3031,7 +3101,80 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, shapeDotsKey]);
-  useEffect(() => () => { for (const marker of shapeMarkersRef.current) marker.remove(); shapePopupRef.current?.remove(); }, []);
+  useEffect(() => () => { for (const marker of shapeMarkersRef.current) marker.remove(); }, []);
+
+  /**
+   * The point the rider tapped (`MapControls.selectedPoint`): a steady orange
+   * ring around it, and the pin itself enlarged — the old faint blink was
+   * missed on a phone (rider, 2026-09-25). The ring is a marker of its own
+   * under the pins, so it looks the same around a teardrop, a numbered disc
+   * or a white dot; the pin is found by its coordinates, the way the active
+   * row's pin is. Gone the moment the selection ends.
+   */
+  const selectedAt = controls?.selectedPoint ?? null;
+  const selectedKey = selectedAt ? `${selectedAt.lat},${selectedAt.lon}` : "";
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || !selectedAt) return;
+    const ring = new maplibregl.Marker({ element: selectionRingElement() }).setLngLat([selectedAt.lon, selectedAt.lat]).addTo(map);
+    const undo: (() => void)[] = [() => ring.remove()];
+    const markers = [markerRef.current, destMarkerRef.current, ...viaMarkersRef.current, ...shapeMarkersRef.current].filter((x): x is maplibregl.Marker => Boolean(x));
+    for (const marker of markers) {
+      const { lat, lng } = marker.getLngLat();
+      if (Math.abs(lat - selectedAt.lat) > 1e-6 || Math.abs(lng - selectedAt.lon) > 1e-6) continue;
+      const el = marker.getElement();
+      // MapLibre owns the element's transform, so a teardrop pin grows by its
+      // SVG; a disc, a pill or a dot gets a white-and-orange edge instead.
+      const inner = el.querySelector("svg");
+      const was = { z: el.style.zIndex, shadow: el.style.boxShadow, radius: el.style.borderRadius };
+      el.style.zIndex = "4";
+      el.dataset.selectedPoint = "1";
+      if (inner) { inner.style.transformOrigin = "50% 100%"; inner.style.transform = "scale(1.35)"; }
+      else { el.style.borderRadius = "9999px"; el.style.boxShadow = "0 0 0 3px #fff, 0 0 0 6px #f56300"; }
+      undo.push(() => { el.style.zIndex = was.z; el.style.boxShadow = was.shadow; el.style.borderRadius = was.radius; delete el.dataset.selectedPoint; if (inner) inner.style.transform = ""; });
+    }
+    return () => { for (const u of undo) u(); };
+    // Same pin-rebuild deps as the active pin's raise, so a rebuilt pin is found again.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, selectedKey, segments, start, destination, via, showTet, locale, pinsDraggable, shapeDotsKey]);
+  // The selected point is never left under its own sheet and the header row
+  // (at the bottom on a phone, where the inline map is ~340 px tall): the map
+  // pans it into the free part, once per selection and phase, after the sheet
+  // is drawn. A phone's bottom sheet covers the page's lower part, so there
+  // the page scrolls first, and the map pans for whatever scrolling cannot.
+  const sheetMode = controls?.pointSheet?.mode ?? "";
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || !selectedAt) return;
+    const frame = requestAnimationFrame(() => {
+      const project = () => {
+        const box = map.getContainer().getBoundingClientRect();
+        const at = map.project([selectedAt.lon, selectedAt.lat]);
+        return { box, at, y: box.top + at.y, inside: at.x >= 0 && at.x <= box.width && at.y >= 0 && at.y <= box.height };
+      };
+      let p = project();
+      if (!p.inside) return;
+      const phone = window.matchMedia(PHONE_QUERY).matches;
+      const sheet = document.querySelector('[data-point-sheet="menu"]')?.getBoundingClientRect();
+      if (phone && sheet) {
+        const target = sheet.top / 2;
+        if (p.y < sheet.top - 32 && p.y > 24) return;
+        window.scrollBy(0, p.y - target);
+        p = project();
+        if (Math.abs(p.y - target) > 24) map.panBy([0, p.y - target], { duration: 250 });
+        return;
+      }
+      const header = headerRef.current?.getBoundingClientRect();
+      if (!header) return;
+      const top = header.top - p.box.top - 28;
+      const bottom = header.bottom - p.box.top + 28;
+      if (p.at.y < top || p.at.y > bottom) return;
+      const target = phone ? Math.max(40, top / 2) : bottom + (p.box.height - bottom) / 2;
+      map.panBy([0, p.at.y - target], { duration: 250 });
+    });
+    return () => cancelAnimationFrame(frame);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, selectedKey, sheetMode]);
 
   /**
    * After a batch is confirmed: every pin shown once, if one is off-screen —
@@ -3520,13 +3663,16 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
       // returns before the segment lookup on purpose — a rider aiming at a
       // forest track is aiming at the drawn line as often as not, and opening
       // that road's card would both cover the point and leave the row empty.
-      // Edit mode: a click on the drawn line grabs that point of it — but
-      // only while no row is waiting for its mark. With a stop selected (its
-      // pin pressed, its row active) the click is that stop's new place, on
-      // the line or off it: the rider could not move his stop 5, which sat
-      // on the line, because every tap near it grabbed the line instead
-      // (2026-09-25).
-      if (lineGrabRef.current && !grabbingRef.current && !onPickPointRef.current && !onMarker(e) && grabLineAt(e.point, e.lngLat)) return;
+      // A click on the drawn line never grabs it (rider, 2026-09-25: a
+      // double-tap zoom's first tap left white points on his ride). Only a
+      // deliberate drag does — see `lineDrag` below. So with a stop row
+      // active, a tap on the line is that stop's new place, like any tap.
+      // The release of a line drag, or of a hold on the line, is not a tap.
+      if (performance.now() < lineClickMuteUntil) return;
+      // A point's sheet is open: a tap on the map closes it, and does nothing
+      // else — nothing moves until „Pārvietot”.
+      const sheet = pointSheetRef.current;
+      if (sheet?.mode === "menu") { sheet.onClose(); return; }
       const pick = onPickPointRef.current;
       if (pick) { pick({ lat: e.lngLat.lat, lon: e.lngLat.lng }); return; }
       const feature = featureAt(e.point);
@@ -3577,44 +3723,118 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
     };
 
     /**
-     * Press on the line and drag: the same grab in one gesture. Only a press
-     * that lands on the route layer starts it — `preventDefault` there stops
-     * the map panning — and anywhere else the map pans as it always has. The
-     * drag draws the connector live; letting go is the new spot's mark, which
-     * then waits for Confirm like any other. Mouse only: on a touch screen a
-     * press on a line is also the start of a swipe, and taking it would stop
-     * the rider scrolling the map; there the line is grabbed by a tap.
+     * Drag the line: the only way a shaping point is made (`lineDragStep` in
+     * lib/map/line-drag.ts has the rule and why). Mouse: press on the line —
+     * `preventDefault` stops the map panning — and drag ≥ 12 px. Touch: hold
+     * one finger still on the line, then drag ≥ 12 px; a finger that moves at
+     * once pans, a second finger pinches, and neither grabs anything. The drag
+     * draws the connector live; letting go is the new spot's mark, which then
+     * waits for Confirm like any other.
      */
-    let lineDrag: { start: maplibregl.Point; lngLat: maplibregl.LngLat; grabbed: boolean; last: maplibregl.LngLat } | null = null;
+    let lineDrag: LineDragState | null = null;
+    let lineDragFrom: { point: maplibregl.Point; lngLat: maplibregl.LngLat } | null = null;
+    let lineDragLast: maplibregl.LngLat | null = null;
+    let lineHoldTimer: ReturnType<typeof setTimeout> | null = null;
+    let lineHoldRing: maplibregl.Marker | null = null;
+    let lineClickMuteUntil = 0;
+    const lineDragUndo = () => {
+      if (lineHoldTimer) clearTimeout(lineHoldTimer);
+      lineHoldTimer = null;
+      lineHoldRing?.remove();
+      lineHoldRing = null;
+      // `dragPan` is gone once the map itself has been removed (the cleanup).
+      if (map.dragPan && !map.dragPan.isEnabled()) map.dragPan.enable();
+    };
+    const lineDragFeed = (ev: LineDragEvent, at?: maplibregl.LngLat) => {
+      const was = lineDrag;
+      const { state, action } = lineDragStep(lineDrag, ev);
+      lineDrag = state;
+      if (at) lineDragLast = at;
+      if (action === "arm" && lineDragFrom) {
+        // The finger holds the line: the map stops panning under it, and a
+        // ring where it rests says so.
+        map.dragPan.disable();
+        lineHoldRing = new maplibregl.Marker({ element: lineHoldElement() }).setLngLat(lineDragFrom.lngLat).addTo(map);
+        navigator.vibrate?.(10);
+      } else if (action === "grab" && lineDragFrom) {
+        lineHoldRing?.remove();
+        lineHoldRing = null;
+        if (!grabLineAt(lineDragFrom.point, lineDragFrom.lngLat)) { lineDrag = null; lineDragUndo(); }
+      } else if (action === "follow" && at) {
+        connectorRef.current({ lat: at.lat, lon: at.lng });
+        movePreviewRef.current({ lat: at.lat, lon: at.lng });
+      } else if (action === "drop" || action === "abort") {
+        // A hold or a drag that ends is not also a tap on the map.
+        if (was && (was.phase === "dragging" || (was.pointer === "touch" && was.phase === "armed"))) lineClickMuteUntil = performance.now() + 700;
+        lineDragUndo();
+        const to = lineDragLast;
+        lineDragFrom = null;
+        if (action !== "drop" || !to) return;
+        // The form opens the new point on the grab; its pick handler arrives
+        // a render later, and the release can beat it.
+        const spot = { lat: to.lat, lon: to.lng };
+        let tries = 0;
+        const deliver = () => {
+          const pick = onPickPointRef.current;
+          if (pick && grabbingRef.current) { pick(spot); return; }
+          if (++tries < 40) setTimeout(deliver, 25);
+        };
+        deliver();
+      }
+    };
+    const lineDragStart = (pointer: "mouse" | "touch", point: maplibregl.Point, lngLat: maplibregl.LngLat, fingers: number, onLine: boolean) => {
+      lineDragUndo();
+      lineDragFrom = { point, lngLat };
+      lineDragLast = lngLat;
+      lineDragFeed({ type: "down", pointer, x: point.x, y: point.y, at: performance.now(), onLine, fingers });
+      if (lineDrag?.phase === "pressed") lineHoldTimer = setTimeout(() => lineDragFeed({ type: "hold", at: performance.now() }), LINE_HOLD_MS);
+    };
+    const lineGrabbable = () => Boolean(lineGrabRef.current) && !grabbingRef.current;
     const onMouseDown = (e: maplibregl.MapMouseEvent) => {
-      if (!lineGrabRef.current || grabbingRef.current || e.originalEvent.button !== 0 || onMarker(e) || !featureAt(e.point)) return;
+      // The mouse events a phone makes up after a tap are not a mouse.
+      if (performance.now() - lastTouchEndAt < 800) return;
+      if (!lineGrabbable() || e.originalEvent.button !== 0 || onMarker(e) || !featureAt(e.point)) return;
       e.preventDefault();
-      lineDrag = { start: e.point, lngLat: e.lngLat, grabbed: false, last: e.lngLat };
+      lineDragStart("mouse", e.point, e.lngLat, 1, true);
     };
     const onDragMove = (e: maplibregl.MapMouseEvent) => {
-      if (!lineDrag) return;
-      lineDrag.last = e.lngLat;
-      if (!lineDrag.grabbed && lineDrag.start.dist(e.point) > 5) {
-        lineDrag.grabbed = grabLineAt(lineDrag.start, lineDrag.lngLat);
-      }
-      if (lineDrag.grabbed) connectorRef.current({ lat: e.lngLat.lat, lon: e.lngLat.lng });
+      if (lineDrag?.pointer === "mouse") lineDragFeed({ type: "move", x: e.point.x, y: e.point.y, fingers: 1 }, e.lngLat);
     };
-    const onMouseUp = (e: maplibregl.MapMouseEvent) => {
-      const drag = lineDrag;
-      lineDrag = null;
-      if (!drag?.grabbed) return;
-      // The click MapLibre may still send for this release is not a new grab.
-      sightClickAtRef.current = e.originalEvent.timeStamp;
-      const to = { lat: e.lngLat.lat, lon: e.lngLat.lng };
-      // The form opens the new row on the grab; its pick handler arrives a
-      // render later, and the release can beat it.
-      let tries = 0;
-      const deliver = () => {
-        const pick = onPickPointRef.current;
-        if (pick && grabbingRef.current) { pick(to); return; }
-        if (++tries < 40) setTimeout(deliver, 25);
-      };
-      deliver();
+    const onMouseUp = () => { if (lineDrag?.pointer === "mouse") lineDragFeed({ type: "up" }); };
+    const onTouchStart = (e: maplibregl.MapTouchEvent) => {
+      const fingers = e.originalEvent.touches.length;
+      // A tap waiting to settle is the first half of a double tap: drop it.
+      if (tapTimer) { clearTimeout(tapTimer); tapTimer = null; }
+      if (lineDrag) { lineDragFeed({ type: "move", x: e.point.x, y: e.point.y, fingers }); return; }
+      if (!lineGrabbable()) return;
+      const onLine = fingers === 1 && !(e.originalEvent.target as Element | null)?.closest?.(".maplibregl-marker") && Boolean(featureAt(e.point));
+      if (onLine) lineDragStart("touch", e.point, e.lngLat, fingers, true);
+    };
+    const onTouchMove = (e: maplibregl.MapTouchEvent) => {
+      if (!lineDrag) return;
+      lineDragFeed({ type: "move", x: e.point.x, y: e.point.y, fingers: e.originalEvent.touches.length }, e.lngLat);
+      // Held: the finger drags the line, not the page.
+      if (lineDrag && lineDrag.phase !== "pressed") e.originalEvent.preventDefault();
+    };
+    const onTouchEnd = (e: maplibregl.MapTouchEvent) => {
+      lastTouchEndAt = performance.now();
+      if (lineDrag && e.originalEvent.touches.length === 0) lineDragFeed({ type: "up" });
+    };
+    const onTouchCancel = () => { if (lineDrag) lineDragFeed({ type: "move", x: 0, y: 0, fingers: 2 }); };
+
+    /**
+     * A tap on a phone settles for `TAP_SETTLE_MS` before it counts, and a
+     * touch that begins meanwhile drops it: it was the first tap of a
+     * double-tap zoom (or a tap-and-drag zoom), which marked the spot — or
+     * added a pending stop row to a batch — as the map zoomed. The browser's
+     * click follows its `touchend` within a few ms; a mouse click has none.
+     */
+    let lastTouchEndAt = -Infinity;
+    let tapTimer: ReturnType<typeof setTimeout> | null = null;
+    const onMapClick = (e: maplibregl.MapMouseEvent) => {
+      if (performance.now() - lastTouchEndAt > 500) { onClick(e); return; }
+      if (tapTimer) clearTimeout(tapTimer);
+      tapTimer = setTimeout(() => { tapTimer = null; onClick(e); }, TAP_SETTLE_MS);
     };
 
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { clearHighlight(); clearFocus(); } };
@@ -3622,9 +3842,13 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
     map.on("mousedown", onMouseDown);
     map.on("mousemove", onDragMove);
     map.on("mouseup", onMouseUp);
+    map.on("touchstart", onTouchStart);
+    map.on("touchmove", onTouchMove);
+    map.on("touchend", onTouchEnd);
+    map.on("touchcancel", onTouchCancel);
     map.on("mousemove", onMouseMove);
     map.on("mouseout", hideHover);
-    map.on("click", onClick);
+    map.on("click", onMapClick);
     // The hover element must not be left hanging over the map while it moves.
     map.on("movestart", hideHover);
     window.addEventListener("keydown", onKey);
@@ -3632,9 +3856,15 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
       map.off("mousedown", onMouseDown);
       map.off("mousemove", onDragMove);
       map.off("mouseup", onMouseUp);
+      map.off("touchstart", onTouchStart);
+      map.off("touchmove", onTouchMove);
+      map.off("touchend", onTouchEnd);
+      map.off("touchcancel", onTouchCancel);
       map.off("mousemove", onMouseMove);
       map.off("mouseout", hideHover);
-      map.off("click", onClick);
+      map.off("click", onMapClick);
+      if (tapTimer) clearTimeout(tapTimer);
+      lineDragUndo();
       map.off("movestart", hideHover);
       window.removeEventListener("keydown", onKey);
     };
@@ -3801,6 +4031,9 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
           )}
         </div>
       )}
+      {/* The tapped point's own actions — above the row on a phone, below
+          it on the desktop, like the notice. */}
+      {controls?.pointSheet && <MapPointSheet sheet={controls.pointSheet} />}
       {/* Below the row on the desktop, above it on a phone (the column is
           reversed there), so it is never squeezed into the field. */}
       {controls?.notice && (
