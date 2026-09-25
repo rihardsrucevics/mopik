@@ -423,6 +423,10 @@ function visitsProtected(coords: Point[], seq: number[], a: number, b: number, p
  * used. Everything else the router said about the base path (a moved
  * endpoint, a stitched-together leg) is still true of the result.
  */
+export function rebuildPath(base: RoutePath, sources: RoutePath[], refs: [number, number][]): RoutePath {
+  return rebuild(base, sources, refs);
+}
+
 function rebuild(base: RoutePath, sources: RoutePath[], refs: [number, number][]): RoutePath {
   const edgeMaps = sources.map((path) => {
     const at = new Map<number, RouteEdge>();

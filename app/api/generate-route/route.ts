@@ -39,6 +39,8 @@ import {
 import { buildMotoProfileOptions, type MotoProfileOptions } from "@/lib/routing/moto-profile";
 import { buildCostingOptions, profileName } from "@/lib/routing/profiles";
 import { pruneOrLoopSpurs, pruneSpurs, spurLoopsFor } from "@/lib/routing/prune-spurs";
+import { rideThroughStops, stopSpurs } from "@/lib/routing/generated-through-stops";
+import { THROUGH_SHARED_MIN_M } from "@/lib/routing/reroute-leg";
 import { joinPaths } from "@/lib/routing/join-paths";
 import { loopRank, meetsRideLimits } from "@/lib/routing/score";
 import { classifyRoute } from "@/lib/routing/classify";
@@ -110,6 +112,12 @@ const RequestSchema = z.object({
  * an out-and-back to one this way). Weak, so nothing outlives its request.
  */
 const routedThrough = new WeakMap<RoutePath, [number, number][]>();
+/**
+ * The profile each routed path was asked on — the rider's, or the complex
+ * version's deeper one — so a stop's window re-routed after the search
+ * (`rideThroughStops`) rides the same way the rest of the ride does.
+ */
+const routedWith = new WeakMap<RoutePath, MotoProfileOptions>();
 
 /** point offset perpendicular to the start→end line at fraction t, by `meters` */
 function perpendicularVia(
@@ -480,6 +488,7 @@ async function buildCandidates(
       .map(({ index }) => index);
     const path = await fetchRoutePath({ points, profileOptions: options, generatedViaIndices });
     routedThrough.set(path, points);
+    routedWith.set(path, options);
     const stops = [...requiredVia, ...(destination ? [destination] : [])].map(p => [p.lon, p.lat] as [number, number]);
     // A spur out to a shaping point is the rider's own bend, not a detour the
     // builder invented; it is kept like a spur to a stop.
@@ -523,6 +532,7 @@ async function buildCandidates(
     catch (error) { if (routedVia.length) return path; throw error; }
     if (cleaned === path) return path;
     routedThrough.set(cleaned, points);
+    routedWith.set(cleaned, options);
     // Belt and braces: the order check sees the whole ride, the spur check one spur.
     return visitsRequiredStops(cleaned.coordinates, stops, stopTolerance) ? cleaned : path;
   };
@@ -1265,6 +1275,14 @@ const selfHostedRouter = (): boolean => Boolean(process.env.BROUTER_BASE_URL?.tr
  * it answers far faster per candidate and is not paced.
  */
 const TIME_BUDGET_MS = selfHostedRouter() ? 50_000 : 40_000;
+/**
+ * The part of `TIME_BUDGET_MS` a ride with stops keeps back from the search
+ * for riding them through afterwards (`rideThroughStops`): the two plain legs
+ * and two fenced ones per stop, all at once, under edit mode's 2.5 s loop
+ * budget. Without it a search that runs to the budget — the rider's
+ * 2026-09-25 ride did — leaves nothing, and the stops stay spurs.
+ */
+const THROUGH_RESERVE_MS = 3_500;
 
 /** Rejects when the budget runs out; the underlying fetch is left to finish alone. */
 function withDeadline<T>(promise: Promise<T>, ms: number): Promise<T> {
@@ -1332,7 +1350,10 @@ function directLegOfferRoute(
 
 export async function POST(req: NextRequest) {
   const startedAt = Date.now();
-  const remainingMs = () => TIME_BUDGET_MS - (Date.now() - startedAt);
+  // Kept back from the search for riding the rider's stops through once it is
+  // over (`rideThroughStops`); set when the ride has stops.
+  let throughReserveMs = 0;
+  const remainingMs = () => TIME_BUDGET_MS - throughReserveMs - (Date.now() - startedAt);
   /**
    * How many candidates this generation may route. Unlimited until the
    * feasibility probe measures a slow leg, after which it is whatever the
@@ -1432,6 +1453,7 @@ export async function POST(req: NextRequest) {
       try { requiredVia.push(await resolvePlace(name)); }
       catch { return NextResponse.json({ error: `Neizdevās atrast obligāto pieturvietu “${name}”. Precizē to čatā.` }, { status: 422 }); }
     }
+    if (requiredVia.length) throughReserveMs = THROUGH_RESERVE_MS;
     // A focus area away from the start ("meža aplis Baldones mežos, no
     // Rīgas"): ride there directly, loop around it with the rider's own
     // settings, come back by another corridor. The loop is planned exactly
@@ -1629,7 +1651,7 @@ export async function POST(req: NextRequest) {
           totalSegments: allSegments.length,
         });
         const affordable = affordableCandidates({
-          budgetMs: TIME_BUDGET_MS,
+          budgetMs: TIME_BUDGET_MS - throughReserveMs,
           spentMs: Date.now() - startedAt,
           legMs: perCandidate * 1000,
           cap: Number.MAX_SAFE_INTEGER,
@@ -2125,6 +2147,39 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // The rider's stops are ridden THROUGH on what is returned (2026-09-25):
+    // a stop the search reached by an out-and-back gets a window of the ride
+    // re-routed with the spur fenced off both ways, kept only when the whole
+    // ride then retraces less. The search protects a stop's spur (it is the
+    // visit) and loops only its own vias' spurs, so this is where it happens.
+    const stopDeadEnd = new Map<Scored, number>();
+    if (requiredVia.length) {
+      const stops = requiredVia.map((p) => [p.lon, p.lat] as [number, number]);
+      const deadlineAt = Math.min(startedAt + TIME_BUDGET_MS, Date.now() + THROUGH_RESERVE_MS);
+      const shown = [...new Set([...chosen, ...[...alternativesFor.values()].flat()])];
+      const throughStarted = Date.now();
+      const results = await Promise.all(shown.map((s) => rideThroughStops({
+        path: s.path, stops, deadlineAt,
+        keep: shapePoints.map((p) => [p.lon, p.lat] as [number, number]),
+        profileOptions: routedWith.get(s.path) ?? buildMotoProfileOptions(intent),
+      }).catch(() => null)));
+      results.forEach((result, i) => {
+        const s = shown[i];
+        if (!result) return;
+        if (result.path !== s.path) {
+          const tolerance = Math.max(300, (s.path.endpointMovedMeters ?? 0) + ENDPOINT_SNAP_MARGIN_M);
+          if (visitsRequiredStops(result.path.coordinates, [...stops, ...(destination ? [[destination.lon, destination.lat] as [number, number]] : [])], tolerance)) {
+            routedThrough.set(result.path, routedThrough.get(s.path) ?? []);
+            s.path = result.path;
+            s.classified = classifyRoute(result.path);
+          }
+        }
+        stopDeadEnd.set(s, stopSpurs(s.path.coordinates, stops).reduce((worst, x) => Math.max(worst, x.spur), 0));
+        console.log(`through stops: ${s.variant} ${result.spurs.map((x) => `${x.stop + 1}: ${x.beforeMeters} → ${x.afterMeters} m`).join(", ")}`);
+      });
+      console.log(`through stops: ${shown.length} rides in ${Date.now() - throughStarted} ms`);
+    }
+
     const startName = placeName(start.label);
     const originName = placeName(origin.label);
     const locale = detectLocale(body.prompt);
@@ -2158,6 +2213,7 @@ export async function POST(req: NextRequest) {
         surfaces: classified.surfaces,
         quality: classified.quality,
         overlap: classified.overlap,
+        ...((stopDeadEnd.get(chosenScored) ?? 0) > THROUGH_SHARED_MIN_M ? { stopDeadEndMeters: Math.round(stopDeadEnd.get(chosenScored)!) } : {}),
         stops: [...(remote ? [{ name: startName, category: "via" }] : []), ...requiredVia.map(p => ({ name: placeName(p.label), category: "via" })), ...stopLabels(stops, locale)],
         profile: profileName(intent),
         sourcePrompt: body.prompt,
