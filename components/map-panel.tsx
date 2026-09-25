@@ -55,6 +55,9 @@ export function MapPanel({ children, className = "", expandedClassName = "" }: {
       if (legend && legend !== watched) { watched = legend; observer.observe(legend); }
       const h = !legend || legend.offsetParent === null ? 0 : legend.getBoundingClientRect().height;
       root.style.setProperty("--map-legend", h ? `${h + 8}px` : "0px");
+      // The map's own height, for the phone's column of ✓ / + / ↶ / ✕, which
+      // must fit between the zoom stack and the field (see RouteMap's header).
+      root.style.setProperty("--map-h", `${root.getBoundingClientRect().height}px`);
     };
     apply();
     observer.observe(root);
