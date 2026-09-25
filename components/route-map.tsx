@@ -3656,7 +3656,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
   }, []);
 
   return (
-    <div className="relative h-full w-full">
+    <div className="relative h-full w-full" data-map-pending={controls?.pending ? "true" : undefined}>
       <div ref={containerRef} className="h-full w-full rounded-lg" />
 
       {/* The label that follows the cursor over a warning stretch, so the
@@ -3689,12 +3689,12 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
           where the thumb is (rider, 2026-09-25): ONE row with the full-screen
           button — which MapPanel draws at the left of exactly this line, above
           the legend (`--map-legend`, 0 px on the inline strip) — then the
-          field, full width. Its buttons — ✓ / "+", ↶, ✕ — stand in a column
-          of 56 px discs on the right edge just above it (rider, 2026-09-25:
-          beside the field they cut a hint to „Atzīmē kartē, kur pārvietot
-          šo…”). The off-road verdict stacks above it (`flex-col-reverse`).
+          field, then ✕ when there is something to cancel — all 56 px tall,
+          one line. ✓ / "+" and ↶ stand in a column on the right edge just
+          above it, ↶ over ✕ (rider, 2026-09-25: beside the field they cut a
+          hint to „Atzīmē kartē, kur pārvietot šo…”). The off-road verdict stacks above it (`flex-col-reverse`).
           TET takes the top-left; the ⓘ credit is beside it. */}
-      <div ref={headerRef} className={`absolute left-3 top-3 flex flex-col gap-2 ${controls ? "right-14 z-10 has-[input:focus]:right-3 has-[input:focus]:z-30 max-md:top-auto max-md:left-[3.75rem] max-md:right-3 max-md:bottom-[calc(0.75rem+var(--map-legend,0px))] max-md:flex-col-reverse max-md:z-20" : "right-14"}`}>
+      <div ref={headerRef} data-map-chrome className={`absolute left-3 top-3 flex flex-col gap-2 ${controls ? "right-14 z-10 has-[input:focus]:right-3 has-[input:focus]:z-30 max-md:top-auto max-md:left-[4.75rem] max-md:right-3 max-md:bottom-[calc(0.75rem+var(--map-legend,0px))] max-md:flex-col-reverse max-md:z-20" : "right-14"}`}>
       {controls && (
         /* The header, in ONE row — backlog 30. The rider's screenshot at
            375 px showed three stacked pills (the field, "+ Pietura", the hint)
@@ -3713,7 +3713,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
            With no row active the field is off and says what to do instead
            („Izvēlies rindu vai pievieno pieturu”); "+" stays, since adding a
            stop is one of the two answers. */
-        <div className="group flex items-center gap-1.5 max-md:relative md:max-w-md">
+        <div className="group flex items-center gap-1.5 max-md:relative max-md:gap-2 md:max-w-md">
           <span role="status" className="sr-only">{controls.hint}</span>
           <PlaceInput
             className="min-w-0 flex-1"
@@ -3735,15 +3735,12 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
             ) : undefined}
             compact
           />
-          {/* The buttons: in the row on the desktop (`contents`); on a phone a
-              column on the right edge, bottom-up from just above the field,
-              primary on top. `--map-h` (MapPanel) caps it below the zoom stack
-              and the geolocate button (9.25 rem from the top): a column too
-              tall for a short map wraps a second column to its left, and on a
-              map with no room for even one disc (under ~16.5 rem, the inline
-              strip at 568 px) the discs line up in a row above the field,
-              moved 2.5 rem in from the edge to clear the zoom stack. */}
-          <div className="contents max-md:absolute max-md:bottom-full max-md:right-[clamp(0px,calc((16.5rem+var(--map-legend,0px)-var(--map-h,100dvh))*1000),2.5rem)] max-md:mb-2 max-md:flex max-md:max-h-[calc(var(--map-h,100dvh)-var(--map-legend,0px)-13rem)] max-md:flex-col max-md:flex-wrap-reverse max-md:justify-end max-md:gap-2">
+          {/* ✓ / "+" and ↶: in the row on the desktop (`contents`); on a phone
+              a column on the right edge, bottom-up from just above the row,
+              primary on top. Only the full-screen map has it — inline the map
+              is a preview (MapPanel). A disabled ✓ is not drawn on a phone
+              either; the column grows from the bottom, so ↶ stays put. */}
+          <div className="contents max-md:absolute max-md:bottom-full max-md:right-0 max-md:mb-2 max-md:flex max-md:flex-col max-md:gap-2">
           {controls.pending && !controls.pending.offRoad ? (
             /* Not hidden while the field has focus, unlike "+": a place just
                picked from the field's list is exactly when Confirm is needed,
@@ -3753,7 +3750,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
             <>
               <button type="button" onClick={controls.pending.onConfirm ?? undefined} disabled={!controls.pending.onConfirm}
                 aria-label={controls.pending.confirmLabel} title={controls.pending.confirmLabel}
-                className="flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-full bg-[#f56300] px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#d85600] disabled:opacity-60 max-md:size-14 max-md:px-0 max-md:shadow-md">
+                className="flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-full bg-[#f56300] px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#d85600] disabled:opacity-60 max-md:size-14 max-md:px-0 max-md:shadow-md max-md:disabled:hidden">
                 <Check aria-hidden="true" className="size-4 shrink-0 max-md:size-6" /><span className="max-md:hidden">{controls.pending.confirmLabel}</span>
               </button>
               {controls.pending.undo && (
@@ -3763,11 +3760,6 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
                   <Undo2 aria-hidden="true" className="size-4 max-md:size-6" />
                 </button>
               )}
-              <button type="button" onClick={controls.pending.onCancel}
-                aria-label={controls.pending.cancelLabel} title={controls.pending.cancelLabel}
-                className="flex size-10 shrink-0 items-center justify-center rounded-full border border-[#ececf0] bg-white/95 text-stone-700 shadow-sm backdrop-blur transition-colors hover:bg-white max-md:size-14 max-md:shadow-md">
-                <X aria-hidden="true" className="size-5 max-md:size-6" />
-              </button>
             </>
           ) : (
             /* Disabled at the cap and saying why, rather than absent: a button
@@ -3799,6 +3791,14 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
             </button>
           )}
           </div>
+          {/* ✕ closes the row on a phone, under ↶; after ✓ ↶ on the desktop. */}
+          {controls.pending && !controls.pending.offRoad && (
+            <button type="button" onClick={controls.pending.onCancel}
+              aria-label={controls.pending.cancelLabel} title={controls.pending.cancelLabel}
+              className="flex size-10 shrink-0 items-center justify-center rounded-full border border-[#ececf0] bg-white/95 text-stone-700 shadow-sm backdrop-blur transition-colors hover:bg-white max-md:size-14 max-md:shadow-md">
+              <X aria-hidden="true" className="size-5 max-md:size-6" />
+            </button>
+          )}
         </div>
       )}
       {/* Below the row on the desktop, above it on a phone (the column is
@@ -3883,7 +3883,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
           together wherever TET goes: the top-left on a phone while the header
           row is at the bottom, beside the full-screen button on a phone
           result, above the legend on the desktop. */}
-      <div className={`absolute bottom-[calc(1.125rem+var(--map-legend,0px))] left-[3.75rem] z-10 flex max-w-[calc(100%-4.5rem)] items-center gap-1.5 md:bottom-[calc(0.75rem+var(--map-legend,0px))] md:left-3 ${controls ? "max-md:bottom-auto max-md:left-3 max-md:top-3" : ""}`}>
+      <div data-map-chrome className={`absolute bottom-[calc(1.5625rem+var(--map-legend,0px))] left-[4.75rem] z-10 flex max-w-[calc(100%-5.5rem)] items-center gap-1.5 md:bottom-[calc(0.75rem+var(--map-legend,0px))] md:left-3 ${controls ? "max-md:bottom-auto max-md:left-3 max-md:top-3" : ""}`}>
       <button
         type="button"
         onClick={() => onToggleTet(!showTet)}

@@ -577,6 +577,7 @@ export type MessageKey =
   | "legendTrail"
   | "mapFullscreen"
   | "mapExitFullscreen"
+  | "mapOpenPreview"
   | "cancel"
   | "badgeUnverified"
   | "badgeUnverifiedDetail"
@@ -1106,6 +1107,7 @@ const lv: Messages = {
   legendTrail: "Taciņas",
   mapFullscreen: "Karte pa visu ekrānu",
   mapExitFullscreen: "Aizvērt pilnekrāna karti",
+  mapOpenPreview: "Atvērt karti",
   cancel: "Atcelt",
   badgeUnverified: "Nepārbaudīta piekļuve",
   badgeUnverifiedDetail:
@@ -1577,6 +1579,7 @@ const lt: Messages = {
   legendTrail: "Takeliai",
   mapFullscreen: "Žemėlapis per visą ekraną",
   mapExitFullscreen: "Uždaryti viso ekrano žemėlapį",
+  mapOpenPreview: "Atidaryti žemėlapį",
   cancel: "Atšaukti",
   badgeUnverified: "Nepatikrintas privažiavimas",
   badgeUnverifiedDetail:
@@ -2052,6 +2055,7 @@ const et: Messages = {
   legendTrail: "Rajad",
   mapFullscreen: "Kaart üle ekraani",
   mapExitFullscreen: "Sulge täisekraanikaart",
+  mapOpenPreview: "Ava kaart",
   cancel: "Tühista",
   badgeUnverified: "Kontrollimata juurdepääs",
   badgeUnverifiedDetail:
@@ -2521,6 +2525,7 @@ const en: Messages = {
   legendTrail: "Trails",
   mapFullscreen: "Full-screen map",
   mapExitFullscreen: "Close full-screen map",
+  mapOpenPreview: "Open map",
   cancel: "Cancel",
   badgeUnverified: "Unverified access",
   badgeUnverifiedDetail:
