@@ -448,6 +448,17 @@ export type MessageKey =
   | "shapePromote"
   | "shapeCapNote"
   | "shapeMoveHint"
+  /**
+   * A point tapped on the map (2026-09-25): the hint its selection shows in
+   * the sheet and the bottom bar — the next mark is its new place; the
+   * sheet's close; a shaping point's short name, the sheet's title.
+   * Latvian never says „piesit”.
+   */
+  | "pointMoveHint"
+  | "pointMove"
+  | "pointStopTitle"
+  | "pointSheetClose"
+  | "shapePointName"
   | "resSearchDropsShapes"
   /**
    * Including the ticked sights without re-planning, and correcting the ride
@@ -1039,11 +1050,16 @@ const lv: Messages = {
   mapAddStop: "+ Pietura",
   mapAddStopFull: "Vairāk pieturu pievienot nevar — braucienā var būt ne vairāk kā {n} pieturas",
   mapStopCapShort: "Maks. {n} pieturas",
-  shapePointLabel: "Maršruta punkts — pavelc, lai pārvietotu, vai spied izvēlnei",
+  shapePointLabel: "Maršruta punkts — spied, lai atvērtu izvēlni",
   shapeRemove: "Izņemt",
   shapePromote: "Padarīt par pieturu",
   shapeCapNote: "Maršruta punktu ir jau {n} — vairāk pievienot nevar",
   shapeMoveHint: "Maršruta punkts pārvietots — apstiprini",
+  pointMoveHint: "Izvēlies jaunu vietu kartē",
+  pointMove: "Pārvietot",
+  pointStopTitle: "Pietura {n}",
+  pointSheetClose: "Aizvērt",
+  shapePointName: "Maršruta punkts",
   resSearchDropsShapes: "Maršruta punkti pilnajā meklēšanā netiek ņemti vērā.",
   resAddSelected: "Pievienot izvēlētos",
   resAddSelectedHint: "Atzīmētās vietas paliek maršrutā — bez jaunas meklēšanas.",
@@ -1510,11 +1526,16 @@ const lt: Messages = {
   mapAddStop: "+ Sustojimas",
   mapAddStopFull: "Daugiau sustojimų pridėti negalima — kelionėje gali būti ne daugiau kaip {n} sustojimų",
   mapStopCapShort: "Daugiausia {n} sustojimų",
-  shapePointLabel: "Maršruto taškas — vilkite, kad perkeltumėte, arba spustelėkite meniu",
+  shapePointLabel: "Maršruto taškas — spustelėkite, kad atvertumėte meniu",
   shapeRemove: "Pašalinti",
   shapePromote: "Paversti sustojimu",
   shapeCapNote: "Maršruto taškų jau {n} — daugiau pridėti negalima",
   shapeMoveHint: "Maršruto taškas perkeltas — patvirtinkite",
+  pointMoveHint: "Pasirinkite naują vietą žemėlapyje",
+  pointMove: "Perkelti",
+  pointStopTitle: "Sustojimas {n}",
+  pointSheetClose: "Uždaryti",
+  shapePointName: "Maršruto taškas",
   resSearchDropsShapes: "Pilnoje paieškoje maršruto taškai neatsižvelgiami.",
   resAddSelected: "Pridėti pažymėtas",
   resAddSelectedHint: "Pažymėtos vietos lieka maršrute — be naujos paieškos.",
@@ -1985,11 +2006,16 @@ const et: Messages = {
   mapAddStop: "+ Peatus",
   mapAddStopFull: "Rohkem peatusi lisada ei saa — sõidul võib olla kuni {n} peatust",
   mapStopCapShort: "Kuni {n} peatust",
-  shapePointLabel: "Marsruudi punkt — lohista, et liigutada, või klõpsa menüü jaoks",
+  shapePointLabel: "Marsruudi punkt — klõpsa, et avada menüü",
   shapeRemove: "Eemalda",
   shapePromote: "Tee peatuseks",
   shapeCapNote: "Marsruudi punkte on juba {n} — rohkem lisada ei saa",
   shapeMoveHint: "Marsruudi punkt liigutatud — kinnita",
+  pointMoveHint: "Vali kaardil uus koht",
+  pointMove: "Liiguta",
+  pointStopTitle: "Peatus {n}",
+  pointSheetClose: "Sulge",
+  shapePointName: "Marsruudi punkt",
   resSearchDropsShapes: "Täisotsing marsruudi punkte ei arvesta.",
   resAddSelected: "Lisa valitud",
   resAddSelectedHint: "Märgitud kohad jäävad marsruuti — ilma uue otsinguta.",
@@ -2454,11 +2480,16 @@ const en: Messages = {
   mapAddStop: "+ Stop",
   mapAddStopFull: "No room for another stop — a ride takes up to {n} stops",
   mapStopCapShort: "Max. {n} stops",
-  shapePointLabel: "Route point — drag to move it, or click for options",
+  shapePointLabel: "Route point — click for options",
   shapeRemove: "Remove",
   shapePromote: "Make it a stop",
   shapeCapNote: "There are already {n} route points — no more can be added",
   shapeMoveHint: "Route point moved — confirm",
+  pointMoveHint: "Choose a new spot on the map",
+  pointMove: "Move",
+  pointStopTitle: "Stop {n}",
+  pointSheetClose: "Close",
+  shapePointName: "Route point",
   resSearchDropsShapes: "The full search does not keep route points.",
   resAddSelected: "Add the ticked places",
   resAddSelectedHint: "The ticked places stay in the ride — no new search.",

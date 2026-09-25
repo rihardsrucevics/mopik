@@ -270,10 +270,9 @@ export type EditPlan = {
  * kilometres around the tip: walks outwards while the line on both sides is
  * the same road (within 40 m), and reports how far that went.
  */
-export function spurLength(line: Point[], cum: number[], alongMeters: number): number {
+export function spurLength(line: Point[], cum: number[], alongMeters: number, step = 100): number {
   const total = cum[cum.length - 1];
   let w = 0;
-  const step = 100;
   while (alongMeters - w - step >= 0 && alongMeters + w + step <= total) {
     const a = pointAtDistance(line, cum, alongMeters - w - step).point;
     const b = pointAtDistance(line, cum, alongMeters + w + step).point;
@@ -281,6 +280,21 @@ export function spurLength(line: Point[], cum: number[], alongMeters: number): n
     w += step;
   }
   return w;
+}
+
+/**
+ * The step `planEdit` walks a neighbouring place's spur in: fine enough to
+ * see the 50-300 m out-and-backs `spurLength`'s 100 m step reads as none.
+ */
+export const SPUR_TIP_STEP_M = 20;
+
+/**
+ * Which points of a stretch are shaping points — sent with it, so the router
+ * cuts a spur to one instead of keeping it (`routeThroughPlaces`).
+ */
+export function shapeFlags(run: EditRun, places: RidePlaces): boolean[] {
+  const shapes = shapesOf(places);
+  return run.points.map((p) => shapes.some((s) => Math.abs(s.lon - p[0]) < 1e-9 && Math.abs(s.lat - p[1]) < 1e-9));
 }
 
 /**
@@ -400,6 +414,59 @@ export function planEdit(params: {
 
   if (!startMoved && !finishMoved) {
     const bv = before.vias, av = after.vias;
+    /**
+     * The stretch around one changed place: `w` each way along the line from
+     * `centre`, never past the places either side (anchors `lo` and `hi`) —
+     * unless that place sits at the tip of an out-and-back on the line. Then
+     * the stretch reaches past it, taking it in as a place to ride through:
+     * a stretch that stops ON such a place keeps the spur to it for ever,
+     * whatever the edit does (measured on the rider's ride, 2026-09-25: his
+     * stop 2 was the tip of a 600 m out-and-back, the stops he added beside
+     * it were re-routed up to it and no further, and it stayed a spur).
+     */
+    type Piece = { from: number; to: number; points: { along: number; p: Point }[] };
+    const pieceAround = (centre: number, w: number, lo: number, hi: number, p: Point): Piece => {
+      const out: Piece = { from: Math.max(along[lo], centre - w), to: Math.min(along[hi], centre + w), points: [{ along: centre, p }] };
+      const isVia = (k: number) => k > 0 && k < oldA.length - 1;
+      if (out.from <= along[lo] + 1 && isVia(lo)) {
+        const spur = spurLength(line, cum, along[lo], SPUR_TIP_STEP_M);
+        if (spur >= THROUGH_SHARED_MIN_M) {
+          out.points.unshift({ along: along[lo], p: oldA[lo] });
+          out.from = Math.max(along[lo - 1], along[lo] - spur - EDIT_WINDOW_M);
+        }
+      }
+      if (out.to >= along[hi] - 1 && isVia(hi)) {
+        const spur = spurLength(line, cum, along[hi], SPUR_TIP_STEP_M);
+        if (spur >= THROUGH_SHARED_MIN_M) {
+          out.points.push({ along: along[hi], p: oldA[hi] });
+          out.to = Math.min(along[hi + 1], along[hi] + spur + EDIT_WINDOW_M);
+        }
+      }
+      return out;
+    };
+    /**
+     * Pieces that overlap are one stretch, through every place in both, in
+     * the order the line reaches them. Two that only touch — at a place both
+     * stop on — stay two: merged, the place between them would be left out.
+     */
+    const runsOf = (pieces: Piece[]): EditRun[] => {
+      const sorted = [...pieces].sort((x, y) => x.from - y.from);
+      const merged: Piece[] = [];
+      for (const q of sorted) {
+        const open = merged[merged.length - 1];
+        if (open && q.from < open.to) {
+          open.to = Math.max(open.to, q.to);
+          for (const pt of q.points) if (!open.points.some((o) => o.p[0] === pt.p[0] && o.p[1] === pt.p[1])) open.points.push(pt);
+          continue;
+        }
+        merged.push({ ...q, points: [...q.points] });
+      }
+      return merged.map((q) => ({
+        fromMeters: q.from,
+        toMeters: q.to,
+        points: [at(q.from), ...q.points.sort((x, y) => x.along - y.along).map((pt) => pt.p), at(q.to)],
+      }));
+    };
     // One stop moved.
     if (bv.length === av.length) {
       const changed = bv.map((v, i) => (same(v, av[i]) ? -1 : i)).filter((i) => i >= 0);
@@ -407,10 +474,7 @@ export function planEdit(params: {
       if (changed.length === 1) {
         const k = changed[0] + 1; // anchor index
         const moved = haversineMeters(oldA[k], toPoint(av[changed[0]]));
-        const w = windowFor(moved);
-        const from = Math.max(along[k - 1], along[k] - w);
-        const to = Math.min(along[k + 1], along[k] + w);
-        return plan("move-stop", [{ fromMeters: from, toMeters: to, points: [at(from), toPoint(av[changed[0]]), at(to)] }]);
+        return plan("move-stop", runsOf([pieceAround(along[k], windowFor(moved), k - 1, k + 1, toPoint(av[changed[0]]))]));
       }
     }
     // One stop added: every old stop still there, in order, plus one.
@@ -428,18 +492,15 @@ export function planEdit(params: {
         let slot = 0;
         while (slot < bv.length && along[slot + 1] <= nearest.alongMeters) slot++;
         after = { ...after, vias: [...bv.slice(0, slot), added, ...bv.slice(slot)] };
-        const w = windowFor(nearest.meters);
-        const from = Math.max(along[slot], nearest.alongMeters - w);
-        const to = Math.min(along[slot + 1], nearest.alongMeters + w);
-        return plan("add-stop", [{ fromMeters: from, toMeters: to, points: [at(from), toPoint(added), at(to)] }]);
+        return plan("add-stop", runsOf([pieceAround(nearest.alongMeters, windowFor(nearest.meters), slot, slot + 1, toPoint(added))]));
       }
     }
     // Several stops added at once (a batch, 2026-09-25): every old stop still
     // there, in order, plus two or more. Each goes into the ride where the
     // line passes it, exactly as one added stop does, and each gets its own
-    // window; windows between the same two places that meet are one stretch,
-    // routed through both stops in the order the line reaches them. All the
-    // stretches go to the router in one request and are routed in parallel.
+    // window; windows that meet are one stretch, routed through every stop in
+    // it in the order the line reaches them. All the stretches go to the
+    // router in one request and are routed in parallel.
     if (av.length > bv.length + 1) {
       const isOld = (v: RidePlace) => bv.some((b) => same(b, v));
       const kept = av.filter(isOld);
@@ -450,8 +511,7 @@ export function planEdit(params: {
           const meters = added.grabbedAt ? haversineMeters(added.grabbedAt, toPoint(added)) : n.meters;
           let slot = 0;
           while (slot < bv.length && along[slot + 1] <= n.alongMeters) slot++;
-          const w = windowFor(meters);
-          return { added, alongMeters: n.alongMeters, slot, from: Math.max(along[slot], n.alongMeters - w), to: Math.min(along[slot + 1], n.alongMeters + w) };
+          return { added, alongMeters: n.alongMeters, slot, piece: pieceAround(n.alongMeters, windowFor(meters), slot, slot + 1, toPoint(added)) };
         }).sort((a, b) => a.alongMeters - b.alongMeters);
         const vias: RidePlace[] = [];
         for (let slot = 0; slot <= bv.length; slot++) {
@@ -459,22 +519,7 @@ export function planEdit(params: {
           for (const e of extras) if (e.slot === slot) vias.push(e.added);
         }
         after = { ...after, vias };
-        const runs: EditRun[] = [];
-        let open: { from: number; to: number; slot: number; stops: RidePlace[] } | null = null;
-        const close = () => {
-          if (open) runs.push({ fromMeters: open.from, toMeters: open.to, points: [at(open.from), ...open.stops.map(toPoint), at(open.to)] });
-        };
-        for (const e of extras) {
-          if (open && open.slot === e.slot && e.from <= open.to) {
-            open.to = Math.max(open.to, e.to);
-            open.stops.push(e.added);
-            continue;
-          }
-          close();
-          open = { from: e.from, to: e.to, slot: e.slot, stops: [e.added] };
-        }
-        close();
-        return plan("add-stops", runs);
+        return plan("add-stops", runsOf(extras.map((e) => e.piece)));
       }
     }
     // One stop removed.
@@ -609,6 +654,41 @@ export const LOOP_SHARED_MIN_M = 300;
  */
 export const LOOP_EXTRA_PER_SHARED = 1;
 
+/**
+ * The least extra road a loop through a place may cost in edit mode, however
+ * short the spur it replaces (rider, 2026-09-25: "if the only way is a dead
+ * end, prefer looping"). With the bound at `LOOP_EXTRA_PER_SHARED` alone a
+ * 300 m spur allowed a loop 300 m longer than the out-and-back — no way
+ * round a Latvian forest block is — so short spurs were always kept. Edit
+ * mode only: the generation's spur loops (`prune-spurs.ts`) keep their own
+ * bound.
+ */
+export const LOOP_EXTRA_FLOOR_M = 1_500;
+
+/**
+ * The shared road between a place's way in and way out from which the edit
+ * looks for a way through it (`routeThroughPlaces`). Below this is the few
+ * metres two legs share at any place set a little off the road; above it is
+ * a spur the rider would ride twice. Much lower than `LOOP_SHARED_MIN_M`
+ * (which the generation keeps): the rider's stop 2 sat 250-600 m up a dead-end
+ * track and edit mode never looked for a way round it.
+ */
+export const THROUGH_SHARED_MIN_M = 50;
+
+/**
+ * Where a place's spur begins on its way in: the index in `approach` of the
+ * first vertex of the stretch the way out rides back along (0 when the whole
+ * approach is shared, the approach's last index when nothing is). A shaping
+ * point on a spur is moved there (`routeThroughPlaces`).
+ */
+export function spurBaseIndex(approach: Point[], departure: Point[]): number {
+  const inD = new Set<string>();
+  for (let i = 1; i < departure.length; i++) inD.add(pairKey(departure[i - 1], departure[i]));
+  let k = approach.length - 1;
+  while (k > 0 && inD.has(pairKey(approach[k - 1], approach[k]))) k--;
+  return k;
+}
+
 /** Undirected keys of a line's consecutive pairs, at `recomputeOverlap`'s ~1 m. */
 function pairKey(p: Point, q: Point): string {
   const a = `${p[0].toFixed(5)},${p[1].toFixed(5)}`;
@@ -650,17 +730,22 @@ export function sharedRoad(a: Point[], b: Point[]): { meters: number; points: Po
 export function nogosAlong(
   points: Point[],
   keepClear: Point[],
-  opts: { spacingM?: number; radiusM?: number; clearM?: number; maxCount?: number } = {},
+  opts: {
+    spacingM?: number; radiusM?: number; clearM?: number; maxCount?: number;
+    /** A clearance per `keepClear` point, overriding `clearM` for it. */
+    keepClearM?: number[];
+  } = {},
 ): { lon: number; lat: number; radius: number }[] {
   const radius = opts.radiusM ?? 60;
   const clear = opts.clearM ?? 250;
   const max = opts.maxCount ?? MAX_NOGOS;
+  const clearOf = (i: number) => opts.keepClearM?.[i] ?? clear;
   const place = (spacing: number) => {
     const out: { lon: number; lat: number; radius: number }[] = [];
     let last: Point | null = null;
     for (const p of points) {
       if (last && haversineMeters(last, p) < spacing * 0.95) continue;
-      if (keepClear.some((k) => haversineMeters(k, p) < clear)) continue;
+      if (keepClear.some((k, i) => haversineMeters(k, p) < clearOf(i))) continue;
       out.push({ lon: p[0], lat: p[1], radius });
       last = p;
     }
@@ -711,7 +796,7 @@ export function chooseLoop(base: LegPair, variants: (LegPair | null)[]): { index
     const s = shared(v);
     const saved = baseShared - s;
     if (saved <= 0) return;
-    if (length(v) - length(base) > LOOP_EXTRA_PER_SHARED * saved) return;
+    if (length(v) - length(base) > Math.max(LOOP_EXTRA_PER_SHARED * saved, LOOP_EXTRA_FLOOR_M)) return;
     if (s < best.sharedMeters || (s === best.sharedMeters && length(v) < best.length)) {
       best = { index, pair: v, sharedMeters: s, length: length(v) };
     }
