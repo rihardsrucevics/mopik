@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useRef, useState, useEffect } from "react";
 import { RouteMap, type MapControls } from "@/components/route-map";
 import { mapWiring } from "@/lib/map/map-wiring";
+import { editNotice } from "@/lib/map/batch-commit";
 import { RoutePrompt } from "@/components/route-prompt";
 import { ResultPanel } from "@/components/result-panel";
 import type { DetourFocusNote, SelectedPoi } from "@/components/suggestions-card";
@@ -1141,8 +1142,12 @@ export function HomePage() {
    * ride the rider had is still the ride he has. A correction that cannot be
    * routed must never cost him the route he already liked.
    */
-  async function commitEdit(rows: { names: string[]; picked: Record<number, ResolvedPlace | null> }) {
-    if (!plan || !result || !route || !ridePlaces || rerouting) return;
+  async function commitEdit(rows: { names: string[]; picked: Record<number, ResolvedPlace | null> }, opts: { keepOnFailure?: boolean } = {}): Promise<boolean> {
+    // Never a silent no-op (2026-09-25): a change committed while another
+    // is still being routed used to return here with nothing said, and the
+    // rows it had already filled were left as pins off the line.
+    if (!plan || !result || !route || !ridePlaces) return false;
+    if (rerouting) { setEditNote(ui.resEditRouting); return false; }
     const before = ridePlaces;
     const fromRows = placesFromRows({
       picked: rows.picked,
@@ -1153,11 +1158,11 @@ export function HomePage() {
     if ("error" in fromRows) {
       track("route_edit_failed", { reason: "no-place" });
       setEditNote(ui.editNeedsPlace);
-      reseed();
-      return;
+      if (!opts.keepOnFailure) reseed();
+      return false;
     }
     // The rows are the stops; the shaping points go back where they were.
-    await reroutePlaces(before, mergeShapes(before, fromRows));
+    return reroutePlaces(before, mergeShapes(before, fromRows), { keepOnFailure: opts.keepOnFailure });
   }
 
   /**
@@ -1222,18 +1227,28 @@ export function HomePage() {
    * — the one path every edit takes, a stop's or a shaping point's. `shape`
    * only changes the words of the notes ("maršruta punkts", not "pietura").
    */
-  async function reroutePlaces(before: RidePlaces, after: RidePlaces, opts: { shape?: boolean } = {}) {
-    if (!plan || !result || !route) return;
+  /**
+   * Whether the change landed. A failure always says why (`editNote`, shown
+   * on the map itself as well as in the panel) and puts the rows back —
+   * unless the caller keeps them (`keepOnFailure`: a batch stays pending, so
+   * its stops can be confirmed again or dropped, never left as pins off the
+   * line with nothing to undo).
+   */
+  async function reroutePlaces(before: RidePlaces, after: RidePlaces, opts: { shape?: boolean; keepOnFailure?: boolean } = {}): Promise<boolean> {
+    if (!plan || !result || !route) return false;
+    const fail = (note: string) => {
+      setEditNote(note);
+      if (!opts.keepOnFailure) reseed();
+      return false;
+    };
     const baseSegments = edited?.segments ?? route.segments;
     const line = coordinatesOf(baseSegments);
-    if (line.length < 2) return;
+    if (line.length < 2) return fail(ui.resEditFailed);
     const planned = planEdit({ line, cum: cumulative(line), before, after });
-    if (!planned) return;
+    if (!planned) { if (!opts.keepOnFailure) reseed(); return true; }
     if ("error" in planned) {
       track("route_edit_failed", { reason: "degenerate" });
-      setEditNote(ui.editNoRide);
-      reseed();
-      return;
+      return fail(ui.editNoRide);
     }
     const nextPlan = planWithPlaces(plan, planned.places);
     setRerouting(true);
@@ -1270,9 +1285,7 @@ export function HomePage() {
       let data = await request(runs);
       if ("status" in data) {
         track("route_edit_failed", { reason: String(data.status) });
-        setEditNote(ui.resEditFailed);
-        reseed();
-        return;
+        return fail(ui.resEditFailed);
       }
       let spliced = splice(runs, data);
       // The invariant (rider, 2026-09-25): the edited ride is ONE continuous
@@ -1296,11 +1309,7 @@ export function HomePage() {
           else console.warn("mopik: edited line broke again on the whole span", { breaks: second.breaks, missesPlaces: second.missesPlaces });
         }
       }
-      if (!verdict.ok) {
-        setEditNote(ui.editBrokenLine);
-        reseed();
-        return;
-      }
+      if (!verdict.ok) return fail(ui.editBrokenLine);
       // Where the line actually reaches each changed place. A point in a
       // field is answered by the router with a line that turns back at the
       // nearest track, silently; the place follows the line and the rider is
@@ -1327,9 +1336,7 @@ export function HomePage() {
       const snapped = snapToLine({ line: spliced.coordinates, before, after: withJoins, maxMoveMeters: MOVE_OFFER_MAX_M });
       if ("error" in snapped) {
         track("route_edit_failed", { reason: "too-far" });
-        setEditNote(fi(ui.pickOffRoadTitle, { m: snapped.meters }));
-        reseed();
-        return;
+        return fail(fi(ui.pickOffRoadTitle, { m: snapped.meters }));
       }
       // Where a grabbed line point was taken only mattered to this edit's
       // plan; the shaping point it became is an ordinary one from here on.
@@ -1395,10 +1402,10 @@ export function HomePage() {
           repeated_after: next.overlap.repeatedPercent,
         });
       });
+      return true;
     } catch {
       track("route_edit_failed", { reason: "network" });
-      setEditNote(ui.resEditFailed);
-      reseed();
+      return fail(ui.resEditFailed);
     } finally {
       setRerouting(false);
     }
@@ -1774,6 +1781,16 @@ export function HomePage() {
     }
     return spliced.segments;
   }, [spliced, shownRoute, wiring.editing]);
+  /**
+   * The map's header, with what an edit is doing said on the map itself
+   * (2026-09-25). On a phone the editor is full screen, and the panel that
+   * says „Pārrēķinu posmu…” or why a change was refused is behind it: a
+   * confirmed batch then looked like two pins left off the line with nothing
+   * happening, and a refusal said nothing at all.
+   */
+  const editMapControls: MapControls | null = mapControls && wiring.editing
+    ? { ...mapControls, notice: editNotice({ rerouting, note: editNote, routingText: ui.resEditRouting, base: mapControls.notice }) }
+    : mapControls;
   const mapPanel = (
     <MapPanel
       // Phone heights. The map yields to words whenever there are words to
@@ -1830,7 +1847,7 @@ export function HomePage() {
         // The header: the field bound to the active row and "+". Only while the
         // rows are the view — planning, or editing a ride — because a plain
         // result map has no active row and nothing to add a stop to.
-        controls={wiring.header ? mapControls : null} />
+        controls={wiring.header ? editMapControls : null} />
     </MapPanel>
   );
   // Where the map lives depends only on the viewport and the view — never on
@@ -1874,7 +1891,7 @@ export function HomePage() {
   const editor: RideEdit | null = wiring.editing && ridePlaces
     ? {
         seed: { ...rowsOf(ridePlaces), roundTrip: ridePlaces.roundTrip, token: seed.token, active: seed.active },
-        onCommit: (rows) => { void commitEdit(rows); },
+        onCommit: (rows, opts) => commitEdit(rows, opts),
         shapePoints: shapesOf(ridePlaces).map((v) => ({ lat: v.lat, lon: v.lon })),
         onShape: (op) => { void commitShape(op); },
         onDone: finishEdit,

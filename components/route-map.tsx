@@ -4040,7 +4040,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
           reversed there), so it is never squeezed into the field. */}
       {controls?.notice && (
         <div role="status" title={controls.notice.title} aria-label={controls.notice.title}
-          className="self-start rounded-full border border-amber-300 bg-amber-50/95 px-3 py-1 text-xs font-medium text-amber-900 shadow-sm backdrop-blur">
+          className="self-start rounded-2xl border border-amber-300 bg-amber-50/95 px-3 py-1 text-xs font-medium leading-snug text-amber-900 shadow-sm backdrop-blur">
           {controls.notice.text}
         </div>
       )}

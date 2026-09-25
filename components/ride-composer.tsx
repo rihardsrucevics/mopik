@@ -18,6 +18,7 @@ import type { ResolvedPlace } from "@/lib/chat/places";
 import { placeRoles, type PlaceRoles } from "@/lib/map/place-roles";
 import type { ShapeEdit } from "@/lib/routing/reroute-leg";
 import { stepShape, type ShapePending } from "@/lib/map/shape-pending";
+import { stepBatch } from "@/lib/map/batch-commit";
 // On a phone the inline map is a preview: a row's pin and "+ Pietura" open it
 // full screen first (rider, 2026-09-25).
 import { openMapFullscreen } from "@/lib/map/fullscreen";
@@ -152,8 +153,13 @@ export type RideEdit = {
    * map would be the one thing an editor must never show.
    */
   seed: { names: string[]; picked: Record<number, ResolvedPlace>; roundTrip: boolean; token: number; active?: number };
-  /** A change the rider committed: a Confirm, a pick from a list, ✕ on a stop, an arrow. */
-  onCommit: (rows: { names: string[]; picked: Record<number, ResolvedPlace | null> }) => void;
+  /**
+   * A change the rider committed: a Confirm, a pick from a list, ✕ on a stop,
+   * an arrow. Resolves to whether it landed on the line. `keepOnFailure`: a
+   * refused change leaves the rows alone instead of re-seeding them, so the
+   * caller can keep its marks pending (a batch).
+   */
+  onCommit: (rows: { names: string[]; picked: Record<number, ResolvedPlace | null> }, opts?: { keepOnFailure?: boolean }) => Promise<boolean>;
   /** "Pabeigt labošanu": back to the result panel, keeping the edits. */
   onDone: () => void;
   /** "Atcelt labošanu": back to the result panel with every edit of this session dropped. */
@@ -447,6 +453,8 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   const [batch, setBatch] = useState<BatchItem[]>([]);
   /** The pending stop the rider pressed: the next mark or drag moves it. */
   const [batchSel, setBatchSel] = useState<number | null>(null);
+  /** Editing: a confirmed batch is being routed; its stops stay pending until the line lands. */
+  const [batchCommitting, setBatchCommitting] = useState(false);
   const batchIdRef = useRef(0);
   const batchRef = useRef(batch);
   useEffect(() => { batchRef.current = batch; }, [batch]);
@@ -1454,6 +1462,32 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     const names = places.map((p, i) => batch.find((b) => b.row === i)?.place?.name ?? p);
     const nextPicked = { ...picked };
     for (const b of batch) nextPicked[b.row] = b.place;
+    if (edit) {
+      // Editing (2026-09-25): the stops stay pending until the line goes
+      // through them. Turning them into confirmed rows at once drew them as
+      // numbered pins off the line for as long as the re-route took, with ↶
+      // hidden — and when it failed, or was dropped because another was
+      // still running, they stayed that way. Now ✓ waits („Pārrēķinu
+      // posmu…”); the new line clears the batch (the rows are re-seeded from
+      // the ride); a refusal keeps it, pending, with the reason on the map.
+      const start = stepBatch({ committing: batchCommitting }, { type: "confirm", busy: edit.rerouting });
+      if (!start.send) return;
+      track("batch_confirmed", { n: batch.length });
+      setBatchCommitting(true);
+      setBatchSel(null);
+      void edit.onCommit({ names, picked: nextPicked }, { keepOnFailure: true }).then((ok) => {
+        const done = stepBatch(start.state, { type: ok ? "landed" : "refused" });
+        setBatchCommitting(done.state.committing);
+        if (!done.clearBatch) return;
+        for (const b of batch) rememberPlace(b.place!);
+        batchRef.current = [];
+        setBatch([]);
+        setRowIsNew(false);
+        // As planning's batch does: no row stays waiting for a mark.
+        setChosenRow(defaultActiveRow(names));
+      });
+      return;
+    }
     // The step back is to before the batch: its rows gone again, the empty
     // row it started in empty again — one undo takes the whole batch.
     const rowsOf = batch.map((b) => b.row);
@@ -1783,8 +1817,8 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     // for a selected pending stop the probe found off the road, the verdict.
     const stopsBefore = batchActive ? places.slice(1, batch[0].row).filter((_, j) => picked[j + 1] && !picked[j + 1]?.kind).length : 0;
     const batchPending = !batchActive ? null : {
-      confirmLabel: t(locale, "batchConfirmAll"),
-      onConfirm: batch.some((b) => !b.place || b.check !== "ok") || edit?.rerouting ? null : () => pendingHandlers.current?.confirmBatch(),
+      confirmLabel: batchCommitting || edit?.rerouting ? t(locale, "resEditRouting") : t(locale, "batchConfirmAll"),
+      onConfirm: batch.some((b) => !b.place || b.check !== "ok") || edit?.rerouting || batchCommitting ? null : () => pendingHandlers.current?.confirmBatch(),
       cancelLabel: t(locale, "batchDiscard"),
       onCancel: () => pendingHandlers.current?.discardBatch(),
       undo: { label: t(locale, "batchUndoLast"), onUndo: () => pendingHandlers.current?.undoBatch() },
@@ -1846,7 +1880,9 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
       // disabled and says why, and a control that does nothing is never shipped.
       // Through the ref like the other handlers: whether a blank new row is
       // already waiting (`ghostRow`) can change without the rows changing.
-      onAddStop: atCap ? null : () => pendingHandlers.current?.addStop(),
+      // Not while an edit is being routed: a change committed then was
+      // dropped, and its stop left as a pin off the line.
+      onAddStop: atCap || edit?.rerouting ? null : () => pendingHandlers.current?.addStop(),
       // At the cap, why „+” is greyed out and the next mark adds nothing —
       // short, on a line of its own; the sentence is its tooltip.
       notice: atCap ? { text: fi(t(locale, "mapStopCapShort"), { n: MAX_STOPS }), title: capSentence } : null,
@@ -1937,7 +1973,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     // The parent's callback is an inline arrow and is rebuilt every render;
     // listing it would re-report the same controls on every keystroke.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapLive, activeRow, activeLabel, atCap, activeValue, activeConfirmed, anchor, locale, tripType, rowsKey, pendingKey, mapQuery, activeOwn?.lat, activeOwn?.lon, planKey, grab?.at.lat, grab?.at.lon, batchKey, fitAsk, undo.past.length, edit?.canUndo, shapeKey, stopCount, pointKey, movePreviewKey]);
+  }, [mapLive, activeRow, activeLabel, atCap, activeValue, activeConfirmed, anchor, locale, tripType, rowsKey, pendingKey, mapQuery, activeOwn?.lat, activeOwn?.lon, planKey, grab?.at.lat, grab?.at.lon, batchKey, fitAsk, undo.past.length, edit?.canUndo, edit?.rerouting, batchCommitting, shapeKey, stopCount, pointKey, movePreviewKey]);
   // Nothing is offered once the form is gone. Without this the page would keep
   // drawing a map header for a form the rider has left.
   useEffect(() => () => onMapControlsChange?.(null),
