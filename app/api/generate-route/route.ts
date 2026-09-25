@@ -23,6 +23,8 @@ import { findResolvedPlace, type ResolvedPlace } from "@/lib/chat/places";
 import { fetchIsochrone } from "@/lib/routing/valhalla";
 import { fetchRoutePath, probeSnapPoint } from "@/lib/routing/brouter";
 import { canOfferMove, checkRoutablePoint } from "@/lib/routing/routable-point";
+// Backlog 27: every rider place probed for reachability before the search.
+import { checkRiderPlaces } from "@/lib/routing/pre-search-reachability";
 // The feasibility probe: one timed leg before the search, so a ride Mopik
 // cannot plan in one go is named up front instead of after a 50 s wait.
 import {
@@ -1426,6 +1428,45 @@ export async function POST(req: NextRequest) {
     for (const name of body.plan?.viaPlaces ?? []) {
       try { requiredVia.push(await resolvePlace(name)); }
       catch { return NextResponse.json({ error: `Neizdevās atrast obligāto pieturvietu “${name}”. Precizē to čatā.` }, { status: 422 }); }
+    }
+
+    // Backlog 27: a place the profile cannot reach is refused here, in well
+    // under a second, instead of after every candidate has failed on it
+    // (55 s in production on the rider's Pilskalni 2 ride). Only rides with
+    // stops or a finish — a plain loop's start has its own calibration route.
+    // Same 200 + `unplannable.unreachableStop` as the after-the-fact
+    // diagnosis below, so the chat and its chips need nothing new.
+    if (requiredVia.length || destination) {
+      const reach = await checkRiderPlaces({
+        places: [
+          { point: [start.lon, start.lat], name: placeName(start.label), index: 0, role: "start" },
+          ...requiredVia.map((p, i) => ({ point: [p.lon, p.lat] as [number, number], name: placeName(p.label), index: i + 1, role: "via" as const })),
+          ...(destination
+            ? [{ point: [destination.lon, destination.lat] as [number, number], name: placeName(destination.label), index: requiredVia.length + 1, role: "destination" as const }]
+            : []),
+        ],
+        probe: (leg) => probeSnapPoint({ from: leg[0], to: leg[1], profileOptions: buildMotoProfileOptions(intent), timeoutMs: 2_000 }),
+      });
+      console.log(
+        `reachability: ${reach.verdicts.length} places in ${reach.ms} ms — ` +
+          reach.verdicts
+            .map((v) => `${v.place.name} ${v.result.ok ? "ok" : v.result.reason}${v.result.distanceM !== undefined ? ` ${v.result.distanceM} m` : ""}`)
+            .join("; ")
+      );
+      if (reach.unreachable) {
+        const unplannable: UnplannableVerdict = {
+          from: placeName(start.label),
+          to: placeName((destination ?? requiredVia[requiredVia.length - 1] ?? start).label),
+          legKm: 0,
+          budgetSeconds: Math.round(PROBE_BUDGET_MS / 1000),
+          reason: "error",
+          unreachableStop: reach.unreachable,
+        };
+        return NextResponse.json(
+          { unplannable, intent, parser: parsed.source, start: { lat: start.lat, lon: start.lon, label: start.label } },
+          { status: 200 }
+        );
+      }
     }
     // A focus area away from the start ("meža aplis Baldones mežos, no
     // Rīgas"): ride there directly, loop around it with the rider's own
