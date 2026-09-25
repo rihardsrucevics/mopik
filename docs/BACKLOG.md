@@ -1331,3 +1331,113 @@ rows, the finish stays last on a one-way ride, and the reorder goes through
 the same `reorder` path the arrows use so picked coordinates, the active
 row, the undo stack and the map's numbered pins follow. Pointer events with
 mouse only (`pointerType === "mouse"`), so touch laptops fall back to arrows.
+
+## 34. One kind of point: stop ↔ pass-through, switchable both ways
+
+**Rider, 2026-09-25.** Stops and the white shaping points are two different
+objects today, with different lists and behaviour, and only one direction of
+conversion exists (shaping point → stop). "Kopumā sarežģīti." Do what
+Garmin (*via point* / *shaping point*) and Kurviger (*waypoint* / *shaping
+point*) do: **one object, „punkts”, with one switch**:
+- **Pietura** — numbered, in the list, a GPX waypoint, kept by the full search.
+- **Caurbraucams punkts** — small white dot, no number, only steers the line.
+
+Tapping any point offers „Izņemt”, move, and „Pietura ↔ Caurbraucams” in
+**both** directions. The list shows stops only; pass-through points live on
+the map. Dragging the line makes a pass-through point; typing a place makes
+a stop. The share code and GPX export follow the switch (a pass-through
+point exported as a `<rtept>` shaping point for Garmin, not a `<wpt>`).
+Builds on the 2026-09-25 tap sheet („Izņemt” / „Padarīt par pieturu”). A
+new point — of either kind — must never create a spur (see the 2026-09-25
+stops-as-spurs fix).
+
+## 35. Draw a straight segment between two points
+
+**Rider, 2026-09-25: "obligāti".** The rider can mark a straight line on the
+map between two points, and the ride must go **exactly there** between them —
+for tracks OSM does not know, a field edge, a ford, a stretch he has ridden
+himself. Ride with GPS ("straight line" drawing mode), Komoot ("off-grid"
+segment) and Kurviger (direct segment) all have it: per segment, a toggle
+between *follow roads* and *straight line*.
+
+Needs: a segment-level mode (not a whole-ride one), drawn visibly different
+(e.g. thin dashed line, surface „nezināms”), its length and a stated speed
+assumption in the honest duration, its own class in the share code and GPX
+(plain track points), and a clear warning that Mopik has not checked that it
+can be ridden or that it is legal. Edit mode, the continuous-line invariant
+and „Optimizēt” (32) must treat such a segment as fixed.
+
+## 36. Tap a stretch of the line and say what to do with it
+
+**Rider, 2026-09-25**, instead of doing "avoid" and "no retracing" through
+points. A **tap** on the line (a drag still makes a pass-through point)
+highlights the stretch **junction to junction**; on a retraced stretch, the
+whole doubled piece both ways. The same bottom sheet as for points shows the
+road class, surface, length and TET, plus:
+- **„Izvairīties no šī posma”** — re-route the neighbouring stretches with a
+  `nogo` on this piece;
+- **„Atpakaļ pa citu ceļu”** (retraced stretches only) — re-route the return
+  with `nogos` on what is already ridden;
+- **„Braukt taisni”** — make it a straight segment (35);
+- **„Pievienot punktu šeit”**.
+Each shows a grey preview with km before → after, then ✓/✕, then the edit
+state ends. A summary chip „N km braukti divreiz · parādīt” jumps to the
+first retraced stretch — no new map badge (badges stay ⚠️ and 🔥 only).
+
+## 37. Ideas from other route planners (research 2026-09-25)
+
+Competitor manuals read 2026-09-25 (Kurviger, Garmin zūmo/BaseCamp/Tread,
+calimoto, Komoot, Ride with GPS, MyRoute-app, Scenic, REVER, Google Maps,
+OsmAnd). Not yet agreed with the rider — candidates:
+- **Insert a new point into the leg it is nearest**, or ask „tuvākajam
+  posmam / jaunas beigas” (Garmin, Ride with GPS; OsmAnd has explicit „add
+  point before / after”). Kurviger's silent auto-order is what riders
+  complain about.
+- **Spot a spur and offer a one-tap fix** — nobody does this; Mopik could.
+- **„Nebraukt pa to pašu ceļu divreiz” as a preference**, retracing only via
+  an explicit „turp un atpakaļ” action (Kurviger, Ride with GPS).
+- **Move with a fixed centre crosshair** and a dashed preview to the
+  neighbours before confirming (OsmAnd).
+- **Undo and redo always visible**, version history, „atpakaļ uz čata
+  sākotnējo” (Ride with GPS).
+- **Per-leg route type** — roads vs straight (OsmAnd „change route type
+  before/after this point”, Komoot, MyRoute-app); see 35.
+- **Device-aware GPX** — stops and shaping points in Garmin's own tags,
+  extra shaping points so the zūmo does not recalculate elsewhere, warn that
+  Tread strips them (Kurviger, MyRoute-app).
+- **Surface/road-class strip under the map**, synced with the line (Komoot);
+  **reverse** and **close the loop** in one tap (Ride with GPS).
+
+## 38. A proper sharing experience
+
+**Rider, 2026-09-25**, after pressing share on desktop and getting the
+browser's own `prompt()` box „Kopē saiti:” with the link selected and
+Cancel/OK. The link should be **copied automatically** the moment he
+presses share, and Mopik should **show** it — a small in-app panel or toast
+with the short link, „Saite nokopēta ✓”, and a copy-again button — never a
+native `prompt()`. On phones, where it exists, offer the system share sheet
+(`navigator.share`) as well — Messenger, WhatsApp, Instagram DM — with the
+ride's name and km in the text. Clipboard write can fail (permissions,
+insecure context): fall back to showing the link selected with a clear
+„Nokopē to” line, still in Mopik's own UI. All four languages.
+
+**Also the preview image (rider, 2026-09-25: „dīvaini”).** The link
+preview a messenger shows (the Open Graph image) carries the „mopik.” wordmark
+**and** „mopik.eu” beside it, while the messenger already prints „mopik.eu”
+under the card — the name three times, and the image itself says nothing
+about the ride (a faint wavy line). Decide what the image should be: most
+likely the ride's own line on a map with km / duration / unpaved %, and the
+brand once, small. Check every place the image is generated (home, shared
+ride `/r/…`), in all four languages.
+
+## 39. The search fills its whole 50 s budget and tries few candidates
+
+**Measured 2026-09-25 on integrate-0925 against production.** Rīga → Sigulda
+→ Cēsis: 46.8–48.0 s, only 8–16 of 27 candidates tried. The rider's
+Taaza Cinnamon → Cinītes 2 → Vecās piķa bedres ceļš → Gaujaslīču iela 22:
+47–50 s, **4 of 27** — so just two reach the ranking. One cause found by the
+loop-fix agent: candidates run in batches of four and the search waits on
+the whole batch, so one slow candidate (59 s on the plain candidate there)
+holds the other three. Let finished slots start the next candidate instead
+of waiting for the batch; then measure how many candidates each ride gets.
+The pre-search reachability probe (27) costs 0.25–1.3 s and is not the cause.

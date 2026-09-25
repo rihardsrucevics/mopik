@@ -24,6 +24,31 @@ If `gh` is on `tronems`, `git push` fails with 403 — that one is loud.
 symptom is that www.mopik.eu does not change. When a deploy "did not work",
 check the account before you check the code.
 
+## Where this stands — handover, 2026-09-25 (evening)
+
+**Shipped this evening** (read the commit messages; each has its numbers):
+generated and edited rides ride *through* the rider's stops instead of
+reaching them by spurs (`lib/routing/through-stops.ts`,
+`generated-through-stops.ts`); a corridor ridden out to a loop round a
+generated via and back goes with the loop (`prune-spurs.ts`); backlog 26
+(share start label) and 27 (pre-search reachability probe,
+`pre-search-reachability.ts`). On phones the small map is a **preview
+only** — a tap opens full screen (`lib/map/fullscreen.ts`); full screen has
+the bottom row [collapse][field][✕] with ✓/+ and ↶ in a column above, all
+56 px. Tapping a point opens a sheet (`components/map-point-sheet.tsx`:
+Pārvietot / Padarīt par pieturu / Izņemt); a tap never grabs the line — on
+phones hold 350 ms then drag ≥ 12 px (`lib/map/line-drag.ts`); every exit
+from a point's edit state goes through `lib/map/shape-pending.ts`; an edit
+batch stays pending until its line lands (`lib/map/batch-commit.ts`).
+
+**Next, rider's direction:** backlog 34 (one kind of point, stop ↔
+pass-through both ways), 36 (tap a stretch: avoid / back another way /
+straight), 32, 35, 38 (sharing), 39 (the search fills its 50 s budget and
+tries 4–16 of 27 candidates — the rider's own ride is at 47–50 s). The
+competitor research behind 34–37 is summarised in backlog 37. Known small
+things: „Pārvietot” zooms the map in hard; the „Punkts pārvietots N m…”
+notice outlives the action it describes.
+
 ## Where this stands — handover, 2026-09-25
 
 **Production is `ed12d80`** (brand `8d0b502`, loader `d1cae65`, edit mode /
