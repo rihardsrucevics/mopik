@@ -1313,3 +1313,16 @@ consecutive fixed points with `nogos` along the rest of the ride where it
 overlaps. Different from „Meklēt labāku apli”, which drops shaping points
 and searches from scratch. Must say what it changed (km, retraced %, before
 → after) and be undoable in one step; never silently.
+
+## 33. Reorder places by drag and drop on desktop
+
+**Rider, 2026-09-25.** On desktop the place rows should reorder by drag and
+drop instead of the ↑/↓ arrows. Desktop only: CLAUDE.md records three
+failed drag attempts on the rider's iPhone (Safari keeps the gesture for
+scrolling), which is why phones use arrows — keep the arrows there, and
+keep ArrowUp/ArrowDown on a focused row for keyboard users. On desktop: a
+grip on each row (or the whole row as the handle), a drop indicator between
+rows, the finish stays last on a one-way ride, and the reorder goes through
+the same `reorder` path the arrows use so picked coordinates, the active
+row, the undo stack and the map's numbered pins follow. Pointer events with
+mouse only (`pointerType === "mouse"`), so touch laptops fall back to arrows.
