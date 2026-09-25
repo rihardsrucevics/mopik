@@ -15,6 +15,13 @@ import type { UiLocale } from "@/lib/i18n/locale";
 import { POI_KIND, stopNumbers, type RoutePoi, type RoutePois } from "@/lib/poi/kinds";
 import { PlaceInput } from "@/components/place-input";
 import type { ResolvedPlace } from "@/lib/chat/places";
+import { nearestUnder } from "@/lib/map/pin-hit";
+
+/** A ride pin as built, with what pressing it means. */
+type PinTarget = { el: HTMLElement; role: "start" | "via" | "finish"; index: number };
+/** The pin a tap at client (`x`, `y`) meant — see `nearestUnder`. */
+const nearestPin = (targets: PinTarget[], x: number, y: number): PinTarget | null =>
+  nearestUnder(targets, (t) => (t.el.isConnected ? t.el.getBoundingClientRect() : null), x, y);
 
 // Serve the MapLibre worker from /public — bundler-emitted module workers
 // 404 under the Next.js dev server, leaving the map blank.
@@ -109,6 +116,8 @@ export type MapControls = {
    * A ride pin clicked: its row becomes the active one, as if its field had
    * been focused — no card, and the pin does not move (rider, 2026-09-25:
    * switching from the finish to the start meant going back to the form).
+   * Of two pins that overlap, the one whose centre is nearer the tap is
+   * the one pressed, so the one underneath can be taken too.
    */
   onPinPress?: (role: "start" | "via" | "finish", index: number) => void;
   search: {
@@ -136,10 +145,12 @@ export type MapControls = {
   grab?: { lat: number; lon: number } | null;
   /**
    * Edit mode: the ride's shaping points („maršruta punkti”, 2026-09-25) —
-   * small white dots with a dark edge on the line, no number. A dot drags
-   * (`onShapeDrag`, which waits for Confirm like every edit) and a press
-   * opens a small popover at it: „Izņemt” / „Padarīt par pieturu”. Never on
-   * a plain result or a shared ride, where the line already shows the bend.
+   * small white dots with a dark edge on the line, no number. A press opens
+   * a small popover at it: „Izņemt” / „Padarīt par pieturu”. A confirmed dot
+   * does not drag (rider, 2026-09-25: one that still followed the finger
+   * after ✓ read as a point left half-edited, and its drag broke the line).
+   * Never on a plain result or a shared ride, where the line already shows
+   * the bend.
    */
   shapePoints?: { lat: number; lon: number }[];
   onShapeDrag?: (index: number, at: { lat: number; lon: number }) => void;
@@ -1621,7 +1632,7 @@ function shapeDotElement(title: string, pending = false): HTMLElement {
   el.title = title;
   el.setAttribute("aria-label", title);
   el.dataset.shape = pending ? "pending" : "1";
-  el.style.cssText = "display:flex;align-items:center;justify-content:center;width:24px;height:24px;padding:0;border:0;background:transparent;cursor:grab;z-index:2";
+  el.style.cssText = `display:flex;align-items:center;justify-content:center;width:24px;height:24px;padding:0;border:0;background:transparent;cursor:${pending ? "grab" : "pointer"};z-index:2`;
   const dot = document.createElement("span");
   dot.style.cssText = `display:block;width:12px;height:12px;border-radius:6px;background:#fff;border:2.5px ${pending ? "dashed" : "solid"} #1c1917;box-shadow:0 1px 3px rgba(0,0,0,0.35);box-sizing:content-box`;
   el.appendChild(dot);
@@ -2003,6 +2014,8 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
   useEffect(() => { pinPressRef.current = controls?.onPinPress; }, [controls?.onPinPress]);
   /** When a pin drag last ended: the click that ends a drag is not a press. */
   const dragEndedAtRef = useRef(0);
+  /** The ride's pins as built, for telling overlapping ones apart (`nearestPin`). */
+  const pinTargetsRef = useRef<PinTarget[]>([]);
   const viaRef = useRef(via);
   useEffect(() => { viaRef.current = via; }, [via]);
   const lineGrabRef = useRef(controls?.onLineGrab);
@@ -2317,7 +2330,13 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
       event.stopPropagation();
       sightClickAtRef.current = event.timeStamp;
       if (performance.now() - dragEndedAtRef.current < 400) return true;
-      press(role, index);
+      // Two pins close together overlap (the rider's stops 4 and 5, 17 px
+      // apart on his phone): the one drawn on top takes every tap on the
+      // overlap, and the other could not be chosen. The pin pressed is the
+      // one whose centre is nearest the tap, among those under it.
+      const hit = nearestPin(pinTargetsRef.current, event.clientX, event.clientY);
+      if (hit) press(hit.role, hit.index);
+      else press(role, index);
       return true;
     };
     const syncData = () => {
@@ -2383,6 +2402,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
       // the badges did before `locale` joined this effect's deps.
       for (const marker of endpointDecorationsRef.current) marker.remove();
       endpointDecorationsRef.current = [];
+      pinTargetsRef.current = [];
 
       markerRef.current?.remove();
       markerRef.current = null;
@@ -2390,6 +2410,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
         markerRef.current = new maplibregl.Marker({ color: START_PIN_COLOR, draggable: pinsDraggable })
           .setLngLat([start.lon, start.lat])
           .addTo(map);
+        pinTargetsRef.current.push({ el: markerRef.current.getElement(), role: "start", index: 0 });
         if (pinsDraggable) pinDraggable(markerRef.current, [start.lon, start.lat], "start", 0);
         markerRef.current.getElement().addEventListener("click", (event) => { pressPin(event, "start", 0); });
         endpointDecorationsRef.current.push(
@@ -2413,6 +2434,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
         destMarkerRef.current = new maplibregl.Marker({ color: FINISH_PIN_COLOR, draggable: pinsDraggable })
           .setLngLat([destination.lon, destination.lat])
           .addTo(map);
+        pinTargetsRef.current.push({ el: destMarkerRef.current.getElement(), role: "finish", index: 0 });
         if (pinsDraggable) pinDraggable(destMarkerRef.current, [destination.lon, destination.lat], "finish", 0);
         destMarkerRef.current.getElement().addEventListener("click", (event) => { pressPin(event, "finish", 0); });
         endpointDecorationsRef.current.push(
@@ -2505,6 +2527,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
         // gates, which is what putting `showSights` in this effect's deps
         // would cost. A typed stop carries no mark and is never hidden.
         if (entry) el.dataset.sight = "1";
+        pinTargetsRef.current.push({ el, role: "via", index: i });
         el.addEventListener("click", (event) => {
           // Answering the form, a press makes this stop's row active instead
           // of opening its card (`pressPin`).
@@ -2943,18 +2966,15 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
 
   /**
    * The ride's shaping points, edit mode only (see `MapControls.shapePoints`).
-   * Rebuilt when the list changes — a ride has a handful. A drag leaves the
-   * dot where it was let go and hands the spot to the form, which holds it
-   * there, pending, until Confirm or Cancel; a press (not the click that ends
-   * a drag) opens the popover. Both mark the gesture as theirs
-   * (`sightClickAtRef`), so the map's own click does not grab the line
-   * under the dot as well.
+   * Rebuilt when the list changes — a ride has a handful. A press opens the
+   * popover, and marks the gesture as its own (`sightClickAtRef`), so the
+   * map's own click does not grab the line under the dot as well. Dots do
+   * not drag (see where the marker is made).
    */
   const shapeMarkersRef = useRef<maplibregl.Marker[]>([]);
   const shapePopupRef = useRef<maplibregl.Popup | null>(null);
-  const shapeDragRef = useRef(controls?.onShapeDrag);
   const shapeMenuRef = useRef(controls?.shapeMenu);
-  useEffect(() => { shapeDragRef.current = controls?.onShapeDrag; shapeMenuRef.current = controls?.shapeMenu; });
+  useEffect(() => { shapeMenuRef.current = controls?.shapeMenu; });
   const shapeDots = controls?.shapePoints ?? [];
   const shapeDotsKey = shapeDots.map((p) => `${p.lat},${p.lon}`).join("|") + `|${controls?.shapeMenu?.onPromote ? 1 : 0}|${controls?.shapeMenu?.label ?? ""}`;
   useEffect(() => {
@@ -3000,14 +3020,14 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
           .setDOMContent(box)
           .addTo(map);
       });
-      const marker = new maplibregl.Marker({ element: el, draggable: true }).setLngLat([p.lon, p.lat]).addTo(map);
-      marker.on("dragstart", () => { shapePopupRef.current?.remove(); });
-      marker.on("dragend", () => {
-        dragEndedAtRef.current = performance.now();
-        const { lat, lng } = marker.getLngLat();
-        shapeDragRef.current?.(i, { lat, lon: lng });
-      });
-      return marker;
+      // Not draggable (rider, 2026-09-25). A confirmed dot that still
+      // followed the finger read as a point left half-edited, and on a phone
+      // a tap on it that jittered a few pixels became a drag: MapLibre then
+      // takes the dot's pointer events away for the gesture, the tap's click
+      // fell through to the map beneath, and a waiting grab took the dot's
+      // own spot as its new place — the dashed ghost and the broken line he
+      // reported. A tap opens the dot's menu; that is all a dot does.
+      return new maplibregl.Marker({ element: el }).setLngLat([p.lon, p.lat]).addTo(map);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, shapeDotsKey]);
@@ -3500,10 +3520,13 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
       // returns before the segment lookup on purpose — a rider aiming at a
       // forest track is aiming at the drawn line as often as not, and opening
       // that road's card would both cover the point and leave the row empty.
-      // Edit mode: a click on the drawn line grabs that point of it — it wins
-      // over an active row (rider, 2026-09-25). The next click is where it
-      // goes, and that one reaches the pick below as the new stop's mark.
-      if (lineGrabRef.current && !grabbingRef.current && !onMarker(e) && grabLineAt(e.point, e.lngLat)) return;
+      // Edit mode: a click on the drawn line grabs that point of it — but
+      // only while no row is waiting for its mark. With a stop selected (its
+      // pin pressed, its row active) the click is that stop's new place, on
+      // the line or off it: the rider could not move his stop 5, which sat
+      // on the line, because every tap near it grabbed the line instead
+      // (2026-09-25).
+      if (lineGrabRef.current && !grabbingRef.current && !onPickPointRef.current && !onMarker(e) && grabLineAt(e.point, e.lngLat)) return;
       const pick = onPickPointRef.current;
       if (pick) { pick({ lat: e.lngLat.lat, lon: e.lngLat.lng }); return; }
       const feature = featureAt(e.point);

@@ -3,13 +3,10 @@ import { z } from "zod";
 import { RidePlanSchema, planToIntent } from "@/lib/chat/ride-plan";
 import { MAX_SHAPE_POINTS, MAX_STOPS } from "@/lib/chat/ride-limits";
 import { buildMotoProfileOptions } from "@/lib/routing/moto-profile";
-import { fetchRouteAvoiding, fetchRoutePath } from "@/lib/routing/brouter";
-import { JOIN_GAP_M, LOOP_SHARED_MIN_M, chooseLoop, nogosAlong, sharedRoad, type LegPair } from "@/lib/routing/reroute-leg";
-import { haversineMeters } from "@/lib/geo/geometry";
-import type { MotoProfileOptions } from "@/lib/routing/moto-profile";
+import { fetchRoutePath } from "@/lib/routing/brouter";
+import { routeThroughPlaces, type ThroughResult } from "@/lib/routing/through-stops";
 import { classifyRoute } from "@/lib/routing/classify";
 import type { Point } from "@/lib/geo/geometry";
-import type { RoutePath } from "@/lib/types";
 
 /**
  * The stretches of a ride an edit re-routes, on the ride's own profile.
@@ -112,67 +109,34 @@ const BodySchema = z.object({
   // carry every stop and every shaping point of the ride.
   runs: z.array(z.array(CoordSchema).min(2).max(MAX_STOPS + MAX_SHAPE_POINTS + 2)).min(1).max(MAX_STOPS + 2),
   /**
-   * Which runs go through a stop that should be ridden through, not out to
-   * and back — `join → stop → join` for a stop added or moved. Those are
-   * routed as two halves and, when the halves share the road, again with the
-   * shared road fenced off (`routeThroughStop`).
+   * Which runs go through places that should be ridden through, not out to
+   * and back — every stretch an added or moved place is in. Those are routed
+   * leg by leg and, where a place's way in and way out share road, again
+   * with that road fenced off (`routeThroughPlaces`).
    */
   loops: z.array(z.boolean()).max(MAX_STOPS + 2).optional(),
+  /**
+   * Per run, per point: a shaping point. A spur to one is cut — the line goes
+   * through the spur's base — where a stop's is kept and reported.
+   */
+  shapes: z.array(z.array(z.boolean()).max(MAX_STOPS + MAX_SHAPE_POINTS + 2)).max(MAX_STOPS + 2).optional(),
 });
-
-/**
- * How long the fenced second attempts may take. They start only once the
- * halves are back (0.1-0.3 s warm), run in parallel, and answered in 0.1-0.2 s
- * on the rider's ride; a refusal comes back as fast. Past this the plain
- * route stays — a loop found late is not worth a correction that feels slow.
- */
-const LOOP_BUDGET_MS = 2_500;
 
 /**
  * When the loop search must have answered, counted from the request's start
- * rather than from the halves: Confirm → line has to stay well under 5 s, and
- * a stop far off the line spends most of that on the halves alone (measured:
+ * rather than from the legs: Confirm → line has to stay well under 5 s, and
+ * a stop far off the line spends most of that on the legs alone (measured:
  * a stop ~80 km off Sigulda → Cēsis, 3.7 s for the two halves, 4-5 s more for
- * each fenced leg). What is left of this after the halves is what the fences
- * get, never more than `LOOP_BUDGET_MS`.
- */
-const LOOP_DEADLINE_MS = 4_500;
-
-/** Two routed halves as one path, the second's edges shifted onto the joined shape. */
-function joinPaths(a: RoutePath, b: RoutePath): RoutePath {
-  const offset = a.coordinates.length - 1;
-  return {
-    distanceMeters: a.distanceMeters + b.distanceMeters,
-    durationSeconds: a.durationSeconds + b.durationSeconds,
-    coordinates: [...a.coordinates, ...b.coordinates.slice(1)],
-    ...(a.elevations && b.elevations ? { elevations: [...a.elevations, ...b.elevations.slice(1)] } : {}),
-    edges: [
-      ...a.edges,
-      ...b.edges.map((e) => ({ ...e, beginShapeIndex: e.beginShapeIndex + offset, endShapeIndex: e.endShapeIndex + offset })),
-    ],
-  };
-}
-
-const asPair = (approach: RoutePath, departure: RoutePath): LegPair => ({
-  approach: { coordinates: approach.coordinates, distanceMeters: approach.distanceMeters },
-  departure: { coordinates: departure.coordinates, distanceMeters: departure.distanceMeters },
-});
-
-/**
- * A stretch through a stop, routed so it does not ride out and back the same
- * way when another way exists.
+ * each fenced leg). What is left of this after the legs is what the fences
+ * get, never more than `LOOP_BUDGET_MS` (`lib/routing/through-stops.ts`).
  *
  * Measured on the rider's Rīga → Vasara 46 → Annužas 1: asked in one request,
  * the router took the same 6.03 km of road to the stop and back — 9 % of the
- * ride retraced. Routed as two halves the overlap is plain to see; fencing the
- * shared road off the approach found a way in that is 4.8 km *shorter*, and
- * the ride went to 3 % (`scripts/measure-edit-loop.ts`). Both mirrors are
- * tried at once — the departure fenced off the approach's road and the
- * approach fenced off the departure's — because which side has the other way
- * out is a fact about the map, not about the order. `chooseLoop` keeps the
- * one that rides least of the same road twice within its length bound, and
- * the plain route when neither helps: then the stop really is at the end of
- * a single road, and the page says so rather than hiding it.
+ * ride retraced; routed as two halves with the shared road fenced off the
+ * approach, the way in was 4.8 km *shorter* and the ride went to 3 %
+ * (`scripts/measure-edit-loop.ts`). Since 2026-09-25 that is done for every
+ * place of every stretch, not only for a stretch with one stop in it
+ * (`routeThroughPlaces`).
  *
  * **Unless the search did not finish.** A fenced leg that ran out of time, or
  * a request the server would not take, has not said anything about the map,
@@ -182,63 +146,7 @@ const asPair = (approach: RoutePath, departure: RoutePath): LegPair => ({
  * of a 95 km dead end. So an out-and-back kept because an attempt went
  * unanswered is reported as that (`deadEndUnchecked`), not as a dead end.
  */
-async function routeThroughStop(
-  points: Point[],
-  profileOptions: MotoProfileOptions,
-  deadlineAt: number,
-): Promise<{ path: RoutePath; deadEndMeters: number; deadEndUnchecked?: boolean }> {
-  const [from, stop, to] = points;
-  // The joins are cuts in the kept ride and never move; the stop may be
-  // nudged onto a road like any place the rider named.
-  const [approach, departure] = await Promise.all([
-    fetchRoutePath({ points: [from, stop], profileOptions, generatedViaIndices: [], pinnedEnds: { start: true } }),
-    fetchRoutePath({ points: [stop, to], profileOptions, generatedViaIndices: [], pinnedEnds: { end: true } }),
-  ]);
-  // Two halves that reach the stop at different points (each nudged its own
-  // way) would join with a jump in the middle of the stretch: ride it as one
-  // request instead, through the stop.
-  if (haversineMeters(approach.coordinates[approach.coordinates.length - 1], departure.coordinates[0]) > JOIN_GAP_M) {
-    const whole = await fetchRoutePath({ points, profileOptions, generatedViaIndices: [], pinnedEnds: true });
-    return { path: whole, deadEndMeters: 0 };
-  }
-  const shared = sharedRoad(approach.coordinates, departure.coordinates);
-  if (shared.meters <= LOOP_SHARED_MIN_M) return { path: joinPaths(approach, departure), deadEndMeters: 0 };
-
-  // Kept clear of the stop and both joins, so a genuine dead end refuses the
-  // fenced request instead of being routed around the stop itself; spaced
-  // wider on a long shared stretch so the request stays one a server takes
-  // (`MAX_NOGOS`).
-  const nogos = nogosAlong(shared.points, [stop, from, to]);
-  const budget = Math.min(LOOP_BUDGET_MS, deadlineAt - Date.now());
-  type Attempt = { path: RoutePath } | { refused: true } | { unanswered: true };
-  const attempt = (pts: Point[]): Promise<Attempt> => {
-    if (budget < 300) return Promise.resolve({ unanswered: true });
-    const request = fetchRouteAvoiding({ points: pts, profileOptions, nogos }).then(
-      (path): Attempt => ({ path }),
-      // A 400 is the router's own answer about these points — no way there
-      // with the fences up. Anything else (a refused URL, a network error, a
-      // 5xx) is not an answer about the map.
-      (err): Attempt => (/routing failed \(400\)|no route|empty shape/i.test(err instanceof Error ? err.message : "") ? { refused: true } : { unanswered: true }),
-    );
-    return Promise.race([request, new Promise<Attempt>((resolve) => { setTimeout(() => resolve({ unanswered: true }), budget).unref?.(); })]);
-  };
-  const attempts = await Promise.all([attempt([stop, to]), attempt([from, stop])]);
-  const [fencedDeparture, fencedApproach] = attempts.map((a) => ("path" in a ? a.path : null));
-  // A fenced half that does not meet the other at the stop, or its own join,
-  // is not a way through — it would splice a gap into the ride.
-  const meets = (a: RoutePath, d: RoutePath) =>
-    haversineMeters(a.coordinates[a.coordinates.length - 1], d.coordinates[0]) <= JOIN_GAP_M &&
-    haversineMeters(a.coordinates[0], from) <= JOIN_GAP_M * 2 &&
-    haversineMeters(d.coordinates[d.coordinates.length - 1], to) <= JOIN_GAP_M * 2;
-  const variants: [RoutePath, RoutePath][] = [];
-  if (fencedDeparture && meets(approach, fencedDeparture)) variants.push([approach, fencedDeparture]);
-  if (fencedApproach && meets(fencedApproach, departure)) variants.push([fencedApproach, departure]);
-  const choice = chooseLoop(asPair(approach, departure), variants.map(([a, d]) => asPair(a, d)));
-  const [a, d] = choice.index < 0 ? [approach, departure] : variants[choice.index];
-  const deadEndMeters = choice.sharedMeters > LOOP_SHARED_MIN_M ? Math.round(choice.sharedMeters) : 0;
-  const unchecked = deadEndMeters > 0 && attempts.some((x) => "unanswered" in x);
-  return { path: joinPaths(a, d), deadEndMeters, ...(unchecked ? { deadEndUnchecked: true } : {}) };
-}
+const LOOP_DEADLINE_MS = 4_500;
 
 export async function POST(req: NextRequest) {
   const startedAt = Date.now();
@@ -246,9 +154,9 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ error: "bad body" }, { status: 400 });
   }
-  const { plan, runs, loops } = parsed.data;
+  const { plan, runs, loops, shapes } = parsed.data;
 
-  let paths: { path: RoutePath; deadEndMeters: number; deadEndUnchecked?: boolean }[];
+  let paths: ThroughResult[];
   try {
     // The ride's own profile, built through the same two functions
     // `/api/generate-route` and `/api/detour` use. A correction routed on a
@@ -258,7 +166,9 @@ export async function POST(req: NextRequest) {
     const profileOptions = buildMotoProfileOptions(intent);
     const routing = Promise.all(runs.map((run, i) => {
       const points = run.map((c): Point => [c.lon, c.lat]);
-      if (loops?.[i] && points.length === 3) return routeThroughStop(points, profileOptions, startedAt + LOOP_DEADLINE_MS);
+      if (loops?.[i] && points.length >= 3) {
+        return routeThroughPlaces({ points, shapes: shapes?.[i], profileOptions, deadlineAt: startedAt + LOOP_DEADLINE_MS });
+      }
       return fetchRoutePath({
         points,
         profileOptions,
