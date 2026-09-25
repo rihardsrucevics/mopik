@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useLocale } from "@/lib/i18n/use-locale";
 import { messages } from "@/lib/i18n/messages";
 import { RouteScene } from "@/components/route-loader";
+import { BRAND_NAME, BrandLogo } from "@/components/brand-logo";
 
 /**
  * A three-second opening: the route draws itself across the hills while the
@@ -61,7 +62,11 @@ export function IntroSplash() {
         <RouteScene className="h-auto w-full" speed={1.25} />
       </div>
       <div className="mt-2 flex items-baseline gap-3">
-        <span className="mopik-wordmark text-4xl font-bold tracking-tight text-stone-900 md:text-5xl">Mopik<span className="text-[#f56300]">.</span></span>
+        {/* The logo inherits the wordmark's fade-and-rise; its letter-spacing
+            keyframe has nothing to act on in an SVG and is simply inert. */}
+        <span className="mopik-wordmark flex text-[#242426]">
+          <BrandLogo variant="wordmark" className="h-12 w-auto md:h-16" title={BRAND_NAME} />
+        </span>
       </div>
       <p className="mopik-tagline mt-3 text-sm text-stone-500">{m.tagline}</p>
     </div>

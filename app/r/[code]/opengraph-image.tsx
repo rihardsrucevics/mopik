@@ -2,11 +2,19 @@ import { ImageResponse } from "next/og";
 import { resolveShare } from "@/lib/share/resolve";
 import { t } from "@/lib/i18n/messages";
 import { DEFAULT_SHARE_LOCALE } from "@/lib/share/card-locale";
+import { BRAND_NAME, BRAND_WORDMARK_BASELINE, BRAND_WORDMARK_RATIO, brandWordmarkSvg, svgDataUri } from "@/components/brand-logo";
 
 /** The share card: the actual route line, coloured by surface, with the numbers. */
 export const alt = "Mopik route";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
+
+/** The header's "mopik." wordmark (orange dot, no icon, no "eu"), 56 px from ascender to descender. */
+const LOGO_H = 56;
+const LOGO_SRC = svgDataUri(brandWordmarkSvg());
+/** The caption's font size, and the lift that sets its baseline on the wordmark's. */
+const CAPTION_PX = 20;
+const CAPTION_LIFT = Math.round(LOGO_H * (1 - BRAND_WORDMARK_BASELINE) - CAPTION_PX * 0.2);
 
 const COLOR: Record<string, string> = { asphalt: "#2f7bff", gravel: "#f56300", compacted: "#f56300", ground: "#8a5a2b", dirt: "#8a5a2b", sand: "#8a5a2b", unknown: "#5b5b60" };
 
@@ -60,9 +68,10 @@ export default async function Image({ params }: { params: Promise<{ code: string
               <div style={{ display: "flex", flexDirection: "column" }}><span style={{ fontSize: 18, color: "#78716c", letterSpacing: 2 }}>{t(locale, "shareCardGravel")}</span><span style={{ fontSize: 44, fontWeight: 700 }}>{share?.unpavedPercent ?? "—"} %</span></div>
             </div>
           </div>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
-            <span style={{ fontSize: 40, fontWeight: 800, letterSpacing: -1 }}>Mopik<span style={{ color: "#f56300" }}>.</span></span>
-            <span style={{ fontSize: 20, color: "#78716c" }}>mopik.eu</span>
+          {/* The wordmark, then the address it stands for — the link has to be readable from the card. */}
+          <div style={{ display: "flex", alignItems: "flex-end", gap: 14 }}>
+            <img src={LOGO_SRC} width={LOGO_H * BRAND_WORDMARK_RATIO} height={LOGO_H} alt={BRAND_NAME} />
+            <span style={{ fontSize: CAPTION_PX, lineHeight: 1, color: "#78716c", marginBottom: CAPTION_LIFT }}>{BRAND_NAME}</span>
           </div>
         </div>
       </div>

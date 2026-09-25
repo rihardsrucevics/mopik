@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Bookmark, Plus } from "lucide-react";
 import { SavedRidesLink } from "@/components/saved-rides-link";
 import { LanguagePicker } from "@/components/language-picker";
+import { BrandLogo } from "@/components/brand-logo";
 import { useLocale } from "@/lib/i18n/use-locale";
 import { t } from "@/lib/i18n/messages";
 
@@ -56,13 +57,14 @@ export function SiteHeader({
 
   return (
     <header className="mb-5 flex items-center justify-between border-b border-stone-200 pb-4">
-      <div className="flex items-baseline gap-3">
-        <h1 className="text-2xl font-bold tracking-tight">
+      <div className="flex items-center gap-3">
+        <h1 className="flex text-2xl font-bold tracking-tight">
           {/* A plain `<a>`, not `<Link>`: a full reload on purpose, so the
-              wordmark always lands on a clean, empty plan. */}
+              wordmark always lands on a clean, empty plan. The wordmark itself
+              is decorative; the link's label is the accessible name. */}
           {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
-          <a href="/" aria-label={t(locale, "backToHome")}>
-            Mopik<span className="text-[#f56300]">.</span>
+          <a href="/" aria-label={t(locale, "backToHome")} className="flex">
+            <BrandLogo variant="wordmark" className="h-7 w-auto text-[#242426]" />
           </a>
         </h1>
         <p className="hidden text-xs text-stone-500 sm:block">{t(locale, "tagline")}</p>

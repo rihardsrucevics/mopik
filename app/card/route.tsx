@@ -2,10 +2,11 @@ import { ImageResponse } from "next/og";
 import { isUiLocale } from "@/lib/i18n/locale";
 import { t } from "@/lib/i18n/messages";
 import { DEFAULT_METADATA_LOCALE } from "@/lib/i18n/metadata-locale";
+import { BRAND_NAME, BRAND_WORDMARK_RATIO, brandWordmarkSvg, svgDataUri } from "@/components/brand-logo";
 
 /**
  * The share card: the same "route drawing itself over the hills" motif as
- * the intro, frozen mid-stroke, with the wordmark and tagline.
+ * the intro, frozen mid-stroke, with the "mopik." wordmark and tagline.
  *
  * A route handler rather than the `opengraph-image` file convention, because
  * that convention renders one image with no access to the request — so the
@@ -14,6 +15,13 @@ import { DEFAULT_METADATA_LOCALE } from "@/lib/i18n/metadata-locale";
  * the caption is drawn in it.
  */
 const size = { width: 1200, height: 630 };
+
+/**
+ * The header's "mopik." wordmark (orange dot, no icon, no "eu"), 128 px from
+ * ascender to descender — ~423 px wide, about what the old 148 px "Mopik." took.
+ */
+const LOGO_H = 128;
+const LOGO_SRC = svgDataUri(brandWordmarkSvg());
 
 const ROUTE_D =
   "M 12 108 C 40 96, 52 70, 82 74 S 128 110, 158 92 C 184 76, 176 40, 206 38 S 250 68, 272 54 C 292 42, 300 28, 314 22";
@@ -62,8 +70,9 @@ export function GET(req: Request) {
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-          <div style={{ display: "flex", fontSize: 148, fontWeight: 800, letterSpacing: -6, lineHeight: 1 }}>
-            Mopik<span style={{ color: "#f56300" }}>.</span>
+          <div style={{ display: "flex" }}>
+            {/* eslint-disable-next-line @next/next/no-img-element -- satori, not a page */}
+            <img src={LOGO_SRC} width={LOGO_H * BRAND_WORDMARK_RATIO} height={LOGO_H} alt={BRAND_NAME} />
           </div>
           <div style={{ display: "flex", fontSize: 44, color: "#57534e" }}>{t(locale, "tagline")}</div>
           <div style={{ display: "flex", fontSize: 28, color: "#78716c", marginTop: 6 }}>

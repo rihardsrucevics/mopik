@@ -1,6 +1,7 @@
 "use client";
 
 import { InstagramLink } from "@/components/instagram-link";
+import { BRAND_NAME, BrandLogo } from "@/components/brand-logo";
 import { useLocale } from "@/lib/i18n/use-locale";
 import { t } from "@/lib/i18n/messages";
 
@@ -23,8 +24,8 @@ export function SiteFooter() {
     <footer className="mx-auto w-full max-w-[1600px] px-4 pb-8 pt-10 md:px-7">
       <div className="flex flex-col gap-4 border-t border-stone-200 pt-5 text-xs text-stone-500 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-col gap-1">
-          <p className="font-semibold tracking-tight text-stone-900">
-            Mopik<span className="text-[#f56300]">.</span>
+          <p className="flex text-[#242426]">
+            <BrandLogo variant="wordmark" className="h-5 w-auto" title={BRAND_NAME} />
           </p>
           <p>{t(locale, "tagline")}</p>
         </div>
