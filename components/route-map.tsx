@@ -136,10 +136,12 @@ export type MapControls = {
   grab?: { lat: number; lon: number } | null;
   /**
    * Edit mode: the ride's shaping points („maršruta punkti”, 2026-09-25) —
-   * small white dots with a dark edge on the line, no number. A dot drags
-   * (`onShapeDrag`, which waits for Confirm like every edit) and a press
-   * opens a small popover at it: „Izņemt” / „Padarīt par pieturu”. Never on
-   * a plain result or a shared ride, where the line already shows the bend.
+   * small white dots with a dark edge on the line, no number. A press opens
+   * a small popover at it: „Izņemt” / „Padarīt par pieturu”. A confirmed dot
+   * does not drag (rider, 2026-09-25: one that still followed the finger
+   * after ✓ read as a point left half-edited, and its drag broke the line).
+   * Never on a plain result or a shared ride, where the line already shows
+   * the bend.
    */
   shapePoints?: { lat: number; lon: number }[];
   onShapeDrag?: (index: number, at: { lat: number; lon: number }) => void;
@@ -1621,7 +1623,7 @@ function shapeDotElement(title: string, pending = false): HTMLElement {
   el.title = title;
   el.setAttribute("aria-label", title);
   el.dataset.shape = pending ? "pending" : "1";
-  el.style.cssText = "display:flex;align-items:center;justify-content:center;width:24px;height:24px;padding:0;border:0;background:transparent;cursor:grab;z-index:2";
+  el.style.cssText = `display:flex;align-items:center;justify-content:center;width:24px;height:24px;padding:0;border:0;background:transparent;cursor:${pending ? "grab" : "pointer"};z-index:2`;
   const dot = document.createElement("span");
   dot.style.cssText = `display:block;width:12px;height:12px;border-radius:6px;background:#fff;border:2.5px ${pending ? "dashed" : "solid"} #1c1917;box-shadow:0 1px 3px rgba(0,0,0,0.35);box-sizing:content-box`;
   el.appendChild(dot);
@@ -2943,18 +2945,15 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
 
   /**
    * The ride's shaping points, edit mode only (see `MapControls.shapePoints`).
-   * Rebuilt when the list changes — a ride has a handful. A drag leaves the
-   * dot where it was let go and hands the spot to the form, which holds it
-   * there, pending, until Confirm or Cancel; a press (not the click that ends
-   * a drag) opens the popover. Both mark the gesture as theirs
-   * (`sightClickAtRef`), so the map's own click does not grab the line
-   * under the dot as well.
+   * Rebuilt when the list changes — a ride has a handful. A press opens the
+   * popover, and marks the gesture as its own (`sightClickAtRef`), so the
+   * map's own click does not grab the line under the dot as well. Dots do
+   * not drag (see where the marker is made).
    */
   const shapeMarkersRef = useRef<maplibregl.Marker[]>([]);
   const shapePopupRef = useRef<maplibregl.Popup | null>(null);
-  const shapeDragRef = useRef(controls?.onShapeDrag);
   const shapeMenuRef = useRef(controls?.shapeMenu);
-  useEffect(() => { shapeDragRef.current = controls?.onShapeDrag; shapeMenuRef.current = controls?.shapeMenu; });
+  useEffect(() => { shapeMenuRef.current = controls?.shapeMenu; });
   const shapeDots = controls?.shapePoints ?? [];
   const shapeDotsKey = shapeDots.map((p) => `${p.lat},${p.lon}`).join("|") + `|${controls?.shapeMenu?.onPromote ? 1 : 0}|${controls?.shapeMenu?.label ?? ""}`;
   useEffect(() => {
@@ -3000,14 +2999,14 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
           .setDOMContent(box)
           .addTo(map);
       });
-      const marker = new maplibregl.Marker({ element: el, draggable: true }).setLngLat([p.lon, p.lat]).addTo(map);
-      marker.on("dragstart", () => { shapePopupRef.current?.remove(); });
-      marker.on("dragend", () => {
-        dragEndedAtRef.current = performance.now();
-        const { lat, lng } = marker.getLngLat();
-        shapeDragRef.current?.(i, { lat, lon: lng });
-      });
-      return marker;
+      // Not draggable (rider, 2026-09-25). A confirmed dot that still
+      // followed the finger read as a point left half-edited, and on a phone
+      // a tap on it that jittered a few pixels became a drag: MapLibre then
+      // takes the dot's pointer events away for the gesture, the tap's click
+      // fell through to the map beneath, and a waiting grab took the dot's
+      // own spot as its new place — the dashed ghost and the broken line he
+      // reported. A tap opens the dot's menu; that is all a dot does.
+      return new maplibregl.Marker({ element: el }).setLngLat([p.lon, p.lat]).addTo(map);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, shapeDotsKey]);

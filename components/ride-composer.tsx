@@ -17,6 +17,7 @@ import { fi } from "@/lib/i18n/format";
 import type { ResolvedPlace } from "@/lib/chat/places";
 import { placeRoles, type PlaceRoles } from "@/lib/map/place-roles";
 import type { ShapeEdit } from "@/lib/routing/reroute-leg";
+import { stepShape, type ShapePending } from "@/lib/map/shape-pending";
 import { MAX_SHAPE_POINTS, MAX_STOPS } from "@/lib/chat/ride-limits";
 import {
   PROFILE_PRESETS,
@@ -395,13 +396,22 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
    * Confirm commits it (`edit.onShape`); Cancel or Escape drops it, and the
    * dot goes back where it was.
    */
-  type ShapePending =
-    | { kind: "add"; at: { lat: number; lon: number }; to: { lat: number; lon: number } | null }
-    | { kind: "move"; index: number; to: { lat: number; lon: number } };
   const [shapePending, setShapePending] = useState<ShapePending | null>(null);
   const grab = shapePending?.kind === "add" ? shapePending : null;
   const shapeAddRef = useRef(false);
   useEffect(() => { shapeAddRef.current = grab !== null; }, [grab]);
+  /**
+   * Leave a shaping point's edit state completely (`stepShape`, rider
+   * 2026-09-25): nothing pending, and — unless a row has the map — the map
+   * stops taking marks, so the pending marker, its connector and the grab's
+   * dot go with it. Every way out goes through here.
+   */
+  const leaveShape = (opts: { keepPick?: boolean } = {}) => {
+    const hadGrab = shapeAddRef.current;
+    setShapePending(null);
+    shapeAddRef.current = false;
+    if (hadGrab && !opts.keepPick && activeRowRef.current === null) onPickModeChange?.(false);
+  };
   /**
    * Batch adding (rider, 2026-09-25): with an empty stop row active, every
    * mark on the map adds another pending stop instead of replacing the last,
@@ -669,7 +679,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     // name is looked up — Confirm is live the moment the mark lands.
     if (shapeAddRef.current) {
       const at = { lat: pickPoint.lat, lon: pickPoint.lon };
-      setShapePending((p) => (p?.kind === "add" ? { ...p, to: at } : p));
+      setShapePending((p) => stepShape(p, { type: "mark", at }).pending);
       setNamedToken(pickPoint.token);
       return;
     }
@@ -813,6 +823,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     // Only the row's own place moves the map (rider, 2026-09-25: activating a
     // filled row shows where it is; an empty row leaves the map alone).
     const at = own;
+    leaveShape({ keepPick: true });
     const target = leaveGhost(index);
     // Only the row's own place seeds a marker. Another row's place, or the
     // rider's own position, says where to *look* — putting a draggable pin on
@@ -837,6 +848,9 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
    */
   const focusRow = (index: number, opts: { refocus?: boolean } = {}) => {
     if (!mapLive || index === activeRow) return;
+    // A grab of the line left waiting is let go: the map now answers this
+    // row, and a waiting grab would take its next mark as a shaping point.
+    leaveShape({ keepPick: true });
     let target: number | null = index;
     if (edit && (preview || offRoad)) {
       // Editing, Cancel puts the rows back to the ride's — a "+" row above
@@ -901,6 +915,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     // which silently emptied the stop the rider had just confirmed. The
     // handler is rebuilt every render, so `places` here is always current.
     const current = places;
+    leaveShape({ keepPick: true });
     // An unused new stop row is already waiting (a Confirm opened it, or "+"
     // was pressed twice): that row is the answer, not a second blank one.
     if (ghostRow !== null) {
@@ -1150,7 +1165,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     setMapQuery(null);
     setRowIsNew(false);
     setChosenRow(null);
-    setShapePending({ kind: "add", at: { lat, lon }, to: null });
+    setShapePending(stepShape(shapePending, { type: "grab", at: { lat, lon } }).pending);
     shapeAddRef.current = true;
     openPick({ at: null, marker: null });
   };
@@ -1170,29 +1185,27 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     setChosenRow(null);
     setShapePending({ kind: "move", index, to });
   };
-  /** Confirm on a pending shaping point. */
+  /**
+   * Confirm on a pending shaping point: the edit goes to the page, and the
+   * point's edit state is left completely (`leaveShape`) — the rider carries
+   * on with something else, and the dot is a plain dot until he taps it.
+   */
   const confirmShape = () => {
     if (!edit || !shapePending || edit.rerouting) return;
-    const p = shapePending;
-    if (p.kind === "add") {
-      if (!p.to) return;
-      edit.onShape({ kind: "add", lat: p.to.lat, lon: p.to.lon, grabbedAt: [p.at.lon, p.at.lat] });
-    } else {
-      edit.onShape({ kind: "move", index: p.index, lat: p.to.lat, lon: p.to.lon });
-    }
-    setShapePending(null);
-    shapeAddRef.current = false;
+    const step = stepShape(shapePending, { type: "confirm" });
+    if (!step.commit) return;
+    leaveShape();
+    edit.onShape(step.commit);
   };
   /** Cancel on a pending shaping point: the dot goes back, nothing changes. */
   const cancelShape = () => {
-    setShapePending(null);
-    shapeAddRef.current = false;
+    leaveShape();
     onPickModeChange?.(false);
   };
   /** „Izņemt” in a dot's popover: the line goes back without it. */
   const removeShape = (index: number) => {
     if (!edit || busy || edit.rerouting) return;
-    setShapePending(null);
+    leaveShape();
     edit.onShape({ kind: "remove", index });
   };
   /**
@@ -1204,7 +1217,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     if (!edit || busy || edit.rerouting) return;
     const point = edit.shapePoints[index];
     if (!point) return;
-    setShapePending(null);
+    leaveShape();
     void (async () => {
       const found = await nameForPoint(point.lat, point.lon);
       const place = pickedPlace(found, point.lat, point.lon, placesRef.current, t(locale, "pickedOnMap"));
@@ -1416,6 +1429,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     const row = rowOfPin(role, index);
     if (row < 0) return;
     track("route_edit_pin_dragged", { role });
+    leaveShape({ keepPick: true });
     const target = leaveGhost(row);
     setPreview(null);
     setMapQuery(null);
