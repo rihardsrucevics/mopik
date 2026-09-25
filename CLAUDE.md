@@ -24,6 +24,25 @@ If `gh` is on `tronems`, `git push` fails with 403 — that one is loud.
 symptom is that www.mopik.eu does not change. When a deploy "did not work",
 check the account before you check the code.
 
+## Where this stands — handover, 2026-09-25
+
+**Production is `ed12d80`** (brand `8d0b502`, loader `d1cae65`, edit mode /
+map / refusals / spurs `ed12d80` — read that commit message, it is the map
+of everything below). Edit mode is live: „Labot” → two-stretch re-route in
+0.2–0.7 s, loop-before-out-and-back, a continuous-line invariant on every
+commit. The planning map runs on one active row with batch adding, undo,
+role-coloured pending pins, and the controls at the bottom on phones.
+Spurs that are not exact mirrors are found and, when cheap, looped.
+
+**Next, agreed with the rider and not started:** stops vs *shaping points*
+— grabbing the line should make a small white „maršruta punkts” (no number,
+no form row, not a GPX waypoint; click → „Izņemt” / „Padarīt par pieturu”;
+kept in the share code; the full search keeps stops and drops them). The
+spec is in the session's last message to the map agent and in backlog 29.
+Also open: the Daugavgrīvas → Mālpils ride now takes ~45 s in production
+(37 s locally) — close to the 50 s budget; backlog 31 (ride photos in the
+loader) is an idea, not a task.
+
 ## Where this stands — handover, 2026-09-20
 
 **Production is `84b6a38`, main clean, no WIP branch left.** Shipped today,
