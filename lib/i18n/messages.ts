@@ -432,6 +432,24 @@ export type MessageKey =
   | "mapAddStop"
   | "mapAddStopFull"
   /**
+   * The cap, short enough for the map's header field (rider, 2026-09-25: the
+   * full sentence was cut to „Vairāk pieturu pievienot ne…” and he could not
+   * tell why the fifth stop would not go in). The sentence is `mapAddStopFull`,
+   * the field's tooltip and the „+”'s name.
+   */
+  | "mapStopCapShort"
+  /**
+   * Shaping points („maršruta punkti”, 2026-09-25): the dot a grab of the
+   * line leaves, its popover, the cap, and the full search's note that it
+   * does not keep them.
+   */
+  | "shapePointLabel"
+  | "shapeRemove"
+  | "shapePromote"
+  | "shapeCapNote"
+  | "shapeMoveHint"
+  | "resSearchDropsShapes"
+  /**
    * Including the ticked sights without re-planning, and correcting the ride
    * on the result map.
    *
@@ -480,6 +498,9 @@ export type MessageKey =
    * not been shown to be.
    */
   | "editSameWayBack"
+  /** The same two notes when the out-and-back is to a shaping point, not a stop. */
+  | "editDeadEndShape"
+  | "editSameWayBackShape"
   | "resSearchBetterLink"
   | "editNeedsPlace"
   | "editNoRide"
@@ -1016,7 +1037,14 @@ const lv: Messages = {
   mapCredit: "© OpenStreetMap contributors",
   mapCreditToggle: "Kartes dati",
   mapAddStop: "+ Pietura",
-  mapAddStopFull: "Vairāk pieturu pievienot nevar",
+  mapAddStopFull: "Vairāk pieturu pievienot nevar — braucienā var būt ne vairāk kā {n} pieturas",
+  mapStopCapShort: "Maks. {n} pieturas",
+  shapePointLabel: "Maršruta punkts — pavelc, lai pārvietotu, vai spied izvēlnei",
+  shapeRemove: "Izņemt",
+  shapePromote: "Padarīt par pieturu",
+  shapeCapNote: "Maršruta punktu ir jau {n} — vairāk pievienot nevar",
+  shapeMoveHint: "Maršruta punkts pārvietots — apstiprini",
+  resSearchDropsShapes: "Maršruta punkti pilnajā meklēšanā netiek ņemti vērā.",
   resAddSelected: "Pievienot izvēlētos",
   resAddSelectedHint: "Atzīmētās vietas paliek maršrutā — bez jaunas meklēšanas.",
   resSearchBetter: "Meklēt labāku apli ar šīm pieturām",
@@ -1038,6 +1066,8 @@ const lv: Messages = {
   editDeadEnd: "Pietura ir strupceļā — atpakaļ pa to pašu ceļu {km} km.",
   editBrokenLine: "Šo labojumu neizdevās savienot ar maršrutu vienā līnijā — maršruts palika, kāds bija.",
   editSameWayBack: "Uz pieturu un atpakaļ pa to pašu ceļu {km} km — citu ceļu laikus atrast neizdevās.",
+  editDeadEndShape: "Maršruta punkts ir strupceļā — atpakaļ pa to pašu ceļu {km} km.",
+  editSameWayBackShape: "Uz maršruta punktu un atpakaļ pa to pašu ceļu {km} km — citu ceļu laikus atrast neizdevās.",
   resSearchBetterLink: "Meklēt labāku apli ar šīm pieturām →",
   editNeedsPlace: "Šai rindai vajag vietu — atzīmē to kartē vai izvēlies no saraksta.",
   editNoRide: "Bez šīs pieturas no apļa nekas nepaliek — pievieno citu vai meklē jaunu apli.",
@@ -1478,7 +1508,14 @@ const lt: Messages = {
   mapCredit: "© OpenStreetMap contributors",
   mapCreditToggle: "Žemėlapio duomenys",
   mapAddStop: "+ Sustojimas",
-  mapAddStopFull: "Daugiau sustojimų pridėti negalima",
+  mapAddStopFull: "Daugiau sustojimų pridėti negalima — kelionėje gali būti ne daugiau kaip {n} sustojimų",
+  mapStopCapShort: "Daugiausia {n} sustojimų",
+  shapePointLabel: "Maršruto taškas — vilkite, kad perkeltumėte, arba spustelėkite meniu",
+  shapeRemove: "Pašalinti",
+  shapePromote: "Paversti sustojimu",
+  shapeCapNote: "Maršruto taškų jau {n} — daugiau pridėti negalima",
+  shapeMoveHint: "Maršruto taškas perkeltas — patvirtinkite",
+  resSearchDropsShapes: "Pilnoje paieškoje maršruto taškai neatsižvelgiami.",
   resAddSelected: "Pridėti pažymėtas",
   resAddSelectedHint: "Pažymėtos vietos lieka maršrute — be naujos paieškos.",
   resSearchBetter: "Ieškoti geresnio rato su šiais sustojimais",
@@ -1500,6 +1537,8 @@ const lt: Messages = {
   editDeadEnd: "Sustojimas yra akligatvyje — atgal tuo pačiu keliu {km} km.",
   editBrokenLine: "Šio pataisymo nepavyko sujungti su maršrutu viena linija — maršrutas liko toks, koks buvo.",
   editSameWayBack: "Į sustojimą ir atgal tuo pačiu keliu {km} km — kito kelio laiku rasti nepavyko.",
+  editDeadEndShape: "Maršruto taškas yra akligatvyje — atgal tuo pačiu keliu {km} km.",
+  editSameWayBackShape: "Į maršruto tašką ir atgal tuo pačiu keliu {km} km — kito kelio laiku rasti nepavyko.",
   resSearchBetterLink: "Ieškoti geresnio rato su šiais sustojimais →",
   editNeedsPlace: "Šiai eilutei reikia vietos — pažymėkite ją žemėlapyje arba pasirinkite iš sąrašo.",
   editNoRide: "Be šio sustojimo iš rato nieko nelieka — pridėkite kitą arba ieškokite naujo rato.",
@@ -1944,7 +1983,14 @@ const et: Messages = {
   mapCredit: "© OpenStreetMap contributors",
   mapCreditToggle: "Kaardi andmed",
   mapAddStop: "+ Peatus",
-  mapAddStopFull: "Rohkem peatusi lisada ei saa",
+  mapAddStopFull: "Rohkem peatusi lisada ei saa — sõidul võib olla kuni {n} peatust",
+  mapStopCapShort: "Kuni {n} peatust",
+  shapePointLabel: "Marsruudi punkt — lohista, et liigutada, või klõpsa menüü jaoks",
+  shapeRemove: "Eemalda",
+  shapePromote: "Tee peatuseks",
+  shapeCapNote: "Marsruudi punkte on juba {n} — rohkem lisada ei saa",
+  shapeMoveHint: "Marsruudi punkt liigutatud — kinnita",
+  resSearchDropsShapes: "Täisotsing marsruudi punkte ei arvesta.",
   resAddSelected: "Lisa valitud",
   resAddSelectedHint: "Märgitud kohad jäävad marsruuti — ilma uue otsinguta.",
   resSearchBetter: "Otsi parem ring nende peatustega",
@@ -1966,6 +2012,8 @@ const et: Messages = {
   editDeadEnd: "Peatus on umbteel — tagasi sama teed {km} km.",
   editBrokenLine: "Seda muudatust ei õnnestunud marsruudiga üheks jooneks ühendada — marsruut jäi endiseks.",
   editSameWayBack: "Peatusesse ja tagasi sama teed {km} km — teist teed ei õnnestunud õigel ajal leida.",
+  editDeadEndShape: "Marsruudi punkt on umbteel — tagasi sama teed {km} km.",
+  editSameWayBackShape: "Marsruudi punkti ja tagasi sama teed {km} km — teist teed ei õnnestunud õigel ajal leida.",
   resSearchBetterLink: "Otsi parem ring nende peatustega →",
   editNeedsPlace: "Sellel real peab olema koht — märgi see kaardile või vali loendist.",
   editNoRide: "Ilma selle peatuseta ei jää ringist midagi järele — lisa teine või otsi uus ring.",
@@ -2404,7 +2452,14 @@ const en: Messages = {
   mapCredit: "© OpenStreetMap contributors",
   mapCreditToggle: "Map data",
   mapAddStop: "+ Stop",
-  mapAddStopFull: "No room for another stop",
+  mapAddStopFull: "No room for another stop — a ride takes up to {n} stops",
+  mapStopCapShort: "Max. {n} stops",
+  shapePointLabel: "Route point — drag to move it, or click for options",
+  shapeRemove: "Remove",
+  shapePromote: "Make it a stop",
+  shapeCapNote: "There are already {n} route points — no more can be added",
+  shapeMoveHint: "Route point moved — confirm",
+  resSearchDropsShapes: "The full search does not keep route points.",
   resAddSelected: "Add the ticked places",
   resAddSelectedHint: "The ticked places stay in the ride — no new search.",
   resSearchBetter: "Search for a better loop with these stops",
@@ -2426,6 +2481,8 @@ const en: Messages = {
   editDeadEnd: "The stop is on a dead end — back the same way for {km} km.",
   editBrokenLine: "This change couldn't be joined into one line with the route — the route stays as it was.",
   editSameWayBack: "To the stop and back the same way for {km} km — no other way was found in time.",
+  editDeadEndShape: "The route point is on a dead end — back the same way for {km} km.",
+  editSameWayBackShape: "To the route point and back the same way for {km} km — no other way was found in time.",
   resSearchBetterLink: "Find a better loop with these stops →",
   editNeedsPlace: "This row needs a place — mark it on the map or pick one from the list.",
   editNoRide: "Without this stop nothing is left of the loop — add another or search for a new one.",

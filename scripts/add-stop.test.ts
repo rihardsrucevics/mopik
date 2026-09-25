@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { addStop, addedStopIndex, MAX_ROWS } from "../components/route-places";
+import { addStop, addedStopIndex, maxRows } from "../components/route-places";
+import { MAX_STOPS } from "../lib/chat/ride-limits";
 
 /**
  * Where a new stop lands, and which row that is.
@@ -62,10 +63,13 @@ test("one way keeps the finish last; a round trip puts the stop first", () => {
 });
 
 test("the cap is one number, so the map's tap stops where the button greys out", () => {
-  // Both doors read `MAX_ROWS`. A tap that was still allowed where the button
+  // Both doors read `maxRows`. A tap that was still allowed where the button
   // was already dead would be two answers to one question, and the one the
   // rider cannot see is the one that would surprise him.
-  const full = Array.from({ length: MAX_ROWS }, (_, i) => `Vieta ${i}`);
-  assert.equal(full.length >= MAX_ROWS, true);
-  assert.equal(["Rīga", "Cēsis"].length >= MAX_ROWS, false);
+  const full = Array.from({ length: maxRows(true) }, (_, i) => `Vieta ${i}`);
+  assert.equal(full.length >= maxRows(true), true);
+  assert.equal(["Rīga", "Cēsis"].length >= maxRows(true), false);
+  // Counted as stops: ten either way, the finish row on top one way.
+  assert.equal(maxRows(true) - 2, MAX_STOPS);
+  assert.equal(maxRows(false) - 1, MAX_STOPS);
 });

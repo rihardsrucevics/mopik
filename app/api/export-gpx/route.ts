@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { generateGpx } from "@/lib/gpx/generate-gpx";
 import { gpxFilename } from "@/lib/gpx/filename";
+import { MAX_STOPS } from "@/lib/chat/ride-limits";
 
 /**
  * The planned places, as pins the device can draw.
  *
  * Capped at 40 because this is a *plan*, not a track: the longest ride the
- * composer can express is a start, six vias and a finish, plus the sights the
+ * composer can express is a start, `MAX_STOPS` vias and a finish, plus the sights the
  * rider ticks — 40 leaves room for every one of them and still refuses a
  * payload that is trying to be a second track. Coordinates are range-checked
  * for the same reason the rest of this body is validated: the file goes
@@ -28,7 +29,7 @@ const RequestSchema = z.object({
   coordinates: z.array(z.tuple([z.number(), z.number()])).min(2),
   description: z.string().max(600).optional(),
   /** Places in riding order, used to build the filename. */
-  places: z.array(z.string()).max(12).optional(),
+  places: z.array(z.string()).max(MAX_STOPS + 2).optional(),
   km: z.number().optional(),
   /** Start, stops and ticked sights, as <wpt>. Absent on an older client. */
   waypoints: z.array(WaypointSchema).max(40).optional(),

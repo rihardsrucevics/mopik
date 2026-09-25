@@ -8,6 +8,7 @@ import { fi } from "@/lib/i18n/format";
 import { POI_KIND, osmUrl, type RoutePoi, type RoutePois } from "@/lib/poi/kinds";
 import { type DetourResult } from "@/lib/routing/detour";
 import { describeDetourForFocus } from "@/lib/routing/use-detours";
+import { MAX_STOPS } from "@/lib/chat/ride-limits";
 
 /**
  * What a row says about its detour, in the shape the map's focus card takes.
@@ -15,8 +16,8 @@ import { describeDetourForFocus } from "@/lib/routing/use-detours";
  */
 export type DetourFocusNote = NonNullable<ReturnType<typeof describeDetourForFocus>>;
 
-/** The plan's own cap (`RidePlanSchema` maxes `viaPlaces` at six). */
-export const MAX_VIAS = 6;
+/** The plan's own cap (`RidePlanSchema` maxes `viaPlaces` at `MAX_STOPS`). */
+export const MAX_VIAS = MAX_STOPS;
 
 /**
  * A place the rider has ticked, in the shape the pages need to make it a via.
@@ -59,7 +60,7 @@ export type SelectedPoi = { id: string; name: string; lat: number; lon: number; 
  */
 export function SuggestionsCard({
   pois, loading, failed = false, expanded, onToggle, onShow,
-  selected = [], onToggleSelect, onClearSelection, onCommit, onSearchBetter, committable = false, viaCount = 0, includedNames = [], busy,
+  selected = [], onToggleSelect, onClearSelection, onCommit, onSearchBetter, shapesDropped = false, committable = false, viaCount = 0, includedNames = [], busy,
   detours = {}, detoursLoading = false, refusedIds = [],
 }: {
   /** null until the first expand has answered; both lists may be empty. */
@@ -103,6 +104,8 @@ export function SuggestionsCard({
    * the common case fast would trade one of his asks for the other.
    */
   onSearchBetter?: () => void;
+  /** The ride has shaping points, which the full search drops — said under its button. */
+  shapesDropped?: boolean;
   /**
    * At least one ticked place has a routed detour spliced into the drawn line.
    *
@@ -270,7 +273,7 @@ export function SuggestionsCard({
                   >
                     {m.resSearchBetter}
                   </button>
-                  <p className="text-[10px] leading-snug text-stone-400">{m.resSearchBetterHint}</p>
+                  <p className="text-[10px] leading-snug text-stone-400">{m.resSearchBetterHint}{shapesDropped ? ` ${m.resSearchDropsShapes}` : ""}</p>
                 </>
               )}
             </div>

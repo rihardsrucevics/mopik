@@ -95,7 +95,7 @@ function Row({ label, value, icon }: { label: string; value: string; icon?: stri
   );
 }
 
-export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, remoteLoop, longerSuggestion, tolerancePercent = 20, busy, onSend, onBackToForm, resolvedPlaces, alternatives, offset, onOffsetChange, map, sparsePlaceData = false, assembledFromSegments = false, directLeg = false, onShowPoi, pois = null, poisLoading = false, poisFailed = false, onDetoursChange, selectedPois = [], onToggleSelectPoi, onClearSelectedPois, onCommitSelection, onSearchBetterLoop, onSplicedChange, override = null, edited = null, rerouting = false, editNote = null, onEdit }: {
+export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, remoteLoop, longerSuggestion, tolerancePercent = 20, busy, onSend, onBackToForm, resolvedPlaces, alternatives, offset, onOffsetChange, map, sparsePlaceData = false, assembledFromSegments = false, directLeg = false, onShowPoi, pois = null, poisLoading = false, poisFailed = false, onDetoursChange, selectedPois = [], onToggleSelectPoi, onClearSelectedPois, onCommitSelection, onSearchBetterLoop, shapesDropped = false, onSplicedChange, override = null, edited = null, rerouting = false, editNote = null, onEdit }: {
   routes: GeneratedRoute[];
   /**
    * This is the direct-road offer (backlog item 7b), not a planned ride.
@@ -182,6 +182,12 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
    * another. So both are on screen and the slower one says what it costs.
    */
   onSearchBetterLoop?: () => void;
+  /**
+   * The ride has shaping points, which the full search does not keep (rider,
+   * 2026-09-25): said beside every „Meklēt labāku apli”, so pressing it is
+   * never how he finds out his bend is gone.
+   */
+  shapesDropped?: boolean;
   /**
    * The ride on screen when the rider has changed it — sights kept, places
    * moved, added or removed — already in the shape of a ride, with every
@@ -722,10 +728,13 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
                     </span>
                   )}
                   {onSearchBetterLoop && (
-                    <button type="button" onClick={onSearchBetterLoop} disabled={busy || rerouting} title={m.resSearchBetterHint}
+                    <button type="button" onClick={onSearchBetterLoop} disabled={busy || rerouting} title={shapesDropped ? `${m.resSearchBetterHint} ${m.resSearchDropsShapes}` : m.resSearchBetterHint}
                       className="text-[11px] font-semibold text-[#bd4b00] hover:underline disabled:opacity-40">
                       {m.resSearchBetterLink}
                     </button>
+                  )}
+                  {onSearchBetterLoop && shapesDropped && (
+                    <span className="w-full text-[10px] leading-snug text-stone-500">{m.resSearchDropsShapes}</span>
                   )}
                 </div>
               )}
@@ -886,6 +895,7 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
           onClearSelection={onClearSelectedPois}
           onCommit={onCommitSelection}
           onSearchBetter={onSearchBetterLoop}
+          shapesDropped={shapesDropped}
           committable={Boolean(spliced && spliced.applied.length > 0)}
           viaCount={plan?.viaPlaces.length ?? 0}
           includedNames={plan?.viaPlaces ?? []}

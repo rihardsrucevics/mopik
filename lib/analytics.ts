@@ -17,7 +17,9 @@ export type AnalyticsEvent =
   | "route_unplannable"      // probe says the ride is too hard to search; props: leg_km, reason
   | "route_no_route"         // every candidate failed, no place to blame; props: tried, stops
   | "map_pin_pressed"        // a ride pin clicked to make its row active; props: role
-  | "route_line_grabbed"     // edit mode: a point of the drawn line grabbed to move; props: slot
+  | "route_line_grabbed"     // edit mode: the drawn line grabbed, a shaping point in the making; props: slot
+  | "shape_point_dragged"    // edit mode: a shaping point's dot dragged (waits for Confirm)
+  | "shape_point_edited"     // edit mode: a shaping point added/moved/removed/made a stop; props: kind
   | "batch_stop_marked"      // a pending stop added to a batch on the map; props: n (its place in the batch)
   | "batch_confirmed"        // „Apstiprināt visas”; props: n
   | "batch_discarded"        // ✕ on an open batch; props: n

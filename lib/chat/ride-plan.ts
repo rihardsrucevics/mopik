@@ -2,10 +2,28 @@ import { z } from "zod";
 import { messages } from "@/lib/i18n/messages";
 import type { UiLocale } from "@/lib/i18n/locale";
 import { RouteIntentSchema, type RouteIntent, type UnreachableStop } from "@/lib/types";
+import { MAX_SHAPE_POINTS, MAX_STOPS } from "@/lib/chat/ride-limits";
 
 export const RidePlanSchema = z.object({
   startPlace: z.string().max(160).nullable(),
-  viaPlaces: z.array(z.string().min(1).max(160)).max(6),
+  viaPlaces: z.array(z.string().min(1).max(160)).max(MAX_STOPS),
+  /**
+   * Shaping points („maršruta punkti”, 2026-09-25): where the rider bent the
+   * drawn line by grabbing it, in riding order. Not places — no name, no row,
+   * no GPX waypoint — only points the router rides through. `afterPlace` is
+   * the index of the place each follows in `[start, ...viaPlaces]` (0: after
+   * the start, before the first stop), which is what keeps them in the right
+   * leg when the plan is rebuilt from names.
+   *
+   * Optional, and absent rather than empty when there are none: a plan
+   * without them encodes exactly as it always has, so the share codes and the
+   * saved-ride ids made before this field existed do not change.
+   */
+  shapePoints: z.array(z.object({
+    lat: z.number().min(-90).max(90),
+    lon: z.number().min(-180).max(180),
+    afterPlace: z.number().int().min(0).max(MAX_STOPS),
+  })).max(MAX_SHAPE_POINTS).optional(),
   destinationPlace: z.string().max(160).nullable(),
   /**
    * "Man vienalga" — the rider was asked where the one-way ride should

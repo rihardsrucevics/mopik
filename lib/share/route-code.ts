@@ -2,6 +2,7 @@ import type { GeneratedRoute, RoadClass, RouteSegmentProperties, SurfaceClass } 
 import { RidePlanSchema, type RidePlan } from "@/lib/chat/ride-plan";
 import type { ResolvedPlace } from "@/lib/chat/places";
 import { isUiLocale, type UiLocale } from "@/lib/i18n/locale";
+import { MAX_SHAPE_POINTS, MAX_STOPS } from "@/lib/chat/ride-limits";
 
 /**
  * A route as a link, with no database behind it.
@@ -332,6 +333,13 @@ export function encodePlanShare(plan: RidePlan, places?: ResolvedPlace[] | null)
     b: plan.budget, df: plan.difficulty, st: plan.rideStyle, g: plan.gravelPreference, t: plan.trailPreference, a: plan.accessPolicy,
     pf: plan.preferForest, am: plan.avoidMainRoads, si: plan.includeSightseeing, su: plan.surroundings,
   };
+  // Shaping points (2026-09-25) as `sp`, `[lat, lon, afterPlace]` each, the
+  // way `pl` was added: optional, written only when the ride has any, so a
+  // plan without them encodes to exactly the code it always did — the share
+  // version stays "1" and `rideId()` of every ride already saved is unchanged.
+  if (plan.shapePoints?.length) {
+    compact.sp = plan.shapePoints.map((p) => [Number(p.lat.toFixed(5)), Number(p.lon.toFixed(5)), p.afterPlace]);
+  }
   if (places?.length) {
     // Two extra slots, appended, and only when the place has them: a place
     // that came from a suggestion carries its POI kind and OSM id so the
@@ -370,10 +378,30 @@ export function decodePlanPlaces(code: string): ResolvedPlace[] {
     return [];
   }
 }
+/**
+ * A code's shaping points, if it carries any (`sp`). Validated row by row
+ * rather than trusted: the code is user-supplied, and one bad row must cost
+ * that row, not the whole plan — `RidePlanSchema` refuses a plan with a
+ * malformed entry outright, and a reopened ride with no plan at all is a far
+ * worse answer than one without a bend.
+ */
+function decodeShapePoints(raw: unknown): RidePlan["shapePoints"] {
+  if (!Array.isArray(raw)) return undefined;
+  const rows = raw
+    .filter((r): r is [number, number, number] =>
+      Array.isArray(r) && Number.isFinite(r[0]) && Number.isFinite(r[1]) && Number.isInteger(r[2])
+      && Math.abs(r[0]) <= 90 && Math.abs(r[1]) <= 180 && r[2] >= 0 && r[2] <= MAX_STOPS)
+    .slice(0, MAX_SHAPE_POINTS)
+    .map(([lat, lon, afterPlace]) => ({ lat, lon, afterPlace }));
+  return rows.length ? rows : undefined;
+}
+
 export function decodePlanShare(code: string): RidePlan | null {
   try {
     const c = JSON.parse(fromBase64Url(code));
+    const shapePoints = decodeShapePoints(c.sp);
     return RidePlanSchema.parse({
+      ...(shapePoints ? { shapePoints } : {}),
       startPlace: c.s ?? null, viaPlaces: c.v ?? [], destinationPlace: c.d ?? null, directionPlace: null, focusArea: c.f ?? null,
       budgetScope: c.bs ?? "total", returnToStart: c.r ?? true, budget: c.b ?? { mode: "flexible", value: null, constraint: "target", minimumValue: null },
       difficulty: c.df ?? "adventure", rideStyle: c.st ?? "explore", gravelPreference: c.g ?? 55, trailPreference: c.t ?? "some",

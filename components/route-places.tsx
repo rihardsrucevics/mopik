@@ -4,6 +4,8 @@ import { ChevronDown, ChevronUp, LocateFixed, MapPin, MapPinPlus, Plus, X } from
 import { PlaceInput } from "@/components/place-input";
 import { track } from "@/lib/analytics";
 import { MIN_ROWS } from "@/lib/chat/compose-plan";
+import { MAX_STOPS, maxRows } from "@/lib/chat/ride-limits";
+import { fi } from "@/lib/i18n/format";
 import { useLocale } from "@/lib/i18n/use-locale";
 import { t } from "@/lib/i18n/messages";
 import type { ResolvedPlace } from "@/lib/chat/places";
@@ -48,14 +50,13 @@ export function addStop(list: string[], toDestination: boolean): string[] {
 }
 
 /**
- * How many rows the form will carry.
- *
- * The plan's schema takes six via places; the form has always counted whole
- * rows against the same six, and the map's "+ Pietura" must hit exactly the
- * wall the form's "Pievienot pieturvietu" button hits — one enabled where the
+ * How many rows the form will carry: `maxRows` in `lib/chat/ride-limits.ts`,
+ * counted as stops so a one-way ride and a round trip both stop at the same
+ * number of stops the plan's schema takes. The map's „+” must hit exactly the
+ * wall the form's „Pievienot pieturvietu” button hits — one enabled where the
  * other was greyed out would be two different answers to one question.
  */
-export const MAX_ROWS = 6;
+export { maxRows };
 
 /**
  * Whether a row's pin button is drawn on the desktop (≥ 768 px).
@@ -488,7 +489,9 @@ export function RoutePlaces({ places, picked, oneWay, busy, onChange, onPick, on
           const next = addStop(places, oneWay);
           if (onStructure) onStructure(next, { kind: "insert", at: addedStopIndex(places, oneWay) });
           else onChange(next);
-        }} disabled={busy || places.length >= MAX_ROWS}
+        }} disabled={busy || places.length >= maxRows(oneWay)}
+        // At the cap the button says why it is greyed out, as the map's „+” does.
+        title={places.length >= maxRows(oneWay) ? fi(t(locale, "mapAddStopFull"), { n: MAX_STOPS }) : undefined}
         className="inline-flex items-center gap-1 self-start text-xs font-medium text-[#bd4b00] disabled:opacity-40">
         <Plus className="size-3.5" />{oneWay ? t(locale, "addStop") : t(locale, "addPlace")}
       </button>

@@ -6,6 +6,8 @@ import { placeRoles } from "@/lib/map/place-roles";
 import { cumulative, lineMeters, pointAtDistance, sliceBetween, splicedSurfaces } from "@/lib/routing/detour";
 import { segmentSpeedKmh } from "@/lib/routing/speed";
 import { visitsRequiredStops } from "@/lib/routing/required-stops";
+import { MAX_SHAPE_POINTS, MAX_STOPS } from "@/lib/chat/ride-limits";
+import { interleaveShapes, shapesAfterPlaces, type ShapePoint } from "@/lib/routing/shape-points";
 
 /**
  * Correcting a ride on the map, without searching for a new one.
@@ -105,7 +107,42 @@ export type RidePlace = ResolvedPlace & {
    * rather than wherever the line happens to pass nearest the new spot.
    */
   grabbedAt?: Point;
+  /**
+   * A shaping point („maršruta punkts”, 2026-09-25), not a stop: where the
+   * rider bent the line by grabbing it. It sits among the vias in riding
+   * order because to the router it IS a via — every stretch, window and
+   * loop rule here treats it exactly like a stop — but it has no row, no
+   * name, no waypoint and no visit check: the rows, the plan's names, the
+   * share code's places and the GPX all read the stops only (`stopsOf`).
+   */
+  shape?: true;
 };
+
+/** Whether a via is a shaping point rather than a stop. */
+export const isShape = (p: RidePlace): boolean => p.shape === true;
+
+/** The ride's stops: its vias without the shaping points. */
+export function stopsOf(places: RidePlaces): RidePlace[] {
+  return places.vias.filter((v) => !isShape(v));
+}
+
+/** The ride's shaping points, in riding order. */
+export function shapesOf(places: RidePlaces): RidePlace[] {
+  return places.vias.filter(isShape);
+}
+
+/** A shaping point as a via: no name, because it is not a place. */
+function shapeVia(p: { lat: number; lon: number }): RidePlace {
+  return { name: "", label: "", lat: p.lat, lon: p.lon, shape: true };
+}
+
+/**
+ * The shaping points as the plan carries them — each with the place it
+ * follows — or none. See `RidePlanSchema.shapePoints`.
+ */
+export function shapePointsOf(places: RidePlaces): ShapePoint[] {
+  return shapesAfterPlaces(places.vias, isShape, (v) => ({ lat: Number(v.lat.toFixed(6)), lon: Number(v.lon.toFixed(6)) }));
+}
 
 /**
  * The ride's places, by role, as the edit leaves them.
@@ -521,6 +558,14 @@ export function snapToLine(params: {
   const snap = (p: RidePlace): RidePlace => {
     if (known.some((k) => same(k, p))) return p;
     const near = nearestAlong(toPoint(p), line, cum);
+    // A shaping point goes onto the line wherever the router took it, and
+    // nothing is said: it is not a place the rider will look for, only the
+    // bend he asked for, and a later edit measures along the line from it.
+    if (isShape(p)) {
+      if (near.meters <= 1) return p;
+      const [lon, lat] = pointAtDistance(line, cum, near.alongMeters).point;
+      return { ...p, lat, lon };
+    }
     if (near.meters <= SNAP_SILENT_M) return p;
     if (near.meters > maxMoveMeters) { refused = Math.max(refused, near.meters); return p; }
     moved = Math.max(moved, near.meters);
@@ -882,6 +927,10 @@ export function lineBreaks(segments: Segments, original?: Segments): { index: nu
  * gap between two stops and an orphan stub is not a ride): it is one
  * continuous line (`lineBreaks`), and it passes every place in order within
  * `toleranceMeters`. The page shows an edit only when this holds.
+ *
+ * Places means stops: a shaping point is not visited, it is ridden past
+ * wherever the router reached, and `snapToLine` puts it there — so it is
+ * held to the continuous line and to nothing else.
  */
 export function spliceIsSound(params: {
   segments: Segments;
@@ -891,7 +940,7 @@ export function spliceIsSound(params: {
 }): { ok: true } | { ok: false; breaks: { index: number; meters: number }[]; missesPlaces: boolean } {
   const breaks = lineBreaks(params.segments, params.original);
   const line = coordinatesOf(params.segments);
-  const places = anchorsOf(params.places, line[line.length - 1] ?? [0, 0]);
+  const places = anchorsOf({ ...params.places, vias: stopsOf(params.places) }, line[line.length - 1] ?? [0, 0]);
   const missesPlaces = line.length < 2 || !visitsRequiredStops(line, places, params.toleranceMeters);
   return breaks.length || missesPlaces ? { ok: false, breaks, missesPlaces } : { ok: true };
 }
@@ -1011,8 +1060,11 @@ export type EditedRide = {
    * `edit` earns the "Labots ar roku" kicker.
    */
   kind: "commit" | "edit";
-  /** Which edit made it, for the undo's analytics: an `EditKind`, or "sights". */
-  how: EditKind | "sights";
+  /**
+   * Which edit made it, for the undo's analytics: an `EditKind`, "sights", or
+   * "promote" — a shaping point made a stop, which changes no line.
+   */
+  how: EditKind | "sights" | "promote";
 };
 
 /**
@@ -1066,7 +1118,9 @@ export function insertStopsByAlong(line: Point[], places: RidePlaces, added: Rid
     while (slot < vias.length && along[slot + 1] <= at) slot++;
     vias = [...vias.slice(0, slot), stop, ...vias.slice(slot)];
   }
-  return { ...places, vias: vias.slice(0, 6) };
+  // The cap counts stops; the shaping points all stay.
+  let room = MAX_STOPS;
+  return { ...places, vias: vias.filter((v) => isShape(v) || room-- > 0) };
 }
 
 /**
@@ -1106,23 +1160,35 @@ export function undoEdit(h: EditHistory): EditHistory {
 /**
  * The plan with the edit's places written into it, so the share code, a save
  * and "Meklēt labāku apli" all describe the ride on the map. The plan carries
- * six stops at most; the form's cap is the same six, so nothing is dropped
+ * `MAX_STOPS` stops at most; the form's cap is the same, so nothing is dropped
  * that the form could have added.
+ *
+ * The stops are the plan's names; the shaping points its `shapePoints`, each
+ * with the place it follows. None means no key at all — a plan without them
+ * must encode to the very code it always did (`encodePlanShare`, `rideId`).
  */
 export function planWithPlaces(plan: RidePlan, places: RidePlaces): RidePlan {
+  const { shapePoints: _was, ...rest } = plan;
+  void _was;
+  const shapes = shapePointsOf(places).slice(0, MAX_SHAPE_POINTS);
   return {
-    ...plan,
+    ...rest,
+    ...(shapes.length ? { shapePoints: shapes } : {}),
     startPlace: places.start.name,
-    viaPlaces: places.vias.slice(0, 6).map((v) => v.name),
+    viaPlaces: stopsOf(places).slice(0, MAX_STOPS).map((v) => v.name),
     ...(places.roundTrip ? {} : places.finish
       ? { destinationPlace: places.finish.name, destinationAny: false }
       : {}),
   };
 }
 
-/** The ride's places in riding order, as the share code and the API carry them. */
+/**
+ * The ride's places in riding order, as the share code and the API carry them
+ * — stops only: a shaping point is not a place (it travels in the plan's
+ * `shapePoints`), so it is never a waypoint in the GPX or a row reopened.
+ */
 export function resolvedOf(places: RidePlaces): ResolvedPlace[] {
-  return [places.start, ...places.vias, ...(places.finish ? [places.finish] : [])];
+  return [places.start, ...stopsOf(places), ...(places.finish ? [places.finish] : [])];
 }
 
 /**
@@ -1162,17 +1228,24 @@ export function placesFromRide(params: {
     };
   };
   const namesLineUp = plan.viaPlaces.length === params.via.length;
+  // The API's vias are the stops; the plan's shaping points go back in
+  // between them, where each was (`afterPlace`).
+  const stops = params.via.map((v, i) => place(v, namesLineUp ? plan.viaPlaces[i] : null));
   return {
     start: place(params.start, plan.startPlace),
-    vias: params.via.map((v, i) => place(v, namesLineUp ? plan.viaPlaces[i] : null)),
+    vias: interleaveShapes(stops, plan.shapePoints, shapeVia),
     finish: plan.returnToStart === true || !params.destination ? null : place(params.destination, plan.destinationPlace),
     roundTrip: plan.returnToStart === true,
   };
 }
 
-/** The form's rows for a ride's places: names by row, and the pick under each. */
+/**
+ * The form's rows for a ride's places: names by row, and the pick under each.
+ * A shaping point has no row (rider, 2026-09-25: „just a moved route”, not a
+ * stop); the editor draws it as a dot on the map instead.
+ */
 export function rowsOf(places: RidePlaces): { names: string[]; picked: Record<number, ResolvedPlace> } {
-  const list = [places.start, ...places.vias, ...(places.finish ? [places.finish] : [])];
+  const list = [places.start, ...stopsOf(places), ...(places.finish ? [places.finish] : [])];
   const names = list.map((p) => p.name);
   const picked: Record<number, ResolvedPlace> = {};
   list.forEach((p, i) => { picked[i] = p; });
@@ -1201,4 +1274,88 @@ export function placesFromRows(params: {
   if (!roles.start) return { error: "no-start" };
   if (!params.roundTrip && !roles.finish && !params.finishOptional) return { error: "no-finish" };
   return { start: roles.start, vias: roles.vias, finish: params.roundTrip ? null : roles.finish, roundTrip: params.roundTrip };
+}
+
+/**
+ * The form's rows committed over a ride that has shaping points: the rows are
+ * stops only, so the shaping points are put back where they were.
+ *
+ * Each kind of change keeps them the way `planEdit` needs to see it:
+ * - the same number of stops (a stop, the start or the finish moved): every
+ *   shaping point stays exactly where it was among the vias;
+ * - one stop fewer: that stop goes and the shaping points stay;
+ * - more stops, the old ones still in order (added from the form, the search
+ *   or a batch): the new ones are appended, and `planEdit` slots each where
+ *   the line passes it, between whatever stops or shaping points it lies;
+ * - anything else (the arrows reordered the stops): each shaping point
+ *   follows the place it followed by index — the stretch between the first
+ *   and last changed place is re-routed through all of them anyway.
+ */
+export function mergeShapes(before: RidePlaces, after: RidePlaces): RidePlaces {
+  if (!before.vias.some(isShape)) return after;
+  const oldStops = stopsOf(before);
+  const newStops = after.vias;
+  let k = 0;
+  if (newStops.length === oldStops.length) {
+    return { ...after, vias: before.vias.map((v) => (isShape(v) ? v : newStops[k++])) };
+  }
+  if (newStops.length === oldStops.length - 1) {
+    const gone = oldStops.findIndex((v, i) => !newStops[i] || !same(v, newStops[i]));
+    const rest = oldStops.filter((_, i) => i !== gone);
+    if (gone >= 0 && rest.every((v, i) => same(v, newStops[i]))) {
+      return { ...after, vias: before.vias.filter((v) => v !== oldStops[gone]) };
+    }
+  }
+  if (newStops.length > oldStops.length) {
+    const isOld = (v: RidePlace) => oldStops.some((o) => same(o, v));
+    const kept = newStops.filter(isOld);
+    if (kept.length === oldStops.length && kept.every((v, i) => same(v, oldStops[i]))) {
+      return { ...after, vias: [...before.vias, ...newStops.filter((v) => !isOld(v))] };
+    }
+  }
+  return { ...after, vias: interleaveShapes(newStops, shapePointsOf(before), shapeVia) };
+}
+
+/**
+ * What the rider did to a shaping point on the map, one commit each:
+ * - `add` — the line grabbed at `grabbedAt` and let go at the point;
+ * - `move` — a dot dragged, and Confirmed;
+ * - `remove` — „Izņemt” in the dot's popover;
+ * - `promote` — „Padarīt par pieturu”: the dot becomes a numbered stop with
+ *   a row, named by the reverse lookup (`place`), at the dot's own spot.
+ *
+ * `index` counts the shaping points in riding order.
+ */
+export type ShapeEdit =
+  | { kind: "add"; lat: number; lon: number; grabbedAt: Point }
+  | { kind: "move"; index: number; lat: number; lon: number }
+  | { kind: "remove"; index: number }
+  | { kind: "promote"; index: number; place: ResolvedPlace };
+
+/**
+ * The places after one shaping-point edit, or why it cannot be made. An
+ * added point goes last among the vias with where it was grabbed, and
+ * `planEdit` puts it into the ride there (its add-stop path — a shaping point
+ * is re-routed exactly as a stop would be). A promoted one keeps its place
+ * in the list and its coordinates, so the line does not change at all.
+ */
+export function applyShapeEdit(places: RidePlaces, op: ShapeEdit): RidePlaces | { error: "shape-cap" | "stop-cap" | "no-such-point" } {
+  const shapeIndex = (i: number) => {
+    let seen = -1;
+    return places.vias.findIndex((v) => isShape(v) && ++seen === i);
+  };
+  if (op.kind === "add") {
+    if (shapesOf(places).length >= MAX_SHAPE_POINTS) return { error: "shape-cap" };
+    return { ...places, vias: [...places.vias, { ...shapeVia(op), grabbedAt: op.grabbedAt }] };
+  }
+  const at = shapeIndex(op.index);
+  if (at < 0) return { error: "no-such-point" };
+  if (op.kind === "move") {
+    return { ...places, vias: places.vias.map((v, i) => (i === at ? { ...v, lat: op.lat, lon: op.lon } : v)) };
+  }
+  if (op.kind === "remove") return { ...places, vias: places.vias.filter((_, i) => i !== at) };
+  if (stopsOf(places).length >= MAX_STOPS) return { error: "stop-cap" };
+  const { lat, lon, joins } = places.vias[at];
+  const stop: RidePlace = { ...op.place, lat, lon, ...(joins ? { joins } : {}) };
+  return { ...places, vias: places.vias.map((v, i) => (i === at ? stop : v)) };
 }

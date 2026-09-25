@@ -16,6 +16,8 @@ import { SuggestionsCard, type DetourFocusNote, type SelectedPoi } from "@/compo
 import { MapPanel } from "@/components/map-panel";
 import { SiteHeader } from "@/components/site-header";
 import { track } from "@/lib/analytics";
+import { MAX_STOPS } from "@/lib/chat/ride-limits";
+import { planForFullSearch } from "@/lib/chat/compose-plan";
 import { decodePlanPlaces, encodePlanShare, sharedRouteSegments, type SharedRoute } from "@/lib/share/route-code";
 import { isCodeSaved, removeRide, rideId, saveSharedRide } from "@/lib/share/saved-rides";
 import { gpxFilename } from "@/lib/gpx/filename";
@@ -284,10 +286,14 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
     if (!planCode || !share.plan || selectedPois.length === 0) return;
     const fresh = selectedPois.filter((p) => !share.plan!.viaPlaces.includes(p.name));
     if (fresh.length === 0) { setSelectedPois([]); return; }
-    // `RidePlanSchema` caps the list at six. Past that the press does nothing
-    // rather than building a plan the schema would refuse on arrival.
-    if (share.plan.viaPlaces.length + fresh.length > 6) return;
-    const next = { ...share.plan, viaPlaces: [...share.plan.viaPlaces, ...fresh.map((p) => p.name)] };
+    // `RidePlanSchema` caps the list at `MAX_STOPS`. Past that the press does
+    // nothing rather than building a plan the schema would refuse on arrival.
+    if (share.plan.viaPlaces.length + fresh.length > MAX_STOPS) return;
+    // A new search through one more stop, like „Meklēt labāku apli”: the
+    // shaping points bent the line this ride had, and the search plans a new
+    // one, so they are not carried into it.
+    const plan = planForFullSearch(share.plan);
+    const next = { ...plan, viaPlaces: [...plan.viaPlaces, ...fresh.map((p) => p.name)] };
     // The coordinates travel as a picked place for the same reason the form's
     // do: "Pilskalns" names dozens of hillforts and the one meant is the one
     // on this map, not whatever a geocoder picks tomorrow. Any place the code

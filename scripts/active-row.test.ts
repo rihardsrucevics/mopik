@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { addStop, addedStopIndex, defaultActiveRow, followRow, rowAfterConfirm, MAX_ROWS } from "../components/route-places";
+import { addStop, addedStopIndex, defaultActiveRow, followRow, rowAfterConfirm, maxRows } from "../components/route-places";
 
 /**
  * Which row the planning map answers, and which row "+ Pietura" makes.
@@ -81,7 +81,7 @@ test("a confirmed stop opens no new row: batch adding took that job", () => {
 test("at the row cap, with the finish still empty, the finish is next", () => {
   assert.equal(rowAfterConfirm(["Rīga", "A", "B", "C", "D", ""], 4, true).active, 5);
   assert.equal(rowAfterConfirm(["Rīga", "A", "B", "C", "D", "Cēsis"], 4, true).active, null);
-  assert.equal(["Rīga", "A", "B", "C", "D", "Cēsis"].length, MAX_ROWS);
+  assert.equal(["Rīga", "A", "B", "C", "D", "Cēsis"].length <= maxRows(true), true);
 });
 
 for (const oneWay of [true, false]) {
@@ -148,11 +148,11 @@ test("round trip: every press activates the ride's first stop, by the rider's ow
 
 test("the button is the only door, and it stops at the same cap the form does", () => {
   // The tap that used to create a stop is gone, so this is now the single
-  // place the cap has to hold. At `MAX_ROWS` the button is disabled and says
+  // place the cap has to hold. At `maxRows` the button is disabled and says
   // why — it never renders as a control that does nothing.
-  const full = Array.from({ length: MAX_ROWS }, (_, i) => `Vieta ${i}`);
-  assert.equal(full.length >= MAX_ROWS, true, "six rows is the cap");
-  assert.equal(addStop(["Rīga", "Cēsis"], true).length <= MAX_ROWS, true);
+  const full = Array.from({ length: maxRows(true) }, (_, i) => `Vieta ${i}`);
+  assert.equal(full.length >= maxRows(true), true, "twelve rows one way is the cap");
+  assert.equal(addStop(["Rīga", "Cēsis"], true).length <= maxRows(true), true);
 });
 
 test("the active row follows its place when the arrows move it", () => {

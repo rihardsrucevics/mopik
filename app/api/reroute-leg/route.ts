@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { RidePlanSchema, planToIntent } from "@/lib/chat/ride-plan";
+import { MAX_SHAPE_POINTS, MAX_STOPS } from "@/lib/chat/ride-limits";
 import { buildMotoProfileOptions } from "@/lib/routing/moto-profile";
 import { fetchRouteAvoiding, fetchRoutePath } from "@/lib/routing/brouter";
 import { JOIN_GAP_M, LOOP_SHARED_MIN_M, chooseLoop, nogosAlong, sharedRoad, type LegPair } from "@/lib/routing/reroute-leg";
@@ -105,16 +106,18 @@ const BodySchema = z.object({
    * derived travels, and the derived part (which stretch to cut) is computed
    * on the client from the same geometry it draws.
    */
-  // Up to six: a batch of added stops routes each stretch it touches in
-  // this one request (2026-09-25).
-  runs: z.array(z.array(CoordSchema).min(2).max(8)).min(1).max(6),
+  // One run per stretch a batch of added stops touches, all in this one
+  // request (2026-09-25) — at most one per stop. A run holds its two joins
+  // and every place between them: the whole-span fallback (`spanRun`) can
+  // carry every stop and every shaping point of the ride.
+  runs: z.array(z.array(CoordSchema).min(2).max(MAX_STOPS + MAX_SHAPE_POINTS + 2)).min(1).max(MAX_STOPS + 2),
   /**
    * Which runs go through a stop that should be ridden through, not out to
    * and back — `join → stop → join` for a stop added or moved. Those are
    * routed as two halves and, when the halves share the road, again with the
    * shared road fenced off (`routeThroughStop`).
    */
-  loops: z.array(z.boolean()).max(6).optional(),
+  loops: z.array(z.boolean()).max(MAX_STOPS + 2).optional(),
 });
 
 /**

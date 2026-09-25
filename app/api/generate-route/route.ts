@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { RidePlanSchema, nextPlanQuestion, planToIntent } from "@/lib/chat/ride-plan";
+import { MAX_STOPS } from "@/lib/chat/ride-limits";
+import { interleaveShapes, type ShapePoint } from "@/lib/routing/shape-points";
 import { estimateLegs } from "@/lib/chat/feasibility";
 import { plannedAvgSpeedKmh } from "@/lib/routing/speed";
 import { hasBeachLikePath, hasUnverifiedMotorPath } from "@/lib/routing/access";
@@ -83,7 +85,8 @@ const RequestSchema = z.object({
    */
   places: z
     .array(z.object({ name: z.string(), label: z.string(), lat: z.number(), lon: z.number() }))
-    .max(12)
+    // The start, every stop the plan may carry, and the finish.
+    .max(MAX_STOPS + 2)
     .optional(),
   /** form controls, used as defaults that the prompt overrides */
   settings: RouteIntentSchema.partial().optional(),
@@ -436,7 +439,8 @@ async function buildCandidates(
   targetKm: number,
   calibration: LoopCalibration | null,
   direction?: BearingSector,
-  requiredVia: GeocodeResult[] = []
+  requiredVia: GeocodeResult[] = [],
+  shapePoints: ShapePoint[] = []
 ): Promise<BuiltCandidates> {
   const costingOptions = buildCostingOptions(intent);
   const startPt: [number, number] = [start.lon, start.lat];
@@ -458,8 +462,14 @@ async function buildCandidates(
    * which is exactly what `namedPoints` below collects; anything else in the
    * list was put there by the shapes above.
    */
+  // The rider's shaping points (2026-09-25) ride with the stops, in the leg
+  // each was put in: every candidate shape below is built through them, so
+  // the ride keeps the bend he gave it. They are named points — rescued by
+  // the endpoint-nudge ring when they sit off a road, never dropped as a
+  // guess — but not stops: the visit check below is for stops alone.
+  const routedVia = interleaveShapes(requiredVia, shapePoints, (p): GeocodeResult => ({ lat: p.lat, lon: p.lon, label: "" }));
   const namedPoints = new Set(
-    [start, ...requiredVia, ...(destination ? [destination] : [])].map((p) => `${p.lon},${p.lat}`)
+    [start, ...routedVia, ...(destination ? [destination] : [])].map((p) => `${p.lon},${p.lat}`)
   );
   const route = async (points: [number, number][], options = profileOptions) => {
     const generatedViaIndices = points
@@ -471,6 +481,9 @@ async function buildCandidates(
     const path = await fetchRoutePath({ points, profileOptions: options, generatedViaIndices });
     routedThrough.set(path, points);
     const stops = [...requiredVia, ...(destination ? [destination] : [])].map(p => [p.lon, p.lat] as [number, number]);
+    // A spur out to a shaping point is the rider's own bend, not a detour the
+    // builder invented; it is kept like a spur to a stop.
+    const kept = [...stops, ...shapePoints.map((p) => [p.lon, p.lat] as [number, number])];
     // A place the profile cannot route to at all (a centre mapped onto a
     // footway) is reached as closely as the network allows; `fetchRoutePath`
     // says how far that was, and the stop check has to allow the same, or the
@@ -496,13 +509,13 @@ async function buildCandidates(
       // loop through that country first, the cut only when no loop is cheap
       // (item 28, `pruneOrLoopSpurs`); the ride shares one request allowance.
       cleaned = await pruneOrLoopSpurs(path, {
-        protect: stops,
+        protect: kept,
         toleranceMeters: stopTolerance,
         requireCircuit: !destination,
         loop: spurLoopsFor({ ride: intent, profileOptions: options, waypoints: points, generatedViaIndices }),
       });
     }
-    catch (error) { if (requiredVia.length) return path; throw error; }
+    catch (error) { if (routedVia.length) return path; throw error; }
     if (cleaned === path) return path;
     routedThrough.set(cleaned, points);
     // Belt and braces: the order check sees the whole ride, the spur check one spur.
@@ -510,8 +523,8 @@ async function buildCandidates(
   };
 
 
-  if (requiredVia.length || destination) {
-    const places = [start, ...requiredVia, destination ?? start];
+  if (routedVia.length || destination) {
+    const places = [start, ...routedVia, destination ?? start];
     const directKm = places.slice(1).reduce((sum, p, i) => sum + Math.hypot((p.lat-places[i].lat)*111, (p.lon-places[i].lon)*61), 0);
     const spareMeters = Math.max(0, targetKm-directKm) * 1000;
     // How far the corridors are pushed apart. From the spare budget when
@@ -1484,10 +1497,13 @@ export async function POST(req: NextRequest) {
     // A flexible budget on a ride with fixed places means "as long as the
     // places take, with room to wander": the direct distance plus a quarter,
     // never below the plain-loop default.
-    const fixedPlaces = [start, ...requiredVia, destination ?? start];
+    // The rider's shaping points, where the plan carries them: routed through
+    // in order with the stops (`buildCandidates`), checked like nothing.
+    const shapePoints = body.plan?.shapePoints ?? [];
+    const fixedPlaces = [start, ...interleaveShapes(requiredVia, shapePoints, (p): GeocodeResult => ({ lat: p.lat, lon: p.lon, label: "" })), destination ?? start];
     const fixedDirectKm = fixedPlaces.slice(1).reduce((sum, p, i) => sum + Math.hypot((p.lat - fixedPlaces[i].lat) * 111, (p.lon - fixedPlaces[i].lon) * 61), 0);
     let targetKm = body.plan?.budget.mode === "flexible"
-      ? (remote ? 60 : body.lucky ? 120 : (requiredVia.length || destination) ? Math.max(80, Math.round(fixedDirectKm * 1.25)) : 80)
+      ? (remote ? 60 : body.lucky ? 120 : (requiredVia.length || shapePoints.length || destination) ? Math.max(80, Math.round(fixedDirectKm * 1.25)) : 80)
       : resolveTargetDistanceKm(intent);
 
     // The feasibility probe. Route the rider's legs once, under a short
@@ -1621,7 +1637,7 @@ export async function POST(req: NextRequest) {
     // fixed shapes). It corrects the anchor radius — and, for a duration
     // request, the target distance — to what this region actually delivers.
     let calibration: LoopCalibration | null = null;
-    if (!destination && !requiredVia.length) {
+    if (!destination && !requiredVia.length && !shapePoints.length) {
       const profileOptions = buildMotoProfileOptions(intent);
       calibration = await calibrateLoop(start, intent, targetKm, (points) =>
         fetchRoutePath({ points, profileOptions }).then(path => intent.includeSightseeing ? path : pruneSpurs(path)), direction
@@ -1629,7 +1645,7 @@ export async function POST(req: NextRequest) {
       if (calibration) targetKm = calibration.targetKm;
     }
 
-    const built = await buildCandidates(intent, start, destination, targetKm, calibration, direction, requiredVia);
+    const built = await buildCandidates(intent, start, destination, targetKm, calibration, direction, requiredVia, shapePoints);
     // A slow leg means fewer versions, not a failure. The candidates are in
     // build order, which puts the plain corridors (the ones a rider actually
     // recognises as the ride they asked for) before the ornamental shapes, so
@@ -1740,7 +1756,7 @@ export async function POST(req: NextRequest) {
           ...calibration,
           radiusMeters,
           secondPass: true,
-        }, direction, requiredVia);
+        }, direction, requiredVia, shapePoints);
         const retry = again.candidates.filter((c) => !c.exploratory);
         const second = await runAll(selfHostedRouter() ? retry : retry.slice(0, PUBLIC_SECOND_PASS_SHAPES));
         scored = [...scored, ...second.scored];

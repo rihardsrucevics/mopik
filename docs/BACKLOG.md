@@ -1292,3 +1292,24 @@ curates), consent and moderation before anything is shown, a small CDN'd
 set so the loader never waits on an image, and alt text. Ties in with the
 paused loading-animation work (a minute-long, layered scene) — decide both
 together.
+
+## 32. „Optimizēt, balstoties uz maniem labojumiem”
+
+**Rider, 2026-09-25, from his own edited ride** (`Mopik 2026-09-25
+Daugavgrivas iela-Gaujas iela-Ionity Adazi-Lielstaprinu iela 75km.gpx`,
+Daugavgrīvas iela → Gaujas iela → Ionity Ādaži → Lielstapriņu iela 16 →
+Ataru ezers, „Labots ar roku · 4 %”). His map edits left spurs of their own:
+measured with the geometric revisit detector, **2.21 km of 75.1 km ridden
+twice in four places** (0.32, 0.26, 0.61, 1.01 km — around Ādaži and the
+approach to Ataru ezers). Edit mode re-routes only the stretches around each
+change, so each edit is locally sensible and the whole can still double back.
+
+**The idea:** one explicit action after editing — „Optimizēt, balstoties uz
+labojumiem” — that keeps everything the rider decided (his stops, his
+shaping points, their order) and re-plans the connecting stretches together
+to remove spurs and retracing: the spur detector + loop-before-cut from 28b
+run over the edited ride, plus a pass that re-routes each stretch between
+consecutive fixed points with `nogos` along the rest of the ride where it
+overlaps. Different from „Meklēt labāku apli”, which drops shaping points
+and searches from scratch. Must say what it changed (km, retraced %, before
+→ after) and be undoable in one step; never silently.

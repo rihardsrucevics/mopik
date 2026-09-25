@@ -20,6 +20,7 @@ import { RideComposer } from "@/components/ride-composer";
 import { ChatMessage, ChatQuickReply, ChatResponse, RidePlan, planSummary } from "@/lib/chat/ride-plan";
 import { describeInfeasible, describeUnplannable, minutesLabel } from "@/lib/chat/feasibility";
 import { seedPlanFromProfile } from "@/lib/chat/ride-profile";
+import { planForFullSearch } from "@/lib/chat/compose-plan";
 import type { ResolvedPlace } from "@/lib/chat/places";
 import { useRideProfile } from "@/lib/chat/use-ride-profile";
 import { DESKTOP_QUERY, useMediaQuery } from "@/lib/use-media-query";
@@ -33,7 +34,13 @@ import type { SplicedRoute } from "@/lib/routing/detour";
 import {
   NO_EDITS,
   applyRuns,
+  applyShapeEdit,
   asGeneratedRoute,
+  isShape,
+  mergeShapes,
+  nearestAlong,
+  shapesOf,
+  stopsOf,
   coordinatesOf,
   insertStopsByAlong,
   joinsFor,
@@ -55,12 +62,15 @@ import {
   type EditedRide,
   type RidePlace,
   type RoutedRun,
+  type RidePlaces,
+  type ShapeEdit,
 } from "@/lib/routing/reroute-leg";
-import { cumulative } from "@/lib/routing/detour";
+import { cumulative, pointAtDistance } from "@/lib/routing/detour";
 import type { Point } from "@/lib/geo/geometry";
 import type { PlaceRoles } from "@/lib/map/place-roles";
 import type { RideEdit } from "@/components/ride-composer";
 import { MOVE_OFFER_MAX_M } from "@/lib/routing/routable-point";
+import { MAX_SHAPE_POINTS, MAX_STOPS } from "@/lib/chat/ride-limits";
 import { LoaderCircle } from "lucide-react";
 
 type Retry = { stage: "chat"; messages: ChatMessage[]; plan: RidePlan | null } | { stage: "route"; messages: ChatMessage[]; plan: RidePlan };
@@ -1079,11 +1089,12 @@ export function HomePage() {
     setSplicedFor({ result, spliced: null });
     setFocusPoi(null);
     setEditNote(null);
-    setPreview({ start: ridePlaces.start, vias: ridePlaces.vias, finish: ridePlaces.finish });
+    // Stops only: a shaping point is a dot of the editor's own, not a pin.
+    setPreview({ start: ridePlaces.start, vias: stopsOf(ridePlaces), finish: ridePlaces.finish });
     setEditEntry({ editsFor, plan, places });
     reseed();
     setEditMode(true);
-    track("route_edit_opened", { km: Math.round(shownRoute.distanceMeters / 1000), stops: ridePlaces.vias.length });
+    track("route_edit_opened", { km: Math.round(shownRoute.distanceMeters / 1000), stops: stopsOf(ridePlaces).length, shapes: shapesOf(ridePlaces).length });
     requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: "smooth" }));
   }
 
@@ -1128,18 +1139,86 @@ export function HomePage() {
   async function commitEdit(rows: { names: string[]; picked: Record<number, ResolvedPlace | null> }) {
     if (!plan || !result || !route || !ridePlaces || rerouting) return;
     const before = ridePlaces;
-    const after = placesFromRows({
+    const fromRows = placesFromRows({
       picked: rows.picked,
       rowCount: rows.names.length,
       roundTrip: before.roundTrip,
       finishOptional: !before.finish,
     });
-    if ("error" in after) {
+    if ("error" in fromRows) {
       track("route_edit_failed", { reason: "no-place" });
       setEditNote(ui.editNeedsPlace);
       reseed();
       return;
     }
+    // The rows are the stops; the shaping points go back where they were.
+    await reroutePlaces(before, mergeShapes(before, fromRows));
+  }
+
+  /**
+   * A shaping point added, moved, taken out or made a stop, on the map
+   * (2026-09-25). The first three re-route exactly as a stop would — the
+   * same `planEdit` windows, loops and continuous-line check, through the
+   * same `reroutePlaces`. Making one a stop changes no line: the dot already
+   * is where the ride goes, so the ride is kept and only its places change —
+   * still one step of the undo.
+   */
+  async function commitShape(op: ShapeEdit) {
+    if (!plan || !result || !route || !ridePlaces || rerouting) return;
+    const before = ridePlaces;
+    const next = applyShapeEdit(before, op);
+    if ("error" in next) {
+      track("route_edit_failed", { reason: next.error });
+      setEditNote(next.error === "stop-cap" ? fi(ui.mapAddStopFull, { n: MAX_STOPS }) : next.error === "shape-cap" ? fi(ui.shapeCapNote, { n: MAX_SHAPE_POINTS }) : ui.resEditFailed);
+      return;
+    }
+    track("shape_point_edited", { kind: op.kind });
+    if (op.kind !== "promote") { await reroutePlaces(before, next, { shape: true }); return; }
+    const baseLine = edited?.coordinates ?? (route.geometry.coordinates as Point[]);
+    // Onto the line, if the dot was a little off it (a plan's shaping point
+    // is where the rider put it, the line where the router went): a stop is
+    // held to the line it is on, and this one is on it by construction.
+    const cum = cumulative(baseLine);
+    const promoted: RidePlaces = {
+      ...next,
+      vias: next.vias.map((v) => {
+        if (isShape(v) || before.vias.some((b) => !isShape(b) && b.lat === v.lat && b.lon === v.lon)) return v;
+        const near = nearestAlong([v.lon, v.lat], baseLine, cum);
+        if (near.meters <= 1) return v;
+        const [lon, lat] = pointAtDistance(baseLine, cum, near.alongMeters).point;
+        return { ...v, lat, lon };
+      }),
+    };
+    const keep: EditedRide = edited
+      ? { ...edited, places: promoted, kind: "edit", how: "promote" }
+      : {
+          coordinates: baseLine,
+          segments: route.segments,
+          distanceMeters: route.distanceMeters,
+          durationSeconds: route.durationSeconds,
+          overlap: route.overlap,
+          summary: summariseSegments(route.segments, route.quality.gateCount !== undefined),
+          places: promoted,
+          kind: "edit",
+          how: "promote",
+        };
+    setEditsFor((prev) => {
+      const mine = prev.routeId === route.id;
+      return { routeId: route.id, history: pushEdit(mine ? prev.history : NO_EDITS, keep), original: mine && prev.original ? prev.original : { plan, places } };
+    });
+    setPlan(planWithPlaces(plan, promoted));
+    setPlaces(resolvedOf(promoted));
+    setEditNote(null);
+    reseed();
+  }
+
+  /**
+   * Re-route the stretches a change of places invalidates and splice them in
+   * — the one path every edit takes, a stop's or a shaping point's. `shape`
+   * only changes the words of the notes ("maršruta punkts", not "pietura").
+   */
+  async function reroutePlaces(before: RidePlaces, after: RidePlaces, opts: { shape?: boolean } = {}) {
+    if (!plan || !result || !route) return;
     const baseSegments = edited?.segments ?? route.segments;
     const line = coordinatesOf(baseSegments);
     if (line.length < 2) return;
@@ -1241,7 +1320,7 @@ export function HomePage() {
         return;
       }
       // Where a grabbed line point was taken only mattered to this edit's
-      // plan; the stop it became is an ordinary stop from here on.
+      // plan; the shaping point it became is an ordinary one from here on.
       const settled = { ...snapped.places, vias: snapped.places.vias.map((v) => { const { grabbedAt: _g, ...rest } = v; void _g; return rest; }) };
       const next: EditedRide = {
         ...spliced,
@@ -1267,8 +1346,10 @@ export function HomePage() {
       setPlaces(resolvedOf(settled));
       // A new stop was put where the line meets it, which may not be the row
       // "+ Pietura" made; the rows follow, and the map keeps answering it.
+      // Counted among the stops: the rows have none for shaping points.
+      const addedStops = planned.places.vias.filter((v) => !isShape(v));
       const addedAt = planned.kind === "add-stop"
-        ? planned.places.vias.findIndex((v) => !before.vias.some((b) => b.lat === v.lat && b.lon === v.lon))
+        ? addedStops.findIndex((v) => !before.vias.some((b) => b.lat === v.lat && b.lon === v.lon))
         : -1;
       // Said out loud rather than swallowed: the ride goes somewhere slightly
       // different from where the finger landed, and a substitution is never
@@ -1284,7 +1365,9 @@ export function HomePage() {
       const deadEndKm = new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(deadEnd / 1000);
       const notes = [
         snapped.movedMeters > 0 ? fi(ui.resEditMoved, { m: snapped.movedMeters }) : "",
-        deadEnd > 0 ? fi(deadEndRun?.deadEndUnchecked ? ui.editSameWayBack : ui.editDeadEnd, { km: deadEndKm }) : "",
+        deadEnd > 0 ? fi(deadEndRun?.deadEndUnchecked
+          ? (opts.shape ? ui.editSameWayBackShape : ui.editSameWayBack)
+          : (opts.shape ? ui.editDeadEndShape : ui.editDeadEnd), { km: deadEndKm }) : "",
       ].filter(Boolean);
       if (notes.length) setEditNote(notes.join(" "));
       reseed(addedAt >= 0 ? addedAt + 1 : undefined);
@@ -1352,12 +1435,15 @@ export function HomePage() {
     // have ticked something a previous pass put in the ride.
     const fresh = selectedPois.filter((p) => !plan.viaPlaces.includes(p.name));
     if (fresh.length === 0 && !edited) { setSelectedPois([]); return; }
-    // The plan carries at most six stops (`RidePlanSchema`); the card disables
-    // its own button past that, and this is the belt to that brace.
-    if (plan.viaPlaces.length + fresh.length > 6) return;
+    // The plan carries at most `MAX_STOPS` stops (`RidePlanSchema`); the card
+    // disables its own button past that, and this is the belt to that brace.
+    if (plan.viaPlaces.length + fresh.length > MAX_STOPS) return;
     if (fresh.length > 0) track("suggestion_added", { via_count: plan.viaPlaces.length + fresh.length, batch: fresh.length });
     track("search_better_loop", { pois: fresh.length, after_edit: Boolean(edited) });
-    const next: RidePlan = { ...plan, viaPlaces: [...plan.viaPlaces, ...fresh.map((p) => p.name)] };
+    // The full search keeps the stops and drops the shaping points (rider,
+    // 2026-09-25): they bent the line this ride has, and the search looks for
+    // a different one — the panel says so beside the button.
+    const next: RidePlan = { ...planForFullSearch(plan), viaPlaces: [...plan.viaPlaces, ...fresh.map((p) => p.name)] };
     const names = new Set(fresh.map((p) => p.name));
     const picked: ResolvedPlace[] = [
       ...places.filter((p) => !names.has(p.name)),
@@ -1398,7 +1484,7 @@ export function HomePage() {
     if (busyRef.current || !plan || selectedPois.length === 0) return;
     const fresh = selectedPois.filter((p) => !plan.viaPlaces.includes(p.name));
     if (fresh.length === 0) { setSelectedPois([]); return; }
-    if (plan.viaPlaces.length + fresh.length > 6) return;
+    if (plan.viaPlaces.length + fresh.length > MAX_STOPS) return;
     // Nothing spliced means nothing was routed to splice — every ticked place
     // is still pending or unreachable. Falling through to the search would be
     // the slow path arriving unannounced, so the press simply waits.
@@ -1637,7 +1723,9 @@ export function HomePage() {
    */
   const mapVia = useMemo(() => {
     if (!result) return preview.vias;
-    const list = wiring.editing ? preview.vias : ridePlaces?.vias ?? [];
+    // A shaping point is not a pin: on the result the line already shows the
+    // bend, and in edit mode the map draws it as a dot of its own.
+    const list = wiring.editing ? preview.vias : (ridePlaces?.vias ?? []).filter((v) => !isShape(v));
     return list.map((v) => ({
       lat: v.lat,
       lon: v.lon,
@@ -1775,6 +1863,8 @@ export function HomePage() {
     ? {
         seed: { ...rowsOf(ridePlaces), roundTrip: ridePlaces.roundTrip, token: seed.token, active: seed.active },
         onCommit: (rows) => { void commitEdit(rows); },
+        shapePoints: shapesOf(ridePlaces).map((v) => ({ lat: v.lat, lon: v.lon })),
+        onShape: (op) => { void commitShape(op); },
         onDone: finishEdit,
         onCancel: cancelEdit,
         status: editStatus,
@@ -1812,7 +1902,7 @@ export function HomePage() {
                   onPickModeChange={changePickMode} pickPoint={pickPoint}
                   onMapControlsChange={setMapControls} mapShown={mapVisible} edit={editor} />
             : result && result.routes.length > 0 && !chatting
-              ? <ResultPanel routes={result.routes} selected={selected} onSelect={setSelected} plan={plan} avoidTowns={result.intent.avoidTowns ?? false} lucky={lucky} remoteLoop={result.remoteLoop} longerSuggestion={result.longerSuggestion} tolerancePercent={result.intent.distanceTolerancePercent} busy={phase !== "idle"} onSend={send} onBackToForm={() => setEntryMode("form")} map={mapInResult && mapVisible ? mapPanel : undefined} resolvedPlaces={routedPlaces} alternatives={result.alternatives} sparsePlaceData={result.sparsePlaceData} assembledFromSegments={result.assembledFromSegments} directLeg={showingDirect} offset={variantOffset} onOffsetChange={setVariantOffset} onShowPoi={showPoi} pois={routePois} poisLoading={poisLoading} poisFailed={poisFailed} onDetoursChange={setDetoursForMap} selectedPois={selectedPois} onToggleSelectPoi={toggleSelectPoi} onClearSelectedPois={clearSelectedPois} onCommitSelection={commitSelection} onSearchBetterLoop={searchBetterLoop} onSplicedChange={handleSplicedChange} override={edited ? shownRoute : null} edited={edited} rerouting={rerouting} editNote={editNote} onEdit={canEdit ? enterEdit : undefined} />
+              ? <ResultPanel routes={result.routes} selected={selected} onSelect={setSelected} plan={plan} avoidTowns={result.intent.avoidTowns ?? false} lucky={lucky} remoteLoop={result.remoteLoop} longerSuggestion={result.longerSuggestion} tolerancePercent={result.intent.distanceTolerancePercent} busy={phase !== "idle"} onSend={send} onBackToForm={() => setEntryMode("form")} map={mapInResult && mapVisible ? mapPanel : undefined} resolvedPlaces={routedPlaces} alternatives={result.alternatives} sparsePlaceData={result.sparsePlaceData} assembledFromSegments={result.assembledFromSegments} directLeg={showingDirect} offset={variantOffset} onOffsetChange={setVariantOffset} onShowPoi={showPoi} pois={routePois} poisLoading={poisLoading} poisFailed={poisFailed} onDetoursChange={setDetoursForMap} selectedPois={selectedPois} onToggleSelectPoi={toggleSelectPoi} onClearSelectedPois={clearSelectedPois} onCommitSelection={commitSelection} onSearchBetterLoop={searchBetterLoop} shapesDropped={Boolean(plan?.shapePoints?.length)} onSplicedChange={handleSplicedChange} override={edited ? shownRoute : null} edited={edited} rerouting={rerouting} editNote={editNote} onEdit={canEdit ? enterEdit : undefined} />
               : <RoutePrompt messages={messages} plan={plan} hasRoute={Boolean(route)} phase={phase} quickReplies={quickReplies} lucky={lucky && !route} onSend={send} onBackToForm={() => setEntryMode("form")} originCode={origin?.code ?? null} onAction={(reply) => { if (reply.action === "retry") { retryLast(); return; } if (reply.action === "drop-stops" || reply.action === "easier-profile") { void retryChanged(reply.action); return; } if (reply.action === "direct-leg") { showDirectLeg(); return; } if (reply.action === "remove-stop" || reply.action === "move-stop") { if (reply.stop) reviseUnreachableStop(reply.stop, reply.action === "move-stop" ? "move" : "remove"); return; } setChatting(false); setQuickReplies([]); }} onCancel={cancel} />}
           {/* A ride that came from editing another one. Asked once, here,
               because only the rider knows whether the original is still

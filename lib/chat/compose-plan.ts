@@ -65,3 +65,38 @@ export function placesFromPlan(plan: RidePlan | null): string[] {
   const places = [plan.startPlace ?? "", ...tail];
   return places.length >= MIN_ROWS ? places : [...places, ...Array(MIN_ROWS - places.length).fill("")];
 }
+
+/**
+ * The shaping points of the plan the form was opened with, carried into the
+ * plan it builds — when the ride's places are still the ones they bend.
+ *
+ * The form has no rows for them (they are dots on the edit map, not places),
+ * so a plan rebuilt from its rows would quietly lose them, and a shared ride
+ * reopened and generated again would come back without the shape its rider
+ * gave it. They follow places by index, so they are kept only while the start,
+ * the stops, the finish and the trip type are exactly the old plan's; a
+ * changed list of places is a different ride, and its shape is the search's
+ * to find again.
+ */
+export function carryShapePoints(next: RidePlan, previous: RidePlan | null): RidePlan {
+  const shapes = previous?.shapePoints;
+  if (!shapes?.length || !previous) return next;
+  const same = (next.startPlace ?? "") === (previous.startPlace ?? "")
+    && (next.destinationPlace ?? "") === (previous.destinationPlace ?? "")
+    && Boolean(next.returnToStart) === Boolean(previous.returnToStart)
+    && next.viaPlaces.length === previous.viaPlaces.length
+    && next.viaPlaces.every((v, i) => v === previous.viaPlaces[i]);
+  return same ? { ...next, shapePoints: shapes } : next;
+}
+
+/**
+ * The plan the full search („Meklēt labāku apli ar šīm pieturām”) is given:
+ * the same stops, and no shaping points (rider, 2026-09-25). They bent the
+ * line this ride has; the search is asked for a different one, and the panel
+ * says beside the button that they are not kept.
+ */
+export function planForFullSearch(plan: RidePlan): RidePlan {
+  const { shapePoints: _shaped, ...rest } = plan;
+  void _shaped;
+  return rest;
+}

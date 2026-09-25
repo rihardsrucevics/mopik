@@ -42,8 +42,9 @@ maplibregl.setWorkerUrl("/maplibre-gl-worker.mjs");
  *   answers. It is the only hint on the map; every other one has gone.
  * - `onAddStop` is the explicit control that replaced "a tap on the idle map
  *   creates a stop". The gesture is gone and the capability is a button, which
- *   is a thing the rider can see and aim at. `null` at the six-row cap, where
- *   the button is disabled and `addStopFullLabel` says why.
+ *   is a thing the rider can see and aim at. `null` at the stop cap
+ *   (`MAX_STOPS`), where the button is disabled and `addStopFullLabel` says
+ *   why — and `notice` says it in a few words beside the header.
  * - `search` is the same place field the form's rows use, bound to the active
  *   row. A rider looking at the map should not have to go back to the form to
  *   type a name he already knows — and a pick here fills the row exactly as a
@@ -92,7 +93,7 @@ export type MapControls = {
    * looks like its future pin from the moment it lands — see the marker
    * effect for how "not yet confirmed" stays readable.
    */
-  pendingPin?: { role: "start" | "finish" | "via"; number: number | null };
+  pendingPin?: { role: "start" | "finish" | "via" | "shape"; number: number | null };
   pending: MapPendingMark | null;
   onAddStop: (() => void) | null;
   addStopLabel: string;
@@ -134,6 +135,25 @@ export type MapControls = {
   /** The grabbed point while it waits for its new spot: a dot on the line. */
   grab?: { lat: number; lon: number } | null;
   /**
+   * Edit mode: the ride's shaping points („maršruta punkti”, 2026-09-25) —
+   * small white dots with a dark edge on the line, no number. A dot drags
+   * (`onShapeDrag`, which waits for Confirm like every edit) and a press
+   * opens a small popover at it: „Izņemt” / „Padarīt par pieturu”. Never on
+   * a plain result or a shared ride, where the line already shows the bend.
+   */
+  shapePoints?: { lat: number; lon: number }[];
+  onShapeDrag?: (index: number, at: { lat: number; lon: number }) => void;
+  shapeMenu?: {
+    /** The dot's own name, tooltip and screen-reader label. */
+    label: string;
+    removeLabel: string;
+    promoteLabel: string;
+    onRemove: (index: number) => void;
+    /** Null at the stop cap: the button is then disabled and says why. */
+    onPromote: ((index: number) => void) | null;
+    promoteFullLabel: string;
+  };
+  /**
    * Batch adding (2026-09-25): while it is on, the single pending marker is
    * not drawn and nothing moves the camera; the batch's pending stops are
    * drawn here instead — dashed numbered pins that can be selected (a press),
@@ -148,6 +168,14 @@ export type MapControls = {
   fitToken?: number;
   /** ↶ outside a batch; `onUndo` null when there is nothing to take back. */
   undo?: { label: string; onUndo: (() => void) | null };
+  /**
+   * A short fact about the header's state on a line of its own — the stop
+   * cap, "Maks. 10 pieturas" (rider, 2026-09-25: said inside the field it was
+   * cut to „Vairāk pieturu pievienot ne…” at 375 px, where the field is 71 px
+   * wide beside ✓ ↶ ✕). `title` is the whole sentence, for the tooltip and
+   * a screen reader.
+   */
+  notice?: { text: string; title: string } | null;
 };
 
 type Props = {
@@ -1582,6 +1610,25 @@ function numberedStopElement(title: string, n: number): HTMLElement {
 }
 
 /**
+ * A shaping point: a small white dot with a dark edge, no number — "the line
+ * goes through here", not a place (rider, 2026-09-25). The element is a 24 px
+ * button so a thumb can take it; the dot is the 12 px inside it. `pending`
+ * draws the edge dashed, the look every not-yet-confirmed mark has here.
+ */
+function shapeDotElement(title: string, pending = false): HTMLElement {
+  const el = document.createElement("button");
+  el.type = "button";
+  el.title = title;
+  el.setAttribute("aria-label", title);
+  el.dataset.shape = pending ? "pending" : "1";
+  el.style.cssText = "display:flex;align-items:center;justify-content:center;width:24px;height:24px;padding:0;border:0;background:transparent;cursor:grab;z-index:2";
+  const dot = document.createElement("span");
+  dot.style.cssText = `display:block;width:12px;height:12px;border-radius:6px;background:#fff;border:2.5px ${pending ? "dashed" : "solid"} #1c1917;box-shadow:0 1px 3px rgba(0,0,0,0.35);box-sizing:content-box`;
+  el.appendChild(dot);
+  return el;
+}
+
+/**
  * A sight the ride passes or runs near, drawn without the rider asking.
  *
  * The rider's distinction, in his own words: "on your way" must read
@@ -2631,7 +2678,10 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
     if (!pickedMarkerRef.current || pendingPinKeyRef.current !== pendingPinKey) {
       pickedMarkerRef.current?.remove();
       const role = pendingPin?.role ?? "via";
-      const marker = role === "via"
+      // A grabbed line point waits as the dot it will become, edge dashed.
+      const marker = role === "shape"
+        ? new maplibregl.Marker({ element: shapeDotElement(m.shapePointLabel, true), draggable: true })
+        : role === "via"
         ? new maplibregl.Marker({ element: numberedStopElement(m.mapStop, pendingPin?.number ?? 1), draggable: true })
         : new maplibregl.Marker({ color: role === "start" ? START_PIN_COLOR : FINISH_PIN_COLOR, draggable: true });
       const el = marker.getElement();
@@ -2890,6 +2940,78 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, batchPinsKey, locale]);
+
+  /**
+   * The ride's shaping points, edit mode only (see `MapControls.shapePoints`).
+   * Rebuilt when the list changes — a ride has a handful. A drag leaves the
+   * dot where it was let go and hands the spot to the form, which holds it
+   * there, pending, until Confirm or Cancel; a press (not the click that ends
+   * a drag) opens the popover. Both mark the gesture as theirs
+   * (`sightClickAtRef`), so the map's own click does not grab the line
+   * under the dot as well.
+   */
+  const shapeMarkersRef = useRef<maplibregl.Marker[]>([]);
+  const shapePopupRef = useRef<maplibregl.Popup | null>(null);
+  const shapeDragRef = useRef(controls?.onShapeDrag);
+  const shapeMenuRef = useRef(controls?.shapeMenu);
+  useEffect(() => { shapeDragRef.current = controls?.onShapeDrag; shapeMenuRef.current = controls?.shapeMenu; });
+  const shapeDots = controls?.shapePoints ?? [];
+  const shapeDotsKey = shapeDots.map((p) => `${p.lat},${p.lon}`).join("|") + `|${controls?.shapeMenu?.onPromote ? 1 : 0}|${controls?.shapeMenu?.label ?? ""}`;
+  useEffect(() => {
+    const map = mapRef.current;
+    for (const marker of shapeMarkersRef.current) marker.remove();
+    shapeMarkersRef.current = [];
+    shapePopupRef.current?.remove();
+    shapePopupRef.current = null;
+    if (!map || !ready) return;
+    const menu = shapeMenuRef.current;
+    shapeMarkersRef.current = shapeDots.map((p, i) => {
+      const el = shapeDotElement(menu?.label ?? "");
+      el.addEventListener("click", (event) => {
+        event.stopPropagation();
+        sightClickAtRef.current = event.timeStamp;
+        if (performance.now() - dragEndedAtRef.current < 400) return;
+        const current = shapeMenuRef.current;
+        if (!current) return;
+        shapePopupRef.current?.remove();
+        infoPopupRef.current?.remove();
+        const box = document.createElement("div");
+        box.style.cssText = "display:flex;flex-direction:column;gap:6px;padding:2px 0";
+        const button = (label: string, onPress: (() => void) | null, title?: string) => {
+          const b = document.createElement("button");
+          b.type = "button";
+          b.textContent = label;
+          if (title) b.title = title;
+          b.disabled = !onPress;
+          b.style.cssText = "height:32px;padding:0 12px;border-radius:9999px;border:1px solid #e7e5e4;background:#fff;font:inherit;font-size:12px;font-weight:600;color:#1c1917;cursor:pointer;text-align:left" + (onPress ? "" : ";opacity:0.45;cursor:not-allowed");
+          b.addEventListener("click", (e) => {
+            e.stopPropagation();
+            sightClickAtRef.current = e.timeStamp;
+            shapePopupRef.current?.remove();
+            onPress?.();
+          });
+          return b;
+        };
+        box.appendChild(button(current.removeLabel, () => shapeMenuRef.current?.onRemove(i)));
+        const promote = current.onPromote;
+        box.appendChild(button(current.promoteLabel, promote ? () => shapeMenuRef.current?.onPromote?.(i) : null, promote ? undefined : current.promoteFullLabel));
+        shapePopupRef.current = new maplibregl.Popup({ offset: 14, closeButton: false, maxWidth: "220px", className: "mopik-shape-menu" })
+          .setLngLat([p.lon, p.lat])
+          .setDOMContent(box)
+          .addTo(map);
+      });
+      const marker = new maplibregl.Marker({ element: el, draggable: true }).setLngLat([p.lon, p.lat]).addTo(map);
+      marker.on("dragstart", () => { shapePopupRef.current?.remove(); });
+      marker.on("dragend", () => {
+        dragEndedAtRef.current = performance.now();
+        const { lat, lng } = marker.getLngLat();
+        shapeDragRef.current?.(i, { lat, lon: lng });
+      });
+      return marker;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, shapeDotsKey]);
+  useEffect(() => () => { for (const marker of shapeMarkersRef.current) marker.remove(); shapePopupRef.current?.remove(); }, []);
 
   /**
    * After a batch is confirmed: every pin shown once, if one is off-screen —
@@ -3381,7 +3503,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
       // Edit mode: a click on the drawn line grabs that point of it — it wins
       // over an active row (rider, 2026-09-25). The next click is where it
       // goes, and that one reaches the pick below as the new stop's mark.
-      if (lineGrabRef.current && !grabbingRef.current && grabLineAt(e.point, e.lngLat)) return;
+      if (lineGrabRef.current && !grabbingRef.current && !onMarker(e) && grabLineAt(e.point, e.lngLat)) return;
       const pick = onPickPointRef.current;
       if (pick) { pick({ lat: e.lngLat.lat, lon: e.lngLat.lng }); return; }
       const feature = featureAt(e.point);
@@ -3403,6 +3525,14 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
       clearFocus();
       openCard(e.lngLat, id, props);
     };
+
+    /**
+     * Whether a mouse event began on a marker — a pin or a shaping point's
+     * dot sits ON the line, and pressing one to drag it must drag that marker,
+     * not grab the line underneath it as well.
+     */
+    const onMarker = (e: maplibregl.MapMouseEvent): boolean =>
+      Boolean((e.originalEvent.target as Element | null)?.closest?.(".maplibregl-marker"));
 
     /**
      * The drawn line under `point`, if any, grabbed there: the point is moved
@@ -3434,7 +3564,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
      */
     let lineDrag: { start: maplibregl.Point; lngLat: maplibregl.LngLat; grabbed: boolean; last: maplibregl.LngLat } | null = null;
     const onMouseDown = (e: maplibregl.MapMouseEvent) => {
-      if (!lineGrabRef.current || grabbingRef.current || e.originalEvent.button !== 0 || !featureAt(e.point)) return;
+      if (!lineGrabRef.current || grabbingRef.current || e.originalEvent.button !== 0 || onMarker(e) || !featureAt(e.point)) return;
       e.preventDefault();
       lineDrag = { start: e.point, lngLat: e.lngLat, grabbed: false, last: e.lngLat };
     };
@@ -3632,6 +3762,14 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
               <Undo2 aria-hidden="true" className="size-4" />
             </button>
           )}
+        </div>
+      )}
+      {/* Below the row on the desktop, above it on a phone (the column is
+          reversed there), so it is never squeezed into the field. */}
+      {controls?.notice && (
+        <div role="status" title={controls.notice.title} aria-label={controls.notice.title}
+          className="self-start rounded-full border border-amber-300 bg-amber-50/95 px-3 py-1 text-xs font-medium text-amber-900 shadow-sm backdrop-blur">
+          {controls.notice.text}
         </div>
       )}
       {/* The off-road verdict, directly under the header it answers: the pin

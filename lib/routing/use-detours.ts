@@ -137,8 +137,14 @@ export function useDetourPrefetch(params: {
   }, [routeId, poiKey]);
 
   // Never another ride's detours, not even for the one render before the
-  // effect above has cleared them.
-  return state.forRoute === routeId ? state : { byPoi: {}, loading: Boolean(routeId && poiKey), partial: false, forRoute: routeId };
+  // effect above has cleared them. The placeholder is memoised: a fresh `{}`
+  // on every render reached the page's `setDetoursForMap` as a new value each
+  // time and looped until React gave up („Maximum update depth exceeded”).
+  const empty = useMemo<DetourState>(
+    () => ({ byPoi: {}, loading: Boolean(routeId && poiKey), partial: false, forRoute: routeId }),
+    [routeId, poiKey],
+  );
+  return state.forRoute === routeId ? state : empty;
 }
 
 /**

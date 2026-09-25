@@ -4,10 +4,10 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { Check, ChevronDown, ChevronUp, Map as MapIcon, Sparkles } from "lucide-react";
 import type { MapControls } from "@/components/route-map";
 import { RidePlan } from "@/lib/chat/ride-plan";
-import { composeRidePlan, placesFromPlan } from "@/lib/chat/compose-plan";
+import { carryShapePoints, composeRidePlan, placesFromPlan } from "@/lib/chat/compose-plan";
 import { planLine } from "@/lib/map/plan-line";
 import { emptyUndo, popRedo, popUndo, pushUndo, type UndoStack } from "@/lib/map/undo-stack";
-import { RoutePlaces, addStop, addedStopIndex, defaultActiveRow, followRow, rowAfterConfirm, rowLabel, MAX_ROWS } from "@/components/route-places";
+import { RoutePlaces, addStop, addedStopIndex, defaultActiveRow, followRow, rowAfterConfirm, rowLabel, maxRows } from "@/components/route-places";
 import { useLocale } from "@/lib/i18n/use-locale";
 import { t, messages, type MessageKey } from "@/lib/i18n/messages";
 import { track } from "@/lib/analytics";
@@ -16,6 +16,8 @@ import { pickedPlace } from "@/lib/chat/pick-name";
 import { fi } from "@/lib/i18n/format";
 import type { ResolvedPlace } from "@/lib/chat/places";
 import { placeRoles, type PlaceRoles } from "@/lib/map/place-roles";
+import type { ShapeEdit } from "@/lib/routing/reroute-leg";
+import { MAX_SHAPE_POINTS, MAX_STOPS } from "@/lib/chat/ride-limits";
 import {
   PROFILE_PRESETS,
   normalizeProfile,
@@ -158,6 +160,14 @@ export type RideEdit = {
   /** One step back in the edit history — the map header's ↶ and Ctrl/Cmd+Z. */
   canUndo: boolean;
   onUndo: () => void;
+  /**
+   * The ride's shaping points („maršruta punkti”, 2026-09-25), in riding
+   * order: small white dots on the line, with no row here. A grab of the line
+   * makes one; the dots drag, and a press opens „Izņemt” / „Padarīt par
+   * pieturu”. Each of those is one commit (`onShape`), re-routed by the page.
+   */
+  shapePoints: { lat: number; lon: number }[];
+  onShape: (op: ShapeEdit) => void;
 };
 
 export function RideComposer({ initialPlan, initialPlaces, profile, onProfileChange, busy: busyProp, onGenerate, onUseChat, onPlacesChange, map, mapShown: mapOnPage = false, onPickModeChange, pickPoint, onMapControlsChange, edit }: {
@@ -374,12 +384,24 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
    */
   const [rowIsNew, setRowIsNew] = useState(false);
   /**
-   * Editing: a point of the drawn line grabbed to be moved (rider's sketch,
-   * 2026-09-25). It has become a new, blank stop row (`row`, "new" like any
-   * "+" row) whose mark is where the point goes; `at` is where on the line it
-   * was taken, which the edit uses to put the stop into the ride there.
+   * Editing: a shaping point waiting for Confirm (rider, 2026-09-25: a grab
+   * of the line is „just a moved route”, not a stop — no row, no name).
+   *
+   * - `add`: the line was grabbed at `at`; `to` is the mark where the point
+   *   goes (the next tap, or where a mouse drag of the line was let go),
+   *   null until there is one.
+   * - `move`: dot `index` was dragged to `to`.
+   *
+   * Confirm commits it (`edit.onShape`); Cancel or Escape drops it, and the
+   * dot goes back where it was.
    */
-  const [grab, setGrab] = useState<{ row: number; at: { lat: number; lon: number } } | null>(null);
+  type ShapePending =
+    | { kind: "add"; at: { lat: number; lon: number }; to: { lat: number; lon: number } | null }
+    | { kind: "move"; index: number; to: { lat: number; lon: number } };
+  const [shapePending, setShapePending] = useState<ShapePending | null>(null);
+  const grab = shapePending?.kind === "add" ? shapePending : null;
+  const shapeAddRef = useRef(false);
+  useEffect(() => { shapeAddRef.current = grab !== null; }, [grab]);
   /**
    * Batch adding (rider, 2026-09-25): with an empty stop row active, every
    * mark on the map adds another pending stop instead of replacing the last,
@@ -517,7 +539,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     setPreview(null);
     setOffRoad(null);
     setMapQuery(null);
-    setGrab(null);
+    setShapePending(null);
     setBatch([]);
     setBatchSel(null);
     setRowIsNew(false);
@@ -558,7 +580,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     if (ghostRow === null || ghostRow === target) return target;
     reorder(places.filter((_, i) => i !== ghostRow));
     setRowIsNew(false);
-    setGrab(null);
+    setShapePending(null);
     return target === null ? null : followRow(target, { kind: "remove", at: ghostRow });
   };
   /**
@@ -642,7 +664,16 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     // Token 0 is the seed the page puts under a row that already has a place:
     // its name is known and shown, and re-deriving one would only risk showing
     // the rider a different word for the spot he has not yet moved.
-    if (!pickPoint || pickPoint.token === 0 || row === null) return;
+    if (!pickPoint || pickPoint.token === 0) return;
+    // A grabbed line point: the mark is where it goes. Not a place, so no
+    // name is looked up — Confirm is live the moment the mark lands.
+    if (shapeAddRef.current) {
+      const at = { lat: pickPoint.lat, lon: pickPoint.lon };
+      setShapePending((p) => (p?.kind === "add" ? { ...p, to: at } : p));
+      setNamedToken(pickPoint.token);
+      return;
+    }
+    if (row === null) return;
     const { lat, lon, token: asked } = pickPoint;
     // Batch adding: the mark is another pending stop (or moves the selected
     // one), named in the background — not the single preview below.
@@ -725,7 +756,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   const cancelPicking = () => {
     const row = activeRow;
     endPicking();
-    setGrab(null);
+    setShapePending(null);
     setOffRoad(null);
     setMapQuery(null);
     if (edit) {
@@ -880,7 +911,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     }
     // The cap the form's own button obeys. The map's button is disabled at the
     // cap, so this is the second lock rather than the first.
-    if (current.length >= MAX_ROWS) return;
+    if (current.length >= maxRows(tripType === "one_way")) return;
     const oneWay = tripType === "one_way";
     const next = addStop(current, oneWay);
     const row = addedStopIndex(current, oneWay);
@@ -948,13 +979,9 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     // has not re-rendered yet, and deriving "first empty" live is what once
     // moved the active row under the rider's thumb while he typed.
     const filled = places.map((p, i) => (i === row ? place.name : p));
-    // A grabbed line point carries where it was grabbed, and — being a move
-    // of the line rather than the next stop of a list — opens no new row.
-    const grabbed = grab && grab.row === row ? grab : null;
-    const committed: ResolvedPlace = grabbed ? { ...place, grabbedAt: [grabbed.at.lon, grabbed.at.lat] } as ResolvedPlace : place;
-    const nextPicked = { ...picked, [row]: committed };
-    const after = grabbed ? { rows: filled, active: null, inserted: null } : rowAfterConfirm(filled, row, tripType === "one_way");
-    setGrab(null);
+    const nextPicked = { ...picked, [row]: place };
+    const after = rowAfterConfirm(filled, row, tripType === "one_way");
+    setShapePending(null);
     remember();
     setPlaces(after.rows);
     setPicked(nextPicked);
@@ -1105,37 +1132,85 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
    * order, which is how `placeRoles` numbered them for the map.
    */
   /**
-   * A point of the drawn line grabbed on the map (edit mode). The rows go back
-   * to the ride's — whatever was pending is let go, and the active row with
-   * it: the line click wins — and a blank stop row is put in where the point
-   * lies along the line (`slot` stops before it), active and "new", so Cancel
-   * or Escape takes it away again. The next mark is where the point goes.
+   * A point of the drawn line grabbed on the map (edit mode): a shaping point
+   * in the making (rider, 2026-09-25 — „just a moved route”, not a stop). No
+   * row is made and none stays active: whatever was pending on the rows is let
+   * go (the line click wins), the rows go back to the ride's, and the next
+   * mark — or where a mouse drag of the line is let go — is where the point
+   * goes, waiting for Confirm.
    */
   const grabLine = ({ lat, lon, slot }: { lat: number; lon: number; slot: number }) => {
     if (!edit || busy || edit.rerouting) return;
-    const names = edit.seed.names;
-    const oneWay = tripType === "one_way";
-    const last = names.length - 1;
-    if (names.length >= MAX_ROWS) return;
-    // The row of the slot-th stop, or — past the last stop — before the
-    // finish (one way) or at the end (round trip).
-    let seen = 0;
-    let at = oneWay ? last : names.length;
-    for (let i = 1; i <= (oneWay ? last - 1 : last); i++) {
-      if (!edit.seed.picked[i]) continue;
-      if (seen === slot) { at = i; break; }
-      seen++;
-    }
+    if (edit.shapePoints.length >= MAX_SHAPE_POINTS) return;
     track("route_line_grabbed", { slot });
-    setPlaces([...names.slice(0, at), "", ...names.slice(at)]);
-    setPicked(Object.fromEntries(Object.entries(edit.seed.picked).map(([k, v]) => [Number(k) >= at ? Number(k) + 1 : Number(k), v])));
+    setPlaces(edit.seed.names);
+    setPicked({ ...edit.seed.picked });
     setPreview(null);
     setOffRoad(null);
     setMapQuery(null);
-    setChosenRow(at);
-    setRowIsNew(true);
-    setGrab({ row: at, at: { lat, lon } });
+    setRowIsNew(false);
+    setChosenRow(null);
+    setShapePending({ kind: "add", at: { lat, lon }, to: null });
+    shapeAddRef.current = true;
     openPick({ at: null, marker: null });
+  };
+  /**
+   * A shaping point's dot dragged: it waits where it was let go for Confirm,
+   * like every edit. Rows are let go as a grab lets them go.
+   */
+  const dragShape = (index: number, to: { lat: number; lon: number }) => {
+    if (!edit || busy || edit.rerouting) return;
+    track("shape_point_dragged", {});
+    setPlaces(edit.seed.names);
+    setPicked({ ...edit.seed.picked });
+    setPreview(null);
+    setOffRoad(null);
+    setMapQuery(null);
+    setRowIsNew(false);
+    setChosenRow(null);
+    setShapePending({ kind: "move", index, to });
+  };
+  /** Confirm on a pending shaping point. */
+  const confirmShape = () => {
+    if (!edit || !shapePending || edit.rerouting) return;
+    const p = shapePending;
+    if (p.kind === "add") {
+      if (!p.to) return;
+      edit.onShape({ kind: "add", lat: p.to.lat, lon: p.to.lon, grabbedAt: [p.at.lon, p.at.lat] });
+    } else {
+      edit.onShape({ kind: "move", index: p.index, lat: p.to.lat, lon: p.to.lon });
+    }
+    setShapePending(null);
+    shapeAddRef.current = false;
+  };
+  /** Cancel on a pending shaping point: the dot goes back, nothing changes. */
+  const cancelShape = () => {
+    setShapePending(null);
+    shapeAddRef.current = false;
+    onPickModeChange?.(false);
+  };
+  /** „Izņemt” in a dot's popover: the line goes back without it. */
+  const removeShape = (index: number) => {
+    if (!edit || busy || edit.rerouting) return;
+    setShapePending(null);
+    edit.onShape({ kind: "remove", index });
+  };
+  /**
+   * „Padarīt par pieturu”: the dot becomes a numbered stop with a row, named
+   * like any spot marked on the map — the reverse lookup, made
+   * distinguishable from the ride's other places.
+   */
+  const promoteShape = (index: number) => {
+    if (!edit || busy || edit.rerouting) return;
+    const point = edit.shapePoints[index];
+    if (!point) return;
+    setShapePending(null);
+    void (async () => {
+      const found = await nameForPoint(point.lat, point.lon);
+      const place = pickedPlace(found, point.lat, point.lon, placesRef.current, t(locale, "pickedOnMap"));
+      rememberPlace(place);
+      edit.onShape({ kind: "promote", index, place });
+    })();
   };
   /** Whether a row is a stop — neither the start nor a one-way ride's finish. */
   const isStopRow = (i: number) => i > 0 && !(tripType === "one_way" && i === places.length - 1);
@@ -1212,7 +1287,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
       settleBatchItem(id, lat, lon);
       return;
     }
-    if (places.length >= MAX_ROWS) return;
+    if (places.length >= maxRows(tripType === "one_way")) return;
     const at = batch[batch.length - 1].row + 1;
     setPlaces([...places.slice(0, at), "…", ...places.slice(at)]);
     setPicked(shiftPicked(picked, at, 1));
@@ -1222,8 +1297,16 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     track("batch_stop_marked", { n: batch.length + 1 });
     settleBatchItem(id, lat, lon);
   };
+  /**
+   * A pending stop moved — dragged, or the selected one sent to the next mark.
+   * Moving it is the end of dealing with it (rider, 2026-09-25: after he
+   * dragged „3” his next tap on the map moved „3” again instead of adding
+   * „4”), so the selection goes with every move, whichever way it was made,
+   * and the next mark adds the next stop.
+   */
   const moveBatchItem = (id: number, lat: number, lon: number) => {
     const item = batch.find((b) => b.id === id);
+    setBatchSel(null);
     if (!item) return;
     batchRef.current = batch.map((b) => (b.id === id ? { ...b, lat, lon, place: null, check: "checking" as const, snappedTo: null } : b));
     setBatch(batchRef.current);
@@ -1370,7 +1453,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     setSeenSeed(edit.seed.token);
     setPreview(null);
     setOffRoad(null);
-    setGrab(null);
+    setShapePending(null);
     const names = edit.seed.names;
     setPlaces(names);
     setPicked({ ...edit.seed.picked });
@@ -1394,7 +1477,9 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
    * answer to both is the same: wire `onPickPoint`, or do not. Re-running it
    * on every change of row would re-seed the marker the handlers just placed.
    */
-  const picking = activeRow !== null;
+  // A grabbed line point waiting for its mark answers the map too, with no
+  // row: the next tap is where it goes.
+  const picking = activeRow !== null || grab !== null;
   useEffect(() => {
     if (!picking) { onPickModeChange?.(false); return; }
     // A handler that made the row active has already opened the flow with the
@@ -1427,7 +1512,9 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
    * phone's toggle and the desktop's own column — are the page's business.
    */
   const activeLabel = activeRow === null ? "" : rowLabel(locale, activeRow, tripType === "one_way", places.length);
-  const atCap = places.length >= MAX_ROWS;
+  const atCap = places.length >= maxRows(tripType === "one_way");
+  /** Why no stop fits, whole: the „+”'s name and tooltip, the field's at the cap. */
+  const capSentence = fi(t(locale, "mapAddStopFull"), { n: MAX_STOPS });
   /**
    * Every row's text, as one string, so the header is rebuilt whenever any of
    * them changes.
@@ -1487,6 +1574,9 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     addStop: () => void;
     pinPress: (role: "start" | "via" | "finish", index: number) => void;
     lineGrab: (grab: { lat: number; lon: number; slot: number }) => void;
+    shapeDrag: (index: number, at: { lat: number; lon: number }) => void;
+    confirmShape: () => void; cancelShape: () => void;
+    shapeRemove: (index: number) => void; shapePromote: (index: number) => void;
     confirmBatch: () => void; discardBatch: () => void; undoBatch: () => void;
     selectBatch: (id: number) => void; moveBatch: (id: number, at: { lat: number; lon: number }) => void; dropBatch: (id: number) => void;
     moveSelectedToRoad: () => void; dropSelected: () => void;
@@ -1524,9 +1614,19 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   useEffect(() => { batchPointRef.current = batchMode ? addToBatch : null; });
   const selectedItem = batchSel === null ? null : batch.find((b) => b.id === batchSel) ?? null;
   const batchKey = batch.map((b) => `${b.id}:${b.row}:${b.lat},${b.lon}:${b.place?.name ?? ""}:${b.check}`).join("|") + `|${batchSel ?? ""}|${batchReady ? 1 : 0}`;
-  const pendingKey = activeRow === null || !(preview || offRoad || naming)
+  const pendingKey = shapePending
+    ? ["shape", shapePending.kind, shapePending.to?.lat ?? "", shapePending.to?.lon ?? "", edit?.rerouting ? 1 : 0].join("|")
+    : activeRow === null || !(preview || offRoad || naming)
     ? ""
     : [preview?.lat, preview?.lon, checking, naming, offRoad?.distanceM ?? "", offRoad?.snappedTo ? 1 : 0, edit?.rerouting ? 1 : 0].join("|");
+  /**
+   * The dots the map draws: the ride's shaping points, the one being dragged
+   * where it was let go. None outside edit mode, and none while a batch is
+   * open (its marks are stops).
+   */
+  const shapeDots = !edit ? [] : edit.shapePoints.map((p, i) => (shapePending?.kind === "move" && shapePending.index === i ? shapePending.to : p));
+  const shapeKey = shapeDots.map((p) => `${p.lat},${p.lon}`).join("|");
+  const stopCount = places.slice(1, tripType === "one_way" ? -1 : undefined).filter((p) => p.trim()).length;
   useEffect(() => {
     if (!mapLive) { onMapControlsChange?.(null); return; }
     // The batch's own pending state: Confirm all, ↶ the last, ✕ all — and,
@@ -1547,7 +1647,16 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
       } : null,
     };
     const batchCount = batch.length === 1 ? t(locale, "batchCountOne") : fi(t(locale, "batchCountMany"), { n: batch.length });
-    const pending = batchPending ?? (!pendingKey ? null : {
+    // A shaping point waiting: Confirm once it has somewhere to go, Cancel
+    // at once (a grab with no mark yet is still something to take back).
+    const shapeBar = !shapePending ? null : {
+      confirmLabel: t(locale, "pickOnMapConfirm"),
+      onConfirm: edit?.rerouting || (shapePending.kind === "add" && !shapePending.to) ? null : () => pendingHandlers.current?.confirmShape(),
+      cancelLabel: t(locale, "pickOnMapCancel"),
+      onCancel: () => pendingHandlers.current?.cancelShape(),
+      offRoad: null,
+    };
+    const pending = batchPending ?? shapeBar ?? (!pendingKey ? null : {
       confirmLabel: checking ? t(locale, "pickOnMapChecking") : t(locale, "pickOnMapConfirm"),
       // Null while the probe is in flight: the button is then disabled and
       // says so, because a press that takes a second and shows nothing reads
@@ -1573,12 +1682,12 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
       // With no row active the header says what to do instead — pick a row or
       // add a stop — and the field is off: a name found there would have no
       // row to go to.
-      hint: batchActive ? batchCount : grab ? t(locale, "mapGrabHint") : activeRow === null ? t(locale, "mapNoActiveRow") : fi(t(locale, "mapActiveRowHint"), { label: activeLabel }),
+      hint: batchActive ? batchCount : shapePending?.kind === "move" ? t(locale, "shapeMoveHint") : grab ? t(locale, "mapGrabHint") : activeRow === null ? t(locale, "mapNoActiveRow") : fi(t(locale, "mapActiveRowHint"), { label: activeLabel }),
       rowLabel: activeRow === null || batchActive ? undefined : activeLabel,
       // The pin the active row's mark will become, and a stop's number: one
       // more than the filled, numbered stops above it — the order the map
       // numbers stops in (sights carry a glyph, not a number).
-      pendingPin: activeRow === null || batchActive ? undefined : activeRow === 0
+      pendingPin: grab ? { role: "shape" as const, number: null } : activeRow === null || batchActive ? undefined : activeRow === 0
         ? { role: "start" as const, number: null }
         : tripType === "one_way" && activeRow === places.length - 1
           ? { role: "finish" as const, number: null }
@@ -1588,8 +1697,11 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
       // Through the ref like the other handlers: whether a blank new row is
       // already waiting (`ghostRow`) can change without the rows changing.
       onAddStop: atCap ? null : () => pendingHandlers.current?.addStop(),
+      // At the cap, why „+” is greyed out and the next mark adds nothing —
+      // short, on a line of its own; the sentence is its tooltip.
+      notice: atCap ? { text: fi(t(locale, "mapStopCapShort"), { n: MAX_STOPS }), title: capSentence } : null,
       addStopLabel: t(locale, "mapAddStop"),
-      addStopFullLabel: t(locale, "mapAddStopFull"),
+      addStopFullLabel: capSentence,
       search: {
         value: batchActive ? "" : mapQuery && mapQuery.row === activeRow ? mapQuery.text : activeValue,
         confirmed: batchActive ? null : activeConfirmed,
@@ -1605,7 +1717,8 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
         // as well as a name typed here.
         // A batch has no field to type into — its count is the field's words
         // (and the cap, once it is reached).
-        placeholder: batchActive ? (atCap ? t(locale, "mapAddStopFull") : batchCount) : grab ? t(locale, "mapGrabHint") : activeRow === null ? t(locale, "mapNoActiveRow") : t(locale, "mapSearchHint"),
+        // The cap is said on its own line (`notice`); the field keeps the count.
+        placeholder: batchActive ? batchCount : shapePending?.kind === "move" ? t(locale, "shapeMoveHint") : grab ? t(locale, "mapGrabHint") : activeRow === null ? t(locale, "mapNoActiveRow") : t(locale, "mapSearchHint"),
         disabled: activeRow === null || batchActive,
       },
       // The ride's own pins answer the form in planning as in edit mode
@@ -1628,12 +1741,29 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
       // Edit mode: the drawn line can be grabbed and moved.
       // Not while a batch is open: its marks may land on the line too, and
       // they are stops of the batch, not points of the line to move.
-      ...(edit ? { onLineGrab: batchActive ? undefined : (g: { lat: number; lon: number; slot: number }) => pendingHandlers.current?.lineGrab(g), grab: grab?.at ?? null } : {}),
+      // A grab makes a shaping point, not a stop; none past their own cap,
+      // where the line is simply not grabbable (nothing offered that does
+      // nothing).
+      ...(edit ? {
+        onLineGrab: batchActive || edit.shapePoints.length >= MAX_SHAPE_POINTS ? undefined : (g: { lat: number; lon: number; slot: number }) => pendingHandlers.current?.lineGrab(g),
+        grab: grab?.at ?? null,
+        shapePoints: batchActive ? [] : shapeDots,
+        onShapeDrag: (index: number, at: { lat: number; lon: number }) => pendingHandlers.current?.shapeDrag(index, at),
+        shapeMenu: {
+          label: t(locale, "shapePointLabel"),
+          removeLabel: t(locale, "shapeRemove"),
+          promoteLabel: t(locale, "shapePromote"),
+          onRemove: (index: number) => pendingHandlers.current?.shapeRemove(index),
+          // Disabled at the stop cap, and saying why.
+          onPromote: stopCount >= MAX_STOPS ? null : (index: number) => pendingHandlers.current?.shapePromote(index),
+          promoteFullLabel: capSentence,
+        },
+      } : {}),
     });
     // The parent's callback is an inline arrow and is rebuilt every render;
     // listing it would re-report the same controls on every keystroke.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapLive, activeRow, activeLabel, atCap, activeValue, activeConfirmed, anchor, locale, tripType, rowsKey, pendingKey, mapQuery, activeOwn?.lat, activeOwn?.lon, planKey, grab?.at.lat, grab?.at.lon, batchKey, fitAsk, undo.past.length, edit?.canUndo]);
+  }, [mapLive, activeRow, activeLabel, atCap, activeValue, activeConfirmed, anchor, locale, tripType, rowsKey, pendingKey, mapQuery, activeOwn?.lat, activeOwn?.lon, planKey, grab?.at.lat, grab?.at.lon, batchKey, fitAsk, undo.past.length, edit?.canUndo, shapeKey, stopCount]);
   // Nothing is offered once the form is gone. Without this the page would keep
   // drawing a map header for a form the rider has left.
   useEffect(() => () => onMapControlsChange?.(null),
@@ -1677,6 +1807,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
       return;
     }
     if (e.key !== "Escape") return;
+    if (shapePending) { cancelShape(); return; }
     if (batchSel !== null) { setBatchSel(null); return; }
     if (batch.length) { discardBatch(); return; }
     if (activeRow !== null) cancelPicking();
@@ -1725,6 +1856,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   useEffect(() => {
     pendingHandlers.current = {
       confirm: confirmPick, cancel: cancelPicking, move: acceptOffRoadMove, dismiss: () => setOffRoad(null), pinDrag: dragPin, addStop: addStopFromMap, pinPress: pressPin, lineGrab: grabLine,
+      shapeDrag: dragShape, confirmShape, cancelShape, shapeRemove: removeShape, shapePromote: promoteShape,
       confirmBatch, discardBatch,
       undoBatch: () => { const last = batch[batch.length - 1]; if (last) dropBatchItem(last.id); },
       selectBatch: (id: number) => setBatchSel((sel) => (sel === id ? null : id)),
@@ -1763,7 +1895,9 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     if (tripType === "one_way" && filled.length < 2) { setError(t(locale, "errNoDestination")); return; }
     const value = hours.trim() ? Number(hours.replace(",", ".")) : preset ?? NaN;
     if (durationMode === "hours" && (!Number.isFinite(value) || value < 0.5 || value > 16)) { setError(t(locale, "errHours")); return; }
-    const plan = composeRidePlan({ places: rows, tripType, durationMode, hours: value, profile: effectiveProfile });
+    // The shaping points of a ride reopened here ride along while its places
+    // are the same ones (`carryShapePoints`): the form has no rows for them.
+    const plan = carryShapePoints(composeRidePlan({ places: rows, tripType, durationMode, hours: value, profile: effectiveProfile }), initialPlan);
     setError(null);
     if (rows !== places) leaveGhost(null);
     onGenerate(plan, Object.values(picked).filter((p): p is ResolvedPlace => p !== null));
