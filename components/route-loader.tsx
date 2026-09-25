@@ -67,14 +67,21 @@ export function RouteLoader({ phase, className }: {
     <div role="status" aria-live="polite" className={`overflow-hidden rounded-2xl border border-stone-200 bg-[#faf9f6] ${className ?? ""}`}>
       <div className="relative">
         <RouteScene className="h-28 w-full" />
+        {/* The advert is a card of its own, inset with all four corners
+            rounded. Laid edge to edge over the scene it had the outer card's
+            rounded top and a square bottom that ran straight into the status
+            line, which read as the banner — and the text under it — cut off. */}
         {advert && (
-          <div className="mopik-fade-in absolute inset-0 flex h-28 flex-col items-center justify-center bg-[#f56300] text-center">
-            <span className="text-sm font-semibold tracking-tight text-white">{m.advertSlot}</span>
-            <span className="mt-0.5 text-[11px] text-white/80">mopik.eu</span>
+          <div className="mopik-fade-in absolute inset-2 flex flex-col items-center justify-center overflow-hidden rounded-xl bg-[#f56300] text-center shadow-[inset_0_-24px_40px_-24px_rgba(0,0,0,0.18)]">
+            <svg viewBox="0 0 326 102" className="pointer-events-none absolute inset-0 h-full w-full" preserveAspectRatio="none" aria-hidden="true">
+              <path d={ROUTE_D} fill="none" stroke="#fff" strokeOpacity="0.22" strokeWidth="3" strokeLinecap="round" strokeDasharray="10 8" />
+            </svg>
+            <span className="relative text-base font-bold tracking-tight text-white">{m.advertSlot}</span>
+            <span className="relative mt-1.5 rounded-full bg-white/15 px-2.5 py-0.5 text-[11px] font-medium text-white">mopik.eu</span>
           </div>
         )}
       </div>
-      <div className="flex items-center gap-2 px-4 pb-3">
+      <div className="flex items-center gap-2 px-4 pb-3 pt-1">
         <span className="size-1.5 animate-pulse rounded-full bg-[#f56300]" />
         <span key={line} className="mopik-fade-in min-w-0 flex-1 truncate text-xs font-medium text-stone-700">{m[line]}</span>
       </div>
