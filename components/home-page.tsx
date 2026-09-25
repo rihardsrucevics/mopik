@@ -47,6 +47,7 @@ import {
   placesFromRide,
   placesFromRows,
   planEdit,
+  shapeFlags,
   planWithPlaces,
   pushEdit,
   recomputeOverlap,
@@ -1236,11 +1237,21 @@ export function HomePage() {
     const startedAt = startClock();
     try {
       type Routed = { runs: (RoutedRun & { deadEndMeters?: number; deadEndUnchecked?: boolean })[] };
-      const request = async (runs: typeof planned.runs, loops: boolean[]): Promise<Routed | { status: number }> => {
+      // Every place in every stretch is ridden through, not out to and back
+      // (rider, 2026-09-25): the server routes a stretch leg by leg and looks
+      // for a way through each place whose way in and way out share road
+      // (`routeThroughPlaces`) — a lone stop, a batch, the whole-span
+      // fallback alike. Shaping points are flagged: a spur to one is cut.
+      const request = async (runs: typeof planned.runs): Promise<Routed | { status: number }> => {
         const response = await fetch("/api/reroute-leg", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ plan: nextPlan, runs: runs.map((run) => run.points.map(([lon, lat]) => ({ lat, lon }))), loops }),
+          body: JSON.stringify({
+            plan: nextPlan,
+            runs: runs.map((run) => run.points.map(([lon, lat]) => ({ lat, lon }))),
+            loops: runs.map((run) => run.points.length >= 3),
+            shapes: runs.map((run) => shapeFlags(run, planned.places)),
+          }),
         });
         return response.ok ? ((await response.json()) as Routed) : { status: response.status };
       };
@@ -1251,11 +1262,8 @@ export function HomePage() {
         runs,
         routed: routed.runs,
       });
-      // A stop added or moved is ridden through, not out to and back: the
-      // server routes its two halves and looks for a loop when they share
-      // the road (`routeThroughStop`).
       let runs = planned.runs;
-      let data = await request(runs, runs.map((run) => (planned.kind === "add-stop" || planned.kind === "add-stops" || planned.kind === "move-stop") && run.points.length === 3));
+      let data = await request(runs);
       if ("status" in data) {
         track("route_edit_failed", { reason: String(data.status) });
         setEditNote(ui.resEditFailed);
@@ -1276,7 +1284,7 @@ export function HomePage() {
         console.warn("mopik: edited line broke", { kind: planned.kind, breaks: verdict.breaks, missesPlaces: verdict.missesPlaces, runs: runs.map((r, i) => ({ i, from: Math.round(r.fromMeters), to: Math.round(r.toMeters) })) });
         track("route_edit_failed", { reason: "broken-line" });
         const span = spanRun({ line, cum: cumulative(line), before, after: planned.places, runs });
-        const again = await request([span], [false]);
+        const again = await request([span]);
         if (!("status" in again)) {
           const whole = splice([span], again);
           const second = sound(whole);
