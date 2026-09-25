@@ -448,6 +448,17 @@ export type MessageKey =
   | "shapePromote"
   | "shapeCapNote"
   | "shapeMoveHint"
+  /**
+   * A point tapped on the map (2026-09-25): the hint its selection shows in
+   * the sheet and the bottom bar — the next mark is its new place; the
+   * sheet's close; a shaping point's short name, the sheet's title.
+   * Latvian never says „piesit”.
+   */
+  | "pointMoveHint"
+  | "pointMove"
+  | "pointStopTitle"
+  | "pointSheetClose"
+  | "shapePointName"
   | "resSearchDropsShapes"
   /**
    * Including the ticked sights without re-planning, and correcting the ride
@@ -1044,6 +1055,11 @@ const lv: Messages = {
   shapePromote: "Padarīt par pieturu",
   shapeCapNote: "Maršruta punktu ir jau {n} — vairāk pievienot nevar",
   shapeMoveHint: "Maršruta punkts pārvietots — apstiprini",
+  pointMoveHint: "Izvēlies jaunu vietu kartē",
+  pointMove: "Pārvietot",
+  pointStopTitle: "Pietura {n}",
+  pointSheetClose: "Aizvērt",
+  shapePointName: "Maršruta punkts",
   resSearchDropsShapes: "Maršruta punkti pilnajā meklēšanā netiek ņemti vērā.",
   resAddSelected: "Pievienot izvēlētos",
   resAddSelectedHint: "Atzīmētās vietas paliek maršrutā — bez jaunas meklēšanas.",
@@ -1515,6 +1531,11 @@ const lt: Messages = {
   shapePromote: "Paversti sustojimu",
   shapeCapNote: "Maršruto taškų jau {n} — daugiau pridėti negalima",
   shapeMoveHint: "Maršruto taškas perkeltas — patvirtinkite",
+  pointMoveHint: "Pasirinkite naują vietą žemėlapyje",
+  pointMove: "Perkelti",
+  pointStopTitle: "Sustojimas {n}",
+  pointSheetClose: "Uždaryti",
+  shapePointName: "Maršruto taškas",
   resSearchDropsShapes: "Pilnoje paieškoje maršruto taškai neatsižvelgiami.",
   resAddSelected: "Pridėti pažymėtas",
   resAddSelectedHint: "Pažymėtos vietos lieka maršrute — be naujos paieškos.",
@@ -1990,6 +2011,11 @@ const et: Messages = {
   shapePromote: "Tee peatuseks",
   shapeCapNote: "Marsruudi punkte on juba {n} — rohkem lisada ei saa",
   shapeMoveHint: "Marsruudi punkt liigutatud — kinnita",
+  pointMoveHint: "Vali kaardil uus koht",
+  pointMove: "Liiguta",
+  pointStopTitle: "Peatus {n}",
+  pointSheetClose: "Sulge",
+  shapePointName: "Marsruudi punkt",
   resSearchDropsShapes: "Täisotsing marsruudi punkte ei arvesta.",
   resAddSelected: "Lisa valitud",
   resAddSelectedHint: "Märgitud kohad jäävad marsruuti — ilma uue otsinguta.",
@@ -2459,6 +2485,11 @@ const en: Messages = {
   shapePromote: "Make it a stop",
   shapeCapNote: "There are already {n} route points — no more can be added",
   shapeMoveHint: "Route point moved — confirm",
+  pointMoveHint: "Choose a new spot on the map",
+  pointMove: "Move",
+  pointStopTitle: "Stop {n}",
+  pointSheetClose: "Close",
+  shapePointName: "Route point",
   resSearchDropsShapes: "The full search does not keep route points.",
   resAddSelected: "Add the ticked places",
   resAddSelectedHint: "The ticked places stay in the ride — no new search.",
