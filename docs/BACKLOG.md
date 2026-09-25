@@ -1316,8 +1316,9 @@ and searches from scratch. Must say what it changed (km, retraced %, before
 
 ## 33. Reorder places by drag and drop on desktop
 
-**Rider, 2026-09-25.** On desktop the place rows should reorder by drag and
-drop instead of the ↑/↓ arrows. Desktop only: CLAUDE.md records three
+**Rider, 2026-09-25.** On desktop the place rows reorder by drag and drop
+and the ↑/↓ arrows are **removed there** — arrows stay only on phones, where
+drag works badly. CLAUDE.md records three
 failed drag attempts on the rider's iPhone (Safari keeps the gesture for
 scrolling), which is why phones use arrows — keep the arrows there, and
 keep ArrowUp/ArrowDown on a focused row for keyboard users. On desktop: a
