@@ -9,9 +9,9 @@ import { GeneratedRoute, GenerateRouteResponse } from "@/lib/types";
 import { RidePlan, planSummary } from "@/lib/chat/ride-plan";
 import { BeerPopup } from "@/components/beer-popup";
 import { track } from "@/lib/analytics";
-import { encodeRouteShare, shareUrl } from "@/lib/share/route-code";
+import { encodeRouteShare, shareStartLabel, shareUrl } from "@/lib/share/route-code";
 import type { ResolvedPlace } from "@/lib/chat/places";
-import { isSaved, removeRide, rideId, saveRide } from "@/lib/share/saved-rides";
+import { isSaved, saveRide, unsaveRide } from "@/lib/share/saved-rides";
 import { gpxFilename } from "@/lib/gpx/filename";
 import { rideWaypoints } from "@/lib/gpx/waypoints";
 import { DetailsCard, RouteActionRow } from "@/components/action-row";
@@ -498,7 +498,7 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
     // The rider's own language travels with the link, so the card the
     // recipient sees is written in the language the sender was using. Only
     // here: the saved-ride encoders must not write it (see `l` on ShareMeta).
-    const code = encodeRouteShare(route, route.stops?.[0]?.name ?? plan?.startPlace ?? "", plan, resolvedPlaces, locale);
+    const code = encodeRouteShare(route, shareStartLabel(plan, resolvedPlaces), plan, resolvedPlaces, locale);
     // Short id from the store when it answers quickly; the long self-contained
     // link otherwise. Both open the same page.
     let url = shareUrl(code, window.location.origin);
@@ -585,13 +585,13 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
 
   // Saving keeps the ride on this device as the same self-contained code the
   // share link uses, so it can be reopened and exported with no server.
-  const startLabel = route.stops?.[0]?.name ?? plan?.startPlace ?? "";
+  const startLabel = shareStartLabel(plan, resolvedPlaces);
   // savedTick is read so the value recomputes after a save; localStorage is
   // not reactive on its own.
   const saved = savedTick >= 0 && isSaved(route, startLabel, plan, resolvedPlaces);
   const toggleSave = () => {
     if (saved) {
-      removeRide(rideId(encodeRouteShare(route, startLabel, plan, resolvedPlaces)));
+      unsaveRide(route, startLabel, plan, resolvedPlaces);
       track("ride_unsaved");
     } else {
       // The three the rider is looking at, not the API's original picks: a

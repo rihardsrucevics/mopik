@@ -1,6 +1,6 @@
 "use client";
 
-import { encodeRouteShare, decodeRouteShare, type SharedRoute } from "@/lib/share/route-code";
+import { encodeRouteShare, decodeRouteShare, legacyShareStartLabel, type SharedRoute } from "@/lib/share/route-code";
 import type { ResolvedPlace } from "@/lib/chat/places";
 import type { GeneratedRoute } from "@/lib/types";
 import type { RidePlan } from "@/lib/chat/ride-plan";
@@ -155,7 +155,10 @@ export function saveRide(route: GeneratedRoute, startLabel: string, plan: RidePl
     ...(alternatives.length ? { alternatives } : {}),
     ...(context?.prompt ? { prompt: context.prompt } : {}),
   };
-  write([entry, ...read().filter((r) => r.id !== entry.id)]);
+  // The same ride saved before backlog 26 sits under its old id; replace it
+  // rather than keep two entries for one ride.
+  const legacy = legacyRideId(route, startLabel, plan, context?.places);
+  write([entry, ...read().filter((r) => r.id !== entry.id && r.id !== legacy)]);
   return entry;
 }
 
@@ -163,8 +166,26 @@ export function removeRide(id: string): void {
   write(read().filter((r) => r.id !== id));
 }
 
+/**
+ * The id this ride had when it was saved before backlog 26, when the share
+ * code's start label was `route.stops[0]` — or null when that label is the
+ * one used now, so there is no second id to look for.
+ */
+function legacyRideId(route: GeneratedRoute, startLabel: string, plan: RidePlan | null, places?: ResolvedPlace[] | null): string | null {
+  const old = legacyShareStartLabel(route, plan);
+  return old === startLabel ? null : rideId(encodeRouteShare(route, old, plan, places));
+}
+
 export function isSaved(route: GeneratedRoute, startLabel: string, plan: RidePlan | null, places?: ResolvedPlace[] | null): boolean {
-  return isCodeSaved(encodeRouteShare(route, startLabel, plan, places));
+  if (isCodeSaved(encodeRouteShare(route, startLabel, plan, places))) return true;
+  const legacy = legacyRideId(route, startLabel, plan, places);
+  return legacy !== null && read().some((r) => r.id === legacy);
+}
+
+/** Un-save a ride of one's own, under its current id and its pre-backlog-26 one. */
+export function unsaveRide(route: GeneratedRoute, startLabel: string, plan: RidePlan | null, places?: ResolvedPlace[] | null): void {
+  const ids = new Set([rideId(encodeRouteShare(route, startLabel, plan, places)), legacyRideId(route, startLabel, plan, places)]);
+  write(read().filter((r) => !ids.has(r.id)));
 }
 
 export function decodeSaved(ride: SavedRide): SharedRoute | null {

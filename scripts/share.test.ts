@@ -231,3 +231,76 @@ test("a share link carries the sender's language; a saved ride does not", () => 
   const bogus = encodeRouteShare(fakeRoute(), "Baldone", null, null, "klingon" as never);
   assert.equal(decodeRouteShare(bogus)!.locale, null, "an unknown language is refused, not trusted");
 });
+
+// Backlog 26: a shared ride's start label was `route.stops[0]` — a stop, not
+// the start — so a Sigulda → Līgatne → Cēsis link read "Sākums: Līgatne".
+import { shareStartLabel, legacyShareStartLabel } from "../lib/share/route-code";
+import { isSaved, saveRide, unsaveRide, listSaved } from "../lib/share/saved-rides";
+test("a shared ride names its start, not its first stop (backlog 26)", () => {
+  const plan = RidePlanSchema.parse({
+    startPlace: "Sigulda", viaPlaces: ["Līgatne"], destinationPlace: "Cēsis", directionPlace: null, focusArea: null, returnToStart: false,
+    budget: { mode: "flexible", value: null, constraint: "target", minimumValue: null }, difficulty: "adventure", rideStyle: "explore",
+    gravelPreference: 55, trailPreference: "some", accessPolicy: "verified", preferForest: false, noSand: false, avoidTowns: false,
+    avoidMainRoads: false, includeTet: false, includeSightseeing: false,
+  });
+  const places = [
+    { name: "Sigulda", label: "Sigulda, Siguldas novads", lat: 57.15, lon: 24.85 },
+    { name: "Līgatne", label: "Līgatne, Cēsu novads", lat: 57.23, lon: 25.04 },
+    { name: "Cēsis", label: "Cēsis, Cēsu novads", lat: 57.31, lon: 25.27 },
+  ];
+  const route = { ...fakeRoute(), stops: [{ name: "Līgatne", category: "via" }, { name: "Cēsis", category: "via" }] };
+
+  assert.equal(shareStartLabel(plan, places), "Sigulda");
+  const fresh = decodeRouteShare(encodeRouteShare(route, shareStartLabel(plan, places), plan, places))!;
+  assert.equal(fresh.startLabel, "Sigulda", "a new code says where the ride starts");
+
+  // A link made before the fix carries "Līgatne" as `s`. It must still
+  // decode, and say Sigulda: the plan it carries knows the start.
+  assert.equal(legacyShareStartLabel(route, plan), "Līgatne", "the old label really was the stop");
+  const old = encodeRouteShare(route, legacyShareStartLabel(route, plan), plan, places);
+  const back = decodeRouteShare(old)!;
+  assert.ok(back, "an old code still decodes");
+  assert.equal(back.startLabel, "Sigulda", "and names the start");
+  assert.equal(back.points.length, fresh.points.length);
+  // Also for a pre-`pl` code with no resolved places.
+  assert.equal(decodeRouteShare(encodeRouteShare(route, "Līgatne", plan))!.startLabel, "Sigulda");
+  // A plan-less code has only `s` to go on, and keeps it.
+  assert.equal(decodeRouteShare(encodeRouteShare(route, "Baldone"))!.startLabel, "Baldone");
+
+  // No plan start: the first resolved place is the start; nothing at all is
+  // empty, never a guessed stop.
+  assert.equal(shareStartLabel({ ...plan, startPlace: null }, places), "Sigulda");
+  assert.equal(shareStartLabel(null, null), "");
+});
+
+test("a ride saved under the old start label is still found, and not duplicated (backlog 26)", () => {
+  const store = new Map<string, string>();
+  const g = globalThis as unknown as { window?: unknown };
+  const had = "window" in g;
+  g.window = {
+    localStorage: { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v) },
+    dispatchEvent: () => true,
+  };
+  try {
+    const plan = RidePlanSchema.parse({
+      startPlace: "Sigulda", viaPlaces: ["Līgatne"], destinationPlace: null, directionPlace: null, focusArea: null, returnToStart: true,
+      budget: { mode: "flexible", value: null, constraint: "target", minimumValue: null }, difficulty: "adventure", rideStyle: "explore",
+      gravelPreference: 55, trailPreference: "some", accessPolicy: "verified", preferForest: false, noSand: false, avoidTowns: false,
+      avoidMainRoads: false, includeTet: false, includeSightseeing: false,
+    });
+    const route = { ...fakeRoute(), stops: [{ name: "Līgatne", category: "via" }] };
+    // Saved before the fix: the code carried the stop as its start.
+    saveRide(route, legacyShareStartLabel(route, plan), plan);
+    assert.equal(listSaved().length, 1);
+    const label = shareStartLabel(plan, null);
+    assert.ok(isSaved(route, label, plan), "the panel still shows it as saved");
+    saveRide(route, label, plan);
+    assert.equal(listSaved().length, 1, "saving again replaces the old entry");
+    assert.equal(decodeRouteShare(listSaved()[0].code)!.startLabel, "Sigulda");
+    saveRide(route, legacyShareStartLabel(route, plan), plan);
+    unsaveRide(route, label, plan);
+    assert.equal(listSaved().length, 0, "un-saving removes it under either id");
+  } finally {
+    if (!had) delete g.window;
+  }
+});

@@ -361,15 +361,12 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
      * The start's *name* comes from the plan when the code carries one, not
      * from `share.startLabel`.
      *
-     * Measured on a real shared link: `startLabel` is written by the panel as
-     * `route.stops?.[0]?.name ?? plan.startPlace`, and on a ride with stops
-     * that first entry is a **stop**, not the start — a Sigulda → Līgatne →
-     * Cēsis link comes back labelled "Līgatne", which is why this page's own
-     * header reads "Sākums: Līgatne" too. That is a pre-existing bug in the
-     * share metadata and is not this file's to fix, but a green flag saying
-     * "Starts · Līgatne" standing on Sigulda's coordinates is a pin that
-     * actively lies, so the plan's first place — which is correct — names it
-     * where one exists. The coordinates are always the line's own first point.
+     * Links made before backlog 26 (2026-09-25) carry the ride's first
+     * **stop** as `s` — a Sigulda → Līgatne → Cēsis link said "Līgatne".
+     * `decodeRouteShare` now corrects `startLabel` from the plan, but the
+     * resolved place's own name and label are still the better pin, so they
+     * name it where the code carries them. The coordinates are always the
+     * line's own first point.
      */
     const startName = planPlaces[0]?.name ?? share.startLabel;
     const startLabelText = planPlaces[0]?.label ?? share.startLabel;
@@ -414,7 +411,7 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
         <section className="rounded-2xl border border-stone-200 bg-white p-4 md:p-5" aria-label={m.shSharedRoute}>
           <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#bd4b00]">{m.shSharedRoute} · {variantLabel(m, share.variant)}</div>
           <h2 className="mt-1 text-xl font-semibold tracking-tight">{share.name}</h2>
-          <p className="mt-0.5 text-xs text-stone-500">{fi(m.shStartLabel, { place: share.startLabel })}</p>
+          {share.startLabel && <p className="mt-0.5 text-xs text-stone-500">{fi(m.shStartLabel, { place: share.startLabel })}</p>}
           <div className="mt-4 grid grid-cols-3 gap-2">
             <div><div className="text-[10px] uppercase tracking-wider text-stone-400">{m.resDistance}</div><div className="text-lg font-semibold tabular-nums">{spliced ? m.resApprox : ""}{shownKm} km</div></div>
             <div><div className="text-[10px] uppercase tracking-wider text-stone-400">{m.resTime}</div><div className="text-lg font-semibold tabular-nums">{spliced ? m.resApprox : ""}{duration(shownMinutes)}</div></div>

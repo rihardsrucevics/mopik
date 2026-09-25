@@ -1068,7 +1068,9 @@ using foreign-name prompts before concluding anything. The user-visible
 cost when it happens is real: a rider who typed three stops gets a refusal
 that names none of them.
 
-## 26. A shared ride's `startLabel` is its first stop, not its start
+## 26. ~~A shared ride's `startLabel` is its first stop, not its start~~ — DONE 2026-09-25
+
+**Status 2026-09-25:** Done — the panel encodes `shareStartLabel(plan, places)` (plan start, else first resolved place, never `route.stops[0]`); `decodeRouteShare` corrects old codes from their plan, and rides saved under the old label are still found and replaced (`scripts/share.test.ts`).
 
 Found 2026-09-20 while adding GPX waypoints. `encodeRouteShare` is called
 with `route.stops?.[0]?.name ?? plan.startPlace` as the start label, so on

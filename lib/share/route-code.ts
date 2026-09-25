@@ -199,6 +199,29 @@ function classAtOriginalIndex(route: GeneratedRoute): string[] {
   return out;
 }
 
+/**
+ * What a share code calls the ride's start (`s` on `ShareMeta`), backlog 26.
+ *
+ * The plan's own start, then the first resolved place — `resolvedPlaces` is
+ * start, vias, finish in riding order, so its head is the start too. Never
+ * `route.stops[0]`: that list is the places the loop was *planned around* (a
+ * via, a generated anchor, or on a remote loop the loop's far start), so a
+ * Sigulda → Līgatne → Cēsis ride used to be shared as "Sākums: Līgatne".
+ * Empty when neither says, rather than a guess.
+ */
+export function shareStartLabel(plan?: RidePlan | null, places?: ResolvedPlace[] | null): string {
+  return plan?.startPlace?.trim() || places?.[0]?.name?.trim() || "";
+}
+
+/**
+ * The start label every code was written with before backlog 26. Kept only
+ * to find rides already saved on a device: `rideId()` hashes the whole code,
+ * `s` included, so a ride saved under the old label has the old id.
+ */
+export function legacyShareStartLabel(route: GeneratedRoute, plan?: RidePlan | null): string {
+  return route.stops?.[0]?.name ?? plan?.startPlace ?? "";
+}
+
 export function encodeRouteShare(route: GeneratedRoute, startLabel: string, plan?: RidePlan | null, places?: ResolvedPlace[] | null, locale?: UiLocale | null): string {
   const coords = route.geometry.coordinates as Pt[];
   let keep = simplifyIndices(coords, SIMPLIFY_TOLERANCE_M);
@@ -278,6 +301,11 @@ export function decodeRouteShare(code: string): SharedRoute | null {
     }
     while (classes.length < points.length - 1) classes.push({ roadClass: "road", surface: "unknown" });
     const plan = parts[4] ? decodePlanShare(parts[4]) : null;
+    // Codes written before backlog 26 carry the ride's first *stop* as `s`,
+    // and those links (and short-link blobs) live on. Where the code has a
+    // plan, its start is the truth for old and new codes alike; a plan-less
+    // code has only `s` to go on.
+    const startLabel = (plan ? shareStartLabel(plan, decodePlanPlaces(parts[4])) : "") || meta.s;
     const details = meta.rm && meta.sf && meta.q ? {
       roadKm: meta.rm[0], trackKm: meta.rm[1], trailKm: meta.rm[2],
       asphaltPercent: meta.sf[0], gravelPercent: meta.sf[1], dirtPercent: meta.sf[2], unknownPercent: meta.sf[3],
@@ -291,7 +319,7 @@ export function decodeRouteShare(code: string): SharedRoute | null {
     // Validated rather than trusted: the code is user-supplied, and an
     // unknown value must not reach `messages()` as if it were a language.
     const locale = isUiLocale(meta.l) ? meta.l : null;
-    return { name: meta.n, variant: meta.va, km: meta.km, minutes: meta.min, unpavedPercent: meta.up, repeatedPercent: meta.rep, startLabel: meta.s, points, classes, plan, details, locale };
+    return { name: meta.n, variant: meta.va, km: meta.km, minutes: meta.min, unpavedPercent: meta.up, repeatedPercent: meta.rep, startLabel, points, classes, plan, details, locale };
   } catch {
     return null;
   }
