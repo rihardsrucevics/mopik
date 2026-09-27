@@ -38,44 +38,6 @@ export function MapPanel({ children, className = "", expandedClassName = "" }: {
   // is the map's own ✕ — the next Escape closes.
   const pendingMark = () => Boolean(rootRef.current?.querySelector("[data-map-pending]"));
 
-  // How tall the map's legend currently is, published as `--map-legend` so the
-  // full-screen button can sit directly above it on a narrow screen.
-  //
-  // It has to be measured rather than assumed: the legend wraps onto one or
-  // two rows depending on the viewport width and on how long the words are in
-  // the rider's language, so any fixed offset is wrong for somebody. The
-  // legend marks itself with `data-map-legend` and this only ever looks inside
-  // MapPanel's own subtree — the map component stays free to lay its legend
-  // out however it likes, as long as it keeps the marker.
-  //
-  // `getBoundingClientRect` (not offsetHeight) because the legend's height is
-  // fractional at most text sizes, and a rounded-down offset leaves the button
-  // a pixel into the legend. The 8 px gap between the two is folded in here
-  // rather than added in the button's own `calc`, so that the variable is a
-  // flat 0 px when there is no legend to clear — on the inline phone strip the
-  // legend is hidden and the button keeps the corner to itself, with no stray
-  // gap under it.
-  useEffect(() => {
-    const root = rootRef.current;
-    if (!root) return;
-    // Looked up on every measurement, not once: the map (and its legend) can
-    // mount after this runs — on the desktop it did, the variable was never
-    // set, and the TET switch sat on top of the legend's second row (rider,
-    // 2026-09-25). A mutation observer catches the legend arriving.
-    let watched: HTMLElement | null = null;
-    const observer = new ResizeObserver(() => apply());
-    const apply = () => {
-      const legend = root.querySelector<HTMLElement>("[data-map-legend]");
-      if (legend && legend !== watched) { watched = legend; observer.observe(legend); }
-      const h = !legend || legend.offsetParent === null ? 0 : legend.getBoundingClientRect().height;
-      root.style.setProperty("--map-legend", h ? `${h + 8}px` : "0px");
-    };
-    apply();
-    observer.observe(root);
-    const mutations = new MutationObserver(() => apply());
-    mutations.observe(root, { childList: true, subtree: true });
-    return () => { observer.disconnect(); mutations.disconnect(); };
-  }, [expanded, locale]);
 
   useEffect(() => {
     if (!expanded) return;
@@ -95,12 +57,6 @@ export function MapPanel({ children, className = "", expandedClassName = "" }: {
     // without threading the state through — the legend is worth its space on a
     // full screen and not on a 26dvh strip, where it covers the route.
     //
-    // Only a narrow screen has to keep the legend and the button apart, and
-    // `--map-legend` (measured above) is what does it: the two are stacked.
-    // There used to be a `--map-btn` here as well, so the wide layout could
-    // start the legend to the right of the button — but the button is
-    // `md:hidden` in both states, so on a wide screen it reserved a gap for a
-    // control that is not there and left the legend floating off the corner.
     // `data-map-slot` is how anything outside finds the map's box without a
     // ref threaded through three parents: exactly one MapLibre instance
     // exists and `useMediaQuery` moves that single node between the composer

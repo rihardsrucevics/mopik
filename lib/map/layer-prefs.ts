@@ -83,3 +83,37 @@ export function useMapLayer(layer: MapLayer): [boolean, (visible: boolean) => vo
   );
   return [value, (visible: boolean) => setMapLayer(layer, visible)];
 }
+
+/**
+ * The legend's switch. Its default differs by width — off on a phone, where
+ * the map is small and the legend soon known by heart, on on the desktop,
+ * where there is room (rider, 2026-09-27) — and once the rider flips it, that
+ * one answer is remembered for the device. Read raw: "never said" must stay
+ * distinguishable from "off".
+ */
+const DESKTOP_QUERY = "(min-width: 768px)";
+let legendStored: boolean | null | undefined;
+
+function legendSnapshot(): boolean | null {
+  if (legendStored !== undefined) return legendStored;
+  let stored: string | null = null;
+  try {
+    stored = window.localStorage.getItem(KEYS.legend);
+  } catch {
+    // Blocked storage: never said.
+  }
+  legendStored = stored === "1" ? true : stored === "0" ? false : null;
+  return legendStored;
+}
+
+function subscribeDesktop(listener: () => void): () => void {
+  const query = window.matchMedia(DESKTOP_QUERY);
+  query.addEventListener("change", listener);
+  return () => query.removeEventListener("change", listener);
+}
+
+export function useMapLegend(): [boolean, (visible: boolean) => void] {
+  const stored = useSyncExternalStore(subscribe, legendSnapshot, () => null);
+  const desktop = useSyncExternalStore(subscribeDesktop, () => window.matchMedia(DESKTOP_QUERY).matches, () => false);
+  return [stored ?? desktop, (visible: boolean) => { legendStored = visible; setMapLayer("legend", visible); }];
+}

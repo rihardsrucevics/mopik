@@ -35,23 +35,36 @@ test("the right column: ✕ or „+” in one bottom slot, ↶ above, ✓ on top
   assert.doesNotMatch(col, /disabled:hidden/);
 });
 
-test("the phone row holds only the field; the desktop draws its own controls", () => {
-  assert.match(routeMap, /<div className="contents max-md:hidden">/);
+test("the bar is at the bottom at every width: field, then fixed slots (desktop row / phone column)", () => {
+  assert.match(routeMap, /<DesktopBar controls=\{controls\} \/>/);
   assert.match(routeMap, /<PhoneColumn controls=\{controls\} \/>/);
+  assert.match(routeMap, /ref=\{headerRef\} data-map-chrome className=\{controls \? "absolute bottom-3 left-3 right-3 z-20 flex flex-col-reverse/);
+  assert.match(routeMap, /placement="above"/);
+  const bar = routeMap.slice(routeMap.indexOf("function DesktopBar"), routeMap.indexOf("function PhoneColumn"));
+  // Left to right after the field: ✓, ↶, +/✕.
+  const i3 = bar.indexOf('data-slot="3"'), i2 = bar.indexOf('data-slot="2"'), i1 = bar.indexOf('data-slot="1"');
+  assert.ok(i3 > 0 && i3 < i2 && i2 < i1, "✓ ↶ +/✕ in that order");
+  assert.match(bar, /\{pending \? \(\s*<button[^>]*onClick=\{pending\.onCancel\} data-slot="1"/);
+  assert.match(bar, /size-10/);
 });
 
-test("TET, its ⓘ and the legend switch are at the top-left on a phone, in every map state", () => {
-  assert.match(routeMap, /data-map-chrome className="absolute left-3 z-10 flex items-center gap-1\.5 max-md:top-3/);
-  // The sights switch (a result) goes under them, not over them.
-  assert.match(routeMap, /"right-14 max-md:top-\[3\.25rem\]"/);
+test("ONE row of switches at the top-left at every width: TET, sights (a result), legend, then ⓘ", () => {
+  assert.match(routeMap, /data-map-chrome className="absolute left-3 top-3 z-10/);
+  const row = routeMap.slice(routeMap.indexOf("<div data-map-toggles"));
+  const tet = row.indexOf('label="TET"'), sights = row.indexOf("label={m.resSightsLayer}"), legend = row.indexOf("label={m.mapLegend}"), info = row.indexOf("m.mapCreditToggle");
+  assert.ok(tet > 0 && tet < sights && sights < legend && legend < info);
+  // No second row of switches: nothing wraps the row.
+  assert.doesNotMatch(row.slice(0, row.indexOf("</div>")), /flex-wrap/);
+  // The legend is a switch like the others, not a dark chip.
+  assert.doesNotMatch(routeMap, /bg-stone-800 text-white/);
 });
 
-test("the phone legend is off until asked for, remembered per device, and sits at the top", () => {
+test("the legend: off on a phone, on on the desktop, one remembered choice, a box under the row", () => {
   const prefs = src("lib/map/layer-prefs.ts");
-  assert.match(prefs, /legend: false/);
   assert.match(prefs, /legend: "mopik\.map\.legend\.v1"/);
-  assert.match(routeMap, /useMapLayer\("legend"\)/);
-  assert.match(routeMap, /\$\{legendOpen \? "\[\[data-map-expanded\]_&\]:flex" : ""\} md:bottom-3/);
+  assert.match(prefs, /return \[stored \?\? desktop,/);
+  assert.match(routeMap, /useMapLegend\(\)/);
+  assert.match(routeMap, /\{legendOpen && \(\s*<div className="max-w-full max-md:hidden max-md:\[\[data-map-expanded\]_&\]:block">/);
 });
 
 test("the preview chip says what waits for ✓", async () => {

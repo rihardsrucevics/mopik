@@ -89,7 +89,7 @@ export function PlaceInput({ value, onChange, onPick, placeholder, icon, label, 
    * breakpoint, for the map's field, which sits at the bottom of a phone map;
    * capped in height there so the list stays on the map.
    */
-  placement?: "below" | "above-on-phone";
+  placement?: "below" | "above-on-phone" | "above";
   icon?: ReactNode;
   label?: ReactNode;
   className?: string;
@@ -313,7 +313,7 @@ export function PlaceInput({ value, onChange, onPick, placeholder, icon, label, 
         {trailing}
       </label>
       {show && (
-        <ul id={listId} role="listbox" className={`absolute left-0 right-0 top-full z-20 mt-1 overflow-hidden rounded-xl border border-stone-200 bg-white shadow-lg ${placement === "above-on-phone" ? "max-md:top-auto max-md:bottom-full max-md:mt-0 max-md:mb-1 max-md:max-h-52 max-md:overflow-y-auto" : ""}`}>
+        <ul id={listId} role="listbox" className={`absolute left-0 right-0 z-20 rounded-xl border border-stone-200 bg-white shadow-lg ${placement === "above" ? "bottom-full mb-1 max-h-52 overflow-y-auto" : `top-full mt-1 overflow-hidden ${placement === "above-on-phone" ? "max-md:top-auto max-md:bottom-full max-md:mt-0 max-md:mb-1 max-md:max-h-52 max-md:overflow-y-auto" : ""}`}`}>
           {listed.map((s, i) => (
             <li key={`${s.label}-${s.lat}`} role="option" aria-selected={i === active}
               onMouseDown={(e) => { e.preventDefault(); pick(s); }}
