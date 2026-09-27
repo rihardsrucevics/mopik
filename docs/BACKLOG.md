@@ -1384,6 +1384,16 @@ Each shows a grey preview with km before → after, then ✓/✕, then the edit
 state ends. A summary chip „N km braukti divreiz · parādīt” jumps to the
 first retraced stretch — no new map badge (badges stay ⚠️ and 🔥 only).
 
+**Rider again, 2026-09-27 — "šo posmu vajag izslēgt".** While editing he
+wants to mark a stretch and say it must not be part of the ride. Selection
+may need more than junction-to-junction: tap the start and the end of the
+stretch (or drag handles along the line) to mark exactly the piece he
+means. Mopik then re-routes around it (a `nogo` on that piece) and shows
+km before → after; if there is no way round, it says so instead of
+silently keeping the stretch. The exclusion should stay with the ride
+(share code, „Optimizēt” 32, later edits) so the stretch does not come
+back.
+
 ## 37. Ideas from other route planners (research 2026-09-25)
 
 Competitor manuals read 2026-09-25 (Kurviger, Garmin zūmo/BaseCamp/Tread,
@@ -1441,3 +1451,67 @@ the whole batch, so one slow candidate (59 s on the plain candidate there)
 holds the other three. Let finished slots start the next candidate instead
 of waiting for the batch; then measure how many candidates each ride gets.
 The pre-search reachability probe (27) costs 0.25–1.3 s and is not the cause.
+
+## 40. The map's field looks like a search box but does nothing when tapped
+
+**Rider, 2026-09-27, on his iPhone in full-screen edit mode.** He wanted a
+new stop, so he tapped the field at the bottom of the map — it is not
+active; only „+” starts adding a stop. People will try both. The
+placeholder „Izvēlies rindu vai pievieno pieturu” does not help either.
+Make a tap on the field do what it looks like: start a new stop with the
+field focused for search (the same path as „+”), and when a row is active,
+search for that row. The placeholder should say what a tap does, e.g.
+„Meklē vai atzīmē kartē jaunu pieturu”. Keep „+” for tap-on-map adding.
+Input font-size ≥ 16 px so iOS does not zoom the page on focus (see the
+2026-09-27 zoom fix).
+
+## 41. Two ways of drawing a ride — "route between my points" vs "ride exactly my line"
+
+**Rider, 2026-09-27: design problem, no solution agreed yet.** Adding a
+stop today means "here is a point; Mopik, route between the points". That
+is correct — but when the rider drops a point where there is no road,
+Mopik gets confused (snaps it far, spurs, or „neizdevās savienot…”).
+Meanwhile people who draw rides by hand (OsmAnd, other planners) place
+points meaning **the segment between two points IS the ride** — it goes
+into the GPX as drawn and must be ridden exactly.
+
+So there are two use cases, and the rider wants both without confusing
+anyone:
+1. **Stops / route between them** — Mopik generates the connecting road.
+2. **Drawn line** — consecutive points are joined straight and that line is
+   the ride (unknown tracks, fields, fords, his own knowledge).
+
+To decide: whether this is a per-segment mode (see 35 — straight segment,
+and OsmAnd's „change route type before/after this point”), a drawing mode
+toggle for the whole edit session, or automatic (a point far from any road
+offers „savienot taisni?” instead of failing). How the two look different on
+the map, how honest duration counts a drawn stretch, how it is exported
+(`<trkpt>` as drawn), and a clear note that Mopik has not checked a drawn
+stretch can be ridden or is legal. Related: 34 (one kind of point), 35
+(straight segment), 36 (tap a stretch), 37 (research).
+
+## 42. Report a place that cannot be ridden — and have Mopik remember it
+
+**Rider, 2026-09-27.** On his own ride, or on one someone shared with him,
+he wants to report a spot or stretch as not rideable (a locked gate,
+private yard, washed-out track, deep sand, a bridge that is gone). The
+report must be **stored** and **used by Mopik when generating new rides**.
+
+To decide:
+- **What is reported:** a point or a marked stretch (the selection from
+  36), a reason from a short list (gate / private / impassable / closed /
+  other) plus optional note and photo, and the date — conditions change.
+- **Where it lives:** a server-side store (not browser storage), keyed to
+  OSM way ids where the report matches a way, with the geometry as fallback.
+- **How routing uses it:** a `nogo` (or heavy cost) on reported ways for
+  everyone, or only for the reporter until confirmed; how many reports,
+  how old, before it applies; how it expires or is cleared ("tagad atkal
+  var izbraukt").
+- **Trust and abuse:** anyone with a shared link could report — needs a
+  light identity or moderation so one person cannot close a road for all.
+- **Showing it:** a reported spot on the map — within the rider's rule
+  that map badges are only ⚠️ and 🔥 (⚠️ fits).
+- **Giving back to OSM:** optionally suggest an OSM note for real changes
+  (a gate, a closed road), so the data improves for everyone.
+Consistent with the rider's "no guessing" rule: a report is an explicit
+fact from a rider, dated and attributable — never inferred.
