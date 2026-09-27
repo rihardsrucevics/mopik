@@ -1515,3 +1515,21 @@ To decide:
   (a gate, a closed road), so the data improves for everyone.
 Consistent with the rider's "no guessing" rule: a report is an explicit
 fact from a rider, dated and attributable — never inferred.
+
+## 43. „Šī posma vietā brauc caur šejieni”
+
+**Rider, 2026-09-27.** While editing: select a stretch of the line, then
+point at a place on the map — meaning "instead of this stretch, ride via
+here". Mopik drops the selected stretch and re-routes through the new
+point, and may change the neighbouring stretches too if that is what it
+takes to join cleanly (no spur, no retracing). Unlike dragging the line
+(which bends it at one spot) or a new stop (which adds a place), this
+**replaces** a piece of the ride with a direction.
+
+Flow sketch: tap the stretch (selection as in 36, with adjustable ends) →
+„Brauc caur citurieni” → „Izvēlies jaunu vietu kartē” with the dashed
+preview (as for moving a point) → grey preview of the new ride with km
+before → after and which stretches changed → ✓/✕. The new point is a
+pass-through point (34), not a stop. If no clean way exists, say so and
+keep the ride. Related: 34, 36 (tap a stretch / exclude it), 41 (route
+between points vs drawn line), 32 („Optimizēt”).
