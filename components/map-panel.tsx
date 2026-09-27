@@ -5,7 +5,8 @@ import { Maximize2, Minimize2 } from "lucide-react";
 import { track } from "@/lib/analytics";
 import { useLocale } from "@/lib/i18n/use-locale";
 import { t } from "@/lib/i18n/messages";
-import { mapPanelMounted, setMapFullscreen, useMapFullscreen } from "@/lib/map/fullscreen";
+import { mapPanelMounted, setMapFullscreen, useMapFullscreen, useMapPendingCount } from "@/lib/map/fullscreen";
+import { fi } from "@/lib/i18n/format";
 import { guardFullscreenZoom } from "@/lib/map/page-zoom";
 
 /**
@@ -26,6 +27,9 @@ export function MapPanel({ children, className = "", expandedClassName = "" }: {
   // Shared, not local: an action outside the panel („Labot”, a row's pin
   // button) opens it, and „Labot” remounts it on the way (lib/map/fullscreen).
   const expanded = useMapFullscreen();
+  // Marks waiting for ✓: the collapse button works while they wait (it only
+  // minimises the map — the composer keeps them), and the preview says so.
+  const pendingCount = useMapPendingCount();
   const rootRef = useRef<HTMLDivElement>(null);
   useEffect(() => mapPanelMounted(), []);
   // While a mark waits for ✓ or ✕ the map stays full screen (rider,
@@ -128,26 +132,29 @@ export function MapPanel({ children, className = "", expandedClassName = "" }: {
           and made leaving full screen impossible. `flex-1 min-h-0` gives the
           map the whole layer and the button something to sit on. */}
       <div className={expanded ? "relative min-h-0 flex-1" : "contents"}>{children}</div>
-      {/* Bottom-left, above the legend. The button is what the thumb reaches
-          for, so it takes the position nearest the corner that is still clear
-          of the legend: 12 px inset, plus the legend's measured height and the
-          8 px gap between them when there is a legend at all. `--map-legend`
-          resolves to 0 px on the inline phone strip, where the legend is
-          hidden, and the button falls back to the bare corner — as it does if
-          the variable never gets set. `size-10` is the 40 px tap target and is
-          not negotiable; the offset moves the button, never its size. */}
+      {/* Bottom-left, the corner itself: the left slot of the full-screen
+          bottom row, in every state (rider, 2026-09-27: when it disappeared
+          while a mark was pending, "it looks like something vanished
+          unnaturally"). A pending mark survives it — the map is only
+          minimised, and the preview's chip says what is waiting. The legend
+          is at the top on a phone now, so nothing needs clearing down here. */}
       {expanded ? (
         <button type="button" onClick={() => setMapFullscreen(false)}
           aria-label={t(locale, "mapExitFullscreen")}
-          className="absolute bottom-[calc(0.75rem+var(--map-legend,0px))] left-3 flex size-14 items-center justify-center rounded-full border border-stone-200 bg-white/95 text-stone-700 shadow-sm backdrop-blur group-has-[[data-map-pending]]/panel:hidden md:hidden">
+          className="absolute bottom-3 left-3 flex size-14 items-center justify-center rounded-full border border-stone-200 bg-white/95 text-stone-700 shadow-md backdrop-blur md:hidden">
           <Minimize2 className="size-5" />
         </button>
       ) : (
         <button type="button" onClick={() => { track("map_fullscreen"); setMapFullscreen(true); }}
-          aria-label={t(locale, "mapFullscreen")}
+          aria-label={pendingCount > 0 ? `${t(locale, "mapFullscreen")} · ${pendingCount === 1 ? t(locale, "mapPreviewPendingOne") : fi(t(locale, "mapPreviewPendingMany"), { n: pendingCount })}` : t(locale, "mapFullscreen")}
           className="absolute inset-0 z-30 flex items-end justify-center pb-3 md:hidden">
           <span className="flex items-center gap-2 rounded-full border border-stone-200 bg-white/95 px-4 py-2.5 text-sm font-semibold text-stone-800 shadow-md backdrop-blur">
             <Maximize2 aria-hidden="true" className="size-4" />{t(locale, "mapOpenPreview")}
+            {pendingCount > 0 && (
+              <span data-preview-pending className="text-[#bd4b00]">
+                {" · "}{pendingCount === 1 ? t(locale, "mapPreviewPendingOne") : fi(t(locale, "mapPreviewPendingMany"), { n: pendingCount })}
+              </span>
+            )}
           </span>
         </button>
       )}

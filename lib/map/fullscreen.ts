@@ -51,3 +51,28 @@ export function mapPanelMounted(): () => void {
     queueMicrotask(() => { if (mounted === 0) setMapFullscreen(false); });
   };
 }
+
+/**
+ * How many marks wait for ✓ on the map — published by the map, read by the
+ * collapsed preview's chip (rider, 2026-09-27). Collapsing full screen with
+ * something pending only minimises the map: the pending state lives in the
+ * composer and survives, and the chip says it is there („Atvērt karti · 2
+ * neapstiprinātas”), so nothing is lost silently.
+ */
+let pendingCount = 0;
+const pendingListeners = new Set<() => void>();
+
+export function setMapPendingCount(n: number) {
+  const next = Math.max(0, Math.floor(n));
+  if (next === pendingCount) return;
+  pendingCount = next;
+  for (const l of pendingListeners) l();
+}
+
+export function useMapPendingCount(): number {
+  return useSyncExternalStore(
+    (l) => { pendingListeners.add(l); return () => { pendingListeners.delete(l); }; },
+    () => pendingCount,
+    () => 0,
+  );
+}

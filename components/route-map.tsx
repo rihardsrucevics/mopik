@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { Check, Info, Plus, TriangleAlert, Undo2, X } from "lucide-react";
+import { useMapLayer } from "@/lib/map/layer-prefs";
+import { setMapPendingCount } from "@/lib/map/fullscreen";
 import { RouteSegmentProperties } from "@/lib/types";
 import { haversineMeters, type Point } from "@/lib/geo/geometry";
 import { cumulative, pointAtDistance } from "@/lib/routing/detour";
@@ -90,6 +92,8 @@ export type MapPendingMark = {
   } | null;
   /** A batch's ↶: take the last pending stop away. Drawn between ✓ and ✕. */
   undo?: { label: string; onUndo: () => void };
+  /** How many marks this is — a batch's size; one when absent. */
+  count?: number;
 };
 
 export type MapControls = {
@@ -1960,6 +1964,62 @@ const SURFACE_COLOR_EXPR: maplibregl.ExpressionSpecification = [
   SURFACE_COLORS.unknown,
 ];
 
+/**
+ * The phone's right-hand column over the full-screen map's bottom row — fixed
+ * slots, counted from the bottom, so nothing ever jumps (rider, 2026-09-27:
+ * "one moment there's an X in the left corner, the next there isn't"):
+ *
+ *   3 (top)    ✓   only while something is pending and Confirm can act
+ *   2          ↶   the batch's own while pending, the history's otherwise
+ *   1 (bottom) ✕ while something is pending, „+” when idle — one slot, the
+ *              content swapped, so the two never show together
+ *
+ * A slot that has nothing to do right now keeps its place (`invisible`, which
+ * also takes no taps), so ✓ appearing or going never moves ↶ or ✕, and ↶
+ * going never drops ✓ onto it. The column is `flex-col-reverse`: DOM order is
+ * bottom-up, and what is absent at the top leaves empty map, not a gap
+ * between controls. While the field has focus and nothing is pending, „+” and
+ * ↶ stand aside (still in place) for the field's suggestions.
+ *
+ * The desktop draws the same controls in the row instead (`md:` above).
+ */
+function PhoneColumn({ controls }: { controls: MapControls }) {
+  const pending = controls.pending;
+  const round = "flex size-14 shrink-0 items-center justify-center rounded-full shadow-md";
+  const plain = `${round} border border-[#ececf0] bg-white/95 backdrop-blur transition-colors hover:bg-white`;
+  const idleAside = pending ? "" : "group-has-[input:focus]:invisible";
+  const undo = pending ? pending.undo ? { label: pending.undo.label, onUndo: pending.undo.onUndo as (() => void) | null } : null : controls.undo ?? null;
+  return (
+    <div data-phone-column className="absolute bottom-full right-0 mb-2 flex flex-col-reverse gap-2 md:hidden">
+      {pending ? (
+        <button type="button" onClick={pending.onCancel} data-slot="1"
+          aria-label={pending.cancelLabel} title={pending.cancelLabel} className={`${plain} text-stone-700`}>
+          <X aria-hidden="true" className="size-6" />
+        </button>
+      ) : (
+        <button type="button" onClick={controls.onAddStop ?? undefined} disabled={!controls.onAddStop} data-slot="1"
+          aria-label={controls.onAddStop ? controls.addStopLabel : controls.addStopFullLabel}
+          title={controls.onAddStop ? controls.addStopLabel : controls.addStopFullLabel}
+          className={`${plain} text-[#bd4b00] disabled:invisible ${idleAside}`}>
+          <Plus aria-hidden="true" className="size-7" />
+        </button>
+      )}
+      <button type="button" onClick={undo?.onUndo ?? undefined} disabled={!undo?.onUndo} data-slot="2"
+        aria-label={undo?.label} title={undo?.label} aria-hidden={!undo?.onUndo || undefined} tabIndex={undo?.onUndo ? undefined : -1}
+        className={`${plain} text-stone-700 disabled:invisible ${idleAside}`}>
+        <Undo2 aria-hidden="true" className="size-6" />
+      </button>
+      {pending && !pending.offRoad && pending.onConfirm && (
+        <button type="button" onClick={pending.onConfirm} data-slot="3"
+          aria-label={pending.confirmLabel} title={pending.confirmLabel}
+          className={`${round} bg-[#f56300] text-white transition hover:bg-[#d85600]`}>
+          <Check aria-hidden="true" className="size-6" />
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function RouteMap({ segments, start, destination, via, focus, onFocusCleared, onFocusToggle, selectedPois, routePois, showTet, onToggleTet, showSights, onToggleSights, onShowPoi, onPickPoint, pickedPoint, onPickedPointMove, pickCenter, onGeolocated, controls }: Props) {
   const [locale] = useLocale();
   const m = messages(locale);
@@ -2088,8 +2148,9 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
     if (!hasHeaderRef.current) return 64;
     const legend = containerRef.current?.parentElement?.querySelector<HTMLElement>("[data-map-legend]");
     const legendH = legend && legend.offsetParent !== null ? legend.getBoundingClientRect().height + 8 : 0;
+    // On a phone the legend (when shown) is at the top, under TET.
     return window.matchMedia(PHONE_QUERY).matches
-      ? { top: 56, bottom: 72 + legendH, left: 48, right: 72 }
+      ? { top: 56 + legendH, bottom: 72, left: 48, right: 72 }
       : { top: 80, bottom: 56 + legendH, left: 64, right: 64 };
   };
   /** The rider has panned or zoomed this map himself (see its listener). */
@@ -2638,9 +2699,13 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
           // is framed clear of those instead.
           const phoneHeader = header && window.matchMedia(PHONE_QUERY).matches;
           map.fitBounds(bounds, {
+            // On a phone TET, the sights switch and (when shown) the legend
+            // are all at the top-left.
             padding: phoneHeader
-              ? { top: 56, bottom: 48 + legendH + 56, left: 48, right: 72 }
-              : { top: header ? 72 : 48, bottom: 48 + legendH, left: 48, right: header ? 72 : 48 },
+              ? { top: 56 + legendH, bottom: 48 + 56, left: 48, right: 72 }
+              : window.matchMedia(PHONE_QUERY).matches
+                ? { top: 96 + legendH, bottom: 48, left: 48, right: 48 }
+                : { top: header ? 72 : 48, bottom: 48 + legendH, left: 48, right: header ? 72 : 48 },
             duration: 800,
           });
         }
@@ -3890,6 +3955,17 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
     return () => observer.disconnect();
   }, []);
 
+  // The phone's legend switch, remembered per device (lib/map/layer-prefs).
+  const [legendOpen, setLegendOpen] = useMapLayer("legend");
+  // The sights switch: a result with a ride, no header (see there). On a
+  // phone it is the second row at the top-left, under TET.
+  const sightsRow = !controls && Boolean(segments && segments.features.length > 0);
+  // How many marks wait for ✓, for the collapsed preview's chip: the map can
+  // be minimised with them pending, and must say so (lib/map/fullscreen).
+  const pendingCount = controls?.pending ? controls.pending.count ?? 1 : 0;
+  useEffect(() => { setMapPendingCount(pendingCount); }, [pendingCount]);
+  useEffect(() => () => setMapPendingCount(0), []);
+
   return (
     <div className="relative h-full w-full" data-map-pending={controls?.pending ? "true" : undefined}>
       <div ref={containerRef} className="h-full w-full rounded-lg" />
@@ -3929,7 +4005,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
           above it, ↶ over ✕ (rider, 2026-09-25: beside the field they cut a
           hint to „Atzīmē kartē, kur pārvietot šo…”). The off-road verdict stacks above it (`flex-col-reverse`).
           TET takes the top-left; the ⓘ credit is beside it. */}
-      <div ref={headerRef} data-map-chrome className={`absolute left-3 top-3 flex flex-col gap-2 ${controls ? "right-14 z-10 has-[input:focus]:right-3 has-[input:focus]:z-30 max-md:top-auto max-md:left-[4.75rem] max-md:right-3 max-md:bottom-[calc(0.75rem+var(--map-legend,0px))] max-md:flex-col-reverse max-md:z-20" : "right-14"}`}>
+      <div ref={headerRef} data-map-chrome className={`absolute left-3 top-3 flex flex-col gap-2 ${controls ? "right-14 z-10 has-[input:focus]:right-3 has-[input:focus]:z-30 max-md:top-auto max-md:left-[4.75rem] max-md:right-3 max-md:bottom-3 max-md:flex-col-reverse max-md:z-20" : "right-14 max-md:top-[3.25rem]"}`}>
       {controls && (
         /* The header, in ONE row — backlog 30. The rider's screenshot at
            375 px showed three stacked pills (the field, "+ Pietura", the hint)
@@ -3949,7 +4025,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
            own path — and the field searches for it („Meklē vai atzīmē kartē
            jaunu pieturu”, backlog 40); "+" stays, for adding by marking the
            map. When neither can act the field is off and looks it. */
-        <div className="group flex items-center gap-1.5 max-md:gap-2 md:max-w-md">
+        <div className="group flex items-center gap-1.5 max-md:relative max-md:gap-2 md:max-w-md">
           <span role="status" className="sr-only">{controls.hint}</span>
           <PlaceInput
             className="min-w-0 flex-1"
@@ -3979,7 +4055,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
               — primary on top. Only the full-screen map has it — inline the map
               is a preview (MapPanel). A disabled ✓ is not drawn on a phone
               either; the column grows from the bottom, so ↶ stays put. */}
-          <div className="contents max-md:absolute max-md:bottom-full max-md:right-0 max-md:mb-2 max-md:flex max-md:flex-col max-md:gap-2">
+          <div className="contents max-md:hidden">
           {controls.pending && !controls.pending.offRoad ? (
             /* Not hidden while the field has focus, unlike "+": a place just
                picked from the field's list is exactly when Confirm is needed,
@@ -4034,10 +4110,11 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
           {controls.pending && !controls.pending.offRoad && (
             <button type="button" onClick={controls.pending.onCancel}
               aria-label={controls.pending.cancelLabel} title={controls.pending.cancelLabel}
-              className="flex size-10 shrink-0 items-center justify-center rounded-full border border-[#ececf0] bg-white/95 text-stone-700 shadow-sm backdrop-blur transition-colors hover:bg-white max-md:size-14 max-md:shadow-md">
-              <X aria-hidden="true" className="size-5 max-md:size-6" />
+              className="flex size-10 shrink-0 items-center justify-center rounded-full border border-[#ececf0] bg-white/95 text-stone-700 shadow-sm backdrop-blur transition-colors hover:bg-white max-md:hidden">
+              <X aria-hidden="true" className="size-5" />
             </button>
           )}
+          <PhoneColumn controls={controls} />
         </div>
       )}
       {/* The tapped point's own actions — above the row on a phone, below
@@ -4047,7 +4124,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
           reversed there), so it is never squeezed into the field. */}
       {controls?.notice && (
         <div role="status" title={controls.notice.title} aria-label={controls.notice.title}
-          className="self-start rounded-2xl border border-amber-300 bg-amber-50/95 px-3 py-1 text-xs font-medium leading-snug text-amber-900 shadow-sm backdrop-blur">
+          className="self-start rounded-2xl border border-amber-300 bg-amber-50/95 px-3 py-1 text-xs font-medium leading-snug text-amber-900 shadow-sm backdrop-blur max-md:mr-16">
           {controls.notice.text}
         </div>
       )}
@@ -4056,7 +4133,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
           pressed. `role="alert"`: it arrives after a press and replaces what
           Confirm was about to do. */}
       {controls?.pending?.offRoad && (
-        <div role="alert" className="space-y-2 rounded-2xl border border-amber-300 bg-amber-50/95 p-2.5 shadow-md backdrop-blur md:max-w-md">
+        <div role="alert" className="space-y-2 rounded-2xl border border-amber-300 bg-amber-50/95 p-2.5 shadow-md backdrop-blur max-md:mr-16 md:max-w-md">
           <div className="flex gap-2 text-xs font-medium text-amber-900">
             <TriangleAlert aria-hidden="true" className="mt-px size-3.5 shrink-0" />
             <span className="min-w-0 flex-1">{controls.pending.offRoad.title}</span>
@@ -4084,7 +4161,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
           runs near, so with no route there are none to show. Its swatch is a
           miniature of the mark it governs (a white pill with a stone border),
           because what it turns on is a shape, not a line colour. */}
-      {!controls && segments && segments.features.length > 0 && (
+      {sightsRow && (
       <div className="flex flex-wrap items-center gap-2">
       <button
         type="button"
@@ -4125,7 +4202,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
           together wherever TET goes: the top-left on a phone while the header
           row is at the bottom, beside the full-screen button on a phone
           result, above the legend on the desktop. */}
-      <div data-map-chrome className={`absolute bottom-[calc(1.5625rem+var(--map-legend,0px))] left-[4.75rem] z-10 flex max-w-[calc(100%-5.5rem)] items-center gap-1.5 md:bottom-[calc(0.75rem+var(--map-legend,0px))] md:left-3 ${controls ? "max-md:bottom-auto max-md:left-3 max-md:top-3" : ""}`}>
+      <div data-map-chrome className="absolute left-3 z-10 flex items-center gap-1.5 max-md:top-3 max-md:max-w-[calc(100%-4.5rem)] md:bottom-[calc(0.75rem+var(--map-legend,0px))] md:max-w-[calc(100%-5.5rem)]">
       <button
         type="button"
         onClick={() => onToggleTet(!showTet)}
@@ -4149,6 +4226,15 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
         aria-label={m.mapCreditToggle} title={m.mapCreditToggle}
         className="flex size-[30px] shrink-0 items-center justify-center rounded-full border border-[#ececf0] bg-white/95 text-stone-700 shadow-sm backdrop-blur transition-colors hover:bg-white">
         <Info aria-hidden="true" className="size-4" />
+      </button>
+      {/* Phone only: the legend is off until asked for (rider, 2026-09-27 —
+          the more the map is used, the better the legend is known by heart),
+          remembered per device (lib/map/layer-prefs). The desktop always
+          shows it; there is room. */}
+      <button type="button" onClick={() => setLegendOpen(!legendOpen)} aria-pressed={legendOpen}
+        aria-label={legendOpen ? m.mapLegendHide : m.mapLegendShow} title={legendOpen ? m.mapLegendHide : m.mapLegendShow}
+        className={`flex h-[30px] shrink-0 items-center rounded-full border px-3 text-xs font-medium shadow-sm backdrop-blur transition-colors md:hidden ${legendOpen ? "border-stone-800 bg-stone-800 text-white" : "border-[#ececf0] bg-white/95 text-foreground hover:bg-white"}`}>
+        {m.mapLegend}
       </button>
       {creditOpen && (
         <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer"
@@ -4196,7 +4282,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
           On a phone it appears only in full screen: on the inline 26-42dvh
           strip the legend is a third of the map and covers the route it is
           meant to explain. Desktop always shows it — there is room. */}
-      <div data-map-legend className="absolute bottom-3 left-3 right-3 hidden max-w-[calc(100%-0.75rem-3.25rem)] flex-col gap-1.5 rounded-xl border border-[#ececf0] bg-white/95 px-2.5 py-2 text-xs leading-none shadow-sm backdrop-blur [[data-map-expanded]_&]:flex md:left-3 md:right-12 md:flex md:max-w-max md:px-3 md:py-2.5">
+      <div data-map-legend className={`absolute left-3 z-10 hidden flex-col gap-1.5 rounded-xl border border-[#ececf0] bg-white/95 px-2.5 py-2 text-xs leading-none shadow-sm backdrop-blur max-md:right-14 ${sightsRow ? "max-md:top-[5.5rem]" : "max-md:top-[3.25rem]"} ${legendOpen ? "[[data-map-expanded]_&]:flex" : ""} md:bottom-3 md:right-12 md:flex md:max-w-max md:px-3 md:py-2.5`}>
         {/* Two rows, because the line carries two independent facts and a
             single row could only ever explain one of them. Row 1 is the
             colours — what the surface is; row 2 is the patterns — what kind of

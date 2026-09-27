@@ -20,7 +20,7 @@ import { useSyncExternalStore } from "react";
  * One key per layer rather than one JSON blob: a layer added later must not be
  * able to invalidate the answer the rider already gave about this one.
  */
-export type MapLayer = "tet" | "sights";
+export type MapLayer = "tet" | "sights" | "legend";
 
 const KEYS: Record<MapLayer, string> = {
   tet: "mopik.map.tet.v1",
@@ -28,10 +28,14 @@ const KEYS: Record<MapLayer, string> = {
   // around the ride without being asked. Only an explicit "off" is stored, and
   // `snapshot` reads the absence of a value as the default rather than as off.
   sights: "mopik.map.sights.v1",
+  // The legend on a phone's full-screen map: off until asked for (rider,
+  // 2026-09-27 — the more the map is used, the better it is known by heart).
+  // The desktop always shows it and ignores this.
+  legend: "mopik.map.legend.v1",
 };
 
 /** What each layer does before the rider has ever said anything about it. */
-const DEFAULTS: Record<MapLayer, boolean> = { tet: false, sights: true };
+const DEFAULTS: Record<MapLayer, boolean> = { tet: false, sights: true, legend: false };
 
 const current: Partial<Record<MapLayer, boolean>> = {};
 const listeners = new Set<() => void>();

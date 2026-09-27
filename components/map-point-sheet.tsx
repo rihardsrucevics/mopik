@@ -74,9 +74,11 @@ export function MapPointSheet({ sheet }: { sheet: MapPointSheetModel }) {
 
   if (sheet.mode === "move") {
     return (
-      <div data-point-sheet="move" className="flex items-center gap-2 self-start rounded-full border-2 border-[#f56300] bg-white/95 py-1 pl-3 pr-1 shadow-md backdrop-blur">
+      <div data-point-sheet="move" className="flex items-center gap-2 self-start rounded-full border-2 border-[#f56300] bg-white/95 py-1 pl-3 pr-1 shadow-md backdrop-blur max-md:mr-16">
         <MapPinned aria-hidden="true" className="size-4 shrink-0 text-[#bd4b00]" />
-        <span role="status" className="whitespace-nowrap text-[13px] font-semibold text-[#bd4b00]">{sheet.hint}</span>
+        {/* On a phone the hint keeps clear of the right-hand column (✓ ↶ ✕/+),
+            wrapping rather than running under it. */}
+        <span role="status" className="whitespace-nowrap text-[13px] font-semibold leading-tight text-[#bd4b00] max-md:whitespace-normal">{sheet.hint}</span>
         <button type="button" onClick={sheet.onClose} aria-label={sheet.closeLabel} title={sheet.closeLabel}
           className="flex size-8 shrink-0 items-center justify-center rounded-full text-stone-700 transition-colors hover:bg-stone-100">
           <X aria-hidden="true" className="size-4" />

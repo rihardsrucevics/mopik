@@ -595,6 +595,13 @@ export type MessageKey =
   | "mapFullscreen"
   | "mapExitFullscreen"
   | "mapOpenPreview"
+  /** The preview chip's tail while marks wait for ✓ (the map was minimised with them). */
+  | "mapPreviewPendingOne"
+  | "mapPreviewPendingMany"
+  /** The phone's legend switch at the top of the full-screen map; show / hide are its name. */
+  | "mapLegend"
+  | "mapLegendShow"
+  | "mapLegendHide"
   | "cancel"
   | "badgeUnverified"
   | "badgeUnverifiedDetail"
@@ -1131,6 +1138,11 @@ const lv: Messages = {
   mapFullscreen: "Karte pa visu ekrānu",
   mapExitFullscreen: "Aizvērt pilnekrāna karti",
   mapOpenPreview: "Atvērt karti",
+  mapPreviewPendingOne: "1 neapstiprināta",
+  mapPreviewPendingMany: "{n} neapstiprinātas",
+  mapLegend: "Leģenda",
+  mapLegendShow: "Rādīt leģendu",
+  mapLegendHide: "Slēpt leģendu",
   cancel: "Atcelt",
   badgeUnverified: "Nepārbaudīta piekļuve",
   badgeUnverifiedDetail:
@@ -1609,6 +1621,11 @@ const lt: Messages = {
   mapFullscreen: "Žemėlapis per visą ekraną",
   mapExitFullscreen: "Uždaryti viso ekrano žemėlapį",
   mapOpenPreview: "Atidaryti žemėlapį",
+  mapPreviewPendingOne: "1 nepatvirtintas",
+  mapPreviewPendingMany: "{n} nepatvirtinti",
+  mapLegend: "Legenda",
+  mapLegendShow: "Rodyti legendą",
+  mapLegendHide: "Slėpti legendą",
   cancel: "Atšaukti",
   badgeUnverified: "Nepatikrintas privažiavimas",
   badgeUnverifiedDetail:
@@ -2091,6 +2108,11 @@ const et: Messages = {
   mapFullscreen: "Kaart üle ekraani",
   mapExitFullscreen: "Sulge täisekraanikaart",
   mapOpenPreview: "Ava kaart",
+  mapPreviewPendingOne: "1 kinnitamata",
+  mapPreviewPendingMany: "{n} kinnitamata",
+  mapLegend: "Legend",
+  mapLegendShow: "Näita legendi",
+  mapLegendHide: "Peida legend",
   cancel: "Tühista",
   badgeUnverified: "Kontrollimata juurdepääs",
   badgeUnverifiedDetail:
@@ -2567,6 +2589,11 @@ const en: Messages = {
   mapFullscreen: "Full-screen map",
   mapExitFullscreen: "Close full-screen map",
   mapOpenPreview: "Open map",
+  mapPreviewPendingOne: "1 unconfirmed",
+  mapPreviewPendingMany: "{n} unconfirmed",
+  mapLegend: "Legend",
+  mapLegendShow: "Show legend",
+  mapLegendHide: "Hide legend",
   cancel: "Cancel",
   badgeUnverified: "Unverified access",
   badgeUnverifiedDetail:

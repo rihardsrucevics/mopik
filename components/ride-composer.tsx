@@ -1823,6 +1823,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
       cancelLabel: t(locale, "batchDiscard"),
       onCancel: () => pendingHandlers.current?.discardBatch(),
       undo: { label: t(locale, "batchUndoLast"), onUndo: () => pendingHandlers.current?.undoBatch() },
+      count: batch.length,
       offRoad: selectedItem && selectedItem.check === "off-road" ? {
         title: fi(t(locale, "pickOffRoadTitle"), { m: selectedItem.distanceM ?? 0 }),
         moveLabel: t(locale, "pickOffRoadMove"),
