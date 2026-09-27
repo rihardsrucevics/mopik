@@ -1441,3 +1441,16 @@ the whole batch, so one slow candidate (59 s on the plain candidate there)
 holds the other three. Let finished slots start the next candidate instead
 of waiting for the batch; then measure how many candidates each ride gets.
 The pre-search reachability probe (27) costs 0.25–1.3 s and is not the cause.
+
+## 40. The map's field looks like a search box but does nothing when tapped
+
+**Rider, 2026-09-27, on his iPhone in full-screen edit mode.** He wanted a
+new stop, so he tapped the field at the bottom of the map — it is not
+active; only „+” starts adding a stop. People will try both. The
+placeholder „Izvēlies rindu vai pievieno pieturu” does not help either.
+Make a tap on the field do what it looks like: start a new stop with the
+field focused for search (the same path as „+”), and when a row is active,
+search for that row. The placeholder should say what a tap does, e.g.
+„Meklē vai atzīmē kartē jaunu pieturu”. Keep „+” for tap-on-map adding.
+Input font-size ≥ 16 px so iOS does not zoom the page on focus (see the
+2026-09-27 zoom fix).
