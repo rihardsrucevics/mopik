@@ -130,8 +130,13 @@ export type MapControls = {
     onPick: (place: ResolvedPlace | null) => void;
     near: { lat: number; lon: number } | null;
     placeholder: string;
-    /** No row is active: the field is off and its placeholder says what to do. */
+    /** The field cannot act (a batch, the cap with no row): off, and it looks it. */
     disabled?: boolean;
+    /**
+     * No row is active: focusing the field starts a new stop through „+”'s
+     * own path, and the field then searches for it (backlog 40).
+     */
+    onFocus?: (() => void) | null;
   };
   /** The active row's own confirmed place, whose pin is raised on the map. */
   activePlace?: { lat: number; lon: number } | null;
@@ -3940,9 +3945,10 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
            2026-09-25). The full hint is the `role="status"` a screen reader
            hears whenever the active row changes, and the field's tooltip.
 
-           With no row active the field is off and says what to do instead
-           („Izvēlies rindu vai pievieno pieturu”); "+" stays, since adding a
-           stop is one of the two answers. */
+           With no row active a tap on the field starts a new stop — „+”'s
+           own path — and the field searches for it („Meklē vai atzīmē kartē
+           jaunu pieturu”, backlog 40); "+" stays, for adding by marking the
+           map. When neither can act the field is off and looks it. */
         <div className="group flex items-center gap-1.5 max-md:gap-2 md:max-w-md">
           <span role="status" className="sr-only">{controls.hint}</span>
           <PlaceInput
@@ -3954,6 +3960,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
             near={controls.search.near}
             placeholder={controls.search.placeholder}
             disabled={controls.search.disabled}
+            onFocus={controls.search.onFocus ?? undefined}
             title={controls.hint}
             // At the bottom of a phone map the suggestions open upward, over
             // the map, instead of off its lower edge.

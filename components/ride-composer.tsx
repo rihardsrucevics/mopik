@@ -21,6 +21,7 @@ import { stepShape, type ShapePending } from "@/lib/map/shape-pending";
 import { stepBatch } from "@/lib/map/batch-commit";
 // On a phone the inline map is a preview: a row's pin and "+ Pietura" open it
 // full screen first (rider, 2026-09-25).
+import { mapFieldMode } from "@/lib/map/map-field";
 import { openMapFullscreen } from "@/lib/map/fullscreen";
 import { MAX_SHAPE_POINTS, MAX_STOPS } from "@/lib/chat/ride-limits";
 import { neighboursAlong, pointActions, selectionLive, type PointSelection } from "@/lib/map/point-selection";
@@ -1861,12 +1862,25 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
         onDismiss: () => pendingHandlers.current?.dismiss(),
       },
     });
+    // Null at the cap rather than a handler that returns: the button is then
+    // disabled and says why, and a control that does nothing is never shipped.
+    // Through the ref like the other handlers: whether a blank new row is
+    // already waiting (`ghostRow`) can change without the rows changing.
+    // Not while an edit is being routed: a change committed then was
+    // dropped, and its stop left as a pin off the line.
+    const onAddStop = atCap || edit?.rerouting ? null : () => pendingHandlers.current?.addStop();
+    // With no row active the field is where a new stop starts (backlog 40,
+    // rider 2026-09-27: it looked like a search box and a tap did nothing).
+    // Focusing it runs „+”'s own path — `addStopFromMap` — and the field,
+    // still focused, then searches for the new row. Only in the plain idle
+    // state: a batch, a move or a grab has the field say something else.
+    // When „+” cannot act (the cap, an edit being routed) the field is off
+    // and its words say why.
+    const fieldMode = mapFieldMode({ activeRow, batchActive, mapBusy: pointSel?.phase === "move" || shapePending?.kind === "move" || Boolean(grab), canAddStop: Boolean(onAddStop) });
+    const noRowWords = fieldMode === "new-stop" ? t(locale, "mapNoActiveRow") : atCap ? fi(t(locale, "mapStopCapShort"), { n: MAX_STOPS }) : t(locale, "mapFieldRerouting");
     onMapControlsChange?.({
       pending,
-      // With no row active the header says what to do instead — pick a row or
-      // add a stop — and the field is off: a name found there would have no
-      // row to go to.
-      hint: batchActive ? batchCount : pointSel?.phase === "move" ? t(locale, "pointMoveHint") : shapePending?.kind === "move" ? t(locale, "shapeMoveHint") : grab ? t(locale, "mapGrabHint") : activeRow === null ? t(locale, "mapNoActiveRow") : fi(t(locale, "mapActiveRowHint"), { label: activeLabel }),
+      hint: batchActive ? batchCount : pointSel?.phase === "move" ? t(locale, "pointMoveHint") : shapePending?.kind === "move" ? t(locale, "shapeMoveHint") : grab ? t(locale, "mapGrabHint") : activeRow === null ? noRowWords : fi(t(locale, "mapActiveRowHint"), { label: activeLabel }),
       rowLabel: activeRow === null || batchActive ? undefined : activeLabel,
       // The pin the active row's mark will become, and a stop's number: one
       // more than the filled, numbered stops above it — the order the map
@@ -1876,13 +1890,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
         : tripType === "one_way" && activeRow === places.length - 1
           ? { role: "finish" as const, number: null }
           : { role: "via" as const, number: 1 + places.slice(1, activeRow).filter((_, j) => picked[j + 1] && !picked[j + 1]?.kind).length },
-      // Null at the cap rather than a handler that returns: the button is then
-      // disabled and says why, and a control that does nothing is never shipped.
-      // Through the ref like the other handlers: whether a blank new row is
-      // already waiting (`ghostRow`) can change without the rows changing.
-      // Not while an edit is being routed: a change committed then was
-      // dropped, and its stop left as a pin off the line.
-      onAddStop: atCap || edit?.rerouting ? null : () => pendingHandlers.current?.addStop(),
+      onAddStop,
       // At the cap, why „+” is greyed out and the next mark adds nothing —
       // short, on a line of its own; the sentence is its tooltip.
       notice: atCap ? { text: fi(t(locale, "mapStopCapShort"), { n: MAX_STOPS }), title: capSentence } : null,
@@ -1904,8 +1912,9 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
         // A batch has no field to type into — its count is the field's words
         // (and the cap, once it is reached).
         // The cap is said on its own line (`notice`); the field keeps the count.
-        placeholder: batchActive ? batchCount : pointSel?.phase === "move" ? t(locale, "pointMoveHint") : shapePending?.kind === "move" ? t(locale, "shapeMoveHint") : grab ? t(locale, "mapGrabHint") : activeRow === null ? t(locale, "mapNoActiveRow") : t(locale, "mapSearchHint"),
-        disabled: activeRow === null || batchActive,
+        placeholder: batchActive ? batchCount : pointSel?.phase === "move" ? t(locale, "pointMoveHint") : shapePending?.kind === "move" ? t(locale, "shapeMoveHint") : grab ? t(locale, "mapGrabHint") : activeRow === null ? noRowWords : t(locale, "mapSearchHint"),
+        disabled: fieldMode === "off",
+        onFocus: fieldMode === "new-stop" ? onAddStop : null,
       },
       // The ride's own pins answer the form in planning as in edit mode
       // (rider, 2026-09-25): a press makes that pin's row active, a drag makes

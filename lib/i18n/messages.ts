@@ -411,10 +411,16 @@ export type MessageKey =
    */
   | "mapActiveRowHint"
   /**
-   * The header when no row is active — every row confirmed (2026-09-25). A
-   * mark on the map then does nothing, so the header says what does.
+   * The map field when no row is active — every row confirmed. A tap on the
+   * field starts a new stop, the same path as „+”, and the field then
+   * searches for it; a mark on the map fills it too (backlog 40, rider
+   * 2026-09-27: the field looked like a search box and a tap did nothing).
+   * Latvian never says „piesit”. Short enough for the 56 px field at 375 px
+   * without the row tag (the map is right there; „kartē” is not needed).
    */
   | "mapNoActiveRow"
+  /** The map field, no row active, while an edit is being routed: off for that moment. */
+  | "mapFieldRerouting"
   /** Edit mode: a point of the line was grabbed; the next mark is where it goes. */
   | "mapGrabHint"
   /** The map header's ↶ outside a batch (planning and edit mode). */
@@ -1037,7 +1043,8 @@ const lv: Messages = {
   pickOnMapConfirm: "Apstiprināt",
   pickOnMapChecking: "Pārbaudu…",
   mapActiveRowHint: "Atzīmē kartē vai meklē → „{label}”",
-  mapNoActiveRow: "Izvēlies rindu vai pievieno pieturu",
+  mapNoActiveRow: "Meklē vai atzīmē jaunu pieturu",
+  mapFieldRerouting: "Maršruts tiek pārrēķināts…",
   mapGrabHint: "Atzīmē kartē, kur pārvietot šo maršruta punktu",
   mapUndo: "Atsaukt",
   batchConfirmAll: "Apstiprināt visas",
@@ -1514,7 +1521,8 @@ const lt: Messages = {
   pickOnMapConfirm: "Patvirtinti",
   pickOnMapChecking: "Tikrinu…",
   mapActiveRowHint: "Pažymėkite žemėlapyje arba ieškokite → „{label}“",
-  mapNoActiveRow: "Pasirinkite eilutę arba pridėkite sustojimą",
+  mapNoActiveRow: "Ieškoti ar žymėti naują sustojimą",
+  mapFieldRerouting: "Maršrutas perskaičiuojamas…",
   mapGrabHint: "Pažymėkite žemėlapyje, kur perkelti šį maršruto tašką",
   mapUndo: "Atšaukti",
   batchConfirmAll: "Patvirtinti visus",
@@ -1995,7 +2003,8 @@ const et: Messages = {
   pickOnMapConfirm: "Kinnita",
   pickOnMapChecking: "Kontrollin…",
   mapActiveRowHint: "Märgi kaardil või otsi → „{label}“",
-  mapNoActiveRow: "Vali rida või lisa peatus",
+  mapNoActiveRow: "Otsi või märgi uus peatus",
+  mapFieldRerouting: "Marsruuti arvutatakse ümber…",
   mapGrabHint: "Märgi kaardil, kuhu see marsruudi punkt viia",
   mapUndo: "Võta tagasi",
   batchConfirmAll: "Kinnita kõik",
@@ -2470,7 +2479,8 @@ const en: Messages = {
   pickOnMapConfirm: "Confirm",
   pickOnMapChecking: "Checking…",
   mapActiveRowHint: "Mark on the map or search → \"{label}\"",
-  mapNoActiveRow: "Pick a row or add a stop",
+  mapNoActiveRow: "Search or mark a new stop",
+  mapFieldRerouting: "Re-routing…",
   mapGrabHint: "Mark on the map where to move this point of the route",
   mapUndo: "Undo",
   batchConfirmAll: "Confirm all",

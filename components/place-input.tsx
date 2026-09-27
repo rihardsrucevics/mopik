@@ -253,10 +253,12 @@ export function PlaceInput({ value, onChange, onPick, placeholder, icon, label, 
 
   return (
     <div className={`relative ${className ?? ""}`}>
-      <label className={`flex items-center gap-2 border focus-within:border-[#f56300] ${compact ? `h-10 max-md:h-14 rounded-full border-[#ececf0] bg-white/95 shadow-sm backdrop-blur ${leading ? "pl-1.5 pr-3" : "px-3"}` : "rounded-xl border-stone-200 px-3 py-2"}`}>
+      <label className={`flex items-center gap-2 border focus-within:border-[#f56300] ${compact ? `h-10 max-md:h-14 rounded-full border-[#ececf0] bg-white/95 shadow-sm backdrop-blur has-[input:disabled]:bg-stone-100/95 has-[input:disabled]:shadow-none ${leading ? "pl-1.5 pr-3" : "px-3"}` : "rounded-xl border-stone-200 px-3 py-2"}`}>
         {/* Compact: the tick sits inside the frame, before the name, because
             there is no label row for it to ride on. Same green, same meaning —
             this field is resolved to a place the ride knows. */}
+        {/* A compact field that cannot act is grey and flat, not the white
+            search box a tap would be expected to open (backlog 40). */}
         {compact && leading}
         {compact && isConfirmed && <Check aria-hidden="true" className="size-3.5 shrink-0 text-[#16a34a]" />}
         <span className="min-w-0 flex-1">
