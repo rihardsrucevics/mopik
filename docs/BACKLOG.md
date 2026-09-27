@@ -1454,3 +1454,28 @@ search for that row. The placeholder should say what a tap does, e.g.
 „Meklē vai atzīmē kartē jaunu pieturu”. Keep „+” for tap-on-map adding.
 Input font-size ≥ 16 px so iOS does not zoom the page on focus (see the
 2026-09-27 zoom fix).
+
+## 41. Two ways of drawing a ride — "route between my points" vs "ride exactly my line"
+
+**Rider, 2026-09-27: design problem, no solution agreed yet.** Adding a
+stop today means "here is a point; Mopik, route between the points". That
+is correct — but when the rider drops a point where there is no road,
+Mopik gets confused (snaps it far, spurs, or „neizdevās savienot…”).
+Meanwhile people who draw rides by hand (OsmAnd, other planners) place
+points meaning **the segment between two points IS the ride** — it goes
+into the GPX as drawn and must be ridden exactly.
+
+So there are two use cases, and the rider wants both without confusing
+anyone:
+1. **Stops / route between them** — Mopik generates the connecting road.
+2. **Drawn line** — consecutive points are joined straight and that line is
+   the ride (unknown tracks, fields, fords, his own knowledge).
+
+To decide: whether this is a per-segment mode (see 35 — straight segment,
+and OsmAnd's „change route type before/after this point”), a drawing mode
+toggle for the whole edit session, or automatic (a point far from any road
+offers „savienot taisni?” instead of failing). How the two look different on
+the map, how honest duration counts a drawn stretch, how it is exported
+(`<trkpt>` as drawn), and a clear note that Mopik has not checked a drawn
+stretch can be ridden or is legal. Related: 34 (one kind of point), 35
+(straight segment), 36 (tap a stretch), 37 (research).
