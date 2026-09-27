@@ -1384,6 +1384,16 @@ Each shows a grey preview with km before → after, then ✓/✕, then the edit
 state ends. A summary chip „N km braukti divreiz · parādīt” jumps to the
 first retraced stretch — no new map badge (badges stay ⚠️ and 🔥 only).
 
+**Rider again, 2026-09-27 — "šo posmu vajag izslēgt".** While editing he
+wants to mark a stretch and say it must not be part of the ride. Selection
+may need more than junction-to-junction: tap the start and the end of the
+stretch (or drag handles along the line) to mark exactly the piece he
+means. Mopik then re-routes around it (a `nogo` on that piece) and shows
+km before → after; if there is no way round, it says so instead of
+silently keeping the stretch. The exclusion should stay with the ride
+(share code, „Optimizēt” 32, later edits) so the stretch does not come
+back.
+
 ## 37. Ideas from other route planners (research 2026-09-25)
 
 Competitor manuals read 2026-09-25 (Kurviger, Garmin zūmo/BaseCamp/Tread,
