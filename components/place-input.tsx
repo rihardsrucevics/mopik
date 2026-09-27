@@ -277,6 +277,10 @@ export function PlaceInput({ value, onChange, onPick, placeholder, icon, label, 
             )}
           </span>
         )}
+        {/* 16 px (`text-base`) on a phone in both sizes: iOS Safari zooms the
+            whole page into any field under 16 px when it is focused. The
+            compact one was 14 px — the full-screen map's field, where the
+            zoom then had nowhere to be pinched back (rider, 2026-09-27). */}
         <input
           value={value}
           role="combobox"
@@ -293,7 +297,7 @@ export function PlaceInput({ value, onChange, onPick, placeholder, icon, label, 
             else if (e.key === "Enter" && active >= 0) { e.preventDefault(); pick(listed[active]); }
             else if (e.key === "Escape") setOpen(false);
           }}
-          className={`w-full bg-transparent font-medium outline-none disabled:cursor-default ${compact ? "text-sm" : "mt-1 text-base md:text-sm"}`}
+          className={`w-full bg-transparent font-medium outline-none disabled:cursor-default ${compact ? "text-base md:text-sm" : "mt-1 text-base md:text-sm"}`}
           placeholder={placeholder}
           disabled={disabled}
           title={title}

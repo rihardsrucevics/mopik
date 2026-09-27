@@ -6,6 +6,7 @@ import { track } from "@/lib/analytics";
 import { useLocale } from "@/lib/i18n/use-locale";
 import { t } from "@/lib/i18n/messages";
 import { mapPanelMounted, setMapFullscreen, useMapFullscreen } from "@/lib/map/fullscreen";
+import { guardFullscreenZoom } from "@/lib/map/page-zoom";
 
 /**
  * The map with its full-screen control. Wherever a map is shown — the planner,
@@ -78,7 +79,11 @@ export function MapPanel({ children, className = "", expandedClassName = "" }: {
     document.body.style.overflow = "hidden";
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !pendingMark()) setMapFullscreen(false); };
     window.addEventListener("keydown", onKey);
-    return () => { document.body.style.overflow = previous; window.removeEventListener("keydown", onKey); };
+    // The page itself must not zoom under the full-screen map, and a zoom
+    // that happens anyway is undone — here, and on the way out
+    // (lib/map/page-zoom; rider's iPhone, 2026-09-27).
+    const unguard = guardFullscreenZoom();
+    return () => { document.body.style.overflow = previous; window.removeEventListener("keydown", onKey); unguard(); };
   }, [expanded]);
 
   return (
@@ -108,7 +113,15 @@ export function MapPanel({ children, className = "", expandedClassName = "" }: {
       // button takes every gesture, so no mark, drag or pin tap reaches the
       // map, and a swipe over it scrolls the page. `isolate` keeps the map's
       // own z-indices inside the preview's box.
-      className={expanded ? `group/panel fixed inset-0 z-40 flex flex-col bg-[#faf9f6] ${expandedClassName}` : `relative ${className} max-md:isolate max-md:[&_.maplibregl-ctrl-top-right]:hidden max-md:[&_[data-map-chrome]]:hidden`}>
+      //
+      // Full screen is `touch-none`: a pinch or a double-tap on the field, the
+      // legend or a button zooms nothing — before, it zoomed the whole page,
+      // and with the canvas taking every other touch there was nowhere left
+      // to pinch it back (rider's iPhone, 2026-09-27). The map's own pinch is
+      // on its canvas, which MapLibre already makes `touch-action: none` and
+      // drives from touch events. The field's suggestion list still scrolls
+      // (`pan-y`). Taps and clicks are not touch actions and are unaffected.
+      className={expanded ? `group/panel fixed inset-0 z-40 flex touch-none flex-col bg-[#faf9f6] [&_[role=listbox]]:touch-pan-y ${expandedClassName}` : `relative ${className} max-md:isolate max-md:[&_.maplibregl-ctrl-top-right]:hidden max-md:[&_[data-map-chrome]]:hidden`}>
       {/* The map must fill the fixed layer itself. Inside the composer's flex
           column a plain child of `fixed inset-0` collapsed to zero height,
           which took the close button (positioned against it) down to 0 x 0 px

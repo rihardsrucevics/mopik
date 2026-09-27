@@ -61,7 +61,9 @@ const NAME_SEPARATOR = " · ";
 
 export function MapPointSheet({ sheet }: { sheet: MapPointSheetModel }) {
   // On a phone the menu is a bottom sheet over the page, so it goes to <body>:
-  // inside the map it would be clipped by the map's rounded frame.
+  // inside the map it would be clipped by the map's rounded frame. Being out
+  // of the full-screen layer, it carries its own `touch-none` — a pinch or a
+  // double-tap on it must not zoom the page (lib/map/page-zoom).
   const [phone, setPhone] = useState(() => typeof window !== "undefined" && window.matchMedia(PHONE).matches);
   useEffect(() => {
     const query = window.matchMedia(PHONE);
@@ -87,7 +89,7 @@ export function MapPointSheet({ sheet }: { sheet: MapPointSheetModel }) {
   const menu = (
     <div role="dialog" aria-label={sheet.name ? `${sheet.title} · ${sheet.name}` : sheet.title} data-point-sheet="menu"
       className={phone
-        ? "fixed inset-x-0 bottom-0 z-50 rounded-t-3xl border-t border-stone-200 bg-stone-100 px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-2 shadow-[0_-8px_24px_rgba(0,0,0,0.18)]"
+        ? "fixed inset-x-0 bottom-0 z-50 touch-none rounded-t-3xl border-t border-stone-200 bg-stone-100 px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-2 shadow-[0_-8px_24px_rgba(0,0,0,0.18)]"
         : "w-full max-w-xs rounded-2xl border border-stone-200 bg-stone-100 p-3 shadow-lg"}>
       {phone && <div aria-hidden="true" className="mx-auto mb-2 h-1 w-10 rounded-full bg-stone-300" />}
       <div className="mb-3 flex items-center gap-2">
