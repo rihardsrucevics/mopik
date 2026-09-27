@@ -1489,3 +1489,29 @@ the map, how honest duration counts a drawn stretch, how it is exported
 (`<trkpt>` as drawn), and a clear note that Mopik has not checked a drawn
 stretch can be ridden or is legal. Related: 34 (one kind of point), 35
 (straight segment), 36 (tap a stretch), 37 (research).
+
+## 42. Report a place that cannot be ridden — and have Mopik remember it
+
+**Rider, 2026-09-27.** On his own ride, or on one someone shared with him,
+he wants to report a spot or stretch as not rideable (a locked gate,
+private yard, washed-out track, deep sand, a bridge that is gone). The
+report must be **stored** and **used by Mopik when generating new rides**.
+
+To decide:
+- **What is reported:** a point or a marked stretch (the selection from
+  36), a reason from a short list (gate / private / impassable / closed /
+  other) plus optional note and photo, and the date — conditions change.
+- **Where it lives:** a server-side store (not browser storage), keyed to
+  OSM way ids where the report matches a way, with the geometry as fallback.
+- **How routing uses it:** a `nogo` (or heavy cost) on reported ways for
+  everyone, or only for the reporter until confirmed; how many reports,
+  how old, before it applies; how it expires or is cleared ("tagad atkal
+  var izbraukt").
+- **Trust and abuse:** anyone with a shared link could report — needs a
+  light identity or moderation so one person cannot close a road for all.
+- **Showing it:** a reported spot on the map — within the rider's rule
+  that map badges are only ⚠️ and 🔥 (⚠️ fits).
+- **Giving back to OSM:** optionally suggest an OSM note for real changes
+  (a gate, a closed road), so the data improves for everyone.
+Consistent with the rider's "no guessing" rule: a report is an explicit
+fact from a rider, dated and attributable — never inferred.
