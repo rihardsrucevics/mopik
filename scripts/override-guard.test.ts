@@ -46,7 +46,8 @@ test("commitProposal is the only way into the ride, and it asks the guard first,
 test("✓ and a batch's confirm-all: one slot, disabled while warned, and through commitProposal anyway", () => {
   // Both are the ConfirmSlot's `pending.onConfirm`; the slot is off while warned.
   assert.match(map, /const onConfirm = refused \|\| warned \|\| idle \? null : pending!\.onConfirm;/);
-  assert.match(composer, /onConfirm: batch\.some\([^)]*\) [^:]*\? null : \(\) => pendingHandlers\.current\?\.confirmBatch\(\)/);
+  // (line-sheet's in-between-phase fix: editing, ✓ is pressable while a pin is still being named.)
+  assert.match(composer, /onConfirm: \(edit \? batch\.some\([^)]*\) [^\n]*\? null : \(\) => pendingHandlers\.current\?\.confirmBatch\(\)/);
   // …and whatever they call ends in confirmChange → commitProposal, which asks the guard.
   const confirm = body(page, "function confirmChange(");
   assert.match(confirm, /return Promise\.resolve\(commitProposal\(state\.proposal, false\)\);/);
