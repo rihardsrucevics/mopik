@@ -83,7 +83,7 @@ import {
   type ProposalView,
   type Segments,
 } from "@/lib/map/edit-proposal";
-import { changeKey, changedAlong, isKindSwitch, NOTE_JOINER, proposalView, proposeDelay, staleWhileRouting, newStretches, wideNeedsAsking } from "@/lib/map/proposal-view";
+import { changeKey, changedAlong, isKindSwitch, NOTE_JOINER, proposalView, proposeDelay, staleWhileRouting, newStretches, wideNeedsAsking, renamePlaces, renamesBetween, sameGeometry, type Renames } from "@/lib/map/proposal-view";
 import type { Point } from "@/lib/geo/geometry";
 import type { PlaceRoles } from "@/lib/map/place-roles";
 import type { RideEdit } from "@/components/ride-composer";
@@ -187,6 +187,9 @@ type LiveProposal = {
   base: Segments;
   routeId: string;
   landed: { addedAt: number; runs: number; startedAt: number } | null;
+  /** The change as last sent, and the names it has had since it was routed (a pin named after it was dropped). */
+  change: ProposedChange;
+  renames: Renames;
 };
 /** A ✓ pressed before its proposal landed: answered when it lands or is refused. */
 type CommitWaiter = { token: number; resolve: (ok: boolean) => void; keepOnFailure: boolean; pressedAt: number };
@@ -1267,7 +1270,7 @@ export function HomePage() {
     }
     const before = ridePlaces;
     const baseSegments = edited?.segments ?? route.segments;
-    live.current = { token, key: changeKey(change), base: baseSegments, routeId: route.id, landed: null };
+    live.current = { token, key: changeKey(change), base: baseSegments, routeId: route.id, landed: null, change, renames: {} };
     if (opts.confirm) { commitWaiter.current = { ...opts.confirm, token }; setCommitting(true); }
     // A new proposal: whatever the last one said goes with it.
     setEditNote(null);
@@ -1531,7 +1534,8 @@ export function HomePage() {
     const mine = live.current;
     if (!plan || !route || !mine || mine.token !== proposal.token || !mine.landed || mine.routeId !== route.id || mine.base !== (edited?.segments ?? route.segments)) return false;
     const { addedAt, runs, startedAt } = mine.landed;
-    const next = proposal.ride;
+    // Named after it was routed: the stop keeps the name it has now.
+    const next: EditedRide = { ...proposal.ride, places: renamePlaces(proposal.ride.places, mine.renames) };
     setEditsFor((prev) => {
       const own = prev.routeId === route.id;
       return {
@@ -1606,6 +1610,16 @@ export function HomePage() {
     if (isKindSwitch(change) || commitWaiter.current || !route) return;
     const mine = live.current;
     if (mine && mine.key === changeKey(change) && mine.base === (edited?.segments ?? route.segments) && proposalRef.current.phase !== "idle") return;
+    // ── edit-routing ── The dropped pin's name arrived: the same line, so
+    // the routing already under way (or landed) stands — the name goes into
+    // the places it commits, and ✓ recognises the renamed change as its own.
+    if (mine && mine.base === (edited?.segments ?? route.segments) && proposalRef.current.phase !== "idle" && sameGeometry(mine.change, change)) {
+      mine.renames = renamesBetween(mine.change, change, mine.renames);
+      mine.change = change;
+      mine.key = changeKey(change);
+      return;
+    }
+    // ── /edit-routing ──
     const now = performance.now();
     const delay = proposeDelay(lastProposeAt.current, now);
     lastProposeAt.current = now;
@@ -1734,6 +1748,30 @@ export function HomePage() {
     setEditNote(null);
     reseed();
   }
+
+  // ── edit-routing ──
+  /**
+   * A place committed under its spot — ✓ pressed while the pin was still
+   * being named (rider, 2026-09-28: the routing never waits for the name) —
+   * gets its name: in the proposal still routing, for when it commits; in the
+   * ride it already went into, in place, without a step of the undo.
+   */
+  function renamePlace(from: ResolvedPlace, to: ResolvedPlace) {
+    const mine = live.current;
+    if (mine && mine.change.kind === "rows") mine.renames = renamesBetween({ kind: "rows", rows: { names: [from.name], picked: { 0: from } } }, { kind: "rows", rows: { names: [to.name], picked: { 0: to } } }, mine.renames);
+    const current = edited;
+    if (!current || !route || !plan) return;
+    const all = [current.places.start, ...current.places.vias, current.places.finish];
+    if (!all.some((v) => v && v.name === from.name)) return;
+    const renamed = renamePlaces(current.places, { [from.name]: { name: to.name, label: to.label } });
+    setEditsFor((prev) => (prev.routeId !== route.id || prev.history.current !== current ? prev
+      : { ...prev, history: { ...prev.history, current: { ...current, places: renamed } } }));
+    setPlan(planWithPlaces(plan, renamed));
+    setPlaces(resolvedOf(renamed));
+  }
+  const renameRef = useRef(renamePlace);
+  useEffect(() => { renameRef.current = renamePlace; });
+  // ── /edit-routing ──
 
   // ── line-sheet ──
   /**
@@ -2286,6 +2324,7 @@ export function HomePage() {
         // „Pārrēķināt posmu”, on offer while its refusal is shown (`askWide`).
         onWide: wideOffered ? acceptWide : undefined,
         onPassHere: dropPassHere,
+        onRename: (from, to) => renameRef.current(from, to),
         onDone: finishEdit,
         onCancel: cancelEdit,
         status: editStatus,

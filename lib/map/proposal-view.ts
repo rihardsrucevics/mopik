@@ -219,3 +219,49 @@ export const PROPOSE_DEBOUNCE_MS = 250;
 export function proposeDelay(lastAt: number | null, now: number, windowMs = PROPOSE_DEBOUNCE_MS): number {
   return lastAt !== null && now - lastAt < windowMs ? windowMs : 0;
 }
+
+// ── edit-routing ──
+/**
+ * Whether two pending changes route the same line: the same points in the
+ * same rows, whatever the places are called (rider, 2026-09-28: a dropped pin
+ * is routed at once, under its spot, while its name is still being looked
+ * up — the name arriving must not route it again). A point operation is its
+ * own geometry.
+ */
+export function sameGeometry(a: ProposedChange, b: ProposedChange): boolean {
+  if (a.kind !== b.kind) return false;
+  if (a.kind === "shape" || b.kind === "shape") return changeKey(a) === changeKey(b);
+  if (a.rows.names.length !== b.rows.names.length) return false;
+  const keys = new Set([...Object.keys(a.rows.picked), ...Object.keys(b.rows.picked)]);
+  for (const k of keys) {
+    const p = a.rows.picked[Number(k)] ?? null;
+    const q = b.rows.picked[Number(k)] ?? null;
+    if (!p !== !q) return false;
+    if (p && q && (p.lat !== q.lat || p.lon !== q.lon)) return false;
+  }
+  return true;
+}
+
+/** Old name → the place's name and label now, for every row `next` renamed without moving. */
+export type Renames = Record<string, { name: string; label: string }>;
+
+export function renamesBetween(prev: ProposedChange, next: ProposedChange, known: Renames = {}): Renames {
+  if (prev.kind !== "rows" || next.kind !== "rows") return known;
+  const out: Renames = { ...known };
+  for (const [k, p] of Object.entries(prev.rows.picked)) {
+    const q = next.rows.picked[Number(k)];
+    if (!p || !q || p.lat !== q.lat || p.lon !== q.lon || (p.name === q.name && p.label === q.label)) continue;
+    // A name renamed twice keeps pointing from the one the routing used.
+    const first = Object.keys(out).find((old) => out[old].name === p.name) ?? p.name;
+    out[first] = { name: q.name, label: q.label };
+  }
+  return out;
+}
+
+/** The places with the renamed stops' names put in (the routing was done under the old ones). */
+export function renamePlaces<T extends { name: string; label: string }>(places: { start: T; vias: T[]; finish: T | null; roundTrip: boolean }, renames: Renames) {
+  if (!Object.keys(renames).length) return places;
+  const fix = (v: T): T => (renames[v.name] ? { ...v, ...renames[v.name] } : v);
+  return { ...places, start: fix(places.start), vias: places.vias.map(fix), finish: places.finish ? fix(places.finish) : null };
+}
+// ── /edit-routing ──

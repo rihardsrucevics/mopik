@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Check, ChevronDown, ChevronUp, Map as MapIcon, Sparkles } from "lucide-react";
 import type { MapChoiceGroup, MapControls, MapPendingMark } from "@/components/route-map";
 import type { MapPointSheetRow } from "@/components/map-point-sheet";
@@ -224,6 +224,15 @@ export type RideEdit = {
    */
   onPassHere?: (spot: { lat: number; lon: number; alongMeters: number }) => void;
   // ── /line-sheet ──
+  // ── edit-routing ──
+  /**
+   * A place committed under its spot while the reverse lookup was still
+   * naming it (a ✓ pressed the instant a pin landed): its name, now that the
+   * lookup answered. The page renames it wherever it is — the proposal still
+   * routing, or the ride it went into — without a step of the undo.
+   */
+  onRename?: (from: ResolvedPlace, to: ResolvedPlace) => void;
+  // ── /edit-routing ──
 };
 
 /** This device's storage for the one-time edit hint, or nothing (a private window, blocked site data). */
@@ -619,15 +628,27 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
    * best-effort on purpose: a point it cannot name still plans a ride, and the
    * coordinate pair in the field is a truthful answer rather than a failure.
    */
-  const nameForPoint = useCallback(async (lat: number, lon: number): Promise<ResolvedPlace | null> => {
-    try {
-      const res = await fetch(`/api/places?lat=${lat}&lon=${lon}`);
-      if (!res.ok) return null;
-      return ((await res.json()) as { places: ResolvedPlace[] }).places?.[0] ?? null;
-    } catch {
-      // Offline, or the lookup is down. The point itself is still good.
-      return null;
-    }
+  // One lookup per spot in flight: a ✓ pressed while a mark is being named
+  // waits on the lookup already asked (`nameLater`) instead of asking again.
+  const namesInFlight = useRef(new Map<string, Promise<ResolvedPlace | null>>());
+  const nameForPoint = useCallback((lat: number, lon: number): Promise<ResolvedPlace | null> => {
+    const key = `${lat},${lon}`;
+    const known = namesInFlight.current.get(key);
+    if (known) return known;
+    const ask = (async () => {
+      try {
+        const res = await fetch(`/api/places?lat=${lat}&lon=${lon}`);
+        if (!res.ok) return null;
+        return ((await res.json()) as { places: ResolvedPlace[] }).places?.[0] ?? null;
+      } catch {
+        // Offline, or the lookup is down. The point itself is still good.
+        return null;
+      } finally {
+        namesInFlight.current.delete(key);
+      }
+    })();
+    namesInFlight.current.set(key, ask);
+    return ask;
   }, []);
 
   /**
@@ -843,7 +864,10 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
    * to take it back without waiting seconds for a reverse lookup.
    */
   const [namedToken, setNamedToken] = useState<number | null>(null);
-  useEffect(() => {
+  // A layout effect (rider, 2026-09-28): the mark becomes the pending change
+  // before the frame is painted, so no frame shows a dropped point with
+  // nothing said about it (see `proposeRef` below).
+  useLayoutEffect(() => {
     const row = activeRowRef.current;
     // Token 0 is the seed the page puts under a row that already has a place:
     // its name is known and shown, and re-deriving one would only risk showing
@@ -1238,8 +1262,31 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
    * a failed request would make a network hiccup look like a verdict about a
    * place. The generation remains the backstop, and it now names the stop.
    */
+  /**
+   * The names for places committed under their spots (editing, ✓ before the
+   * lookup answered): the rows here take them, and the page renames them in
+   * the ride (`RideEdit.onRename`). A lookup that finds nothing leaves the
+   * spot's name — the truthful answer it always was.
+   */
+  const nameLater = (spots: ResolvedPlace[]) => {
+    const rename = edit?.onRename;
+    for (const from of spots) {
+      void nameForPoint(from.lat, from.lon).then((found) => {
+        const taken = placesRef.current.filter((n) => n !== from.name);
+        const to = pickedPlace(found, from.lat, from.lon, taken, t(locale, "pickedOnMap"));
+        if (to.name === from.name && to.label === from.label) return;
+        setPlaces((rows) => rows.map((n) => (n === from.name ? to.name : n)));
+        setPicked((pk) => Object.fromEntries(Object.entries(pk).map(([k, v]) => [k, v && v.name === from.name && v.lat === from.lat && v.lon === from.lon ? to : v])) as typeof pk);
+        rename?.(from, to);
+      });
+    }
+  };
   const confirmPick = () => {
     const row = activeRow;
+    // Editing, ✓ while the mark is still being named commits it under its
+    // spot at once — the routing is under way already — and the name fills
+    // in when the lookup answers (`nameLater`).
+    if (edit && row !== null && naming && markPreview && !offRoad) { nameLater([markPreview]); commitPick(row, markPreview); return; }
     if (row === null || !preview || checking) return;
     const place = preview;
     // An answer already on screen is the rider's to act on; pressing Confirm
@@ -1945,10 +1992,14 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   };
   /** „Apstiprināt visas”: every pending stop becomes its row's place at once. */
   const confirmBatch = () => {
-    if (!batch.length || batch.some((b) => !b.place || b.check !== "ok")) return;
-    const names = places.map((p, i) => batch.find((b) => b.row === i)?.place?.name ?? p);
+    // Editing, the stops still being named go under their spots and are
+    // named when the lookups answer (`nameLater`); planning waits for them.
+    const itemPlace = (b: BatchItem) => (edit ? batchPlace(b) : b.place);
+    if (!batch.length || batch.some((b) => !itemPlace(b) || (edit ? b.check === "off-road" : b.check !== "ok"))) return;
+    const names = places.map((p, i) => { const b = batch.find((x) => x.row === i); return b ? itemPlace(b)!.name : p; });
     const nextPicked = { ...picked };
-    for (const b of batch) nextPicked[b.row] = b.place;
+    for (const b of batch) nextPicked[b.row] = itemPlace(b);
+    if (edit) nameLater(batch.filter((b) => !b.place).map((b) => batchPlace(b)!));
     if (edit) {
       // Editing (2026-09-25): the stops stay pending until the line goes
       // through them. Turning them into confirmed rows at once drew them as
@@ -1970,7 +2021,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
         setBatchCommitting(done.state.committing);
         // Refused: the batch is still pending, and its ✕ is a real discard.
         if (!done.clearBatch) { committedRef.current = false; return; }
-        for (const b of batch) rememberPlace(b.place!);
+        for (const b of batch) if (b.place) rememberPlace(b.place);
         batchRef.current = [];
         setBatch([]);
         setRowIsNew(false);
@@ -2359,6 +2410,23 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
    * its Cancel.
    */
   const naming = activeRow !== null && token !== null && token !== 0 && namedToken !== token;
+  // ── edit-routing ──
+  /**
+   * Editing: the mark's place from the instant it lands (rider, 2026-09-28:
+   * after he dropped a pin the ride was re-routing but nothing said so, and ✓
+   * was off). While the reverse lookup is still naming it, the place is the
+   * tapped spot under its coordinates („57,12345, 24,12345”) — enough to
+   * route, and the routing never waits for the name. The name fills in when
+   * it arrives; the page keeps the routing it already started
+   * (`sameGeometry`, lib/map/proposal-view.ts). Planning keeps waiting for
+   * the name: its probe is asked by name.
+   */
+  const provisional = (lat: number, lon: number, row: number): ResolvedPlace =>
+    pickedPlace(null, lat, lon, places.filter((_, i) => i !== row), t(locale, "pickedOnMap"));
+  /** A batch's pending stop as the proposal sees it: its name, or its spot while it is being named. */
+  const batchPlace = (b: BatchItem): ResolvedPlace | null => b.place ?? (edit ? provisional(b.lat, b.lon, b.row) : null);
+  const batchNamed = !batch.some((b) => !b.place || b.check !== "ok");
+  // ── /edit-routing ──
   /**
    * Batch adding is on while an empty stop row is active (and no single mark,
    * search pick or grabbed line point is pending), or once a batch has
@@ -2368,6 +2436,12 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   const batchActive = batch.length > 0;
   const batchReady = !batchActive && !grab && !preview && !offRoad && activeRow !== null && isStopRow(activeRow) && !places[activeRow]?.trim();
   const batchMode = batchActive || batchReady;
+  // ── edit-routing ── Only a mark for the active row itself: a batch's
+  // marks, a grab's, a moved dot's and a new pass-through point's go
+  // elsewhere, and are never this row's change.
+  const markPreview = edit && activeRow !== null && naming && pickPoint && !batchMode && !grab && !(pointSel?.kind === "shape" && pointSel.phase === "move") && newPoint?.kind !== "pass"
+    ? provisional(pickPoint.lat, pickPoint.lon, activeRow) : preview;
+  // ── /edit-routing ──
   // Synced after each commit; the mark that the next render brings reads it.
   useEffect(() => { batchPointRef.current = batchMode ? addToBatch : null; });
   useEffect(() => { passMarkRef.current = newPoint?.kind === "pass" && grab ? (lat: number, lon: number) => { placePass(lat, lon, null, newPoint); } : null; });
@@ -2415,11 +2489,14 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
    * place yet, a mark that would change nothing). Editing with `onPropose`
    * only.
    */
+  // Editing, a batch is proposed from its first mark on, its stops still
+  // being named under their spots (`batchPlace`); only an off-road verdict
+  // (planning's probe) holds it back.
   const proposedChange: ProposedChange | null = !edit?.onPropose ? null
-    : batch.length ? (batch.some((b) => !b.place || b.check !== "ok") ? null : (() => {
-        const names = places.map((p, i) => batch.find((b) => b.row === i)?.place?.name ?? p);
+    : batch.length ? (batch.some((b) => !batchPlace(b) || b.check === "off-road") ? null : (() => {
+        const names = places.map((p, i) => { const b = batch.find((x) => x.row === i); return b ? batchPlace(b)!.name : p; });
         const nextPicked = { ...picked };
-        for (const b of batch) nextPicked[b.row] = b.place;
+        for (const b of batch) nextPicked[b.row] = batchPlace(b);
         return { kind: "rows" as const, rows: { names, picked: nextPicked } };
       })())
     : shapePending?.kind === "move" && removeMoved ? { kind: "shape" as const, op: { kind: "remove" as const, index: shapePending.index } }
@@ -2427,8 +2504,8 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     : pointSel?.phase === "remove" ? (pointSel.kind === "shape"
         ? { kind: "shape" as const, op: { kind: "remove" as const, index: pointSel.index } }
         : { kind: "rows" as const, rows: rowsWithout(pointSel.row) })
-    : activeRow !== null && preview && !(picked[activeRow] && picked[activeRow]!.lat === preview.lat && picked[activeRow]!.lon === preview.lon && places[activeRow] === preview.name)
-      ? { kind: "rows" as const, rows: { names: places.map((p, i) => (i === activeRow ? preview.name : p)), picked: { ...picked, [activeRow]: preview } } }
+    : activeRow !== null && markPreview && !(picked[activeRow] && picked[activeRow]!.lat === markPreview.lat && picked[activeRow]!.lon === markPreview.lon && places[activeRow] === markPreview.name)
+      ? { kind: "rows" as const, rows: { names: places.map((p, i) => (i === activeRow ? markPreview.name : p)), picked: { ...picked, [activeRow]: markPreview } } }
     : null;
   const proposeKey = proposedChange ? JSON.stringify(proposedChange) : "";
   /**
@@ -2438,20 +2515,26 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
    * committing the landed proposal, and a null would discard it.
    */
   const proposeRef = useRef(edit?.onPropose);
-  useEffect(() => { proposeRef.current = edit?.onPropose; });
+  useLayoutEffect(() => { proposeRef.current = edit?.onPropose; });
   const proposedRef = useRef("");
   const proposedChangeRef = useRef(proposedChange);
-  useEffect(() => { proposedChangeRef.current = proposedChange; });
+  useLayoutEffect(() => { proposedChangeRef.current = proposedChange; });
   // A pin dragged again, or marked again, is named before its change exists:
   // meanwhile nothing is said — not a null that would discard the proposal
   // on screen only to route the next one a moment later (the page debounces
   // a stream of drags; a discard between each would break the stream up).
-  const holdPropose = naming && activeRow !== null && !batch.length && !shapePending;
+  // (With the mark's spot standing in for its name, editing, the change
+  // exists from the instant the mark lands, and is sent.)
+  const holdPropose = naming && activeRow !== null && !batch.length && !shapePending && !proposedChange;
   // A batch's newest stop is still being named: its change does not exist
   // yet, and the one on screen stays until it does — a null here was the
   // gap between two proposals (rider, 2026-09-28).
   const batchNaming = batch.some((b) => !b.place || b.check !== "ok");
-  useEffect(() => {
+  // Layout, not passive (rider, 2026-09-28: a dropped pin with nothing said
+  // about it): the page hears of the change in the same commit that shows
+  // it, and its „Pārrēķinu…” chip is painted in that frame — never a frame
+  // of a pending point with neither a spinner nor a chip.
+  useLayoutEffect(() => {
     const propose = proposeRef.current;
     if (!propose || holdPropose || proposeKey === proposedRef.current) return;
     if (!proposeKey && batchNaming && proposedRef.current) return;
@@ -2494,7 +2577,9 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     const stopsBefore = batchActive ? places.slice(1, batch[0].row).filter((_, j) => picked[j + 1] && !picked[j + 1]?.kind).length : 0;
     const batchPending = !batchActive ? null : previewBar({
       confirmLabel: batchCommitting || edit?.rerouting ? t(locale, "resEditRouting") : t(locale, "batchConfirmAll"),
-      onConfirm: batch.some((b) => !b.place || b.check !== "ok") || edit?.rerouting || batchCommitting ? null : () => pendingHandlers.current?.confirmBatch(),
+      // Editing, live while its stops are still being named: they are
+      // committed under their spots and named when the lookups answer.
+      onConfirm: (edit ? batch.some((b) => b.check === "off-road") : !batchNamed) || edit?.rerouting || batchCommitting ? null : () => pendingHandlers.current?.confirmBatch(),
       cancelLabel: t(locale, "batchDiscard"),
       onCancel: () => pendingHandlers.current?.discardBatch(),
       undo: { label: t(locale, "batchUndoLast"), onUndo: () => pendingHandlers.current?.undoBatch() },
@@ -2533,7 +2618,9 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
       // as a button that does not work.
       // …and while the tapped point is still being named: there is nothing
       // yet for Confirm to commit.
-      onConfirm: checking || naming || !preview || edit?.rerouting ? null : () => pendingHandlers.current?.confirm(),
+      // Editing, live from the instant the mark lands: routing has already
+      // started (a press confirms it when it lands; the name follows).
+      onConfirm: checking || (naming && !edit) || !markPreview || edit?.rerouting ? null : () => pendingHandlers.current?.confirm(),
       cancelLabel: t(locale, "pickOnMapCancel"),
       onCancel: () => pendingHandlers.current?.cancel(),
       offRoad: !offRoad ? null : {
@@ -2548,7 +2635,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
       },
     };
     // Editing, a pin's mark is previewed like the rest once it is named.
-    const pending = batchPending ?? shapeBar ?? removeBar ?? (single && edit && preview ? previewBar(single) : single);
+    const pending = batchPending ?? shapeBar ?? removeBar ?? (single && edit && markPreview ? previewBar(single) : single);
     // Null at the cap rather than a handler that returns: the button is then
     // disabled and says why, and a control that does nothing is never shipped.
     // Through the ref like the other handlers: whether a blank new row is

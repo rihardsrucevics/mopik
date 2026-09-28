@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import * as maplibregl from "maplibre-gl";
+import { flushSync } from "react-dom";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { Check, Info, List, Plus, TriangleAlert, Undo2, X } from "lucide-react";
 import { useMapLegend } from "@/lib/map/layer-prefs";
@@ -4233,7 +4234,10 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
         let tries = 0;
         const deliver = () => {
           const pick = onPickPointRef.current;
-          if (pick && grabbingRef.current) { pick(spot); return; }
+          // Synchronously (rider, 2026-09-28): the release, its pending point
+          // and the „Pārrēķinu…” chip are one frame — never a released line
+          // with nothing said about it.
+          if (pick && grabbingRef.current) { flushSync(() => pick(spot)); return; }
           if (++tries < 40) setTimeout(deliver, 25);
         };
         deliver();
