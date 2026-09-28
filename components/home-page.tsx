@@ -1644,12 +1644,11 @@ export function HomePage() {
         if (profileAt(ownProfile, level + 1)) return routeProposal({ ...p, relax: level + 1, bestOff: Math.min(p.bestOff ?? Infinity, reachM), fallback: p.fallback ?? fallback, keepSpurs: false });
         return land(p.fallback ?? fallback);
       }
-      // A stop reached only by riding out and back: offered, the dead end
-      // said, and only „Tomēr braukt” takes it (rule 5: never an unmarked spur).
-      if (deadEnd > 0) {
-        land({ proposal: { ...proposal, accept: accept ?? "deadEnd", notes: notes.map((n) => (n === deadEndNote ? fi(ui.editDeadEndAsk, { km: deadEndKm }) : n)) }, addedAt, runs: runs.length });
-        return;
-      }
+      // A stop the rider placed at a real dead end (rider, 2026-09-28): the
+      // out-and-back is kept and said in its note („Pietura ir strupceļā –
+      // atpakaļ pa to pašu ceļu 0,2 km.”) — a plain proposal, ✓ takes it, no
+      // „Tomēr braukt”. Only a pass-through point left on a spur (above), or
+      // a profile / detour warning, waits for the override.
       land({ proposal, addedAt, runs: runs.length });
     } catch (e) {
       if (!current() || (e instanceof DOMException && e.name === "AbortError")) return;
