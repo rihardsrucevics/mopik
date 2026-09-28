@@ -14,7 +14,19 @@ import { useLocale } from "@/lib/i18n/use-locale";
  * tap. Each language is named in itself — a rider looking for Lithuanian
  * finds "Lietuviškai", not "Lithuanian".
  */
-export function LanguagePicker() {
+/**
+ * Where choosing `next` should take the rider, or `null` to stay on this URL.
+ *
+ * Most pages are one address in every language, so the answer is `null` and
+ * the picker only writes `?lang=` into the address bar. A page whose language
+ * *is* its path — the product page, `lib/product/routes.ts` — passes its four
+ * paths, and choosing a language goes to that language's page.
+ */
+export function pickerTarget(next: UiLocale, paths?: Partial<Record<UiLocale, string>>): string | null {
+  return paths?.[next] ?? null;
+}
+
+export function LanguagePicker({ paths }: { paths?: Partial<Record<UiLocale, string>> } = {}) {
   const [locale, setLocale] = useLocale();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -51,6 +63,14 @@ export function LanguagePicker() {
      * planned in React state, and re-running the route would throw it away
      * just because the rider changed the language.
      */
+    const target = pickerTarget(next, paths);
+    if (target && typeof window !== "undefined") {
+      // The preference is saved above exactly as elsewhere; this page's
+      // language is its path, so the choice is a navigation.
+      setOpen(false);
+      if (next !== locale) window.location.assign(target);
+      return;
+    }
     if (typeof window !== "undefined") {
       const url = new URL(window.location.href);
       url.searchParams.set("lang", next);

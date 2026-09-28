@@ -163,6 +163,32 @@ export function setLocale(next: UiLocale): void {
   for (const listener of listeners) listener();
 }
 
+/**
+ * Show a page in the language its *path* names, without saving it.
+ *
+ * The product page is four paths in four languages (`lib/product/routes.ts`).
+ * Its own text is fixed by the path; this makes the shared header and footer
+ * agree with it — the same idea as `?lang=`, which also wins over the stored
+ * choice and is also not saved. Choosing a language in the picker still goes
+ * through `setLocale`, so the rider's preference updates exactly as elsewhere.
+ *
+ * Returns the undo, for when the page is left by a client-side navigation:
+ * the rest of the site then gets the rider's own language back.
+ */
+export function showPageLocale(locale: UiLocale): () => void {
+  const apply = (next: UiLocale) => {
+    current = next;
+    if (typeof document !== "undefined") document.documentElement.lang = next;
+    for (const listener of listeners) listener();
+  };
+  apply(locale);
+  return () => {
+    if (current !== locale) return; // the rider chose another language meanwhile
+    current = null;
+    apply(snapshot());
+  };
+}
+
 export function useLocale(): [UiLocale, (next: UiLocale) => void] {
   // Server and hydration renders both get the country locale, so the markup
   // matches; `snapshot` then layers the rider's stored choice on top.

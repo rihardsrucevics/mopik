@@ -1,9 +1,11 @@
 import Image from "next/image";
 import { BrandLogo } from "@/components/brand-logo";
-import { LOCALE_LABELS, LOCALE_SHORT, UI_LOCALES, type UiLocale } from "@/lib/i18n/locale";
+import { SiteHeader } from "@/components/site-header";
+import { PageLocale } from "@/components/product/page-locale";
+import type { UiLocale } from "@/lib/i18n/locale";
 import { FEATURE_ORDER, PRODUCT_COPY, type Feature, type FeatureId, type ProductCopy } from "@/lib/product/copy";
 import { jsonLdString, productJsonLd } from "@/lib/product/metadata";
-import { productPath } from "@/lib/product/routes";
+import { PRODUCT_PATHS } from "@/lib/product/routes";
 
 /**
  * The product page: what Mopik does, in words and pictures, for a rider who
@@ -11,10 +13,9 @@ import { productPath } from "@/lib/product/routes";
  *
  * A server component with no client JavaScript of its own — the text is in the
  * HTML, the images are `next/image`, and the only script is the JSON-LD. The
- * site header is not reused: it is a client component that follows the
- * *stored* language, while this page's language is its URL, so a header of
- * its own (wordmark, four language links, one call to action) keeps the two
- * from disagreeing.
+ * header is the site's own (`SiteHeader`, the rider's rule: the language
+ * switch is the globe everywhere); `PageLocale` puts it and the footer in the
+ * path's language, and the picker navigates between the four paths.
  *
  * The look is the Instagram launch set (`instagram/CONCEPT.md` §3): paper
  * #FAF9F6, ink #242426 and orange #F56300 as the only three backgrounds, a
@@ -346,48 +347,6 @@ function FeatureSection({ id, index, copy }: { id: FeatureId; index: number; cop
   );
 }
 
-function Header({ locale, copy }: { locale: UiLocale; copy: ProductCopy }) {
-  return (
-    <header className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-4 md:px-8">
-      {/* A plain `<a>` like the site header's: the wordmark lands on a clean plan. */}
-      <a href={`/?lang=${locale}`} aria-label={copy.header.home} className="flex shrink-0">
-        <BrandLogo variant="wordmark" className="h-6 w-auto text-[#242426] sm:h-7" />
-      </a>
-      <div className="flex items-center gap-2 sm:gap-4">
-        <nav aria-label={copy.header.languages}>
-          <ul className={`${mono} flex items-center text-[12px] tracking-[0.08em]`}>
-            {UI_LOCALES.map((l) => (
-              <li key={l}>
-                {l === locale ? (
-                  <span aria-current="page" className="inline-flex h-9 items-center px-1.5 text-[#242426] underline decoration-[#F56300] decoration-2 underline-offset-[6px] sm:px-2">
-                    {LOCALE_SHORT[l]}
-                  </span>
-                ) : (
-                  <a
-                    href={productPath(l)}
-                    hrefLang={l}
-                    lang={l}
-                    title={LOCALE_LABELS[l]}
-                    className="inline-flex h-9 items-center px-1.5 text-[#242426]/55 hover:text-[#242426] sm:px-2"
-                  >
-                    {LOCALE_SHORT[l]}
-                  </a>
-                )}
-              </li>
-            ))}
-          </ul>
-        </nav>
-        <a
-          href={`/?lang=${locale}`}
-          className="hidden h-9 items-center rounded-full bg-[#F56300] px-4 text-[14px] text-[#242426] transition hover:bg-[#ff7414] sm:inline-flex"
-        >
-          {copy.header.cta}
-        </a>
-      </div>
-    </header>
-  );
-}
-
 export function ProductPage({ locale }: { locale: UiLocale }) {
   const copy = PRODUCT_COPY[locale];
   const home = `/?lang=${locale}`;
@@ -397,7 +356,14 @@ export function ProductPage({ locale }: { locale: UiLocale }) {
         <script key={i} type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdString(data) }} />
       ))}
 
-      <Header locale={locale} copy={copy} />
+      {/* The site's own header, as on every other page — wordmark, new ride,
+          saved rides, the globe. Only the picker's destination differs: this
+          page's language is its path, so a choice goes to that language's
+          page. The wordmark is not the <h1> here; the hero heading is. */}
+      <PageLocale locale={locale} />
+      <div className="mx-auto w-full max-w-[1600px] px-4 pt-5 md:px-7">
+        <SiteHeader languagePaths={PRODUCT_PATHS} logoHeading={false} />
+      </div>
 
       {/* Hero */}
       <section aria-labelledby="hero-title" className="bg-[#FAF9F6]">

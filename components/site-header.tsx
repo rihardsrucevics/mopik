@@ -7,6 +7,7 @@ import { LanguagePicker } from "@/components/language-picker";
 import { BrandLogo } from "@/components/brand-logo";
 import { useLocale } from "@/lib/i18n/use-locale";
 import { t } from "@/lib/i18n/messages";
+import type { UiLocale } from "@/lib/i18n/locale";
 
 /**
  * The one header, on all three pages.
@@ -39,6 +40,8 @@ export function SiteHeader({
   newRideLabel,
   showNewRide = true,
   savedActive = false,
+  languagePaths,
+  logoHeading = true,
 }: {
   /** Clear the current plan in place. Omitted: the plus links to `/`. */
   onNewRide?: () => void;
@@ -47,7 +50,12 @@ export function SiteHeader({
   newRideLabel?: string;
   showNewRide?: boolean;
   savedActive?: boolean;
+  /** A page whose language is its path: the picker goes to these instead of writing `?lang=`. */
+  languagePaths?: Partial<Record<UiLocale, string>>;
+  /** The wordmark is the page's `<h1>` unless the page has a heading of its own. */
+  logoHeading?: boolean;
 }) {
+  const Logo = logoHeading ? "h1" : "div";
   const [locale] = useLocale();
   const label = newRideLabel ?? t(locale, "newRide");
   // One class string for all three slots, so the hit areas and the hover
@@ -58,7 +66,7 @@ export function SiteHeader({
   return (
     <header className="mb-5 flex items-center justify-between border-b border-stone-200 pb-4">
       <div className="flex items-center gap-3">
-        <h1 className="flex text-2xl font-bold tracking-tight">
+        <Logo className="flex text-2xl font-bold tracking-tight">
           {/* A plain `<a>`, not `<Link>`: a full reload on purpose, so the
               wordmark always lands on a clean, empty plan. The wordmark itself
               is decorative; the link's label is the accessible name. */}
@@ -66,7 +74,7 @@ export function SiteHeader({
           <a href="/" aria-label={t(locale, "backToHome")} className="flex">
             <BrandLogo variant="wordmark" className="h-7 w-auto text-[#242426]" />
           </a>
-        </h1>
+        </Logo>
         <p className="hidden text-xs text-stone-500 sm:block">{t(locale, "tagline")}</p>
       </div>
       <div className="flex items-center gap-4">
@@ -105,7 +113,7 @@ export function SiteHeader({
         ) : (
           <SavedRidesLink label={t(locale, "savedRides")} unseenLabel={t(locale, "savedRidesUnseen")} />
         )}
-        <LanguagePicker />
+        <LanguagePicker paths={languagePaths} />
       </div>
     </header>
   );

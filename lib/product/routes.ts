@@ -33,6 +33,11 @@ export function productUrl(locale: UiLocale): string {
   return `${SITE_URL}${productPath(locale)}`;
 }
 
+/** Language → path, for the site header's picker on this page. */
+export const PRODUCT_PATHS: Record<UiLocale, string> = Object.fromEntries(
+  UI_LOCALES.map((l) => [l, productPath(l)]),
+) as Record<UiLocale, string>;
+
 /** `hreflang` → absolute URL, all four plus `x-default`. */
 export function productAlternates(): Record<string, string> {
   const languages: Record<string, string> = {};

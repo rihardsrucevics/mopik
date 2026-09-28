@@ -2,6 +2,9 @@
  * The product page: one path per language, each with its own metadata and the
  * same four `hreflang` alternates, and a footer link to it in every language.
  *
+ * The language switch is the site's own globe picker (the rider's rule), and
+ * on this page choosing a language goes to that language's path.
+ *
  * `npx tsx --test scripts/product-page.test.ts`
  */
 import test from "node:test";
@@ -17,8 +20,11 @@ import { t } from "@/lib/i18n/messages";
 import { SITE_URL } from "@/lib/site";
 import { PRODUCT_COPY, FEATURE_ORDER } from "@/lib/product/copy";
 import { productJsonLd, productMetadata } from "@/lib/product/metadata";
-import { PRODUCT_SLUGS, productPath, productUrl } from "@/lib/product/routes";
+import { PRODUCT_PATHS, PRODUCT_SLUGS, productPath, productUrl } from "@/lib/product/routes";
 import { SiteFooter } from "@/components/site-footer";
+import { SiteHeader } from "@/components/site-header";
+import { pickerTarget } from "@/components/language-picker";
+import { ProductPage } from "@/components/product/product-page";
 import sitemap from "@/app/sitemap";
 
 const ROOT = path.resolve(__dirname, "..");
@@ -76,6 +82,28 @@ for (const locale of UI_LOCALES) {
     assert.ok(html.includes(t(locale, "footerProduct")), "the link text is in the footer's language");
   });
 }
+
+test("the picker goes to the chosen language's path here, and nowhere elsewhere", () => {
+  for (const locale of UI_LOCALES) assert.equal(pickerTarget(locale, PRODUCT_PATHS), productPath(locale));
+  // Every other page passes no paths: the picker keeps writing `?lang=` in place.
+  for (const locale of UI_LOCALES) assert.equal(pickerTarget(locale), null);
+});
+
+for (const locale of UI_LOCALES) {
+  test(`the ${locale} page uses the site header with its globe picker, not text links`, () => {
+    seedCountryLocale(locale);
+    const html = renderToStaticMarkup(createElement(ProductPage, { locale }));
+    assert.ok(html.includes('aria-haspopup="listbox"'), "the site's language picker is in the header");
+    assert.ok(html.includes(t(locale, "savedRides")) || html.includes("href=\"/saglabatie\""), "the saved-rides icon is there too");
+    assert.ok(!/<a [^>]*hreflang/i.test(html), "no visible language text links (hreflang stays in <head>)");
+    assert.equal((html.match(/<h1[\s>]/g) ?? []).length, 1, "one <h1>: the hero, not the wordmark");
+  });
+}
+
+test("elsewhere the site header keeps the wordmark as its <h1>", () => {
+  const html = renderToStaticMarkup(createElement(SiteHeader));
+  assert.equal((html.match(/<h1[\s>]/g) ?? []).length, 1);
+});
 
 test("the sitemap lists all four product pages with their alternates", () => {
   const entries = sitemap();
