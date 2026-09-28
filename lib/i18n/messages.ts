@@ -720,7 +720,7 @@ export type MessageKey =
    */
   | "mapNoActiveRowShort"
   | "mapSearchHintShort"
-  | "pointMoveHintShort";
+  | "pointMoveHintShort"
   // ── /P1-insert ──
   /** The gate card (tap a gate on the map) and the gate rows in the segment
    *  card and RISKI. Kinds name OSM's `barrier=*`; access lines put the node's
