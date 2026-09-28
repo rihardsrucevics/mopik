@@ -327,6 +327,7 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
     setFocusPoi((current) => (current ? { ...current, picked: !current.picked } : current));
   };
 
+  // ── P1-E: gpx ──
   /**
    * The plan this page can honestly put in the file.
    *
@@ -399,6 +400,7 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
     document.body.appendChild(a); a.click();
     setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 4000);
   };
+  // ── /P1-E: gpx ──
 
   return (
     <main className="mx-auto min-h-screen w-full max-w-[1600px] px-4 py-5 md:px-7">

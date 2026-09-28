@@ -1407,7 +1407,11 @@ export function mergeShapes(before: RidePlaces, after: RidePlaces): RidePlaces {
  * - `move` — a dot dragged, and Confirmed;
  * - `remove` — „Izņemt” in the dot's popover;
  * - `promote` — „Padarīt par pieturu”: the dot becomes a numbered stop with
- *   a row, named by the reverse lookup (`place`), at the dot's own spot.
+ *   a row, named by the reverse lookup (`place`), at the dot's own spot;
+ * - `demote` — „Padarīt caurbraucamu” (Phase 1, P1-A): the stop becomes a
+ *   pass-through point at its own spot, its row leaves the form, the line
+ *   does not change. `stopIndex` counts the stops among `vias` in riding
+ *   order, from 0 (not the start, not the finish).
  *
  * `index` counts the shaping points in riding order.
  */
@@ -1415,7 +1419,8 @@ export type ShapeEdit =
   | { kind: "add"; lat: number; lon: number; grabbedAt: Point }
   | { kind: "move"; index: number; lat: number; lon: number }
   | { kind: "remove"; index: number }
-  | { kind: "promote"; index: number; place: ResolvedPlace };
+  | { kind: "promote"; index: number; place: ResolvedPlace }
+  | { kind: "demote"; stopIndex: number };
 
 /**
  * The places after one shaping-point edit, or why it cannot be made. An
@@ -1433,6 +1438,10 @@ export function applyShapeEdit(places: RidePlaces, op: ShapeEdit): RidePlaces | 
     if (shapesOf(places).length >= MAX_SHAPE_POINTS) return { error: "shape-cap" };
     return { ...places, vias: [...places.vias, { ...shapeVia(op), grabbedAt: op.grabbedAt }] };
   }
+  // ── P1-A: demote ──
+  // CONTRACT C1 stub: a no-op until P1-A implements it.
+  if (op.kind === "demote") return places;
+  // ── /P1-A: demote ──
   const at = shapeIndex(op.index);
   if (at < 0) return { error: "no-such-point" };
   if (op.kind === "move") {

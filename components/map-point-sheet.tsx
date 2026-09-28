@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { MapPinned, MapPinPlus, Move, Trash2, X, type LucideIcon } from "lucide-react";
+import { CircleDot, MapPinned, MapPinPlus, Move, Trash2, X, type LucideIcon } from "lucide-react";
 
 /**
  * What the map shows for the point the rider tapped (rider, 2026-09-25: act
@@ -22,7 +22,8 @@ import { MapPinned, MapPinPlus, Move, Trash2, X, type LucideIcon } from "lucide-
  *
  * Built by the composer from its selection (lib/map/point-selection.ts).
  */
-export type MapPointSheetIcon = "move" | "stop" | "remove";
+/** `pass`: „Padarīt caurbraucamu” — a stop made a pass-through point (Phase 1). */
+export type MapPointSheetIcon = "move" | "stop" | "remove" | "pass";
 
 export type MapPointSheetRow = {
   key: string;
@@ -53,7 +54,7 @@ export type MapPointSheetModel =
       onClose: () => void;
     };
 
-const ICONS: Record<MapPointSheetIcon, LucideIcon> = { move: Move, stop: MapPinPlus, remove: Trash2 };
+const ICONS: Record<MapPointSheetIcon, LucideIcon> = { move: Move, stop: MapPinPlus, remove: Trash2, pass: CircleDot };
 
 const PHONE = "(max-width: 767px)";
 /** Between the point's title and its name — punctuation, not words. */

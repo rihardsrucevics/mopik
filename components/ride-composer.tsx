@@ -17,6 +17,7 @@ import { fi } from "@/lib/i18n/format";
 import type { ResolvedPlace } from "@/lib/chat/places";
 import { placeRoles, type PlaceRoles } from "@/lib/map/place-roles";
 import type { ShapeEdit } from "@/lib/routing/reroute-leg";
+import type { ProposalState, ProposedChange } from "@/lib/map/edit-proposal";
 import { stepShape, type ShapePending } from "@/lib/map/shape-pending";
 import { stepBatch } from "@/lib/map/batch-commit";
 // On a phone the inline map is a preview: a row's pin and "+ Pietura" open it
@@ -180,6 +181,19 @@ export type RideEdit = {
    */
   shapePoints: { lat: number; lon: number }[];
   onShape: (op: ShapeEdit) => void;
+  /**
+   * Preview before commit (Phase 1, docs/DESIGN-route-editing.md B4). When
+   * present, every pending line-changing mark is handed to the page as it
+   * changes (`ProposedChange`; `null` when the mark is gone) and the page
+   * routes it in the background (250 ms debounce while dragging). ✓ then
+   * still goes through `onCommit` / `onShape` with the same change, and the
+   * page commits the landed proposal instead of routing again. Kind switches
+   * (`promote`, `demote`) change no line and are committed at once.
+   * Absent: today's behaviour, every ✓ routes and commits.
+   */
+  onPropose?: (change: ProposedChange | null) => void;
+  /** The page's proposal for the pending mark: ✓ spins (`confirmBusy`) while routing, is disabled when refused. */
+  proposal?: ProposalState;
 };
 
 export function RideComposer({ initialPlan, initialPlaces, profile, onProfileChange, busy: busyProp, onGenerate, onUseChat, onPlacesChange, map, mapShown: mapOnPage = false, onPickModeChange, pickPoint, onMapControlsChange, edit }: {

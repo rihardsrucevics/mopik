@@ -411,6 +411,7 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
   // from the one on the map.
   const shownUnpaved = shownSurfaces.gravelPercent + shownSurfaces.dirtPercent;
 
+  // ── P1-E: gpx ──
   const downloadGpx = async () => {
     // The thank-you opens in the click itself: on iOS Safari the download
     // sheet and the programmatic click after an await left a timer-driven
@@ -582,6 +583,7 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
       m.resGpxFooter,
     ].filter(Boolean).join("\n");
   };
+  // ── /P1-E: gpx ──
 
   // Saving keeps the ride on this device as the same self-contained code the
   // share link uses, so it can be reopened and exported with no server.

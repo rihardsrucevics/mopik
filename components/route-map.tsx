@@ -21,6 +21,10 @@ import { MapPointSheet, type MapPointSheetModel } from "@/components/map-point-s
 import type { ResolvedPlace } from "@/lib/chat/places";
 import { nearestUnder } from "@/lib/map/pin-hit";
 import { neighboursAlong } from "@/lib/map/point-selection";
+import type { ProposalView } from "@/lib/map/edit-proposal";
+import { useProposalLayer } from "@/components/map/proposal-layer";
+// ── P1-D: imports ──
+// ── /P1-D: imports ──
 
 /** A ride pin as built, with what pressing it means. */
 type PinTarget = { el: HTMLElement; role: "start" | "via" | "finish"; index: number };
@@ -76,6 +80,12 @@ export type MapPendingMark = {
   confirmLabel: string;
   /** Null while the check is in flight — the button is then disabled. */
   onConfirm: (() => void) | null;
+  /**
+   * Preview before commit (Phase 1): the proposal is still routing. ✓ spins
+   * in its own slot and stays pressable — a press confirms it when it lands.
+   * The slot never moves or disappears for it (`invisible`, never `hidden`).
+   */
+  confirmBusy?: boolean;
   cancelLabel: string;
   /** Drops the mark; a row "+ Pietura" made goes with it. Escape does the same. */
   onCancel: () => void;
@@ -370,6 +380,13 @@ type Props = {
    * See `MapControls` for what is in it and why the map draws all three.
    */
   controls?: MapControls | null;
+  /**
+   * Preview before commit (Phase 1, docs/DESIGN-route-editing.md B4): the
+   * edit waiting for ✓ — its line over the dimmed ride and its chip in the
+   * notice slot (`useProposalLayer`, components/map/proposal-layer.ts).
+   * Absent or null: nothing is proposed.
+   */
+  proposal?: ProposalView | null;
 };
 
 const EMPTY: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
@@ -2025,6 +2042,7 @@ function DesktopBar({ controls }: { controls: MapControls }) {
   const undo = pending ? pending.undo ? { label: pending.undo.label, onUndo: pending.undo.onUndo as (() => void) | null } : null : controls.undo ?? null;
   return (
     <div data-desktop-bar className="flex shrink-0 items-center gap-1.5 max-md:hidden">
+      {/* ── P1-D: desktop-confirm ── */}
       {pending && !pending.offRoad && (
         <button type="button" onClick={pending.onConfirm ?? undefined} disabled={!pending.onConfirm} data-slot="3"
           aria-label={pending.confirmLabel} title={pending.confirmLabel}
@@ -2032,6 +2050,7 @@ function DesktopBar({ controls }: { controls: MapControls }) {
           <Check aria-hidden="true" className="size-5" />
         </button>
       )}
+      {/* ── /P1-D: desktop-confirm ── */}
       <button type="button" onClick={undo?.onUndo ?? undefined} disabled={!undo?.onUndo} data-slot="2"
         aria-label={undo?.label} title={undo?.label}
         className={`${plain} text-stone-700 disabled:text-stone-300 ${undo ? "" : "invisible"}`}>
@@ -2080,6 +2099,7 @@ function PhoneColumn({ controls }: { controls: MapControls }) {
         className={`${plain} text-stone-700 disabled:invisible ${idleAside}`}>
         <Undo2 aria-hidden="true" className="size-6" />
       </button>
+      {/* ── P1-D: phone-confirm ── */}
       {pending && !pending.offRoad && pending.onConfirm && (
         <button type="button" onClick={pending.onConfirm} data-slot="3"
           aria-label={pending.confirmLabel} title={pending.confirmLabel}
@@ -2087,11 +2107,12 @@ function PhoneColumn({ controls }: { controls: MapControls }) {
           <Check aria-hidden="true" className="size-6" />
         </button>
       )}
+      {/* ── /P1-D: phone-confirm ── */}
     </div>
   );
 }
 
-export function RouteMap({ segments, start, destination, via, focus, onFocusCleared, onFocusToggle, selectedPois, routePois, showTet, onToggleTet, showSights, onToggleSights, onShowPoi, onPickPoint, pickedPoint, onPickedPointMove, pickCenter, onGeolocated, controls }: Props) {
+export function RouteMap({ segments, start, destination, via, focus, onFocusCleared, onFocusToggle, selectedPois, routePois, showTet, onToggleTet, showSights, onToggleSights, onShowPoi, onPickPoint, pickedPoint, onPickedPointMove, pickCenter, onGeolocated, controls, proposal }: Props) {
   const [locale] = useLocale();
   const m = messages(locale);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -4040,6 +4061,12 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
   useEffect(() => { setMapPendingCount(pendingCount); }, [pendingCount]);
   useEffect(() => () => setMapPendingCount(0), []);
 
+  // ── P1-D: proposal ──
+  // The proposed edit's line over the dimmed ride (Phase 1). A no-op stub
+  // until P1-D implements it.
+  useProposalLayer(mapRef, ready, proposal ?? null);
+  // ── /P1-D: proposal ──
+
   return (
     <div className="relative h-full w-full" data-map-pending={controls?.pending ? "true" : undefined}>
       <div ref={containerRef} className="h-full w-full rounded-lg" />
@@ -4119,6 +4146,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
       {/* The tapped point's own actions — above the bottom bar (the column
           is reversed), like the notice. */}
       {controls?.pointSheet && <MapPointSheet sheet={controls.pointSheet} />}
+      {/* ── P1-D: notice ── */}
       {/* Above the bottom bar (the column is reversed), clear of the switch
           row at the top, never squeezed into the field. */}
       {controls?.notice && (
@@ -4127,6 +4155,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
           {controls.notice.text}
         </div>
       )}
+      {/* ── /P1-D: notice ── */}
       {/* The off-road verdict, directly under the header it answers: the pin
           stays where he put it and the answer sits beside the Confirm he just
           pressed. `role="alert"`: it arrives after a press and replaces what

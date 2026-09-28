@@ -3427,6 +3427,8 @@ gtag is on the page. Without the key it is a no-op. Events, all client-side:
 | `shape_point_pressed` / `map_point_move` / `map_stop_removed` | a shaping point tapped (its sheet opens) / „Pārvietot” on a point's sheet / „Izņemt” on a tapped stop's sheet (2026-09-25) | — / kind / — |
 | `batch_stop_marked` / `batch_confirmed` / `batch_discarded` | batch adding on the map | n |
 | `plan_undone` | ↶ or Ctrl/Cmd+Z in planning | — |
+| `route_edit_proposed` / `route_edit_confirmed` / `route_edit_discarded` / `route_edit_refused` | preview before commit (Phase 1, 2026-09-28): an edit routed and shown / ✓ / ✕ / could not be routed | how, ms, km_delta, repeated_before, repeated_after / how, while_routing / how, phase / how, reason |
+| `point_kind_switched` | „Padarīt par pieturu” / „Padarīt caurbraucamu” (Phase 1) | to (stop, pass), mode (plan, edit) |
 
 Done via the PostHog MCP (2026-09-12): project key in Vercel production
 (`NEXT_PUBLIC_POSTHOG_KEY`), session replay + console capture on, timezone
