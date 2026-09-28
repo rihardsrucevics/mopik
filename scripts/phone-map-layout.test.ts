@@ -181,3 +181,17 @@ test("the proposal's yellow halo covers exactly the changed metres", async () =>
   assert.ok(Math.abs(got[got.length - 1] - 2000) < 1, `2000 m, got ${got[got.length - 1]}`);
   assert.equal(halo.features[0].geometry.coordinates.length, 4, "from, two vertices inside, to");
 });
+
+test("a gate or a badge never swallows the tap that marks a point (release check, 2026-09-28)", () => {
+  // The gate's 44 px target sat on the line; in edit mode „+” then a tap next
+  // to a gate opened the gate's card and the new stop was never placed.
+  assert.match(routeMap, /const mapTakesTap = \(\): boolean => Boolean\(onPickPointRef\.current\) \|\| pointSheetRef\.current\?\.mode === "menu";/);
+  const badge = routeMap.slice(routeMap.indexOf("const el = badgeElement("), routeMap.indexOf("for (const marker of gateMarkersRef.current)"));
+  const gate = routeMap.slice(routeMap.indexOf("const el = gateElement("), routeMap.indexOf("for (const marker of viaMarkersRef.current)"));
+  for (const [name, body] of [["badge", badge], ["gate", gate]] as const) {
+    const i = body.indexOf('addEventListener("click"');
+    assert.ok(i > 0, `${name} has a click handler`);
+    const handler = body.slice(i, body.indexOf("stopPropagation()", i));
+    assert.match(handler, /if \(mapTakesTap\(\)\) return;/, `${name}: the map gets the tap first`);
+  }
+});

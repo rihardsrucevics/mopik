@@ -2702,6 +2702,16 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
      * gesture, is told to let it through (`sightClickAtRef`) — otherwise it
      * would mark this very spot for the row that was active before.
      */
+    /**
+     * Whether a tap on a warning badge or a gate belongs to the map instead of
+     * opening its card: while the map answers a row („Atzīmē kartē”, a new
+     * stop, „Pārvietot”) the tap is that place, and while a point's sheet is
+     * open it closes the sheet. The gate's 44 px target otherwise swallowed a
+     * rider's mark next to a gate — the map never heard it and the row
+     * stayed empty. Not stopped, the click reaches the map's own handler,
+     * which reads the spot from the event.
+     */
+    const mapTakesTap = (): boolean => Boolean(onPickPointRef.current) || pointSheetRef.current?.mode === "menu";
     const pressPin = (event: MouseEvent, role: "start" | "via" | "finish", index: number): boolean => {
       const press = pinPressRef.current;
       if (!press) return false;
@@ -2840,6 +2850,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
             // with the explanation inside it, and stops the event so the map's
             // own handler does not open a second one.
             el.addEventListener("click", (event) => {
+              if (mapTakesTap()) return;
               event.stopPropagation();
               const id = b.segmentIds[0];
               if (typeof id === "number") openCardRef.current(b.point, id);
@@ -2865,6 +2876,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
           ? gateMarksFor(enriched).map((g) => {
               const el = gateElement(gateAtLabel(m, locale, g), gateGlyphFor(g.info?.barrier));
               el.addEventListener("click", (event) => {
+                if (mapTakesTap()) return;
                 // Same reason the badges stop it: otherwise the click also
                 // reaches the map and opens a second card underneath this one.
                 event.stopPropagation();
