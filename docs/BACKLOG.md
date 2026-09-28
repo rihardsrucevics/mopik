@@ -1593,3 +1593,10 @@ mode). Screenshot kept at the session scratchpad as `bug-saved-edit.webp`.
 Check which path the saved-ride edit takes (form prefill vs `placesFromRide`
 vs the result's „Labot”), whether the ride's geometry is passed at all, and
 whether the preview map frames the places.
+
+## 48. Vision: „Waze adventure motobraucējiem” — see docs/VISION.md
+
+**Rider, 2026-09-28.** Far backlog / vision, not scheduled: native app with
+navigation, rider reports and risks, seeing other riders, help when needed,
+more social than Waze, season challenges and badges, a theme in the bike's
+colours. Details in `docs/VISION.md`.
