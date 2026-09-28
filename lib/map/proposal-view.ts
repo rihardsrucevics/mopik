@@ -13,7 +13,7 @@ import { nearestAlong } from "@/lib/routing/reroute-leg";
 /** The copy the view is built from — `previewRouting`, `previewDelta`, `previewDeltaTitle`. */
 export type ProposalCopy = { routing: string; delta: string; deltaTitle: string };
 
-/** Between the chip and the notes that belong to the same proposal. */
+/** Between the chip and its notes where both are said as one line of text (the edit panel's). */
 export const NOTE_JOINER = " — ";
 
 /**
@@ -37,7 +37,10 @@ export function proposalView(state: ProposalState, copy: ProposalCopy, locale: U
   const chip = formatEditDelta(copy.delta, proposal.delta, locale);
   const sentence = formatEditDelta(copy.deltaTitle, proposal.delta, locale);
   return {
-    text: notes ? `${chip}${NOTE_JOINER}${notes}` : chip,
+    // The numbers alone; the notes on a line of their own under them
+    // (2026-09-28: run on, the chip wrapped to four lines on a phone).
+    text: chip,
+    ...(notes ? { notes } : {}),
     title: notes ? `${sentence} ${notes}` : sentence,
     line: proposal.ride.segments,
     changed: proposal.changed,

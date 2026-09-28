@@ -39,6 +39,7 @@ import {
   asGeneratedRoute,
   isShape,
   mergeShapes,
+  mergeAddedInOrder,
   nearestAlong,
   shapesOf,
   stopsOf,
@@ -80,7 +81,7 @@ import {
   type ProposedChange,
   type Segments,
 } from "@/lib/map/edit-proposal";
-import { changeKey, changedAlong, isKindSwitch, proposalView, proposeDelay, unchangedEnds } from "@/lib/map/proposal-view";
+import { changeKey, changedAlong, isKindSwitch, NOTE_JOINER, proposalView, proposeDelay, unchangedEnds } from "@/lib/map/proposal-view";
 import type { Point } from "@/lib/geo/geometry";
 import type { PlaceRoles } from "@/lib/map/place-roles";
 import type { RideEdit } from "@/components/ride-composer";
@@ -1196,7 +1197,7 @@ export function HomePage() {
   // `commitProposal` is the one place a routed edit enters the ride.
 
   /** The places a pending change would leave, or why it cannot be made (said, never swallowed). */
-  function placesForChange(change: ProposedChange, before: RidePlaces): { after: RidePlaces } | { how: EditKind; note: string; reason: string } {
+  function placesForChange(change: ProposedChange, before: RidePlaces, line: Point[]): { after: RidePlaces; keepOrder?: boolean } | { how: EditKind; note: string; reason: string } {
     if (change.kind === "rows") {
       const { rows } = change;
       const fromRows = placesFromRows({
@@ -1210,7 +1211,11 @@ export function HomePage() {
         const how: EditKind = rows.names.length > had ? "add-stop" : rows.names.length < had ? "remove-stop" : "move-stop";
         return { how, note: ui.editNeedsPlace, reason: "no-place" };
       }
-      // The rows are the stops; the shaping points go back where they were.
+      // New stops stay in the leg the rows put them in (Phase 1: the
+      // composer places each in its nearest leg, or the one the rider
+      // chose); otherwise the shaping points go back where they were.
+      const inOrder = mergeAddedInOrder(before, fromRows, line);
+      if (inOrder) return { after: inOrder, keepOrder: true };
       return { after: mergeShapes(before, fromRows) };
     }
     const { op } = change;
@@ -1264,11 +1269,11 @@ export function HomePage() {
       dispatchProposal({ type: "route", token, how });
       refuseProposal(token, how, note, reason);
     };
-    const target = placesForChange(change, before);
-    if ("note" in target) { refuseNow(target.how, target.note, target.reason); return; }
     const line = coordinatesOf(baseSegments);
+    const target = placesForChange(change, before, line);
+    if ("note" in target) { refuseNow(target.how, target.note, target.reason); return; }
     if (line.length < 2) { refuseNow("move-stop", ui.resEditFailed, "degenerate"); return; }
-    const planned = planEdit({ line, cum: cumulative(line), before, after: target.after });
+    const planned = planEdit({ line, cum: cumulative(line), before, after: target.after, keepOrder: target.keepOrder });
     if (!planned) {
       // Nothing about the line changes: nothing to preview, nothing to commit.
       live.current = null;
@@ -2002,21 +2007,24 @@ export function HomePage() {
    * second or two later; outside it they are the ride's own.
    */
   const mapVia = useMemo(() => {
-    if (!result) return preview.vias;
+    if (!result) return preview.viaNumbers ? preview.vias.map((v, i) => (preview.viaNumbers?.[i] != null ? { ...v, number: preview.viaNumbers[i] } : v)) : preview.vias;
     // A shaping point is not a pin: on the result the line already shows the
     // bend, and in edit mode the map draws it as a dot of its own.
     const list = wiring.editing ? preview.vias : (ridePlaces?.vias ?? []).filter((v) => !isShape(v));
-    return list.map((v) => ({
+    // The composer's numbers while a new point waits among the stops.
+    const numbers = !result || wiring.editing ? preview.viaNumbers : undefined;
+    return list.map((v, i) => ({
       lat: v.lat,
       lon: v.lon,
       label: v.label,
+      ...(numbers?.[i] != null ? { number: numbers[i] } : {}),
       ...(stopKind(stopKinds, v.label) ?? {}),
       // The POI category behind this stop, when it came from a suggestion: the
       // marker then carries the sight's own glyph instead of the number that
       // means "a stop you typed".
       ...(v.kind ? { category: v.kind } : {}),
     }));
-  }, [result, wiring.editing, preview.vias, ridePlaces, stopKinds]);
+  }, [result, wiring.editing, preview.vias, preview.viaNumbers, ridePlaces, stopKinds]);
   const mapStart = result ? (wiring.editing ? preview.start : ridePlaces?.start ?? result.start) : preview.start;
   const mapFinish = result ? (wiring.editing ? preview.finish : ridePlaces ? ridePlaces.finish : result.destination ?? null) : preview.finish;
   // While planning the map is always available, whether or not anything is
@@ -2165,7 +2173,7 @@ export function HomePage() {
         </p>
       )}
       {proposalShown && proposalShown.tone !== "routing" && (
-        <p data-edit-proposal role="status" title={proposalShown.title} className={`text-[11px] leading-snug tabular-nums ${proposalShown.tone === "refused" ? "text-[#bd4b00]" : "text-stone-700"}`}>{proposalShown.text}</p>
+        <p data-edit-proposal role="status" title={proposalShown.title} className={`text-[11px] leading-snug tabular-nums ${proposalShown.tone === "refused" ? "text-[#bd4b00]" : "text-stone-700"}`}>{proposalShown.notes ? `${proposalShown.text}${NOTE_JOINER}${proposalShown.notes}` : proposalShown.text}</p>
       )}
       {editNote && !proposalShown && <p role="status" className="text-[11px] leading-snug text-[#bd4b00]">{editNote}</p>}
     </div>
@@ -2175,6 +2183,10 @@ export function HomePage() {
         seed: { ...rowsOf(ridePlaces), roundTrip: ridePlaces.roundTrip, token: seed.token, active: seed.active },
         onCommit: (rows, opts) => commitEdit(rows, opts),
         shapePoints: shapesOf(ridePlaces).map((v) => ({ lat: v.lat, lon: v.lon })),
+        // Where a new point goes, and whether a moved one lands on the line
+        // elsewhere (Phase 1, lib/map/insert-leg.ts): the ride as drawn.
+        places: ridePlaces,
+        line: route ? ((edited?.coordinates ?? route.geometry.coordinates) as Point[]) : undefined,
         onShape: (op) => { commitShape(op); },
         onPropose: proposeChange,
         proposal,

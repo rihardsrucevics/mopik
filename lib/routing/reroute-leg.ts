@@ -364,8 +364,17 @@ export function planEdit(params: {
   cum: number[];
   before: RidePlaces;
   after: RidePlaces;
+  /**
+   * New stops stay where `after` has them (Phase 1, 2026-09-28: a new point
+   * goes into its nearest leg, or the leg the rider chose — see
+   * `lib/map/insert-leg.ts` and `mergeAddedInOrder`). Each is re-routed
+   * where its own leg's line passes nearest to it. Without it, a new stop is
+   * re-slotted wherever the whole line passes nearest.
+   */
+  keepOrder?: boolean;
 }): EditPlan | { error: "degenerate" } | null {
   const { line, cum, before } = params;
+  const keep = params.keepOrder === true;
   let after = params.after;
   const total = cum[cum.length - 1];
   const end = line[line.length - 1];
@@ -484,13 +493,17 @@ export function planEdit(params: {
       if (extra >= 0 && rest.every((v, i) => same(v, bv[i]))) {
         const added = av[extra];
         // A grabbed line point enters the ride where it was grabbed, and the
-        // window is sized by how far it was moved from there.
+        // window is sized by how far it was moved from there. A stop placed
+        // in its leg (`keep`) meets the line in that leg.
+        const inLeg = keep && !added.grabbedAt;
         const nearest = added.grabbedAt
           ? { ...nearestAlong(added.grabbedAt, line, cum), meters: haversineMeters(added.grabbedAt, toPoint(added)) }
+          : inLeg ? nearestWithin(toPoint(added), line, cum, along[extra], along[extra + 1])
           : nearestAlong(toPoint(added), line, cum);
         // Its slot is between the two fixed points the line passes it between.
         let slot = 0;
-        while (slot < bv.length && along[slot + 1] <= nearest.alongMeters) slot++;
+        if (inLeg) slot = extra;
+        else while (slot < bv.length && along[slot + 1] <= nearest.alongMeters) slot++;
         after = { ...after, vias: [...bv.slice(0, slot), added, ...bv.slice(slot)] };
         return plan("add-stop", runsOf([pieceAround(nearest.alongMeters, windowFor(nearest.meters), slot, slot + 1, toPoint(added))]));
       }
@@ -505,14 +518,18 @@ export function planEdit(params: {
       const isOld = (v: RidePlace) => bv.some((b) => same(b, v));
       const kept = av.filter(isOld);
       if (kept.length === bv.length && kept.every((v, i) => same(v, bv[i]))) {
-        const extras = av.filter((v) => !isOld(v)).map((added) => {
+        const extras = av.map((added, i) => ({ added, i })).filter(({ added }) => !isOld(added)).map(({ added, i }) => {
           const anchor = added.grabbedAt ?? toPoint(added);
-          const n = nearestAlong(anchor, line, cum);
+          // Placed in its leg (`keep`): the leg is the old places either side of it in `after`.
+          const inLeg = keep && !added.grabbedAt;
+          const legSlot = av.slice(0, i).filter(isOld).length;
+          const n = inLeg ? nearestWithin(anchor, line, cum, along[legSlot], along[legSlot + 1]) : nearestAlong(anchor, line, cum);
           const meters = added.grabbedAt ? haversineMeters(added.grabbedAt, toPoint(added)) : n.meters;
           let slot = 0;
-          while (slot < bv.length && along[slot + 1] <= n.alongMeters) slot++;
-          return { added, alongMeters: n.alongMeters, slot, piece: pieceAround(n.alongMeters, windowFor(meters), slot, slot + 1, toPoint(added)) };
-        }).sort((a, b) => a.alongMeters - b.alongMeters);
+          if (inLeg) slot = legSlot;
+          else while (slot < bv.length && along[slot + 1] <= n.alongMeters) slot++;
+          return { added, order: i, alongMeters: n.alongMeters, slot, piece: pieceAround(n.alongMeters, windowFor(meters), slot, slot + 1, toPoint(added)) };
+        }).sort((a, b) => (keep ? a.order - b.order : a.alongMeters - b.alongMeters));
         const vias: RidePlace[] = [];
         for (let slot = 0; slot <= bv.length; slot++) {
           if (slot > 0) vias.push(bv[slot - 1]);
@@ -984,7 +1001,7 @@ export const MEETS_LINE_M = 10;
 export const MEET_SHIFT_MAX_M = 1_000;
 
 /** The nearest point of `line` to `target` between `from` and `to` metres along it. */
-function nearestWithin(target: Point, line: Point[], cum: number[], from: number, to: number): { meters: number; alongMeters: number } {
+export function nearestWithin(target: Point, line: Point[], cum: number[], from: number, to: number): { meters: number; alongMeters: number } {
   let best = { meters: Infinity, alongMeters: from };
   const cosLat = Math.cos((target[1] * Math.PI) / 180) || 1;
   const M = 111_320;
@@ -1502,6 +1519,54 @@ export function mergeShapes(before: RidePlaces, after: RidePlaces): RidePlaces {
     }
   }
   return { ...after, vias: interleaveShapes(newStops, shapePointsOf(before), shapeVia) };
+}
+
+/**
+ * The rows committed over a ride when they only add stops, and the rows'
+ * order says where each goes (Phase 1, 2026-09-28): the composer puts a new
+ * point into the leg it is nearest to, or the one the rider chose
+ * (`lib/map/insert-leg.ts`). Each new stop stays between the stops the rows
+ * put it between; among the pass-through points there, it goes where the
+ * line passes it nearest. For `planEdit` with `keepOrder`.
+ *
+ * Null when the rows are not exactly that — the start or the finish
+ * changed, or the old stops are not all there in order — and `mergeShapes`
+ * decides as before.
+ */
+export function mergeAddedInOrder(before: RidePlaces, after: RidePlaces, line: Point[]): RidePlaces | null {
+  if (line.length < 2 || !same(before.start, after.start)) return null;
+  if ((before.finish === null) !== (after.finish === null) || (before.finish && after.finish && !same(before.finish, after.finish))) return null;
+  const oldStops = stopsOf(before);
+  const newStops = after.vias;
+  if (newStops.length <= oldStops.length) return null;
+  const isOld = (v: RidePlace) => oldStops.some((o) => same(o, v));
+  const kept = newStops.filter(isOld);
+  if (kept.length !== oldStops.length || !kept.every((v, i) => same(v, oldStops[i]))) return null;
+  const cum = cumulative(line);
+  const total = cum[cum.length - 1];
+  const along = anchorsAlong(anchorsOf(before, line[line.length - 1]), line, cum);
+  // Each via's place in the order: its gap (how many old stops come before
+  // it) — an old stop sits between two gaps — then where the line meets it.
+  type Entry = { v: RidePlace; gap: number; along: number };
+  const entries: Entry[] = [];
+  let stopsSeen = 0;
+  before.vias.forEach((v, i) => {
+    if (isShape(v)) entries.push({ v, gap: stopsSeen, along: along[i + 1] });
+    else { entries.push({ v, gap: stopsSeen + 0.5, along: along[i + 1] }); stopsSeen++; }
+  });
+  const stopAlong = before.vias.map((v, i) => (isShape(v) ? -1 : along[i + 1])).filter((m) => m >= 0);
+  let gap = 0;
+  for (const v of newStops) {
+    if (isOld(v)) { gap++; continue; }
+    const lo = gap === 0 ? 0 : stopAlong[gap - 1];
+    const hi = gap === oldStops.length ? total : stopAlong[gap];
+    entries.push({ v, gap, along: nearestWithin(toPoint(v), line, cum, lo, hi).alongMeters });
+  }
+  const vias = entries
+    .map((e, i) => ({ ...e, i }))
+    .sort((a, b) => a.gap - b.gap || a.along - b.along || a.i - b.i)
+    .map((e) => e.v);
+  return { ...after, vias };
 }
 
 /**

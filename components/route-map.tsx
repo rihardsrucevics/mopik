@@ -253,7 +253,8 @@ export type MapControls = {
    * dragged, and dropped (the ✕ a selected one carries).
    */
   batchMode?: boolean;
-  batch?: { id: number; lat: number; lon: number; number: number; selected: boolean; failing: boolean }[];
+  /** `finish`: the new point rides on past the one-way finish and becomes it (Phase 1): a red pin, no number. */
+  batch?: { id: number; lat: number; lon: number; number: number; selected: boolean; failing: boolean; finish?: boolean }[];
   onBatchSelect?: (id: number) => void;
   onBatchMove?: (id: number, at: { lat: number; lon: number }) => void;
   onBatchDrop?: (id: number) => void;
@@ -269,6 +270,22 @@ export type MapControls = {
    * a screen reader.
    */
   notice?: { text: string; title: string } | null;
+  /**
+   * Choices about the pending mark, as chips in the notice area — never in
+   * the bar or the column, whose slots stay put (Phase 1 addition,
+   * 2026-09-28): the new point's kind („Pietura” / „Caurbraucams”), the leg
+   * it goes into when Mopik is not sure, and — a pass-through point moved
+   * onto the line — keep it or remove it. One row of groups; each group's
+   * options side by side, the selected one filled.
+   */
+  choices?: MapChoiceGroup[] | null;
+};
+
+/** One group of choice chips; `label` names the group for a screen reader. */
+export type MapChoiceGroup = {
+  key: string;
+  label: string;
+  options: { key: string; label: string; title?: string; selected: boolean; onSelect: () => void }[];
 };
 
 type Props = {
@@ -288,6 +305,12 @@ type Props = {
    */
   via?: {
     lat: number; lon: number; label: string; kind?: string; detail?: string;
+    /**
+     * The number its pin wears, when the composer says (Phase 1: a new point
+     * pending among the stops moves the ones after it up while it waits).
+     * Absent: counted here, 1…n in order, sights skipped.
+     */
+    number?: number | null;
     /**
      * The POI category, when this via came from a suggestion rather than from
      * the form. It selects the glyph (`POI_KIND`) and the card's wording:
@@ -2780,7 +2803,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
         // built after this one) falls through to a numbered stop rather than
         // to a blank — it is in the ride, so it is a stop.
         const entry = place.category ? POI_KIND[place.category as keyof typeof POI_KIND] : undefined;
-        const n = numbers[i];
+        const n = place.number ?? numbers[i];
         const el = n === null
           ? stopElement(place.label, entry?.icon ?? STOP_ICON, true)
           : numberedStopElement(place.label, n);
@@ -3235,15 +3258,16 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
   const batchDropRef = useRef(controls?.onBatchDrop);
   useEffect(() => { batchSelectRef.current = controls?.onBatchSelect; batchMoveRef.current = controls?.onBatchMove; batchDropRef.current = controls?.onBatchDrop; });
   const batchPins = controls?.batch ?? [];
-  const batchPinsKey = batchPins.map((b) => `${b.id}:${b.lat},${b.lon}:${b.number}:${b.selected ? 1 : 0}:${b.failing ? 1 : 0}`).join("|");
+  const batchPinsKey = batchPins.map((b) => `${b.id}:${b.lat},${b.lon}:${b.number}:${b.selected ? 1 : 0}:${b.failing ? 1 : 0}:${b.finish ? 1 : 0}`).join("|");
   useEffect(() => {
     const map = mapRef.current;
     for (const marker of batchMarkersRef.current) marker.remove();
     batchMarkersRef.current = [];
     if (!map || !ready) return;
     batchMarkersRef.current = batchPins.map((b) => {
-      const el = numberedStopElement(m.mapStop, b.number);
-      el.dataset.pending = "via";
+      const el = numberedStopElement(b.finish ? m.mapFinish : m.mapStop, b.number);
+      if (b.finish) { el.textContent = ""; el.style.background = FINISH_PIN_COLOR; }
+      el.dataset.pending = b.finish ? "finish" : "via";
       el.dataset.batch = String(b.id);
       el.style.borderStyle = "dashed";
       el.style.zIndex = b.selected ? "4" : "3";
@@ -4213,12 +4237,38 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
           stack: landed, the delta („72,4 → 75,1 km · +6 min · …”) on white;
           routing, the same with a quiet spinner; refused, the reason in the
           notice's own amber, a line of text and not a badge. */}
+      {/* Choices about the pending mark (Phase 1 addition): directly above
+          the bar, one row of groups — each group's options side by side,
+          wrapping only between groups — so the notice stays compact and the
+          slots never move. */}
+      {controls?.choices && controls.choices.length > 0 && (
+        <div data-map-choices className="flex w-max min-w-0 max-w-full flex-wrap items-center gap-1.5 self-start max-md:-ml-16 max-md:mr-16">
+          {controls.choices.map((group) => (
+            <div key={group.key} role="radiogroup" aria-label={group.label} data-choice-group={group.key}
+              className="flex min-w-0 max-w-full items-center rounded-full border border-[#ececf0] bg-white/95 p-0.5 shadow-sm backdrop-blur">
+              {group.options.map((option) => (
+                <button key={option.key} type="button" role="radio" aria-checked={option.selected} data-choice={option.key}
+                  title={option.title ?? option.label} onClick={option.onSelect}
+                  className={`min-w-0 max-w-[11rem] shrink truncate rounded-full px-2.5 py-1 text-xs font-medium leading-tight transition max-md:px-2 max-md:text-[11px] ${option.selected ? "bg-stone-900 text-white" : "text-stone-600 hover:text-stone-900"}`}>
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
       {controls && proposal ? (
         <div role="status" data-proposal-chip={proposal.tone ?? "proposed"} title={proposal.title} aria-label={proposal.title}
-          className={`flex items-center gap-1.5 self-start rounded-2xl border px-3 py-1 text-xs font-medium leading-snug shadow-sm backdrop-blur max-md:mr-16 ${proposal.tone === "refused" ? "border-amber-300 bg-amber-50/95 text-amber-900" : "border-[#ececf0] bg-white/95 text-foreground"}`}>
-          {proposal.tone === "routing" && <LoaderCircle aria-hidden="true" className="size-3.5 shrink-0 animate-spin text-stone-400" />}
-          {proposal.tone === "refused" && <TriangleAlert aria-hidden="true" className="size-3.5 shrink-0" />}
-          <span className="min-w-0 tabular-nums">{proposal.text}</span>
+          className={`flex max-w-full items-start gap-1.5 self-start rounded-2xl border px-3 py-1 text-xs font-medium leading-snug shadow-sm backdrop-blur max-md:-ml-16 max-md:mr-16 ${proposal.tone === "refused" ? "border-amber-300 bg-amber-50/95 text-amber-900" : "border-[#ececf0] bg-white/95 text-foreground"}`}>
+          {proposal.tone === "routing" && <LoaderCircle aria-hidden="true" className="mt-px size-3.5 shrink-0 animate-spin text-stone-400" />}
+          {proposal.tone === "refused" && <TriangleAlert aria-hidden="true" className="mt-px size-3.5 shrink-0" />}
+          {/* The numbers on one line; the proposal's notes under them,
+              smaller, at most two lines (the chip wrapped to four on a phone
+              with the notes run on). */}
+          <span className="min-w-0">
+            <span data-proposal-text className="block tabular-nums max-md:text-[11px]">{proposal.text}</span>
+            {proposal.notes && <span data-proposal-notes className="line-clamp-2 text-[10.5px] font-normal leading-snug text-stone-500">{proposal.notes}</span>}
+          </span>
         </div>
       ) : controls?.notice && (
         <div role="status" title={controls.notice.title} aria-label={controls.notice.title}

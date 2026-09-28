@@ -95,6 +95,8 @@ export const IDLE_PROPOSAL: ProposalState = { phase: "idle" };
  */
 export type ProposalView = {
   text: string;
+  /** The proposal's notes („Punkts pārvietots 40 m…”), said under the chip, smaller. */
+  notes?: string;
   title: string;
   tone?: "routing" | "refused";
   line: Segments | null;

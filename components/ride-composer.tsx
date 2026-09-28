@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Check, ChevronDown, ChevronUp, Map as MapIcon, Sparkles } from "lucide-react";
-import type { MapControls, MapPendingMark } from "@/components/route-map";
+import type { MapChoiceGroup, MapControls, MapPendingMark } from "@/components/route-map";
 import type { MapPointSheetRow } from "@/components/map-point-sheet";
 import { RidePlan } from "@/lib/chat/ride-plan";
 import { composeRidePlan, placesFromPlan } from "@/lib/chat/compose-plan";
@@ -17,7 +17,9 @@ import { pickedPlace } from "@/lib/chat/pick-name";
 import { fi } from "@/lib/i18n/format";
 import type { ResolvedPlace } from "@/lib/chat/places";
 import { placeRoles, type PlaceRoles } from "@/lib/map/place-roles";
-import type { ShapeEdit } from "@/lib/routing/reroute-leg";
+import type { RidePlaces, ShapeEdit } from "@/lib/routing/reroute-leg";
+import type { Point } from "@/lib/geo/geometry";
+import { onLineElsewhere, placeNewPoint, stopNumbers, type InsertOption, type Placement } from "@/lib/map/insert-leg";
 import type { ProposalState, ProposedChange } from "@/lib/map/edit-proposal";
 import { stepShape, type ShapePending } from "@/lib/map/shape-pending";
 import { stepBatch } from "@/lib/map/batch-commit";
@@ -182,6 +184,15 @@ export type RideEdit = {
    */
   shapePoints: { lat: number; lon: number }[];
   onShape: (op: ShapeEdit) => void;
+  /**
+   * The ride as drawn — its places (stops and pass-through points in riding
+   * order) and its line, [lon, lat] — for where a new point goes (its
+   * nearest leg on the line) and whether a moved pass-through point lands on
+   * the line elsewhere (Phase 1 addition, lib/map/insert-leg.ts). Absent: a
+   * new point is placed by straight lines, as in planning.
+   */
+  places?: RidePlaces;
+  line?: Point[];
   /**
    * Preview before commit (Phase 1, docs/DESIGN-route-editing.md B4). When
    * present, every pending line-changing mark is handed to the page as it
@@ -459,6 +470,8 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     setShapePending(null);
     shapeAddRef.current = false;
     setPointSel(null);
+    setNewPoint(null);
+    setMoveRemove(null);
     const pinMove = sel?.kind === "pin" && sel.phase === "move";
     if (!opts.keepPick && !opts.commit && (opts.dropMark || pinMove)) {
       cancelPicking();
@@ -504,8 +517,31 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     check: "checking" | "ok" | "off-road";
     snappedTo?: { lat: number; lon: number } | null;
     distanceM?: number;
+    /** Put into its nearest leg when marked, and again whenever it moves (Phase 1 addition). */
+    placed?: boolean;
   };
   const [batch, setBatch] = useState<BatchItem[]>([]);
+  /**
+   * The newest point added from the map, and where it went (Phase 1
+   * addition, rider 2026-09-28; lib/map/insert-leg.ts): into the leg it is
+   * nearest to — or the one the rider chose from Mopik's two when Mopik was
+   * not sure (`options`, the notice area's chips). `id` is its pending stop
+   * in the batch (−1: the single mark a search pick leaves in the new row).
+   * `kind` is the „Pietura ⇄ Caurbraucams” switch while it is pending: a
+   * pass-through point waits as a grabbed line point, joined to the line
+   * where its leg passes nearest. `chosen` / `options` name the places either
+   * side as they were when it was placed. Gone with every exit
+   * (`leaveTransient`) and whenever the rows are re-seeded.
+   */
+  type NewWhere = { key: string; a: string | null; b: string | null; extend: boolean };
+  type NewPoint = { id: number; lat: number; lon: number; place: ResolvedPlace | null; kind: "stop" | "pass"; chosen: NewWhere; options: NewWhere[] | null; unsure: Placement["unsure"] };
+  const [newPoint, setNewPoint] = useState<NewPoint | null>(null);
+  /**
+   * §3: a pass-through point moved onto the line elsewhere — whether the
+   * rider picked „Izņemt punktu” for this very spot (keyed by it, so a new
+   * spot starts again on „Vest caur šejieni”).
+   */
+  const [moveRemove, setMoveRemove] = useState<string | null>(null);
   /** The pending stop the rider pressed: the next mark or drag moves it. */
   const [batchSel, setBatchSel] = useState<number | null>(null);
   /** Editing: a confirmed batch is being routed; its stops stay pending until the line lands. */
@@ -632,6 +668,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     setShapePending(null);
     setBatch([]);
     setBatchSel(null);
+    setNewPoint(null);
     setRowIsNew(false);
     setChosenRow(defaultActiveRow(snap.names));
   };
@@ -746,6 +783,8 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   const token = pickPoint?.token ?? null;
   /** Set while the map's marks go to the batch (see `batchMode`). */
   const batchPointRef = useRef<((lat: number, lon: number) => void) | null>(null);
+  /** Set while a new point waits as a pass-through point: a mark is its new spot. */
+  const passMarkRef = useRef<((lat: number, lon: number) => void) | null>(null);
   /**
    * The gesture whose lookup has answered. While it trails `token`, a point
    * is under the marker and its name is still on the way — the map's bar is
@@ -762,6 +801,13 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     if (!pickPoint || pickPoint.token === 0) return;
     // A grabbed line point: the mark is where it goes. Not a place, so no
     // name is looked up — Confirm is live the moment the mark lands.
+    // A new point switched to „Caurbraucams” (Phase 1 addition): the mark
+    // is its new spot, placed in its leg again.
+    if (passMarkRef.current) {
+      passMarkRef.current(pickPoint.lat, pickPoint.lon);
+      setNamedToken(pickPoint.token);
+      return;
+    }
     if (shapeAddRef.current) {
       const at = { lat: pickPoint.lat, lon: pickPoint.lon };
       setShapePending((p) => stepShape(p, { type: "mark", at }).pending);
@@ -858,6 +904,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   const cancelPicking = () => {
     const row = activeRow;
     setPointSel(null);
+    setNewPoint(null);
     endPicking();
     setShapePending(null);
     setOffRoad(null);
@@ -1055,8 +1102,19 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     // Another row's list: a ghost row the map was answering goes first. The
     // active row's own "new" flag stays — a place previewed in it is still
     // not confirmed, and Cancel must still be able to take the row away.
-    const target = row === activeRow ? row : leaveGhost(row);
+    let target = row === activeRow ? row : leaveGhost(row);
     if (row !== activeRow) setRowIsNew(false);
+    // A place found for a new row goes into the leg it is nearest to
+    // (Phase 1 addition), as a mark on the map does.
+    if (target !== null && target === activeRow && rowIsNew && !batch.length && !places[target]?.trim()) {
+      const placed = placeRowAt({ names: places, picked, items: [] }, target, place);
+      if (placed) {
+        setPlaces(placed.names);
+        setPicked(placed.picked);
+        target = placed.row;
+        noteNewPoint(placed, -1, place, place);
+      }
+    }
     setChosenRow(target);
     setOffRoad(null);
     setError(null);
@@ -1301,8 +1359,115 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
       setPlanDots((dots) => dots.map((d, i) => (i === target ? { ...d, lat: op.lat, lon: op.lon } : d)));
       return;
     }
+    // §3: moved onto the line elsewhere and „Izņemt punktu” chosen — the
+    // point goes; the line already rides there.
+    if (moveOnLine) track("moved_point_on_line", { choice: removeMoved ? "remove" : "keep" });
+    const op: ShapeEdit = removeMoved && shapePending.kind === "move" ? { kind: "remove", index: shapePending.index } : step.commit;
     leaveTransient({ commit: true });
-    edit.onShape(step.commit);
+    edit.onShape(op);
+  };
+  /**
+   * The new point as a pass-through point at `lat, lon` (editing): it waits
+   * as a grabbed line point, joined to the line where its leg — the one
+   * `choose` names, or the nearest — passes closest. The rows are the
+   * ride's; a pass-through point has none. False when there is no line to
+   * put it on.
+   */
+  const placePass = (lat: number, lon: number, choose: string | null, from: NewPoint | null): boolean => {
+    if (!edit) return false;
+    const names = edit.seed.names;
+    const rows = names.map((_, i) => (edit.seed.picked[i] ? { lat: edit.seed.picked[i].lat, lon: edit.seed.picked[i].lon } : null));
+    const placement = placeNewPoint({ rows, point: { lat, lon }, oneWay: tripType === "one_way", line: edit.line ?? null, allowExtend: false, choose });
+    const on = placement?.chosen.onLine;
+    if (!placement || !on) return false;
+    setShapePending({ kind: "add", at: { lat: on[1], lon: on[0] }, to: { lat, lon } });
+    shapeAddRef.current = true;
+    setNewPoint({
+      id: from?.id ?? -1, lat, lon, kind: "pass",
+      place: from && from.lat === lat && from.lon === lon ? from.place : null,
+      chosen: whereOf(placement.chosen, names),
+      options: placement.options?.map((o) => whereOf(o, names)) ?? null,
+      unsure: placement.unsure,
+    });
+    return true;
+  };
+  /**
+   * „Pietura ⇄ Caurbraucams” while the new point is pending (editing): the
+   * same spot, the other kind. A stop becomes a pass-through point — its row
+   * goes, the stops after it take their numbers back, the proposal routes it
+   * as a pass-through point; a pass-through point becomes a stop again, in
+   * the leg it was in. The new point stays pending either way; ✓ commits
+   * whichever it is.
+   */
+  const switchNewKind = (to: "stop" | "pass") => {
+    if (!edit || !newPoint || newPoint.kind === to || busy || edit.rerouting || batchCommitting) return;
+    if (to === "pass") {
+      const item = newPoint.id === -1 ? null : batch.find((b) => b.id === newPoint.id) ?? null;
+      const at = item ? { lat: item.lat, lon: item.lon } : preview ? { lat: preview.lat, lon: preview.lon } : null;
+      if (!at || (item && batch.length !== 1) || edit.shapePoints.length >= MAX_SHAPE_POINTS) return;
+      const place = item ? item.place : preview;
+      track("new_point_kind_toggled", { to });
+      setPlaces(edit.seed.names);
+      setPicked({ ...edit.seed.picked });
+      batchRef.current = [];
+      setBatch([]);
+      setBatchSel(null);
+      setPreview(null);
+      setOffRoad(null);
+      setMapQuery(null);
+      setRowIsNew(false);
+      setChosenRow(null);
+      placePass(at.lat, at.lon, newPoint.chosen.extend ? null : newPoint.chosen.key, { ...newPoint, ...at, place });
+      return;
+    }
+    if (shapePending?.kind !== "add" || !shapePending.to) return;
+    if (places.length >= maxRows(tripType === "one_way")) return;
+    const { lat, lon } = shapePending.to;
+    const place = newPoint.place && newPoint.lat === lat && newPoint.lon === lon ? newPoint.place : null;
+    const id = ++batchIdRef.current;
+    const names = edit.seed.names;
+    const end = names.length;
+    const placed = placeRowAt({
+      names: [...names, place?.name ?? "…"], picked: { ...edit.seed.picked },
+      items: [{ id, row: end, lat, lon, place, check: place ? "ok" : "checking" }],
+    }, end, { lat, lon }, newPoint.chosen.key);
+    if (!placed) return;
+    track("new_point_kind_toggled", { to });
+    setShapePending(null);
+    shapeAddRef.current = false;
+    batchRef.current = placed.items;
+    setBatch(placed.items);
+    setPlaces(placed.names);
+    setPicked(placed.picked);
+    setChosenRow(placed.row);
+    setRowIsNew(true);
+    noteNewPoint(placed, id, { lat, lon }, place);
+    if (!place) settleBatchItem(id, lat, lon);
+  };
+  /**
+   * One of Mopik's two choices for where the new point goes (the notice
+   * area's chips): it is put into that leg instead, and re-proposed. The
+   * two choices stay on offer, so the rider can go back.
+   */
+  const chooseLeg = (key: string) => {
+    if (!newPoint || key === newPoint.chosen.key || busy || batchCommitting) return;
+    track("new_point_leg_chosen", { extend: key === "extend" });
+    if (newPoint.kind === "pass") {
+      if (shapePending?.kind === "add" && shapePending.to) placePass(shapePending.to.lat, shapePending.to.lon, key, newPoint);
+      return;
+    }
+    const item = newPoint.id === -1 ? null : batch.find((b) => b.id === newPoint.id) ?? null;
+    const from = item ? item.row : activeRow;
+    const at = item ?? preview;
+    if (from === null || !at) return;
+    const placed = placeRowAt({ names: places, picked, items: batch }, from, { lat: at.lat, lon: at.lon }, key);
+    if (!placed) return;
+    batchRef.current = placed.items;
+    setBatch(placed.items);
+    setPlaces(placed.names);
+    setPicked(placed.picked);
+    setChosenRow(placed.row);
+    noteNewPoint(placed, newPoint.id, { lat: at.lat, lon: at.lon }, newPoint.place, newPoint.options);
   };
   /** Cancel on a pending shaping point: the dot goes back, nothing changes. */
   const cancelShape = () => {
@@ -1522,9 +1687,59 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
       return [[i >= at + (by === -1 ? 1 : 0) ? i + by : i, v]];
     })) as Record<number, ResolvedPlace | null>;
   /**
+   * Put row `from` — a new point at `at`, not yet in the ride — into the leg
+   * it is nearest to, or the one `choose` names (Phase 1 addition,
+   * lib/map/insert-leg.ts): the rows, their places and the batch's pending
+   * stops as they are with the row moved there. Editing, the legs are
+   * measured on the ride's line; planning, by straight lines between the
+   * places. Null when there is no place yet to put it between.
+   */
+  const placeRowAt = (s: { names: string[]; picked: Record<number, ResolvedPlace | null>; items: BatchItem[] }, from: number, at: { lat: number; lon: number }, choose: string | null = null) => {
+    const without = s.names.filter((_, i) => i !== from);
+    const pk = shiftPicked(s.picked, from, -1);
+    const items = s.items.filter((b) => b.row !== from).map((b) => (b.row > from ? { ...b, row: b.row - 1 } : b));
+    const rows = without.map((_, i) => {
+      const b = items.find((x) => x.row === i);
+      return b ? { lat: b.lat, lon: b.lon } : pk[i] ? { lat: pk[i]!.lat, lon: pk[i]!.lon } : null;
+    });
+    const placement = placeNewPoint({
+      rows, pending: without.map((_, i) => items.some((x) => x.row === i)), point: at,
+      oneWay: tripType === "one_way", line: edit?.line ?? null, choose,
+    });
+    if (!placement) return null;
+    const row = placement.chosen.index;
+    const moved = s.items.find((b) => b.row === from);
+    return {
+      names: [...without.slice(0, row), s.names[from], ...without.slice(row)],
+      picked: { ...shiftPicked(pk, row, 1), [row]: s.picked[from] ?? null },
+      items: [...items.map((b) => (b.row >= row ? { ...b, row: b.row + 1 } : b)), ...(moved ? [{ ...moved, row, placed: true }] : [])],
+      row, placement, without,
+    };
+  };
+  /** The places either side of an option, named from the rows it was measured on. */
+  const whereOf = (o: InsertOption, names: readonly string[]): NewWhere => ({
+    key: o.key, extend: o.extend,
+    a: o.before === null ? null : names[o.before]?.trim() || null,
+    b: o.after === null ? null : names[o.after]?.trim() || null,
+  });
+  /** Remember where the newest point went, for the field, its number and the chips. */
+  const noteNewPoint = (placed: NonNullable<ReturnType<typeof placeRowAt>>, id: number, at: { lat: number; lon: number }, place: ResolvedPlace | null, keepOptions?: NewWhere[] | null) => {
+    const { placement, without } = placed;
+    setNewPoint({
+      id, lat: at.lat, lon: at.lon, place, kind: "stop",
+      chosen: whereOf(placement.chosen, without),
+      options: keepOptions !== undefined ? keepOptions : placement.options?.map((o) => whereOf(o, without)) ?? null,
+      unsure: placement.unsure,
+    });
+    if (keepOptions === undefined) track("new_point_placed", { unsure: placement.unsure, mode: edit ? "edit" : "plan" });
+  };
+  /**
    * A mark on the map while an empty stop row is active or a batch is open:
    * the selected pending stop moves there, or another pending stop is added
-   * after the last — never a camera move (the map's `batchMode`).
+   * — never a camera move (the map's `batchMode`). Each new stop goes into
+   * the leg it is nearest to (Phase 1 addition, `placeRowAt`); the first one
+   * only when its row is a new one („+”, or the row a Confirm opened) — a
+   * row the rider chose himself stays where he has it.
    */
   const addToBatch = (lat: number, lon: number) => {
     if (batchSel !== null) { moveBatchItem(batchSel, lat, lon); setBatchSel(null); return; }
@@ -1532,20 +1747,38 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     if (batch.length === 0) {
       if (activeRow === null) return;
       const row = activeRow;
-      batchRef.current = [{ id, row, lat, lon, place: null, check: "checking" }];
+      const item: BatchItem = { id, row, lat, lon, place: null, check: "checking" };
+      const base = { names: places.map((p, i) => (i === row ? "…" : p)), picked, items: [item] };
+      const placed = rowIsNew ? placeRowAt(base, row, { lat, lon }) : null;
+      batchRef.current = placed?.items ?? base.items;
       setBatch(batchRef.current);
-      setPlaces((rows) => rows.map((p, i) => (i === row ? "…" : p)));
+      setPlaces(placed?.names ?? base.names);
+      if (placed) {
+        setPicked(placed.picked);
+        setChosenRow(placed.row);
+        noteNewPoint(placed, id, { lat, lon }, null);
+      }
       track("batch_stop_marked", { n: 1 });
       settleBatchItem(id, lat, lon);
       return;
     }
     if (places.length >= maxRows(tripType === "one_way")) return;
+    const end = places.length;
+    const placed = placeRowAt({ names: [...places, "…"], picked, items: [...batch, { id, row: end, lat, lon, place: null, check: "checking" }] }, end, { lat, lon });
+    // No place yet to measure a leg by: after the last pending stop, as before.
     const at = batch[batch.length - 1].row + 1;
-    setPlaces([...places.slice(0, at), "…", ...places.slice(at)]);
-    setPicked(shiftPicked(picked, at, 1));
-    batchRef.current = [...batch, { id, row: at, lat, lon, place: null, check: "checking" }];
+    const next = placed ?? {
+      names: [...places.slice(0, at), "…", ...places.slice(at)],
+      picked: shiftPicked(picked, at, 1),
+      items: [...batch.map((b) => (b.row >= at ? { ...b, row: b.row + 1 } : b)), { id, row: at, lat, lon, place: null, check: "checking" as const }],
+      row: at,
+    };
+    setPlaces(next.names);
+    setPicked(next.picked);
+    batchRef.current = next.items;
     setBatch(batchRef.current);
-    setChosenRow(at);
+    setChosenRow(next.row);
+    if (placed) noteNewPoint(placed, id, { lat, lon }, null);
     track("batch_stop_marked", { n: batch.length + 1 });
     settleBatchItem(id, lat, lon);
   };
@@ -1560,9 +1793,18 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     const item = batch.find((b) => b.id === id);
     setBatchSel(null);
     if (!item) return;
-    batchRef.current = batch.map((b) => (b.id === id ? { ...b, lat, lon, place: null, check: "checking" as const, snappedTo: null } : b));
+    const moved = batch.map((b) => (b.id === id ? { ...b, lat, lon, place: null, check: "checking" as const, snappedTo: null } : b));
+    const names = places.map((p, i) => (i === item.row ? "…" : p));
+    // A new point moved goes into the leg it is nearest to now.
+    const placed = item.placed ? placeRowAt({ names, picked, items: moved }, item.row, { lat, lon }) : null;
+    batchRef.current = placed?.items ?? moved;
     setBatch(batchRef.current);
-    setPlaces((rows) => rows.map((p, i) => (i === item.row ? "…" : p)));
+    setPlaces(placed?.names ?? names);
+    if (placed) {
+      setPicked(placed.picked);
+      setChosenRow(placed.row);
+      noteNewPoint(placed, id, { lat, lon }, null);
+    }
     settleBatchItem(id, lat, lon);
   };
   /** One pending stop out of the batch — its ✕, or ↶ for the last one. */
@@ -1570,6 +1812,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     const item = batch.find((b) => b.id === id);
     if (!item) return;
     setBatchSel(null);
+    if (newPoint?.id === id) setNewPoint(null);
     if (batch.length === 1) {
       // The empty row the batch started in stays, empty and active.
       batchRef.current = [];
@@ -1777,6 +2020,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     setRowIsNew(false);
     setBatch([]);
     setBatchSel(null);
+    setNewPoint(null);
     // No row stays none; a row the rows moved under follows its place.
     setChosenRow((row) => (row === null ? null : Math.min(edit.seed.active ?? row, names.length - 1)));
   }
@@ -1830,6 +2074,85 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
    */
   const activeLabel = activeRow === null ? "" : rowLabel(locale, activeRow, tripType === "one_way", places.length);
   const atCap = places.length >= maxRows(tripType === "one_way");
+  /**
+   * Phase 1 addition (lib/map/insert-leg.ts). The number every stop's pin
+   * wears, a new point pending among them counted — so the stops after it
+   * move up one while it waits, and back when it goes or turns
+   * pass-through. The row of the newest point, and the field's words for
+   * where it went: „Pietura 3 · starp „Līgatne” un „Cēsis””.
+   */
+  const pendingStopRows = new Set(batch.map((b) => b.row));
+  const newRow = !newPoint || newPoint.kind === "pass" ? null
+    : newPoint.id === -1 ? (preview ? activeRow : null)
+    : batch.find((b) => b.id === newPoint.id)?.row ?? null;
+  if (newRow !== null) pendingStopRows.add(newRow);
+  const rowNumbers = stopNumbers(places.map((_, i) => (!isStopRow(i) ? "none" as const
+    : pendingStopRows.has(i) ? "stop" as const
+    : picked[i] ? (picked[i]!.kind ? "sight" as const : "stop" as const) : "none" as const)));
+  const shortName = (name: string) => (name.length > 18 ? `${name.slice(0, 17).trimEnd()}…` : name);
+  const whereWords = (w: NewWhere, chip: boolean, short = false) => {
+    const n = (x: string | null) => (x && short ? shortName(x) : x ?? "");
+    if (w.extend) return chip ? t(locale, "legChipFinish") : fi(t(locale, "insertWhereAfter"), { a: n(w.a) });
+    // A chip names its leg by where it starts — „Pēc „Līgatne”” — short
+    // enough for two side by side at 320 px; its tooltip and the field say
+    // both ends.
+    if (w.a && w.b) return chip && short ? fi(t(locale, "legChipAfter"), { a: n(w.a) }) : fi(t(locale, chip ? "legChipBetween" : "insertWhereBetween"), { a: n(w.a), b: n(w.b) });
+    if (w.a) return fi(t(locale, chip ? "legChipAfter" : "insertWhereAfter"), { a: n(w.a) });
+    return fi(t(locale, chip ? "legChipBefore" : "insertWhereBefore"), { b: n(w.b) });
+  };
+  const insertWords = !newPoint ? null : (() => {
+    const w = newPoint.chosen;
+    const what = newPoint.kind === "pass" ? t(locale, "shapePointName")
+      : w.extend ? t(locale, "insertNewFinish")
+      : newRow !== null && rowNumbers[newRow] ? fi(t(locale, "pointStopTitle"), { n: rowNumbers[newRow]! }) : null;
+    if (!what) return null;
+    return w.a || w.b ? `${what} · ${whereWords(w, false)}` : what;
+  })();
+  /**
+   * §3: a pass-through point moved (dragged, or „Pārvietot” and a mark) to a
+   * spot within `ON_LINE_M` of the line somewhere other than the stretch it
+   * shapes: the line may already go there. The chips ask — „Vest caur
+   * šejieni” (preselected: he moved it) or „Izņemt punktu”.
+   */
+  const movedShape = edit && shapePending?.kind === "move" ? shapePending : null;
+  const moveKey = movedShape ? `${movedShape.index}:${movedShape.to.lat},${movedShape.to.lon}` : "";
+  const moveOnLine = Boolean(movedShape && edit?.line && edit.places
+    && onLineElsewhere({ line: edit.line, places: edit.places, shapeIndex: movedShape.index, to: movedShape.to }));
+  const removeMoved = moveOnLine && moveRemove === moveKey;
+  /** Whether the new point's kind can be switched now: one new point, pending, not being committed. */
+  const canSwitchKind = Boolean(edit?.onPropose && newPoint && !batchCommitting && !edit.rerouting && (newPoint.kind === "pass"
+    ? shapePending?.kind === "add" && Boolean(shapePending.to) && !atCap
+    : (newPoint.id === -1 ? Boolean(preview) : batch.length === 1 && batch[0].id === newPoint.id) && edit.shapePoints.length < MAX_SHAPE_POINTS));
+  /**
+   * The notice area's chips (never in the bar or the column: their slots
+   * stay put). What each does is named here (`act`) and wired to the
+   * handlers in the controls effect below, as every other control is.
+   */
+  type ChoiceAct = { kind: "stop" | "pass" } | { leg: string } | { remove: boolean };
+  type ChoiceSpec = Omit<MapChoiceGroup, "options"> & { options: (Omit<MapChoiceGroup["options"][number], "onSelect"> & { act: ChoiceAct })[] };
+  const choices: ChoiceSpec[] = [];
+  if (canSwitchKind && newPoint) choices.push({
+    key: "kind", label: t(locale, "kindChoiceLabel"),
+    options: (["stop", "pass"] as const).map((k) => ({
+      key: k, label: t(locale, k === "stop" ? "kindStop" : "kindPass"), selected: newPoint.kind === k,
+      act: { kind: k },
+    })),
+  });
+  if (newPoint?.options && !batchCommitting) choices.push({
+    key: "leg", label: t(locale, "legChoiceLabel"),
+    options: newPoint.options.map((o) => ({
+      key: o.key, label: whereWords(o, true, true), title: whereWords(o, true), selected: o.key === newPoint.chosen.key,
+      act: { leg: o.key },
+    })),
+  });
+  if (moveOnLine) choices.push({
+    key: "move", label: t(locale, "moveChoiceLabel"),
+    options: [
+      { key: "keep", label: t(locale, "moveKeepHere"), title: t(locale, "moveChoiceLabel"), selected: !removeMoved, act: { remove: false } },
+      { key: "remove", label: t(locale, "moveRemovePoint"), title: t(locale, "moveChoiceLabel"), selected: removeMoved, act: { remove: true } },
+    ],
+  });
+  const choicesKey = choices.map((g) => `${g.key}:${g.options.map((o) => `${o.key}${o.selected ? "*" : ""}${o.label}`).join(",")}`).join("|");
   /** Why no stop fits, whole: the „+”'s name and tooltip, the field's at the cap. */
   const capSentence = fi(t(locale, "mapAddStopFull"), { n: MAX_STOPS });
   /**
@@ -1916,6 +2239,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     selectBatch: (id: number) => void; moveBatch: (id: number, at: { lat: number; lon: number }) => void; dropBatch: (id: number) => void;
     moveSelectedToRoad: () => void; dropSelected: () => void;
     undo: () => void;
+    switchKind: (to: "stop" | "pass") => void; chooseLeg: (key: string) => void; moveChoice: (remove: boolean) => void;
   } | null>(null);
   /**
    * What the map's header shows in place of "+" — Confirm and Cancel — or
@@ -1947,6 +2271,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   const batchMode = batchActive || batchReady;
   // Synced after each commit; the mark that the next render brings reads it.
   useEffect(() => { batchPointRef.current = batchMode ? addToBatch : null; });
+  useEffect(() => { passMarkRef.current = newPoint?.kind === "pass" && grab ? (lat: number, lon: number) => { placePass(lat, lon, null, newPoint); } : null; });
   const selectedItem = batchSel === null ? null : batch.find((b) => b.id === batchSel) ?? null;
   const batchKey = batch.map((b) => `${b.id}:${b.row}:${b.lat},${b.lon}:${b.place?.name ?? ""}:${b.check}`).join("|") + `|${batchSel ?? ""}|${batchReady ? 1 : 0}`;
   const pendingKey = shapePending
@@ -1994,6 +2319,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
         for (const b of batch) nextPicked[b.row] = b.place;
         return { kind: "rows" as const, rows: { names, picked: nextPicked } };
       })())
+    : shapePending?.kind === "move" && removeMoved ? { kind: "shape" as const, op: { kind: "remove" as const, index: shapePending.index } }
     : shapePending ? (() => { const op = stepShape(shapePending, { type: "confirm" }).commit; return op ? { kind: "shape" as const, op } : null; })()
     : pointSel?.phase === "remove" ? (pointSel.kind === "shape"
         ? { kind: "shape" as const, op: { kind: "remove" as const, index: pointSel.index } }
@@ -2133,7 +2459,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     const noRowWords = fieldMode === "new-stop" ? t(locale, "mapNoActiveRow") : atCap ? fi(t(locale, "mapStopCapShort"), { n: MAX_STOPS }) : t(locale, "mapFieldRerouting");
     onMapControlsChange?.({
       pending,
-      hint: batchActive ? batchCount : removeHint ? removeHint : pointSel?.phase === "move" ? t(locale, "pointMoveHint") : shapePending?.kind === "move" ? t(locale, "shapeMoveHint") : grab ? t(locale, "mapGrabHint") : activeRow === null ? noRowWords : fi(t(locale, "mapActiveRowHint"), { label: activeLabel }),
+      hint: batchActive ? insertWords ?? batchCount : removeHint ? removeHint : pointSel?.phase === "move" ? t(locale, "pointMoveHint") : shapePending?.kind === "move" ? t(locale, "shapeMoveHint") : grab ? insertWords ?? t(locale, "mapGrabHint") : activeRow === null ? noRowWords : fi(t(locale, "mapActiveRowHint"), { label: activeLabel }),
       rowLabel: activeRow === null || batchActive ? undefined : activeLabel,
       // The pin the active row's mark will become, and a stop's number: one
       // more than the filled, numbered stops above it — the order the map
@@ -2142,12 +2468,25 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
         ? { role: "start" as const, number: null }
         : tripType === "one_way" && activeRow === places.length - 1
           ? { role: "finish" as const, number: null }
-          : { role: "via" as const, number: 1 + places.slice(1, activeRow).filter((_, j) => picked[j + 1] && !picked[j + 1]?.kind).length },
+          : { role: "via" as const, number: (newRow === activeRow ? rowNumbers[activeRow] : null) ?? 1 + places.slice(1, activeRow).filter((_, j) => picked[j + 1] && !picked[j + 1]?.kind).length },
       onAddStop,
       // At the cap, why „+” is greyed out and the next mark adds nothing —
       // short, on a line of its own; the sentence is its tooltip.
       // While a proposal is shown the map's chip takes this slot (P1-D).
       notice: atCap ? { text: fi(t(locale, "mapStopCapShort"), { n: MAX_STOPS }), title: capSentence } : null,
+      // Phase 1 addition: the new point's kind and leg, a moved point's keep / remove.
+      choices: !choices.length ? null : choices.map((g) => ({
+        ...g,
+        options: g.options.map(({ act, ...o }) => ({
+          ...o,
+          onSelect: () => {
+            const h = pendingHandlers.current;
+            if ("kind" in act) h?.switchKind(act.kind);
+            else if ("leg" in act) h?.chooseLeg(act.leg);
+            else h?.moveChoice(act.remove);
+          },
+        })),
+      })),
       addStopLabel: t(locale, "mapAddStop"),
       addStopFullLabel: capSentence,
       search: {
@@ -2166,7 +2505,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
         // A batch has no field to type into — its count is the field's words
         // (and the cap, once it is reached).
         // The cap is said on its own line (`notice`); the field keeps the count.
-        placeholder: batchActive ? batchCount : removeHint ? removeHint : pointSel?.phase === "move" ? t(locale, "pointMoveHint") : shapePending?.kind === "move" ? t(locale, "shapeMoveHint") : grab ? t(locale, "mapGrabHint") : activeRow === null ? noRowWords : t(locale, "mapSearchHint"),
+        placeholder: batchActive ? insertWords ?? batchCount : removeHint ? removeHint : pointSel?.phase === "move" ? t(locale, "pointMoveHint") : shapePending?.kind === "move" ? t(locale, "shapeMoveHint") : grab ? insertWords ?? t(locale, "mapGrabHint") : activeRow === null ? noRowWords : newRow === activeRow && insertWords ? insertWords : t(locale, "mapSearchHint"),
         disabled: fieldMode === "off",
         onFocus: fieldMode === "new-stop" ? onAddStop : null,
       },
@@ -2215,7 +2554,11 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
       // Batch adding: the pending stops, drawn by the map as dashed numbered
       // pins it can select and drag; the camera stays still while it is on.
       batchMode,
-      batch: batch.map((b, k) => ({ id: b.id, lat: b.lat, lon: b.lon, number: stopsBefore + k + 1, selected: b.id === batchSel, failing: b.check === "off-road" })),
+      batch: batch.map((b, k) => ({
+        id: b.id, lat: b.lat, lon: b.lon, number: rowNumbers[b.row] ?? stopsBefore + k + 1, selected: b.id === batchSel, failing: b.check === "off-road",
+        // Ridden on past a one-way finish, it is the new finish.
+        ...(tripType === "one_way" && b.row === places.length - 1 ? { finish: true } : {}),
+      })),
       onBatchSelect: (id: number) => pendingHandlers.current?.selectBatch(id),
       onBatchMove: (id: number, at: { lat: number; lon: number }) => pendingHandlers.current?.moveBatch(id, at),
       onBatchDrop: (id: number) => pendingHandlers.current?.dropBatch(id),
@@ -2229,7 +2572,9 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
       // where the line is simply not grabbable (nothing offered that does
       // nothing).
       ...(edit ? {
-        onLineGrab: batchActive || edit.shapePoints.length >= MAX_SHAPE_POINTS ? undefined : (g: { lat: number; lon: number; slot: number }) => pendingHandlers.current?.lineGrab(g),
+        // Nor while a point is being moved (§3): a tap — or a hold — on the
+        // line is then its new place, never a grab.
+        onLineGrab: batchActive || edit.shapePoints.length >= MAX_SHAPE_POINTS || pointSel?.phase === "move" || shapePending?.kind === "move" || newPoint?.kind === "pass" ? undefined : (g: { lat: number; lon: number; slot: number }) => pendingHandlers.current?.lineGrab(g),
         grab: grab?.at ?? null,
         shapePoints: batchActive ? [] : shapeDots,
         onShapeDrag: (index: number, at: { lat: number; lon: number }) => pendingHandlers.current?.shapeDrag(index, at),
@@ -2246,7 +2591,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     // The parent's callback is an inline arrow and is rebuilt every render;
     // listing it would re-report the same controls on every keystroke.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapLive, activeRow, activeLabel, atCap, activeValue, activeConfirmed, anchor, locale, tripType, rowsKey, pendingKey, mapQuery, activeOwn?.lat, activeOwn?.lon, planKey, grab?.at.lat, grab?.at.lon, batchKey, fitAsk, undo.past.length, edit?.canUndo, edit?.rerouting, batchCommitting, shapeKey, stopCount, pointKey, movePreviewKey, proposalKey, proposeKey, passCount, pointTitle]);
+  }, [mapLive, activeRow, activeLabel, atCap, activeValue, activeConfirmed, anchor, locale, tripType, rowsKey, pendingKey, mapQuery, activeOwn?.lat, activeOwn?.lon, planKey, grab?.at.lat, grab?.at.lon, batchKey, fitAsk, undo.past.length, edit?.canUndo, edit?.rerouting, batchCommitting, shapeKey, stopCount, pointKey, movePreviewKey, proposalKey, proposeKey, passCount, pointTitle, choicesKey, insertWords, rowNumbers.join(",")]);
   // Nothing is offered once the form is gone. Without this the page would keep
   // drawing a map header for a form the rider has left.
   useEffect(() => () => onMapControlsChange?.(null),
@@ -2306,8 +2651,13 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   // The rows as roles, which is what the map is actually asking about. Keyed
   // on the role of each row and not merely on the coordinates, so moving a
   // place from the finish row to a stop row re-draws its pin.
-  const roles = placeRoles({ picked, rowCount: places.length, tripType });
+  const rolesBase = placeRoles({ picked, rowCount: places.length, tripType });
+  // While a new point waits among the stops, the ones after it wear their
+  // numbers one up (Phase 1 addition) — the map is told each via's.
+  const viaRows = places.map((_, i) => i).filter((i) => i > 0 && i < (tripType === "one_way" ? places.length - 1 : places.length) && picked[i]);
+  const roles: PlaceRoles = pendingStopRows.size ? { ...rolesBase, viaNumbers: viaRows.map((i) => rowNumbers[i]) } : rolesBase;
   const rolesKey = [
+    roles.viaNumbers ? `n:${roles.viaNumbers.join(",")}` : "n:-",
     roles.start ? `s:${roles.start.lat},${roles.start.lon}` : "s:-",
     ...roles.vias.map((v, i) => `v${i}:${v.lat},${v.lon}`),
     roles.finish ? `f:${roles.finish.lat},${roles.finish.lon}` : "f:-",
@@ -2353,6 +2703,9 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
       moveSelectedToRoad: () => { if (selectedItem?.snappedTo) { moveBatchItem(selectedItem.id, selectedItem.snappedTo.lat, selectedItem.snappedTo.lon); setBatchSel(null); } },
       dropSelected: () => { if (selectedItem) dropBatchItem(selectedItem.id); },
       undo: undoStep,
+      switchKind: switchNewKind,
+      chooseLeg,
+      moveChoice: (remove: boolean) => { if (remove !== removeMoved) setMoveRemove(remove ? moveKey : null); },
       type: (value: string) => {
         if (activeRow === null) return;
         setMapQuery({ row: activeRow, text: value });

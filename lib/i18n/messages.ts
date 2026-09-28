@@ -675,7 +675,35 @@ export type MessageKey =
   /** The gate row inside the map's segment card. `{n}` is the count on that
    *  stretch — what it means for the riding, which the panel's number cannot
    *  say: the gate may have to be opened, or it may turn the ride back. */
-  | "segGates";
+  | "segGates"
+  // ── P1-insert ──
+  /**
+   * Phase 1 addition (rider, 2026-09-28): where a new point goes and its
+   * kind. The field reads „{what} · {where}” — `pointStopTitle`,
+   * `insertNewFinish` or `shapePointName`, then `insertWhere*` with the
+   * places either side ({a} before, {b} after). When Mopik is not sure of
+   * the leg, `legChip*` are the two choice chips (`legChoiceLabel` their
+   * group's name); `kindStop` / `kindPass` the switch while the new point is
+   * pending (`kindChoiceLabel`). A pass-through point moved onto the line
+   * elsewhere: `moveKeepHere` (preselected) / `moveRemovePoint`, the group
+   * `moveChoiceLabel`. Latvian never says „piesit”.
+   */
+  | "insertWhereBetween"
+  | "insertWhereAfter"
+  | "insertWhereBefore"
+  | "insertNewFinish"
+  | "legChipBetween"
+  | "legChipAfter"
+  | "legChipBefore"
+  | "legChipFinish"
+  | "legChoiceLabel"
+  | "kindStop"
+  | "kindPass"
+  | "kindChoiceLabel"
+  | "moveKeepHere"
+  | "moveRemovePoint"
+  | "moveChoiceLabel";
+  // ── /P1-insert ──
 
 type Messages = Record<MessageKey, string>;
 
@@ -1203,6 +1231,23 @@ const lv: Messages = {
   segOnTet: "Pa TET",
   segRough: "Grūts meža ceļš",
   segGates: "{n} vārti šajā posmā — var būt jāatver vai jāgriežas.",
+  // ── P1-insert ──
+  insertWhereBetween: "starp „{a}” un „{b}”",
+  insertWhereAfter: "pēc „{a}”",
+  insertWhereBefore: "pirms „{b}”",
+  insertNewFinish: "Jauns finišs",
+  legChipBetween: "Starp „{a}” un „{b}”",
+  legChipAfter: "Pēc „{a}”",
+  legChipBefore: "Pirms „{b}”",
+  legChipFinish: "Beigās (jauns finišs)",
+  legChoiceLabel: "Kur to ievietot braucienā",
+  kindStop: "Pietura",
+  kindPass: "Caurbraucams",
+  kindChoiceLabel: "Pietura vai caurbraucams punkts",
+  moveKeepHere: "Vest caur šejieni",
+  moveRemovePoint: "Izņemt punktu",
+  moveChoiceLabel: "Līnija jau iet šeit — ko darīt ar punktu?",
+  // ── /P1-insert ──
 };
 
 const lt: Messages = {
@@ -1699,6 +1744,23 @@ const lt: Messages = {
   segOnTet: "TET keliu",
   segRough: "Sunkus miško kelias",
   segGates: "{n} vartai šioje atkarpoje — gali tekti atidaryti arba suktis atgal.",
+  // ── P1-insert ──
+  insertWhereBetween: "tarp „{a}“ ir „{b}“",
+  insertWhereAfter: "po „{a}“",
+  insertWhereBefore: "prieš „{b}“",
+  insertNewFinish: "Naujas finišas",
+  legChipBetween: "Tarp „{a}“ ir „{b}“",
+  legChipAfter: "Po „{a}“",
+  legChipBefore: "Prieš „{b}“",
+  legChipFinish: "Pabaigoje (naujas finišas)",
+  legChoiceLabel: "Kur jį įterpti maršrute",
+  kindStop: "Sustojimas",
+  kindPass: "Pravažiuojamas",
+  kindChoiceLabel: "Sustojimas ar pravažiavimo taškas",
+  moveKeepHere: "Vesti per čia",
+  moveRemovePoint: "Pašalinti tašką",
+  moveChoiceLabel: "Linija jau eina čia — ką daryti su tašku?",
+  // ── /P1-insert ──
 };
 
 const et: Messages = {
@@ -2191,6 +2253,23 @@ const et: Messages = {
   segOnTet: "TET-i mööda",
   segRough: "Raske metsatee",
   segGates: "{n} väravat sellel lõigul — võib olla vaja avada või tagasi pöörata.",
+  // ── P1-insert ──
+  insertWhereBetween: "„{a}“ ja „{b}“ vahel",
+  insertWhereAfter: "pärast „{a}“",
+  insertWhereBefore: "enne „{b}“",
+  insertNewFinish: "Uus finiš",
+  legChipBetween: "„{a}“ ja „{b}“ vahel",
+  legChipAfter: "Pärast „{a}“",
+  legChipBefore: "Enne „{b}“",
+  legChipFinish: "Lõpus (uus finiš)",
+  legChoiceLabel: "Kuhu see sõidus lisada",
+  kindStop: "Peatus",
+  kindPass: "Läbisõit",
+  kindChoiceLabel: "Peatus või läbisõidupunkt",
+  moveKeepHere: "Vii siit läbi",
+  moveRemovePoint: "Eemalda punkt",
+  moveChoiceLabel: "Joon juba läheb siit — mida punktiga teha?",
+  // ── /P1-insert ──
 };
 
 const en: Messages = {
@@ -2681,6 +2760,23 @@ const en: Messages = {
   segOnTet: "On the TET",
   segRough: "Rough forest track",
   segGates: "{n} gates on this stretch — you may have to open one or turn back.",
+  // ── P1-insert ──
+  insertWhereBetween: "between “{a}” and “{b}”",
+  insertWhereAfter: "after “{a}”",
+  insertWhereBefore: "before “{b}”",
+  insertNewFinish: "New finish",
+  legChipBetween: "Between “{a}” and “{b}”",
+  legChipAfter: "After “{a}”",
+  legChipBefore: "Before “{b}”",
+  legChipFinish: "At the end (new finish)",
+  legChoiceLabel: "Where it goes in the ride",
+  kindStop: "Stop",
+  kindPass: "Pass-through",
+  kindChoiceLabel: "Stop or pass-through point",
+  moveKeepHere: "Route through here",
+  moveRemovePoint: "Remove the point",
+  moveChoiceLabel: "The line already goes here — what to do with the point?",
+  // ── /P1-insert ──
 };
 
 const MESSAGES: Record<UiLocale, Messages> = { lv, lt, et, en };

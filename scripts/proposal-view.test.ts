@@ -63,7 +63,9 @@ test("landed: the chip, the new line and where it is new — no tone", () => {
 test("a proposal's notes are said with it and go with it", () => {
   const note = "Punkts pārvietots 40 m, lai tas būtu uz ceļa.";
   const withNote = proposalView({ phase: "proposed", proposal: proposal([note, ""]), confirmNow: false }, copy, "lv");
-  assert.ok(withNote?.text.endsWith(`${NOTE_JOINER}${note}`));
+  // The notes are their own line under the numbers, not run on after them.
+  assert.equal(withNote?.notes, note);
+  assert.ok(!withNote?.text.includes(NOTE_JOINER));
   assert.ok(withNote?.title.endsWith(note));
   // The next state of the same mark — routing again, or ✕ — carries none of it.
   const again = proposalView({ phase: "routing", token: 4, how: "move-stop", confirmWhenReady: false }, copy, "lv");

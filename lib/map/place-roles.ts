@@ -43,6 +43,12 @@ export type PlaceRoles = {
    * than by the map counting places.
    */
   finish: ResolvedPlace | null;
+  /**
+   * The number each via's pin wears, index for index, when a new point is
+   * pending among them (Phase 1, 2026-09-28): the stops after it are counted
+   * up by one while it waits. Absent: the map numbers the vias 1…n.
+   */
+  viaNumbers?: (number | null)[];
 };
 
 /**
