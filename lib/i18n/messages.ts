@@ -855,6 +855,25 @@ export type MessageKey =
   // ── /place-search ──
   | "editNoWayThrough"
   | "editNoWayThroughShape"
+  | "blockFar"
+  | "blockProfile"
+  | "blockDetour"
+  | "blockFailed"
+  | "blockTogether"
+  | "blockTogetherAct"
+  | "blockProbing"
+  | "blockProbingAct"
+  | "blockActMove"
+  | "blockActRemove"
+  | "blockActStraight"
+  | "blockActOverride"
+  | "blockActRest"
+  | "blockOr"
+  | "blockChipLabel"
+  | "blockChipMove"
+  | "blockChipRemove"
+  | "blockChipRest"
+  | "blockMoveHint"
   ;
 
 type Messages = Record<MessageKey, string>;
@@ -1503,6 +1522,25 @@ const lv: Messages = {
   // ── release-b ──
   editNoWayThrough: "Cauri šai pieturai neizdevās atrast citu ceļu – atpakaļ pa to pašu ceļu {km} km.",
   editNoWayThroughShape: "Cauri šim punktam neizdevās atrast citu ceļu – atpakaļ pa to pašu ceļu {km} km.",
+  blockFar: "tuvākais ceļš ~{m} m nostāk",
+  blockProfile: "līdz tai ved tikai ceļi ārpus tava profila",
+  blockDetour: "tā pagarina braucienu par {km} km",
+  blockFailed: "to neizdevās savienot ar maršrutu",
+  blockTogether: "Katru no {n} punktiem var pievienot atsevišķi, bet kopā tos neizdevās savienot",
+  blockTogetherAct: "izņem kādu vai pievieno tos pa vienam.",
+  blockProbing: "Meklēju, kurš punkts traucē",
+  blockProbingAct: "pagaidi mirkli.",
+  blockActMove: "pārvieto",
+  blockActRemove: "izņem",
+  blockActStraight: "„Vest pa taisno”",
+  blockActOverride: "„Tomēr braukt”",
+  blockActRest: "„Pievienot pārējās”",
+  blockOr: "vai",
+  blockChipLabel: "Ko darīt ar šo punktu",
+  blockChipMove: "Pārvietot",
+  blockChipRemove: "Izņemt",
+  blockChipRest: "Pievienot pārējās",
+  blockMoveHint: "Pārvieto {name} – pieskaries jaunajai vietai kartē.",
   // ── /release-b ──
 };
 
@@ -2120,6 +2158,25 @@ const lt: Messages = {
   // ── release-b ──
   editNoWayThrough: "Pro šį sustojimą kito kelio rasti nepavyko – atgal tuo pačiu keliu {km} km.",
   editNoWayThroughShape: "Pro šį tašką kito kelio rasti nepavyko – atgal tuo pačiu keliu {km} km.",
+  blockFar: "artimiausias kelias už ~{m} m",
+  blockProfile: "iki jo veda tik keliai už jūsų profilio ribų",
+  blockDetour: "jis pailgina kelionę {km} km",
+  blockFailed: "jo nepavyko sujungti su maršrutu",
+  blockTogether: "Kiekvieną iš {n} taškų galima pridėti atskirai, bet kartu jų sujungti nepavyko",
+  blockTogetherAct: "pašalinkite kurį nors arba pridėkite po vieną.",
+  blockProbing: "Ieškau, kuris taškas trukdo",
+  blockProbingAct: "palaukite akimirką.",
+  blockActMove: "perkelkite",
+  blockActRemove: "pašalinkite",
+  blockActStraight: "„Vesti tiesiai“",
+  blockActOverride: "„Vis tiek važiuoti“",
+  blockActRest: "„Pridėti likusius“",
+  blockOr: "arba",
+  blockChipLabel: "Ką daryti su šiuo tašku",
+  blockChipMove: "Perkelti",
+  blockChipRemove: "Pašalinti",
+  blockChipRest: "Pridėti likusius",
+  blockMoveHint: "Perkelkite {name} – palieskite naują vietą žemėlapyje.",
   // ── /release-b ──
 };
 
@@ -2733,6 +2790,25 @@ const et: Messages = {
   // ── release-b ──
   editNoWayThrough: "Selle peatuse kaudu teist teed leida ei õnnestunud – tagasi sama teed {km} km.",
   editNoWayThroughShape: "Selle punkti kaudu teist teed leida ei õnnestunud – tagasi sama teed {km} km.",
+  blockFar: "lähim tee on ~{m} m eemal",
+  blockProfile: "sinna viivad ainult teed väljaspool sinu profiili",
+  blockDetour: "see pikendab sõitu {km} km",
+  blockFailed: "seda ei õnnestunud marsruudiga ühendada",
+  blockTogether: "Iga {n} punkti saab lisada eraldi, kuid koos neid ühendada ei õnnestunud",
+  blockTogetherAct: "eemalda mõni või lisa need ükshaaval.",
+  blockProbing: "Otsin, milline punkt segab",
+  blockProbingAct: "oota hetk.",
+  blockActMove: "liiguta",
+  blockActRemove: "eemalda",
+  blockActStraight: "„Vii otse“",
+  blockActOverride: "„Sõida ikkagi“",
+  blockActRest: "„Lisa ülejäänud“",
+  blockOr: "või",
+  blockChipLabel: "Mida selle punktiga teha",
+  blockChipMove: "Liiguta",
+  blockChipRemove: "Eemalda",
+  blockChipRest: "Lisa ülejäänud",
+  blockMoveHint: "Liiguta {name} – puuduta kaardil uut kohta.",
   // ── /release-b ──
 };
 
@@ -3344,6 +3420,25 @@ const en: Messages = {
   // ── release-b ──
   editNoWayThrough: "No other way through this stop was found – back the same way for {km} km.",
   editNoWayThroughShape: "No other way through this point was found – back the same way for {km} km.",
+  blockFar: "the nearest road is ~{m} m away",
+  blockProfile: "only roads outside your profile lead there",
+  blockDetour: "it makes the ride {km} km longer",
+  blockFailed: "it could not be joined to the route",
+  blockTogether: "Each of the {n} points can be added on its own, but together they could not be joined",
+  blockTogetherAct: "remove one or add them one at a time.",
+  blockProbing: "Finding which point is in the way",
+  blockProbingAct: "one moment.",
+  blockActMove: "move it",
+  blockActRemove: "remove it",
+  blockActStraight: "“Go straight”",
+  blockActOverride: "“Ride it anyway”",
+  blockActRest: "“Add the rest”",
+  blockOr: "or",
+  blockChipLabel: "What to do with this point",
+  blockChipMove: "Move",
+  blockChipRemove: "Remove",
+  blockChipRest: "Add the rest",
+  blockMoveHint: "Move {name} – tap its new place on the map.",
   // ── /release-b ──
 };
 

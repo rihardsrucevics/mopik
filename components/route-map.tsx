@@ -178,6 +178,8 @@ export type MapControls = {
    * effect for how "not yet confirmed" stays readable.
    */
   pendingPin?: { role: "start" | "finish" | "via" | "shape"; number: number | null };
+  /** Release B item 1: the pending mark is the point that stops the proposal — ringed in its own colour. */
+  pendingBlocked?: boolean;
   pending: MapPendingMark | null;
   onAddStop: (() => void) | null;
   addStopLabel: string;
@@ -304,7 +306,9 @@ export type MapControls = {
    */
   batchMode?: boolean;
   /** `finish`: the new point rides on past the one-way finish and becomes it (Phase 1): a red pin, no number. */
-  batch?: { id: number; lat: number; lon: number; number: number; selected: boolean; failing: boolean; finish?: boolean }[];
+  batch?: { id: number; lat: number; lon: number; number: number; selected: boolean; failing: boolean; finish?: boolean;
+    /** Release B item 1: this pending stop is what stops the proposal — ringed in its own colour. */
+    blocked?: boolean }[];
   onBatchSelect?: (id: number) => void;
   onBatchMove?: (id: number, at: { lat: number; lon: number }) => void;
   onBatchDrop?: (id: number) => void;
@@ -1854,6 +1858,10 @@ const FINISH_PIN_COLOR = "#dc2626";
  * or the proposal's yellow halo.
  */
 const PENDING_LINK_COLOR = "#57534e";
+/** A stop's own orange — its ring when it stops a proposal (release B item 1). */
+const STOP_RING_COLOR = "#f56300";
+/** The ring a blocking point wears: white, then its own colour. */
+const blockedRing = (color: string) => `0 0 0 3px #fff, 0 0 0 6px ${color}, 0 1px 4px rgba(0,0,0,0.35)`;
 /** The start, for the same reason and in the same place. */
 const START_PIN_COLOR = "#16a34a";
 
@@ -3240,11 +3248,22 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
       pendingPinKeyRef.current = pendingPinKey;
     }
     pickedMarkerRef.current.setLngLat([pickedPoint.lon, pickedPoint.lat]).addTo(map);
+    // Release B item 1: the point that stops the proposal wears a ring in its own colour.
+    const pel = pickedMarkerRef.current.getElement();
+    const role = pendingPin?.role ?? "via";
+    if (controls?.pendingBlocked) {
+      pel.dataset.blocked = "true";
+      pel.style.boxShadow = blockedRing(role === "start" ? START_PIN_COLOR : role === "finish" ? FINISH_PIN_COLOR : role === "shape" ? "#1c1917" : STOP_RING_COLOR);
+      pel.style.borderRadius = pel.style.borderRadius || "9999px";
+    } else if (pel.dataset.blocked) {
+      delete pel.dataset.blocked;
+      pel.style.boxShadow = "";
+    }
     // The coordinates, not the object. The parent rebuilds it on every reverse
     // lookup, and an identity dependency would re-run `setLngLat` for a point
     // that has not moved.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, pickedPoint?.lat, pickedPoint?.lon, pendingPinKey, batchMode]);
+  }, [ready, pickedPoint?.lat, pickedPoint?.lon, pendingPinKey, batchMode, controls?.pendingBlocked]);
 
   /**
    * Keep the pending marker clear of the header.
@@ -3469,7 +3488,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
   const batchDropRef = useRef(controls?.onBatchDrop);
   useEffect(() => { batchSelectRef.current = controls?.onBatchSelect; batchMoveRef.current = controls?.onBatchMove; batchDropRef.current = controls?.onBatchDrop; });
   const batchPins = controls?.batch ?? [];
-  const batchPinsKey = batchPins.map((b) => `${b.id}:${b.lat},${b.lon}:${b.number}:${b.selected ? 1 : 0}:${b.failing ? 1 : 0}:${b.finish ? 1 : 0}`).join("|");
+  const batchPinsKey = batchPins.map((b) => `${b.id}:${b.lat},${b.lon}:${b.number}:${b.selected ? 1 : 0}:${b.failing ? 1 : 0}:${b.finish ? 1 : 0}:${b.blocked ? 1 : 0}`).join("|");
   useEffect(() => {
     const map = mapRef.current;
     for (const marker of batchMarkersRef.current) marker.remove();
@@ -3484,7 +3503,9 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
       el.style.zIndex = b.selected ? "4" : "3";
       el.style.cursor = "grab";
       if (b.failing) el.style.borderColor = "#f59e0b";
+      if (b.blocked) el.dataset.blocked = "true";
       if (b.selected) el.style.boxShadow = "0 0 0 4px rgba(245,99,0,0.35), 0 1px 3px rgba(0,0,0,0.32)";
+      else if (b.blocked) el.style.boxShadow = blockedRing(b.finish ? FINISH_PIN_COLOR : STOP_RING_COLOR);
       else el.animate([{ opacity: 0.55 }, { opacity: 0.95 }], { duration: 900, iterations: Infinity, direction: "alternate", easing: "ease-in-out" });
       el.addEventListener("click", (event) => {
         event.stopPropagation();
