@@ -1562,3 +1562,21 @@ time of a thrown-away stretch was off by −1…+8 min on five real rides.
 Fix: the server returns seconds per segment (a `seconds` field on the
 segments `classifyRoute` produces), carried in the share code and types, so
 an edit subtracts exactly what it removes.
+
+## 46. „Pievienot” on a sight on the map only ticks it — it is not added
+
+**Rider, 2026-09-28.** Viewing or editing his ride, he opens a sight on the
+map and taps „Pievienot”. It looks added. But the side panel's „Apskates
+vietas” list shows it merely **ticked**, still waiting for that list's own
+„Pievienot” button. Had he not opened the panel he would never know the
+sight was not in the ride. Two steps that look like one — the rider's rule
+"never ship a control that does nothing" in a subtler form.
+
+Fix direction: „Pievienot” on the map card adds the sight to the ride
+itself, through the same path as the list's button (in edit mode: a
+proposal with preview, chip and ✓/✕ like every other edit; on a result:
+the existing background detour splice). If ticking-then-adding in batches
+stays useful in the list, the map card's wording must say what it does
+(„Atzīmēt” vs „Pievienot braucienam”), and a ticked-but-not-added state must
+be visible on the map and in the bar („2 atzīmētas · Pievienot”), never only
+in the side panel.
