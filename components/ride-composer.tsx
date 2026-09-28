@@ -22,6 +22,7 @@ import type { Point } from "@/lib/geo/geometry";
 import { onLineElsewhere, placeNewPoint, stopNumbers, type InsertOption, type Placement } from "@/lib/map/insert-leg";
 import type { ProposalState, ProposedChange } from "@/lib/map/edit-proposal";
 import { stepShape, type ShapePending } from "@/lib/map/shape-pending";
+import { OBJECT_COLOR, actionDetail, guidance, objectExplainer, type EditObject, type ObjectMark } from "@/lib/map/edit-guidance";
 // ── line-sheet ──
 import { editTipDue, lineSheetRows, markEditTipSeen, type LineSpot } from "@/lib/map/line-sheet";
 // ── /line-sheet ──
@@ -529,7 +530,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
    * grab's mark (the drag's release). From then on it is the drag's own
    * pending point, proposal and ✓/✕. Gone with every exit (`leaveTransient`).
    */
-  type LineSel = { spot: LineSpot; km: string; heading: string; phase: "menu" | "via" };
+  type LineSel = { spot: LineSpot; km: string; heading: string; color: string; phase: "menu" | "via" };
   const [lineSel, setLineSel] = useState<LineSel | null>(null);
   /** The one-time hint on entering edit mode (once per device, lib/map/line-sheet.ts). */
   const [tipOn, setTipOn] = useState(false);
@@ -1427,7 +1428,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
    * happens — a tap never grabs the line. Whatever was transient goes first,
    * as a press on a pin lets it go; the rows go back to the ride's.
    */
-  const tapLine = (tap: LineSpot & { km: string; heading: string }) => {
+  const tapLine = (tap: LineSpot & { km: string; heading: string; color: string }) => {
     if (!edit || busy) return;
     track("line_tapped", {});
     setTipOn(false);
@@ -1439,7 +1440,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     setMapQuery(null);
     setRowIsNew(false);
     setChosenRow(null);
-    setLineSel({ spot: { lat: tap.lat, lon: tap.lon, slot: tap.slot, alongMeters: tap.alongMeters }, km: tap.km, heading: tap.heading, phase: "menu" });
+    setLineSel({ spot: { lat: tap.lat, lon: tap.lon, slot: tap.slot, alongMeters: tap.alongMeters }, km: tap.km, heading: tap.heading, color: tap.color, phase: "menu" });
   };
   /**
    * „Virzīt caur citu vietu”: the hold-drag's own path (`grabLine`) at the
@@ -2380,7 +2381,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     addStop: () => void;
     pinPress: (role: "start" | "via" | "finish", index: number) => void;
     lineGrab: (grab: { lat: number; lon: number; slot: number }) => void;
-    lineTap: (tap: LineSpot & { km: string; heading: string }) => void; lineVia: () => void; linePass: () => void; tipClose: () => void;
+    lineTap: (tap: LineSpot & { km: string; heading: string; color: string }) => void; lineVia: () => void; linePass: () => void; tipClose: () => void;
     shapeDrag: (index: number, at: { lat: number; lon: number }) => void;
     confirmShape: () => void; cancelShape: () => void;
     shapeRemove: (index: number) => void; shapePromote: (index: number) => void;
@@ -2652,6 +2653,21 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     // and its words say why.
     const fieldMode = mapFieldMode({ activeRow, batchActive, mapBusy: pointSel?.phase === "move" || pointSel?.phase === "remove" || shapePending?.kind === "move" || Boolean(grab), canAddStop: Boolean(onAddStop) });
     const noRowWords = fieldMode === "new-stop" ? t(locale, "mapNoActiveRow") : atCap ? fi(t(locale, "mapStopCapShort"), { n: MAX_STOPS }) : t(locale, "mapFieldRerouting");
+    // ── edit-guidance ── What the selected object is, its mark and colour
+    // (as on the map), and the line that says what is happening – what to do
+    // (lib/map/edit-guidance.ts).
+    const tk = (k: MessageKey) => t(locale, k);
+    const selObject: EditObject | null = lineSel ? "line" : !pointSel ? null : pointSel.kind === "shape" ? "pass" : pointSel.role === "via" ? "stop" : pointSel.role;
+    const stopNumber = pointSel?.kind === "pin" && pointSel.role === "via" ? places.slice(1, pointSel.row + 1).filter((_, j) => picked[j + 1] && !picked[j + 1]?.kind).length : 0;
+    const selMark: ObjectMark | undefined = !selObject ? undefined
+      : selObject === "line" ? { kind: "line", color: lineSel?.color ?? OBJECT_COLOR.line }
+      : selObject === "stop" ? { kind: "stop", number: stopNumber }
+      : { kind: selObject };
+    const selName = lineSel ? tk("lineObjectName") : pointTitle;
+    const selGuide = selObject && (lineSel?.phase === "menu" || pointSel?.phase === "menu") ? guidance(tk, { kind: "selected", object: selObject, name: selName }) : null;
+    const lowerFirst = (w: string) => w.charAt(0).toLocaleLowerCase(locale) + w.slice(1);
+    const detailed = (row: MapPointSheetRow, action: Parameters<typeof actionDetail>[1]): MapPointSheetRow => ({ ...row, detail: actionDetail(tk, action, selObject ?? "stop") });
+    // ── /edit-guidance ──
     onMapControlsChange?.({
       pending,
       hint: batchActive ? insertWords ?? batchCount : removeHint ? removeHint : pointSel?.phase === "move" ? t(locale, "pointMoveHint") : shapePending?.kind === "move" ? t(locale, "shapeMoveHint") : viaWaiting ? t(locale, "lineViaHint") : grab ? insertWords ?? t(locale, "mapGrabHint") : activeRow === null ? noRowWords : fi(t(locale, "mapActiveRowHint"), { label: activeLabel }),
@@ -2718,56 +2734,71 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
       activePlace: activeOwn ? { lat: activeOwn.lat, lon: activeOwn.lon } : null,
       // The tapped point: its ring, and its sheet of what can be done to it.
       selectedPoint: selectedAt ?? (lineSel?.phase === "menu" ? { lat: lineSel.spot.lat, lon: lineSel.spot.lon } : null),
+      // In the selected object's own colour (edit-guidance).
+      selectedColor: selObject ? OBJECT_COLOR[selObject] : undefined,
+      guide: selGuide,
       // A removal waiting for ✓ has no sheet: its ✓ / ✕ are the bottom bar's.
       // ── line-sheet ── The line's sheet, and the hint while „Virzīt caur
       // citu vietu” waits for its tap (its ✕ lets the grab go).
       pointSheet: lineSel?.phase === "menu" ? {
         mode: "menu" as const,
         kind: "line" as const,
-        title: fi(t(locale, "lineSheetTitle"), { km: lineSel.km }),
-        name: lineSel.heading || undefined,
-        groups: [{ key: "line", rows: lineSheetRows({ shapeCount: passCount, rerouting: Boolean(edit?.rerouting) }).map(({ action, enabled, reason }): MapPointSheetRow => ({
+        // „Ceļa posms · 1,2 km grants” — the road's kind in the title (edit-guidance).
+        title: lineSel.heading ? fi(t(locale, "lineSheetTitleKind"), { km: lineSel.km, kind: lowerFirst(lineSel.heading) }) : fi(t(locale, "lineSheetTitle"), { km: lineSel.km }),
+        mark: selMark,
+        explainer: objectExplainer(tk, "line"),
+        guide: selGuide ?? undefined,
+        groups: [{ key: "line", rows: lineSheetRows({ shapeCount: passCount, rerouting: Boolean(edit?.rerouting) }).map(({ action, enabled, reason }): MapPointSheetRow => detailed({
           key: action,
           icon: action === "via" ? "via" as const : "addPass" as const,
           label: t(locale, action === "via" ? "lineVia" : "linePassHere"),
           onPress: !enabled ? null : action === "via" ? () => pendingHandlers.current?.lineVia() : () => pendingHandlers.current?.linePass(),
           title: reason === "cap" ? fi(t(locale, "shapeCapNote"), { n: MAX_SHAPE_POINTS }) : reason === "busy" ? t(locale, "resEditRouting") : undefined,
-        })) }],
+        }, action === "via" ? "via" : "passHere")) }],
         closeLabel: t(locale, "pointSheetClose"),
         cancelLabel: t(locale, "pickOnMapCancel"),
         onClose: () => pendingHandlers.current?.pointClose(),
       } : viaWaiting ? {
         mode: "move" as const,
-        hint: t(locale, "lineViaHint"),
+        // „Virzi posmu – pieskaries vietai, caur kuru braukt.”
+        hint: guidance(tk, { kind: "via" }),
+        color: OBJECT_COLOR.line,
         closeLabel: t(locale, "pickOnMapCancel"),
         onClose: () => pendingHandlers.current?.pointClose(),
       // ── /line-sheet ──
-      } : !pointSel || pointSel.phase === "remove" ? null : pointSel.phase === "move" ? {
+      // Once the new place is marked, the proposal's chip says what is
+      // happening and what to do: one guidance line, never two.
+      } : !pointSel || pointSel.phase === "remove" || (pointSel.phase === "move" && proposedChange) ? null : pointSel.phase === "move" ? {
         mode: "move" as const,
-        hint: t(locale, "pointMoveHint"),
+        // „Pārvieto „Pietura 2” – pieskaries jaunajai vietai kartē.”
+        hint: guidance(tk, { kind: "move", name: pointTitle }),
+        color: selObject ? OBJECT_COLOR[selObject] : undefined,
         closeLabel: t(locale, "pickOnMapCancel"),
         onClose: () => pendingHandlers.current?.pointClose(),
       } : {
         mode: "menu" as const,
         title: pointTitle,
         name: pointSel.kind === "pin" ? places[pointSel.row] : undefined,
+        mark: selMark,
+        explainer: selObject ? objectExplainer(tk, selObject) : undefined,
+        guide: selGuide ?? undefined,
         // Groups: move; the kind switch (stop ↔ pass-through, B3); „Izņemt”
         // last and red — never on the start or the finish, which only move.
         groups: pointActions(pointSel, edit ? "edit" : "plan").flatMap((action): { key: string; rows: MapPointSheetRow[] }[] => {
-          if (action === "move") return [{ key: "move", rows: [{ key: "move", icon: "move" as const, label: t(locale, "pointMove"), onPress: () => pendingHandlers.current?.pointMove() }] }];
-          if (action === "demote") return [{ key: "kind", rows: [{
+          if (action === "move") return [{ key: "move", rows: [detailed({ key: "move", icon: "move" as const, label: t(locale, "pointMove"), onPress: () => pendingHandlers.current?.pointMove() }, "move")] }];
+          if (action === "demote") return [{ key: "kind", rows: [detailed({
             key: "demote", icon: "pass" as const, label: t(locale, "pointDemote"),
             // Off at the pass-through cap, and saying why.
             onPress: passCount >= MAX_SHAPE_POINTS ? null : () => pendingHandlers.current?.pointDemote(),
             title: passCount >= MAX_SHAPE_POINTS ? fi(t(locale, "shapeCapNote"), { n: MAX_SHAPE_POINTS }) : undefined,
-          }] }];
-          if (action === "promote") return [{ key: "kind", rows: [{
+          }, "demote")] }];
+          if (action === "promote") return [{ key: "kind", rows: [detailed({
             key: "promote", icon: "stop" as const, label: t(locale, "shapePromote"),
             // Off at the stop cap, and saying why.
             onPress: stopCount >= MAX_STOPS || atCap ? null : () => pendingHandlers.current?.pointPromote(),
             title: stopCount >= MAX_STOPS || atCap ? capSentence : undefined,
-          }] }];
-          return [{ key: "remove", rows: [{ key: "remove", icon: "remove" as const, tone: "danger" as const, label: t(locale, "shapeRemove"), onPress: () => pendingHandlers.current?.pointRemove() }] }];
+          }, "promote")] }];
+          return [{ key: "remove", rows: [detailed({ key: "remove", icon: "remove" as const, tone: "danger" as const, label: t(locale, "shapeRemove"), onPress: () => pendingHandlers.current?.pointRemove() }, "remove")] }];
         }),
         closeLabel: t(locale, "pointSheetClose"),
         cancelLabel: t(locale, "pickOnMapCancel"),
@@ -2806,7 +2837,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
         shapeLabel: t(locale, "shapePointLabel"),
         // ── line-sheet ── A tap on the line opens its sheet (not while a
         // batch is open: its marks are stops, and the map takes them first).
-        onLineTap: batchActive ? undefined : (tap: LineSpot & { segmentId: number; km: string; heading: string }) => pendingHandlers.current?.lineTap(tap),
+        onLineTap: batchActive ? undefined : (tap: LineSpot & { segmentId: number; km: string; heading: string; color: string }) => pendingHandlers.current?.lineTap(tap),
         lineHoverTip: t(locale, "lineHoverTip"),
         tip: tipOn ? { text: t(locale, "editTip"), closeLabel: t(locale, "pointSheetClose"), onClose: () => pendingHandlers.current?.tipClose() } : null,
         // ── /line-sheet ──

@@ -24,6 +24,7 @@ import { nearestUnder } from "@/lib/map/pin-hit";
 import { neighboursAlong } from "@/lib/map/point-selection";
 import type { ProposalView } from "@/lib/map/edit-proposal";
 import { useProposalLayer } from "@/components/map/proposal-layer";
+import { GUIDE_DASH } from "@/lib/map/edit-guidance";
 // ── line-sheet ──
 import { lineSpotAt, lineTapAction, markerNear, type LineSpot } from "@/lib/map/line-sheet";
 // ── /line-sheet ──
@@ -236,7 +237,7 @@ export type MapControls = {
    * drag takes); `segmentId`, `km` and `heading` name the stretch tapped.
    * A tap on or next to a pin, a dot or a gate goes to that marker instead.
    */
-  onLineTap?: (tap: LineSpot & { segmentId: number; km: string; heading: string }) => void;
+  onLineTap?: (tap: LineSpot & { segmentId: number; km: string; heading: string; color: string }) => void;
   /**
    * Edit mode, on the desktop: the words beside the cursor over the line
    * („Velc, lai virzītu caur citu vietu · pieskaries, lai redzētu iespējas”),
@@ -270,6 +271,16 @@ export type MapControls = {
    * steady ring until the selection ends (✓, ✕, „Izņemt”, the sheet's ✕).
    */
   selectedPoint?: { lat: number; lon: number } | null;
+  // ── edit-guidance ──
+  /** The ring's colour: the selected object's own (lib/map/edit-guidance.ts OBJECT_COLOR). Absent: orange. */
+  selectedColor?: string;
+  /**
+   * The guidance line in the notice area while nothing is proposed — what is
+   * happening – what to do („Pietura 2 izvēlēta – izvēlies darbību.”). On a
+   * phone a point's bottom sheet covers the notice area and says it itself.
+   */
+  guide?: string | null;
+  // ── /edit-guidance ──
   /** What can be done to the selected point, right there (`MapPointSheet`). */
   pointSheet?: MapPointSheetModel | null;
   /**
@@ -1884,11 +1895,12 @@ function lineHoldElement(): HTMLElement {
  * outer pulse on top unless the rider asked for reduced motion — the ring
  * itself never moves, so the selection is readable either way.
  */
-function selectionRingElement(): HTMLElement {
+function selectionRingElement(color = "#f56300"): HTMLElement {
   const el = document.createElement("div");
   el.setAttribute("aria-hidden", "true");
-  el.dataset.selectionRing = "1";
-  el.style.cssText = "width:52px;height:52px;border-radius:50%;pointer-events:none;z-index:1;border:4px solid #f56300;background:rgba(245,99,0,0.16)";
+  el.dataset.selectionRing = color;
+  // The selected object's own colour (edit-guidance), a faint fill of it inside.
+  el.style.cssText = `width:52px;height:52px;border-radius:50%;pointer-events:none;z-index:1;border:4px solid ${color};background:${color}29`;
   if (!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
     el.style.animation = "mopik-focus-pulse 1.6s ease-out infinite";
   }
@@ -3512,11 +3524,12 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
    * row's pin is. Gone the moment the selection ends.
    */
   const selectedAt = controls?.selectedPoint ?? null;
-  const selectedKey = selectedAt ? `${selectedAt.lat},${selectedAt.lon}` : "";
+  const selectedColor = controls?.selectedColor;
+  const selectedKey = selectedAt ? `${selectedAt.lat},${selectedAt.lon},${selectedColor ?? ""}` : "";
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready || !selectedAt) return;
-    const ring = new maplibregl.Marker({ element: selectionRingElement() }).setLngLat([selectedAt.lon, selectedAt.lat]).addTo(map);
+    const ring = new maplibregl.Marker({ element: selectionRingElement(selectedColor) }).setLngLat([selectedAt.lon, selectedAt.lat]).addTo(map);
     const undo: (() => void)[] = [() => ring.remove()];
     const markers = [markerRef.current, destMarkerRef.current, ...viaMarkersRef.current, ...shapeMarkersRef.current].filter((x): x is maplibregl.Marker => Boolean(x));
     for (const marker of markers) {
@@ -4139,7 +4152,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
           // The stretch the sheet is about, lit as the card lights it.
           highlightKeyRef.current = null;
           setHighlight([id], `line:${id}`);
-          lineTap({ ...spot, segmentId: id, km: kmLabel(locale, meters), heading: segmentHeading(m, tapped.roadClass, tapped.surface) });
+          lineTap({ ...spot, segmentId: id, km: kmLabel(locale, meters), heading: segmentHeading(m, tapped.roadClass, tapped.surface), color: SURFACE_COLORS[surfaceBucket(tapped.surface)] });
           return;
         }
       }
@@ -4481,9 +4494,19 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
               smaller, at most two lines (the chip wrapped to four on a phone
               with the notes run on). */}
           <span className="min-w-0">
-            <span data-proposal-text className="block tabular-nums max-md:text-[11px]">{proposal.text}</span>
+            <span data-proposal-text className="block tabular-nums max-md:text-[11px]">
+              {proposal.text}
+              {/* ── edit-guidance ── what to do, after what is happening */}
+              {proposal.guide && <span data-proposal-guide className="font-normal text-stone-600">{GUIDE_DASH}{proposal.guide}</span>}
+            </span>
             {proposal.notes && <span data-proposal-notes className="line-clamp-2 text-[10.5px] font-normal leading-snug text-stone-500">{proposal.notes}</span>}
           </span>
+        </div>
+      ) : controls?.guide && !(phoneLayout && controls.pointSheet?.mode === "menu") ? (
+        // ── edit-guidance ── what is happening – what to do.
+        <div role="status" data-edit-guide="notice"
+          className="self-start rounded-2xl border border-[#ececf0] bg-white/95 px-3 py-1 text-xs font-medium leading-snug text-stone-700 shadow-sm backdrop-blur max-md:mr-16">
+          {controls.guide}
         </div>
       ) : controls?.notice && (
         <div role="status" title={controls.notice.title} aria-label={controls.notice.title}

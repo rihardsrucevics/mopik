@@ -2183,9 +2183,15 @@ export function HomePage() {
    * cannot be made) in the notice slot, and the proposed line over the
    * dimmed ride. Only while editing.
    */
+  const wideNow = Boolean(wideAsk && proposal.phase === "refused" && proposal.token === wideAsk.token);
   const proposalNow = useMemo(
-    () => (wiring.editing ? proposalView(proposal, { routing: ui.previewRouting, delta: ui.previewDelta, deltaTitle: ui.previewDeltaTitle }, locale) : null),
-    [wiring.editing, proposal, ui.previewRouting, ui.previewDelta, ui.previewDeltaTitle, locale],
+    () => (wiring.editing ? proposalView(proposal, {
+      routing: ui.previewRouting, delta: ui.previewDelta, deltaTitle: ui.previewDeltaTitle,
+      // ── edit-guidance ── what to do, after what is happening.
+      guide: { routing: ui.guideRouting, proposed: ui.guideProposed, refused: ui.guideRefused, refusedWide: ui.guideRefusedWide },
+      wide: wideNow,
+    }, locale) : null),
+    [wiring.editing, proposal, ui, wideNow, locale],
   );
   // The last proposal that landed stays on the map while the next change
   // routes — its line, halo and numbers, with the spinner — so there is

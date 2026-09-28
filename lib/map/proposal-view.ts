@@ -10,7 +10,13 @@ import { cumulative } from "@/lib/routing/detour";
  */
 
 /** The copy the view is built from — `previewRouting`, `previewDelta`, `previewDeltaTitle`. */
-export type ProposalCopy = { routing: string; delta: string; deltaTitle: string };
+export type ProposalCopy = {
+  routing: string; delta: string; deltaTitle: string;
+  // ── edit-guidance ── what to do, per phase (`guideRouting`, `guideProposed`, `guideRefused`, `guideRefusedWide`).
+  guide?: { routing: string; proposed: string; refused: string; refusedWide: string };
+  /** „Pārrēķināt posmu” is on offer with this refusal. */
+  wide?: boolean;
+};
 
 /** Between the chip and its notes where both are said as one line of text (the edit panel's). */
 export const NOTE_JOINER = " — ";
@@ -29,8 +35,10 @@ export const NOTE_JOINER = " — ";
  */
 export function proposalView(state: ProposalState, copy: ProposalCopy, locale: UiLocale): ProposalView | null {
   if (state.phase === "idle") return null;
-  if (state.phase === "routing") return { text: copy.routing, title: copy.routing, tone: "routing", line: null, changed: [] };
-  if (state.phase === "refused") return { text: state.reason, title: state.reason, tone: "refused", line: null, changed: [] };
+  const g = copy.guide;
+  if (state.phase === "routing") return { text: copy.routing, title: copy.routing, tone: "routing", line: null, changed: [], ...(g ? { guide: g.routing } : {}) };
+  // A refusal's sentence loses its full stop before the dash („…nostāk – izvēlies citu vietu.”).
+  if (state.phase === "refused") return { text: g ? state.reason.trim().replace(/\.+$/u, "") : state.reason, title: state.reason, tone: "refused", line: null, changed: [], ...(g ? { guide: copy.wide ? g.refusedWide : g.refused } : {}) };
   const { proposal } = state;
   const notes = proposal.notes.filter(Boolean).join(" ");
   const chip = formatEditDelta(copy.delta, proposal.delta, locale);
@@ -43,6 +51,7 @@ export function proposalView(state: ProposalState, copy: ProposalCopy, locale: U
     title: notes ? `${sentence} ${notes}` : sentence,
     line: proposal.ride.segments,
     changed: proposal.changed,
+    ...(g ? { guide: g.proposed } : {}),
   };
 }
 
@@ -74,7 +83,8 @@ export function wideNeedsAsking(beforeMeters: number, afterMeters: number): bool
  */
 export function staleWhileRouting(landed: ProposalView | null, view: ProposalView | null): ProposalView | null {
   if (!view || view.tone !== "routing" || !landed?.line) return view;
-  return { ...landed, tone: "routing", title: view.title };
+  // The landed numbers stay; what to do is the routing's („vari jau spiest ✓…”).
+  return { ...landed, tone: "routing", title: view.title, ...(view.guide ? { guide: view.guide } : {}) };
 }
 
 /**
