@@ -24,6 +24,49 @@ import { neighboursAlong } from "@/lib/map/point-selection";
 import type { ProposalView } from "@/lib/map/edit-proposal";
 import { useProposalLayer } from "@/components/map/proposal-layer";
 // ── P1-D: imports ──
+import { LoaderCircle } from "lucide-react";
+import { useProposalRefused } from "@/components/map/proposal-layer";
+
+/**
+ * ✓ in slot 3, desktop row and phone column alike (Phase 1 preview, B4).
+ *
+ * - `confirmBusy` — the proposal is still routing: a spinner in the SAME
+ *   button, still pressable (a press confirms it the moment it lands), named
+ *   `previewConfirmQueued`.
+ * - A refused proposal — disabled, named `previewConfirmRefused`; the reason
+ *   is the chip in the notice slot.
+ * - Otherwise the mark's own `confirmLabel` / `onConfirm`, as before.
+ *
+ * Never `hidden`: the slot keeps its place in every state. On the phone a ✓
+ * with nothing to do (the routable-point check in flight) is `invisible`,
+ * the column's stable-slot rule; on the desktop it is dimmed, as it was.
+ */
+function ConfirmSlot({ pending, round, phone = false, "data-slot": slot }: {
+  pending: MapPendingMark;
+  round: string;
+  phone?: boolean;
+  "data-slot": "3";
+}) {
+  const [locale] = useLocale();
+  const m = messages(locale);
+  const refused = useProposalRefused();
+  const busy = !refused && Boolean(pending.confirmBusy);
+  const onConfirm = refused ? null : pending.onConfirm;
+  const label = refused ? m.previewConfirmRefused : busy ? m.previewConfirmQueued : pending.confirmLabel;
+  const idle = !onConfirm && !busy && !refused;
+  const icon = phone ? "size-6" : "size-5";
+  return (
+    <button type="button" onClick={onConfirm ?? undefined} disabled={!onConfirm} data-slot={slot}
+      data-confirm={refused ? "refused" : busy ? "busy" : "ready"} aria-busy={busy || undefined}
+      aria-label={label} title={label}
+      aria-hidden={(phone && idle) || undefined} tabIndex={phone && idle ? -1 : undefined}
+      className={`${round} bg-[#f56300] text-white transition hover:bg-[#d85600] disabled:opacity-60 disabled:hover:bg-[#f56300] ${phone && idle ? "invisible" : ""}`}>
+      {busy
+        ? <LoaderCircle aria-hidden="true" className={`${icon} animate-spin`} />
+        : <Check aria-hidden="true" className={icon} />}
+    </button>
+  );
+}
 // ── /P1-D: imports ──
 
 /** A ride pin as built, with what pressing it means. */
@@ -2043,13 +2086,7 @@ function DesktopBar({ controls }: { controls: MapControls }) {
   return (
     <div data-desktop-bar className="flex shrink-0 items-center gap-1.5 max-md:hidden">
       {/* ── P1-D: desktop-confirm ── */}
-      {pending && !pending.offRoad && (
-        <button type="button" onClick={pending.onConfirm ?? undefined} disabled={!pending.onConfirm} data-slot="3"
-          aria-label={pending.confirmLabel} title={pending.confirmLabel}
-          className={`${round} bg-[#f56300] text-white transition hover:bg-[#d85600] disabled:opacity-60`}>
-          <Check aria-hidden="true" className="size-5" />
-        </button>
-      )}
+      {pending && !pending.offRoad && <ConfirmSlot pending={pending} round={round} data-slot="3" />}
       {/* ── /P1-D: desktop-confirm ── */}
       <button type="button" onClick={undo?.onUndo ?? undefined} disabled={!undo?.onUndo} data-slot="2"
         aria-label={undo?.label} title={undo?.label}
@@ -2100,13 +2137,7 @@ function PhoneColumn({ controls }: { controls: MapControls }) {
         <Undo2 aria-hidden="true" className="size-6" />
       </button>
       {/* ── P1-D: phone-confirm ── */}
-      {pending && !pending.offRoad && pending.onConfirm && (
-        <button type="button" onClick={pending.onConfirm} data-slot="3"
-          aria-label={pending.confirmLabel} title={pending.confirmLabel}
-          className={`${round} bg-[#f56300] text-white transition hover:bg-[#d85600]`}>
-          <Check aria-hidden="true" className="size-6" />
-        </button>
-      )}
+      {pending && !pending.offRoad && <ConfirmSlot pending={pending} round={round} phone data-slot="3" />}
       {/* ── /P1-D: phone-confirm ── */}
     </div>
   );
@@ -4148,8 +4179,19 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
       {controls?.pointSheet && <MapPointSheet sheet={controls.pointSheet} />}
       {/* ── P1-D: notice ── */}
       {/* Above the bottom bar (the column is reversed), clear of the switch
-          row at the top, never squeezed into the field. */}
-      {controls?.notice && (
+          row at the top, never squeezed into the field. A proposal's chip
+          takes the same slot — its notes are its own (B4) — so the two never
+          stack: landed, the delta („72,4 → 75,1 km · +6 min · …”) on white;
+          routing, the same with a quiet spinner; refused, the reason in the
+          notice's own amber, a line of text and not a badge. */}
+      {controls && proposal ? (
+        <div role="status" data-proposal-chip={proposal.tone ?? "proposed"} title={proposal.title} aria-label={proposal.title}
+          className={`flex items-center gap-1.5 self-start rounded-2xl border px-3 py-1 text-xs font-medium leading-snug shadow-sm backdrop-blur max-md:mr-16 ${proposal.tone === "refused" ? "border-amber-300 bg-amber-50/95 text-amber-900" : "border-[#ececf0] bg-white/95 text-foreground"}`}>
+          {proposal.tone === "routing" && <LoaderCircle aria-hidden="true" className="size-3.5 shrink-0 animate-spin text-stone-400" />}
+          {proposal.tone === "refused" && <TriangleAlert aria-hidden="true" className="size-3.5 shrink-0" />}
+          <span className="min-w-0 tabular-nums">{proposal.text}</span>
+        </div>
+      ) : controls?.notice && (
         <div role="status" title={controls.notice.title} aria-label={controls.notice.title}
           className="self-start rounded-2xl border border-amber-300 bg-amber-50/95 px-3 py-1 text-xs font-medium leading-snug text-amber-900 shadow-sm backdrop-blur max-md:mr-16">
           {controls.notice.text}
