@@ -3,6 +3,7 @@ import { z } from "zod";
 import { generateGpx } from "@/lib/gpx/generate-gpx";
 import { gpxFilename } from "@/lib/gpx/filename";
 import { MAX_STOPS } from "@/lib/chat/ride-limits";
+import { parseRoutePoints } from "@/lib/gpx/parse-route-points";
 
 /**
  * The planned places, as pins the device can draw.
@@ -33,6 +34,8 @@ const RequestSchema = z.object({
   km: z.number().optional(),
   /** Start, stops and ticked sights, as <wpt>. Absent on an older client. */
   waypoints: z.array(WaypointSchema).max(40).optional(),
+  /** Start, stops, pass-through points, finish — checked by `parseRoutePoints`. */
+  routePoints: z.unknown().optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -43,7 +46,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid request" }, { status: 400 });
   }
 
-  const gpx = generateGpx(body.name, body.coordinates as [number, number][], body.description, body.waypoints);
+  const gpx = generateGpx(body.name, body.coordinates as [number, number][], body.description, body.waypoints, parseRoutePoints(body.routePoints));
   const filename = gpxFilename({ places: body.places, name: body.name, km: body.km });
 
   return new NextResponse(gpx, {

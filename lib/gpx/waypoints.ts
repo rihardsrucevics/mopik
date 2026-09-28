@@ -132,11 +132,31 @@ export function placeRegion(place: RideWaypointPlace): string | null {
  * exactly the devices this feature exists for, and there is no way to see it
  * from inside the app. Also collapses the whitespace that stripping leaves.
  */
-function plainName(name: string): string {
+export function plainName(name: string): string {
   return name
     .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE00}-\u{FE0F}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}]/gu, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/**
+ * A sight's pin name. It leads with what it is — "Ūdenskritums · Dauguļu
+ * ūdenskritums" — because that word is the reason the rider ticked it, and on
+ * a device list of thirty pins the kind is what he scans for. Shared with the
+ * `<rte>` (`lib/gpx/route-points.ts`) so a sight reads the same in both lists.
+ * Returns the bare name for a kind this build does not know.
+ */
+export function sightName(kind: string, name: string, locale: UiLocale): string {
+  const entry = POI_KIND[kind as PoiCategory];
+  if (!entry) return name;
+  const word = t(locale, entry.key as MessageKey);
+  const cap = word ? word.charAt(0).toUpperCase() + word.slice(1) : "";
+  return cap ? `${cap} · ${name}` : name;
+}
+
+/** True when `kind` is a sight category this build knows. */
+export function isSightKind(kind: string | undefined): boolean {
+  return Boolean(kind && kind in POI_KIND);
 }
 
 export type RideWaypointInput = {
@@ -197,12 +217,7 @@ export function rideWaypoints({ places, returnToStart, locale }: RideWaypointInp
     const entry = place.kind ? POI_KIND[place.kind as PoiCategory] : undefined;
     const n = numbers[i - 1];
     if (entry && n === null) {
-      // A sight leads with what it is — "Ūdenskritums · Dauguļu ūdenskritums"
-      // — because that word is the reason the rider ticked it, and on a device
-      // list of thirty pins the kind is what he scans for.
-      const kind = t(locale, entry.key as MessageKey);
-      const word = kind ? kind.charAt(0).toUpperCase() + kind.slice(1) : "";
-      push(place, word ? `${word} · ${name}` : name, KIND_SYM[place.kind as PoiCategory] ?? FALLBACK_SYM, "sight");
+      push(place, sightName(place.kind!, name, locale), KIND_SYM[place.kind as PoiCategory] ?? FALLBACK_SYM, "sight");
       return;
     }
     // A stop the rider typed, or a via whose category this build does not
