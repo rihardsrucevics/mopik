@@ -1,4 +1,5 @@
 "use client";
+import { drawnMeters } from "@/lib/routing/drawn";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useLocale } from "@/lib/i18n/use-locale";
@@ -380,6 +381,8 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
    */
   const shownRepeatedPercent = route.overlap.repeatedPercent;
   const q = route.quality;
+  // Drawn straight, no road („Vest pa taisno”): said in so many words.
+  const drawnKm = Math.round(drawnMeters(route.segments.features) / 100) / 10;
   // The RISKS share, on the same denominator the ROADS rows use: road + track
   // + trail is the whole ride, so the two blocks' percentages are comparable
   // even though they measure different things. `|| 1` guards a zero-length
@@ -752,6 +755,11 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
                     <span className="w-full text-[10px] leading-snug text-stone-500">{m.resSearchDropsShapes}</span>
                   )}
                 </div>
+              )}
+              {drawnKm > 0 && (
+                <p data-drawn-line className="mb-1 text-[11px] leading-snug text-stone-600">
+                  {fi(m.panelDrawn, { km: new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(drawnKm) })}
+                </p>
               )}
               <div className="truncate text-sm font-semibold text-stone-900">{directLeg ? m.directLegTitle : route.name}</div>
               {directLeg

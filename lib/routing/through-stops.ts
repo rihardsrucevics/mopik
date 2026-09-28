@@ -7,6 +7,7 @@ import {
   THROUGH_SHARED_MIN_M,
   chooseLoop,
   nogosAlong,
+  outAndBacks,
   sharedRoad,
   spurBaseIndex,
   type LegPair,
@@ -89,6 +90,8 @@ export type ThroughResult = {
   deadEndMeters: number;
   /** …and that is only because the loop search ran out of time. */
   deadEndUnchecked?: boolean;
+  /** Whose spur `deadEndMeters` is: a shaping point's, or a stop's (absent: a stop's). */
+  deadEndAtShape?: boolean;
 };
 
 export async function routeThroughPlaces(params: {
@@ -98,7 +101,26 @@ export async function routeThroughPlaces(params: {
   profileOptions: MotoProfileOptions;
   /** When the loop search must have answered (epoch ms). */
   deadlineAt: number;
+  /**
+   * Keep a shaping point on its spur instead of moving it to the spur's
+   * base — reported as a dead end (`deadEndAtShape`), never hidden. Asked
+   * for only when moving it would leave the bend nowhere near where it was
+   * dropped: the only road that reaches the point is a dead end, and the
+   * rider may still take it („Tomēr braukt”, rule 1 of 2026-09-28).
+   */
+  keepShapeSpurs?: boolean;
 }): Promise<ThroughResult> {
+  if (params.keepShapeSpurs && params.shapes?.some(Boolean)) {
+    // Every place ridden through where the map allows, as for a stop; what
+    // is left is the shaping point's dead end, said.
+    const kept = await routeThroughPlaces({ ...params, shapes: [], keepShapeSpurs: false });
+    const c = kept.path.coordinates;
+    const atShape = outAndBacks(c).some((o) => {
+      const j = nearestInner(params.points, c[o.apex]);
+      return j > 0 && params.shapes![j] === true && haversineMeters(params.points[j], c[o.apex]) <= SPUR_TIP_NEAR_M;
+    });
+    return atShape && kept.deadEndMeters > 0 ? { ...kept, deadEndAtShape: true } : kept;
+  }
   const { points, profileOptions, deadlineAt } = params;
   const shapes = params.shapes ?? [];
   const n = points.length;
@@ -113,12 +135,26 @@ export async function routeThroughPlaces(params: {
   });
   const legs: RoutePath[] = await Promise.all(points.slice(1).map((p, i) => route([points[i], p], i, 1)));
   // Two legs that reach a place at different points (each nudged its own
-  // way) would join with a jump: ride the stretch as one request instead.
-  const whole = async (): Promise<ThroughResult> => ({
+  // way) would join with a jump. The way out is asked again from where the
+  // way in arrived — so the place is one point, and its spur, if it has
+  // one, is seen below. Only if that does not meet either is the stretch
+  // ridden as one request, and then its spurs are still looked at
+  // (`offSpurs`): measured on Kaņieris (2026-09-28), a bend dropped in a
+  // field was reached from a track 208-528 m from where the way out began,
+  // the one request rode up that track and back, and nothing said so.
+  const whole = async (): Promise<ThroughResult> => offSpurs({
     path: await fetchRoutePath({ points, profileOptions, generatedViaIndices: [], pinnedEnds: true }),
     deadEndMeters: 0,
-  });
-  for (let i = 1; i < legs.length; i++) if (haversineMeters(last(legs[i - 1]), legs[i].coordinates[0]) > JOIN_GAP_M) return whole();
+  }, points, shapes, profileOptions);
+  for (let i = 1; i < legs.length; i++) {
+    if (haversineMeters(last(legs[i - 1]), legs[i].coordinates[0]) <= JOIN_GAP_M) continue;
+    try {
+      legs[i] = await route([last(legs[i - 1]), points[i + 1]], i, 1);
+    } catch {
+      return whole();
+    }
+    if (haversineMeters(last(legs[i - 1]), legs[i].coordinates[0]) > JOIN_GAP_M) return whole();
+  }
 
   // Where each place is reached by a spur: its way in and way out share road.
   const spurOf = (j: number) => sharedRoad(legs[j - 1].coordinates, legs[j].coordinates);
@@ -218,7 +254,86 @@ export async function routeThroughPlaces(params: {
   let path = legs[0];
   for (let i = 1; i < legs.length; i++) if (legs[i].coordinates.length > 1) path = joinPaths(path, legs[i]);
   const deadEndMeters = deadEnd > THROUGH_SHARED_MIN_M ? Math.round(deadEnd) : 0;
-  return { path, deadEndMeters, ...(deadEndMeters && unchecked ? { deadEndUnchecked: true } : {}) };
+  return offSpurs({ path, deadEndMeters, ...(deadEndMeters && unchecked ? { deadEndUnchecked: true } : {}) }, points, shapes, profileOptions);
+}
+
+/**
+ * The last word on a stretch: a shaping point is never the tip of a spur
+ * (rider, 2026-09-28: „caurbraucams punkts nedrīkst radīt atzaru”). Whatever
+ * path got here — the legs, a failed cut, two neighbouring cuts of which only
+ * one was made, the one-request fallback — every out-and-back still in it
+ * whose tip is a shaping point is taken off: the point moves to where the
+ * spur leaves the road, and the stretch is routed once more through that.
+ * If that does not take it off, the spur is not hidden: it is reported as a
+ * dead end, which the page says („Caurbraucamais punkts ir strupceļā…”).
+ */
+async function offSpurs(result: ThroughResult, points: Point[], shapes: boolean[], profileOptions: MotoProfileOptions): Promise<ThroughResult> {
+  const tipOf = (path: RoutePath) => {
+    const c = path.coordinates;
+    return outAndBacks(c).map((o) => {
+      const j = nearestInner(points, c[o.apex]);
+      const atPlace = j > 0 && haversineMeters(points[j], c[o.apex]) <= SPUR_TIP_NEAR_M;
+      return { ...o, j, atPlace, onShape: atPlace && shapes[j] === true };
+    });
+  };
+  const tips = tipOf(result.path);
+  const found = tips.filter((o) => o.onShape);
+  // A place's spur that is not a shaping point's is a stop's: kept, and
+  // said — also when it came from the one-request fallback, which never
+  // measured it.
+  const worst = (list: typeof tips) => Math.round(list.reduce((m, o) => Math.max(m, o.meters), 0));
+  if (!found.length) {
+    const stopSpur = worst(tips.filter((o) => o.atPlace));
+    // Not searched for a way round here, so said as what the line does.
+    return stopSpur > result.deadEndMeters ? { ...result, deadEndMeters: stopSpur, deadEndUnchecked: true } : result;
+  }
+  // At most twice: a point moved to a spur's base can land on the base of a
+  // shorter one (measured: 327 m, then 54 m, then none).
+  const onShapeMeters = (list: typeof tips) => list.filter((o) => o.onShape).reduce((m, o) => m + o.meters, 0);
+  const others = (list: typeof tips) => list.filter((o) => !o.onShape).reduce((m, o) => m + o.meters, 0);
+  let path = result.path;
+  let left = tips;
+  let via = points.slice();
+  for (let round = 0; round < 2 && left.some((o) => o.onShape); round++) {
+    const moved = via.slice();
+    for (const o of left) if (o.onShape) moved[o.j] = path.coordinates[o.base];
+    try {
+      const again = await fetchRoutePath({ points: moved, profileOptions, generatedViaIndices: [], pinnedEnds: true });
+      const tipsAgain = tipOf(again);
+      if (onShapeMeters(tipsAgain) >= onShapeMeters(left) || others(tipsAgain) > others(tips) + 1) break;
+      path = again; left = tipsAgain; via = moved;
+    } catch {
+      // Kept as it was, and said below.
+      break;
+    }
+  }
+  const atShape = worst(left.filter((o) => o.onShape));
+  const deadEndMeters = Math.max(result.deadEndMeters, atShape, worst(left.filter((o) => o.atPlace && !o.onShape)));
+  return {
+    ...result,
+    path,
+    deadEndMeters,
+    ...(deadEndMeters > result.deadEndMeters ? { deadEndUnchecked: true } : {}),
+    ...(atShape && atShape === deadEndMeters ? { deadEndAtShape: true } : {}),
+  };
+}
+
+/**
+ * How far from a place a spur's tip may be and still be that place's spur:
+ * the router's snap to a road, or its endpoint-nudge ring (up to 1.2 km,
+ * `NUDGE_RADII_M` in `brouter.ts` — measured: a bend on Kaņieris reached
+ * 631 m from where it was dropped).
+ */
+const SPUR_TIP_NEAR_M = 1_300;
+
+/** The inner point (not a run end) nearest to `p`, or −1. */
+function nearestInner(points: Point[], p: Point): number {
+  let best = -1, meters = Infinity;
+  for (let j = 1; j < points.length - 1; j++) {
+    const d = haversineMeters(points[j], p);
+    if (d < meters) { meters = d; best = j; }
+  }
+  return best;
 }
 
 /**

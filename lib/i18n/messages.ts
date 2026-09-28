@@ -724,6 +724,42 @@ export type MessageKey =
   | "mapSearchHintShort"
   | "pointMoveHintShort"
   // ── /P1-insert ──
+  // ── spur-0928 ──
+  /**
+   * An edit that asks the ride to go somewhere (rider, 2026-09-28,
+   * `lib/map/edit-reach.ts`): no road at all (`editNoRoad`, {m}); only roads
+   * outside the profile (`editOutsideProfile`: {what} a list of `relax*`,
+   * {km} their length); a big detour (`editBigDetour`: {km} the signed km
+   * added, „+9,1”, {far} the farthest from the old line). `editOverrideAccept` is the chip that takes
+   * either (`editOverrideLabel` its group); ✓ reads `previewConfirmOverride`
+   * meanwhile. The stretch keeps ⚠️ `badgeOutsideProfile` on the map.
+   */
+  | "editNoRoad"
+  | "editDeadEndShapeAsk"
+  | "editDeadEndAsk"
+  | "editOutsideProfile"
+  | "editBigDetour"
+  | "editOverrideAccept"
+  | "editOverrideLabel"
+  | "previewConfirmOverride"
+  | "relaxMainRoads"
+  | "relaxMotorways"
+  | "relaxSand"
+  | "relaxTowns"
+  | "relaxRough"
+  | "relaxAccess"
+  | "relaxCar"
+  | "badgeOutsideProfile"
+  | "badgeOutsideProfileDetail"
+  /** „Vest pa taisno” (2026-09-28, `lib/routing/drawn.ts`): {m} metres to the nearest road, {name} the point, {km} the drawn km. */
+  | "editNoRoadStraight"
+  | "editStraightAccept"
+  | "editStraightLabel"
+  | "editStraightNote"
+  | "editStraightRisk"
+  | "legendDrawn"
+  | "panelDrawn"
+  // ── /spur-0928 ──
   /** The gate card (tap a gate on the map) and the gate rows in the segment
    *  card and RISKI. Kinds name OSM's `barrier=*`; access lines put the node's
    *  own `access=*` in plain words, `gateAccessRaw` shows any other value
@@ -1366,6 +1402,32 @@ const lv: Messages = {
   mapSearchHintShort: "Meklē…",
   pointMoveHintShort: "Atzīmē kartē",
   // ── /P1-insert ──
+  // ── spur-0928 ──
+  editNoRoad: "Šeit nevar izbraukt – tuvākais ceļš ir ~{m} m nostāk.",
+  editDeadEndShapeAsk: "Līdz šejienei ved tikai strupceļš – atpakaļ pa to pašu ceļu {km} km. „Tomēr braukt” vai atmet ar ✕.",
+  editDeadEndAsk: "Pieturu sasniedz tikai strupceļš – atpakaļ pa to pašu ceļu {km} km. „Tomēr braukt” vai atmet ar ✕.",
+  editOutsideProfile: "Šeit ved tikai ceļi ārpus tava profila ({what}, {km} km ⚠️) – „Tomēr braukt” vai atmet ar ✕.",
+  editBigDetour: "{km} km, līdz {far} km no līdzšinējā maršruta – „Tomēr braukt” vai atmet ar ✕.",
+  editOverrideAccept: "Tomēr braukt",
+  editOverrideLabel: "Maršruts ārpus profila vai ar lielu līkumu",
+  previewConfirmOverride: "Apstiprini ar „Tomēr braukt” vai atmet",
+  relaxMainRoads: "lielie ceļi",
+  relaxMotorways: "automaģistrāles",
+  relaxSand: "smiltis",
+  relaxTowns: "apdzīvotas vietas",
+  relaxRough: "grūtāki meža ceļi",
+  relaxAccess: "ceļi ar nepārbaudītu piekļuvi",
+  relaxCar: "ceļi, pa kuriem brauktu auto",
+  badgeOutsideProfile: "Ārpus tava profila",
+  badgeOutsideProfileDetail: "Šo posmu tavs profils neizmantotu – tu to izvēlējies ar „Tomēr braukt”.",
+  editNoRoadStraight: "Šeit nevar izbraukt pa ceļu – tuvākais ceļš ir ~{m} m nostāk. „Vest pa taisno” vai atmet ar ✕.",
+  editStraightAccept: "Vest pa taisno",
+  editStraightLabel: "Kā tikt līdz šai vietai",
+  editStraightNote: "Pēdējie {m} m līdz „{name}” – taisni, bez ceļa, un atpakaļ pa to pašu līniju.",
+  editStraightRisk: "{km} km taisni pāri mežam vai ūdenim",
+  legendDrawn: "Zīmēts taisni",
+  panelDrawn: "Zīmēti posmi: {km} km · laiks rēķināts ar 15 km/h · Mopik nav pārbaudījis, vai tur var izbraukt un vai tas ir atļauts.",
+  // ── /spur-0928 ──
   gateKindGate: "Vārti",
   gateKindLiftGate: "Barjera ar pacēlāju",
   gateKindSwingGate: "Pagriežama barjera",
@@ -1950,6 +2012,32 @@ const lt: Messages = {
   mapSearchHintShort: "Ieškoti…",
   pointMoveHintShort: "Pažymėkite",
   // ── /P1-insert ──
+  // ── spur-0928 ──
+  editNoRoad: "Čia nuvažiuoti negalima – artimiausias kelias yra už ~{m} m.",
+  editDeadEndShapeAsk: "Čia veda tik akligatvis – atgal tuo pačiu keliu {km} km. „Vis tiek važiuoti“ arba atmeskite ✕.",
+  editDeadEndAsk: "Sustojimą pasiekia tik akligatvis – atgal tuo pačiu keliu {km} km. „Vis tiek važiuoti“ arba atmeskite ✕.",
+  editOutsideProfile: "Čia veda tik keliai už jūsų profilio ribų ({what}, {km} km ⚠️) – „Vis tiek važiuoti“ arba atmeskite ✕.",
+  editBigDetour: "{km} km, iki {far} km nuo ankstesnio maršruto – „Vis tiek važiuoti“ arba atmeskite ✕.",
+  editOverrideAccept: "Vis tiek važiuoti",
+  editOverrideLabel: "Maršrutas už profilio ribų arba su dideliu lankstu",
+  previewConfirmOverride: "Patvirtinkite „Vis tiek važiuoti“ arba atmeskite",
+  relaxMainRoads: "dideli keliai",
+  relaxMotorways: "automagistralės",
+  relaxSand: "smėlis",
+  relaxTowns: "gyvenvietės",
+  relaxRough: "sunkesni miško keliai",
+  relaxAccess: "keliai su nepatikrinta prieiga",
+  relaxCar: "keliai, kuriais važiuotų automobilis",
+  badgeOutsideProfile: "Už jūsų profilio ribų",
+  badgeOutsideProfileDetail: "Šios atkarpos jūsų profilis nenaudotų – pasirinkote ją „Vis tiek važiuoti“.",
+  editNoRoadStraight: "Čia keliu nuvažiuoti negalima – artimiausias kelias yra už ~{m} m. „Vesti tiesiai“ arba atmeskite ✕.",
+  editStraightAccept: "Vesti tiesiai",
+  editStraightLabel: "Kaip pasiekti šią vietą",
+  editStraightNote: "Paskutiniai {m} m iki „{name}“ – tiesiai, be kelio, ir atgal ta pačia linija.",
+  editStraightRisk: "{km} km tiesiai per mišką ar vandenį",
+  legendDrawn: "Nubrėžta tiesiai",
+  panelDrawn: "Nubrėžtos atkarpos: {km} km · laikas skaičiuotas 15 km/h · Mopik nepatikrino, ar ten galima pravažiuoti ir ar tai leidžiama.",
+  // ── /spur-0928 ──
   gateKindGate: "Vartai",
   gateKindLiftGate: "Pakeliamas užtvaras",
   gateKindSwingGate: "Pasukamas užtvaras",
@@ -2530,6 +2618,32 @@ const et: Messages = {
   mapSearchHintShort: "Otsi…",
   pointMoveHintShort: "Märgi kaardil",
   // ── /P1-insert ──
+  // ── spur-0928 ──
+  editNoRoad: "Siia ei saa sõita – lähim tee on ~{m} m eemal.",
+  editDeadEndShapeAsk: "Siia viib ainult umbtee – tagasi sama teed {km} km. „Sõida ikkagi“ või loobu ✕-ga.",
+  editDeadEndAsk: "Peatuseni viib ainult umbtee – tagasi sama teed {km} km. „Sõida ikkagi“ või loobu ✕-ga.",
+  editOutsideProfile: "Siia viivad ainult teed väljaspool sinu profiili ({what}, {km} km ⚠️) – „Sõida ikkagi“ või loobu ✕-ga.",
+  editBigDetour: "{km} km, kuni {far} km senisest marsruudist – „Sõida ikkagi“ või loobu ✕-ga.",
+  editOverrideAccept: "Sõida ikkagi",
+  editOverrideLabel: "Marsruut väljaspool profiili või suure ringiga",
+  previewConfirmOverride: "Kinnita „Sõida ikkagi“ või loobu",
+  relaxMainRoads: "suured teed",
+  relaxMotorways: "kiirteed",
+  relaxSand: "liiv",
+  relaxTowns: "asulad",
+  relaxRough: "raskemad metsateed",
+  relaxAccess: "kontrollimata ligipääsuga teed",
+  relaxCar: "teed, mida sõidaks auto",
+  badgeOutsideProfile: "Väljaspool sinu profiili",
+  badgeOutsideProfileDetail: "Seda lõiku sinu profiil ei kasutaks – valisid selle „Sõida ikkagi“-ga.",
+  editNoRoadStraight: "Siia ei saa teed mööda sõita – lähim tee on ~{m} m eemal. „Vii otse“ või loobu ✕-ga.",
+  editStraightAccept: "Vii otse",
+  editStraightLabel: "Kuidas selle kohani jõuda",
+  editStraightNote: "Viimased {m} m kohani „{name}“ – otse, teeta, ja tagasi sama joont mööda.",
+  editStraightRisk: "{km} km otse üle metsa või vee",
+  legendDrawn: "Joonistatud otse",
+  panelDrawn: "Joonistatud lõigud: {km} km · aeg arvestatud 15 km/h · Mopik pole kontrollinud, kas seal saab sõita ja kas see on lubatud.",
+  // ── /spur-0928 ──
   gateKindGate: "Värav",
   gateKindLiftGate: "Tõkkepuu",
   gateKindSwingGate: "Pööratav tõkkepuu",
@@ -3108,6 +3222,32 @@ const en: Messages = {
   mapSearchHintShort: "Search…",
   pointMoveHintShort: "Mark the map",
   // ── /P1-insert ──
+  // ── spur-0928 ──
+  editNoRoad: "You can’t ride here – the nearest road is ~{m} m away.",
+  editDeadEndShapeAsk: "Only a dead end reaches this – back the same way for {km} km. “Ride it anyway” or discard with ✕.",
+  editDeadEndAsk: "Only a dead end reaches the stop – back the same way for {km} km. “Ride it anyway” or discard with ✕.",
+  editOutsideProfile: "Only roads outside your profile reach this ({what}, {km} km ⚠️) – “Ride it anyway” or discard with ✕.",
+  editBigDetour: "{km} km, up to {far} km from the current route – “Ride it anyway” or discard with ✕.",
+  editOverrideAccept: "Ride it anyway",
+  editOverrideLabel: "Route outside your profile or a big detour",
+  previewConfirmOverride: "Confirm with “Ride it anyway” or discard",
+  relaxMainRoads: "big roads",
+  relaxMotorways: "motorways",
+  relaxSand: "sand",
+  relaxTowns: "towns",
+  relaxRough: "rougher forest tracks",
+  relaxAccess: "roads with unverified access",
+  relaxCar: "roads a car would take",
+  badgeOutsideProfile: "Outside your profile",
+  badgeOutsideProfileDetail: "Your profile would not use this stretch – you chose it with “Ride it anyway”.",
+  editNoRoadStraight: "You can’t reach this by road – the nearest road is ~{m} m away. “Go straight” or discard with ✕.",
+  editStraightAccept: "Go straight",
+  editStraightLabel: "How to reach this spot",
+  editStraightNote: "The last {m} m to “{name}” – straight, no road, and back along the same line.",
+  editStraightRisk: "{km} km straight across forest or water",
+  legendDrawn: "Drawn straight",
+  panelDrawn: "Drawn stretches: {km} km · time at 15 km/h · Mopik has not checked whether you can ride there or whether it is allowed.",
+  // ── /spur-0928 ──
   gateKindGate: "Gate",
   gateKindLiftGate: "Boom barrier",
   gateKindSwingGate: "Swing gate",

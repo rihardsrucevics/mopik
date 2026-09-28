@@ -32,7 +32,7 @@ import { gatesAlong, gateHighlightLine, type GateOnRide } from "@/lib/map/gates-
 import { gateAtLabel, gateCardHtml, gateGlyphFor, gateIconSvg, type GateGlyph } from "@/components/gate-card";
 // ── P1-D: imports ──
 import { LoaderCircle } from "lucide-react";
-import { useProposalRefused } from "@/components/map/proposal-layer";
+import { useProposalRefused, useProposalWarn } from "@/components/map/proposal-layer";
 
 /**
  * ✓ in slot 3, desktop row and phone column alike (Phase 1 preview, B4).
@@ -64,16 +64,18 @@ function ConfirmSlot({ pending, round, phone = false, "data-slot": slot }: {
   const [locale] = useLocale();
   const m = messages(locale);
   const refused = useProposalRefused() && Boolean(pending);
+  // A proposal outside the profile or with a big detour: only „Tomēr braukt” takes it.
+  const warned = useProposalWarn() && Boolean(pending) && !refused;
   const idle = !pending || Boolean(pending.offRoad);
-  const busy = !refused && !idle && Boolean(pending?.confirmBusy);
-  const onConfirm = refused || idle ? null : pending!.onConfirm;
+  const busy = !refused && !warned && !idle && Boolean(pending?.confirmBusy);
+  const onConfirm = refused || warned || idle ? null : pending!.onConfirm;
   const label = !pending ? m.pickOnMapConfirm
     : pending.offRoad ? pending.offRoad.title
-    : refused ? m.previewConfirmRefused : busy ? m.previewConfirmQueued : pending.confirmLabel;
+    : refused ? m.previewConfirmRefused : warned ? m.previewConfirmOverride : busy ? m.previewConfirmQueued : pending.confirmLabel;
   const icon = phone ? "size-6" : "size-5";
   return (
     <button type="button" onClick={onConfirm ?? undefined} disabled={!onConfirm} aria-disabled={!onConfirm || undefined} data-slot={slot}
-      data-confirm={refused ? "refused" : busy ? "busy" : onConfirm ? "ready" : "idle"} aria-busy={busy || undefined}
+      data-confirm={refused ? "refused" : warned ? "warn" : busy ? "busy" : onConfirm ? "ready" : "idle"} aria-busy={busy || undefined}
       aria-label={label} title={label}
       className={`${round} border border-[#f56300] bg-[#f56300] text-white transition hover:bg-[#d85600] ${SLOT_DISABLED}`}>
       {busy
@@ -1133,6 +1135,9 @@ const BADGE_MIN_SPACING_SHARE = 0.12;
  */
 const SEGMENT_ID = "segmentId";
 
+/** The ink of drawn geometry (`drawn`): stone, with a white dashed centre. */
+const DRAWN_INK = "#78716c";
+
 /**
  * Set on the features whose geometry runs along the TET — see `tetOverlap`.
  * Read by the TET casing layer's filter.
@@ -1159,7 +1164,17 @@ function warningsFor(
   props: SegmentProps
 ): Warning[] {
   const out: Warning[] = [];
-  if (props.unverified) {
+  // Drawn straight: no road, so nothing a road badge says applies (the panel
+  // says what it is: „Zīmēti posmi …”).
+  if (props.drawn) return out;
+  // Ridden outside the profile on the rider's say-so: the same ⚠️ (map
+  // badges are ⚠️ and 🔥 only), its own words on the card.
+  // Both on one stretch: one ⚠️ saying both, never two identical icons.
+  if (props.outsideProfile && props.unverified) {
+    out.push({ kind: "unverified", title: `${m.badgeOutsideProfile} · ${m.badgeUnverified}`, detail: `${m.badgeOutsideProfileDetail} ${m.badgeUnverifiedDetail}` });
+  } else if (props.outsideProfile) {
+    out.push({ kind: "unverified", title: m.badgeOutsideProfile, detail: m.badgeOutsideProfileDetail });
+  } else if (props.unverified) {
     out.push({ kind: "unverified", title: m.badgeUnverified, detail: m.badgeUnverifiedDetail });
   }
   if (props.roadClass === "trail") {
@@ -2587,6 +2602,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
         id: "route-glow",
         type: "line",
         source: "route",
+        filter: ["!=", ["get", "drawn"], true],
         layout: { "line-cap": "round", "line-join": "round" },
         paint: {
           "line-color": SURFACE_COLOR_EXPR,
@@ -2633,6 +2649,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
         id: "route-casing",
         type: "line",
         source: "route",
+        filter: ["!=", ["get", "drawn"], true],
         layout: { "line-cap": "round", "line-join": "round" },
         paint: {
           "line-color": "#ffffff",
@@ -2645,7 +2662,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
         id: "route-road",
         type: "line",
         source: "route",
-        filter: ["==", ["get", "roadClass"], "road"],
+        filter: ["all", ["==", ["get", "roadClass"], "road"], ["!=", ["get", "drawn"], true]],
         layout: { "line-cap": "round", "line-join": "round" },
         // Opacity is declared so the reveal has something to animate from;
         // without it the first frame jumps from 1 to 0 and reads as a flicker.
@@ -2655,7 +2672,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
         id: "route-track",
         type: "line",
         source: "route",
-        filter: ["==", ["get", "roadClass"], "track"],
+        filter: ["all", ["==", ["get", "roadClass"], "track"], ["!=", ["get", "drawn"], true]],
         // Butt caps: a dash with round caps grows by half its width at each
         // end, which closes the gaps and turns the dashes back into a solid
         // line at low zoom.
@@ -2674,7 +2691,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
         id: "route-trail",
         type: "line",
         source: "route",
-        filter: ["==", ["get", "roadClass"], "trail"],
+        filter: ["all", ["==", ["get", "roadClass"], "trail"], ["!=", ["get", "drawn"], true]],
         // Round caps with a zero-length dash give real round dots. A butt cap
         // here would draw little rectangles, which is what "dotted" looked
         // like before.
@@ -2688,6 +2705,26 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
           "line-dasharray": TRAIL_DASH,
           "line-opacity": 1,
         },
+      });
+
+      // Drawn straight, no road („Vest pa taisno”, `drawn`): a thin stone line
+      // with a white dashed centre — no casing, no glow, no surface colour —
+      // so it never reads as a road, nor as the proposal's halo.
+      map.addLayer({
+        id: "route-drawn",
+        type: "line",
+        source: "route",
+        filter: ["==", ["get", "drawn"], true],
+        layout: { "line-cap": "butt", "line-join": "round" },
+        paint: { "line-color": DRAWN_INK, "line-width": 3, "line-opacity": 1 },
+      });
+      map.addLayer({
+        id: "route-drawn-dash",
+        type: "line",
+        source: "route",
+        filter: ["==", ["get", "drawn"], true],
+        layout: { "line-cap": "butt", "line-join": "round" },
+        paint: { "line-color": "#ffffff", "line-width": 1, "line-dasharray": [3, 3], "line-opacity": 1 },
       });
 
       loadedRef.current = true;
@@ -4489,10 +4526,10 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
         </div>
       )}
       {controls && proposal ? (
-        <div role="status" data-proposal-chip={proposal.tone ?? "proposed"} title={proposal.title} aria-label={proposal.title}
-          className={`flex max-w-full items-start gap-1.5 self-start rounded-2xl border px-3 py-1 text-xs font-medium leading-snug shadow-sm backdrop-blur max-md:-ml-16 max-md:mr-16 ${proposal.tone === "refused" ? "border-amber-300 bg-amber-50/95 text-amber-900" : "border-[#ececf0] bg-white/95 text-foreground"}`}>
+        <div role="status" data-proposal-chip={proposal.tone ?? (proposal.warn ? "warn" : "proposed")} title={proposal.title} aria-label={proposal.title}
+          className={`flex max-w-full items-start gap-1.5 self-start rounded-2xl border px-3 py-1 text-xs font-medium leading-snug shadow-sm backdrop-blur max-md:-ml-16 max-md:mr-16 ${proposal.tone === "refused" || proposal.warn ? "border-amber-300 bg-amber-50/95 text-amber-900" : "border-[#ececf0] bg-white/95 text-foreground"}`}>
           {proposal.tone === "routing" && <LoaderCircle aria-hidden="true" className="mt-px size-3.5 shrink-0 animate-spin text-stone-400" />}
-          {proposal.tone === "refused" && <TriangleAlert aria-hidden="true" className="mt-px size-3.5 shrink-0" />}
+          {(proposal.tone === "refused" || proposal.warn) && <TriangleAlert aria-hidden="true" className="mt-px size-3.5 shrink-0" />}
           {/* The numbers on one line; the proposal's notes under them,
               smaller, at most two lines (the chip wrapped to four on a phone
               with the notes run on). */}
@@ -4657,6 +4694,10 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
                 }}
               />
               {m.legendTrail}
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block h-[3px] w-5" style={{ background: `repeating-linear-gradient(90deg, #ffffff 0 3px, transparent 3px 6px) center / 100% 1px no-repeat, ${DRAWN_INK}` }} />
+              {m.legendDrawn}
             </span>
             {/* The TET sample is the casing, not the overlay line: a purple
                 halo around the route's own colour, which is what the rider

@@ -59,6 +59,8 @@ function authHeaders(): Record<string, string> {
 const profileIdCache = new Map<string, string>();
 
 export async function uploadProfile(options: MotoProfileOptions): Promise<string> {
+  // A built-in profile: nothing to upload (`MotoProfileOptions.stock`).
+  if (options.stock) return options.stock;
   const script = buildMotoProfile(options);
   const cached = profileIdCache.get(script);
   if (cached) return cached;

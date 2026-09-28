@@ -44,9 +44,11 @@ const CLONES: [string, string, string][] = [
   ["proposal-road", "route-road", SOURCE],
   ["proposal-track", "route-track", SOURCE],
   ["proposal-trail", "route-trail", SOURCE],
+  ["proposal-drawn", "route-drawn", SOURCE],
+  ["proposal-drawn-dash", "route-drawn-dash", SOURCE],
 ];
 /** The ride's layers the proposal dims. */
-const RIDE_LAYERS = ["route-glow", "route-highlight", "route-tet", "route-casing", "route-road", "route-track", "route-trail"] as const;
+const RIDE_LAYERS = ["route-glow", "route-highlight", "route-tet", "route-casing", "route-road", "route-track", "route-trail", "route-drawn", "route-drawn-dash"] as const;
 /** What the ride is dimmed to, as a share of each layer's own opacity. */
 export const RIDE_DIM = 0.3;
 /**
@@ -170,7 +172,7 @@ function drawProposal(map: maplibregl.Map, line: Segments, changed: [number, num
  * `previewConfirmRefused`). One entry per mounted hook, so a second map
  * without a proposal never clears the first one's.
  */
-const tones = new Map<symbol, ProposalView["tone"] | "shown">();
+const tones = new Map<symbol, ProposalView["tone"] | "shown" | "warn">();
 const listeners = new Set<() => void>();
 const notify = () => { for (const l of listeners) l(); };
 const subscribe = (l: () => void) => { listeners.add(l); return () => { listeners.delete(l); }; };
@@ -178,6 +180,11 @@ const refusedNow = () => [...tones.values()].includes("refused");
 /** True while a mounted map shows a refused proposal. */
 export function useProposalRefused(): boolean {
   return useSyncExternalStore(subscribe, refusedNow, () => false);
+}
+const warnNow = () => [...tones.values()].includes("warn");
+/** True while a mounted map shows a proposal that waits for „Tomēr braukt” (`ProposalView.warn`): ✓ is off. */
+export function useProposalWarn(): boolean {
+  return useSyncExternalStore(subscribe, warnNow, () => false);
 }
 
 export function useProposalLayer(
@@ -187,7 +194,7 @@ export function useProposalLayer(
 ): void {
   const line = proposal?.line ?? null;
   const changedKey = proposal ? JSON.stringify(proposal.changed) : "";
-  const tone = proposal ? proposal.tone ?? "shown" : undefined;
+  const tone = proposal ? proposal.tone ?? (proposal.warn ? "warn" : "shown") : undefined;
 
   useEffect(() => {
     const key = Symbol("proposal");

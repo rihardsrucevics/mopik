@@ -49,10 +49,44 @@ export function proposalView(state: ProposalState, copy: ProposalCopy, locale: U
     text: chip,
     ...(notes ? { notes } : {}),
     title: notes ? `${sentence} ${notes}` : sentence,
+    ...(proposal.accept ? { warn: true as const } : {}),
     line: proposal.ride.segments,
     changed: proposal.changed,
     ...(g ? { guide: g.proposed } : {}),
   };
+}
+
+/**
+ * A bend is a request to take the line to where the finger let go. When the
+ * routed line comes no nearer to that point than the ride already was, the
+ * router found no road there the ride can pass through — and whatever it
+ * re-routed on the way is not the bend, it is noise (rider, 2026-09-28:
+ * bending the line „sometimes regenerates the route very atypically and
+ * chaotically”).
+ *
+ * Measured on 59 bends (150-470 m) on four real rides against production
+ * BRouter: the worst re-routes were exactly these — Antiņciems 21 %, dropped
+ * 453 m off, re-routed 12.4 km of road up to 4.5 km away (+9.1 km) and ended
+ * 416 m from the drop, as far as before; Mālpils 21 %: 9.6 km, 3.2 km away,
+ * 453 m → 453 m. Of the 22 bends that changed the line, 11 were such — 38.5
+ * of the 72 km of new road — and 35 more changed nothing. A bend that
+ * brings the line at least `BEND_GAIN_M` (or `BEND_GAIN_SHARE` of the
+ * distance) nearer is a bend and is proposed as before. One that is not is
+ * no solution (rider's rule 5, `lib/map/edit-reach.ts`): the next, more
+ * relaxed profile is tried towards the drop, and only when none gets nearer
+ * is it said that no road reaches the point.
+ *
+ * Only for a point dropped off the line (`BEND_OFF_LINE_M`): one put on the
+ * line itself is answered by the composer („Vest caur šejieni”).
+ */
+export const BEND_OFF_LINE_M = 60;
+export const BEND_GAIN_M = 50;
+export const BEND_GAIN_SHARE = 0.25;
+
+/** Whether a bend dropped `offBefore` metres from the ride came back `offAfter` metres from it — no nearer. */
+export function bendMissed(offBefore: number, offAfter: number): boolean {
+  if (offBefore <= BEND_OFF_LINE_M) return false;
+  return offBefore - offAfter < Math.max(BEND_GAIN_M, BEND_GAIN_SHARE * offBefore);
 }
 
 /**

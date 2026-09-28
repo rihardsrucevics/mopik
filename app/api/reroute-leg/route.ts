@@ -3,6 +3,7 @@ import { z } from "zod";
 import { RidePlanSchema, planToIntent } from "@/lib/chat/ride-plan";
 import { MAX_SHAPE_POINTS, MAX_STOPS } from "@/lib/chat/ride-limits";
 import { buildMotoProfileOptions } from "@/lib/routing/moto-profile";
+import { profileAt } from "@/lib/routing/relax";
 import { fetchRoutePath } from "@/lib/routing/brouter";
 import { routeThroughPlaces, type ThroughResult } from "@/lib/routing/through-stops";
 import { classifyRoute } from "@/lib/routing/classify";
@@ -120,6 +121,18 @@ const BodySchema = z.object({
    * through the spur's base — where a stop's is kept and reported.
    */
   shapes: z.array(z.array(z.boolean()).max(MAX_STOPS + MAX_SHAPE_POINTS + 2)).max(MAX_STOPS + 2).optional(),
+  /**
+   * Route on a relaxed profile, rung `relax` of `relaxedProfiles`
+   * (`lib/routing/relax.ts`) — asked for only after the ride's own profile
+   * reached no road through the edit's point, and shown to the rider as
+   * outside his profile before anything is kept. Absent or 0: his profile.
+   */
+  relax: z.number().int().min(0).max(4).optional(),
+  /**
+   * Leave a shaping point on its spur (`routeThroughPlaces` `keepShapeSpurs`):
+   * asked for when taking it off left the bend nowhere near the drop.
+   */
+  keepSpurs: z.boolean().optional(),
 });
 
 /**
@@ -154,7 +167,7 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ error: "bad body" }, { status: 400 });
   }
-  const { plan, runs, loops, shapes } = parsed.data;
+  const { plan, runs, loops, shapes, relax, keepSpurs } = parsed.data;
 
   let paths: ThroughResult[];
   try {
@@ -163,11 +176,13 @@ export async function POST(req: NextRequest) {
     // different cost profile would be a different kind of road spliced into
     // the middle of the ride — the one thing a rider notices immediately.
     const intent = planToIntent(plan);
-    const profileOptions = buildMotoProfileOptions(intent);
+    const rung = profileAt(buildMotoProfileOptions(intent), relax ?? 0);
+    if (!rung) return NextResponse.json({ error: "no-such-profile" }, { status: 400 });
+    const profileOptions = rung.options;
     const routing = Promise.all(runs.map((run, i) => {
       const points = run.map((c): Point => [c.lon, c.lat]);
       if (loops?.[i] && points.length >= 3) {
-        return routeThroughPlaces({ points, shapes: shapes?.[i], profileOptions, deadlineAt: startedAt + LOOP_DEADLINE_MS });
+        return routeThroughPlaces({ points, shapes: shapes?.[i], profileOptions, deadlineAt: startedAt + LOOP_DEADLINE_MS, keepShapeSpurs: keepSpurs });
       }
       return fetchRoutePath({
         points,
@@ -213,7 +228,7 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json({
-    runs: paths.map(({ path, deadEndMeters, deadEndUnchecked }) => {
+    runs: paths.map(({ path, deadEndMeters, deadEndUnchecked, deadEndAtShape }) => {
       // The same classifier the ride's own segments came from, so the spliced
       // stretch carries surfaces, road classes, gates and unverified-access
       // flags in exactly the shape the map already draws and the panel counts.
@@ -236,6 +251,10 @@ export async function POST(req: NextRequest) {
         // search ran out of time: then the page says the way back is the way
         // in, without calling the stop a dead end it has not proved.
         ...(deadEndUnchecked ? { deadEndUnchecked } : {}),
+        // …and whether the place at the end of it is a shaping point (a bend
+        // that could not be taken off its spur) or a stop — the page names
+        // the right one, whatever kind of edit made it.
+        ...(deadEndAtShape ? { deadEndAtShape } : {}),
       };
     }),
     ms: Date.now() - startedAt,

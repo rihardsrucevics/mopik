@@ -234,6 +234,14 @@ export type RideEdit = {
    */
   onRename?: (from: ResolvedPlace, to: ResolvedPlace) => void;
   // ── /edit-routing ──
+  /**
+   * „Tomēr braukt” on a warned proposal: arms it (the page's `mayCommit`),
+   * and the chip then confirms it the way ✓ would. Without it nothing
+   * commits a warned proposal.
+   */
+  onOverride?: (commitNow: boolean) => void;
+  /** „Vest pa taisno”: no road reaches the point — as far as a road goes, then straight (a proposal). Absent unless on offer. */
+  onStraight?: () => void;
 };
 
 /** This device's storage for the one-time edit hint, or nothing (a private window, blocked site data). */
@@ -2274,7 +2282,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
    * stay put). What each does is named here (`act`) and wired to the
    * handlers in the controls effect below, as every other control is.
    */
-  type ChoiceAct = { kind: "stop" | "pass" } | { leg: string } | { remove: boolean } | { wide: true };
+  type ChoiceAct = { kind: "stop" | "pass" } | { leg: string } | { remove: boolean } | { wide: true } | { override: true } | { straight: true };
   type ChoiceSpec = Omit<MapChoiceGroup, "options"> & { options: (Omit<MapChoiceGroup["options"][number], "onSelect"> & { act: ChoiceAct })[] };
   const choices: ChoiceSpec[] = [];
   if (canSwitchKind && newPoint) choices.push({
@@ -2301,6 +2309,17 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   if (edit?.onWide) choices.push({
     key: "wide", label: t(locale, "editWideAccept"), action: true,
     options: [{ key: "wide", label: t(locale, "editWideAccept"), selected: false, act: { wide: true } }],
+  });
+  if (edit?.onStraight) choices.push({
+    key: "straight", label: t(locale, "editStraightLabel"), action: true,
+    options: [{ key: "straight", label: t(locale, "editStraightAccept"), selected: false, act: { straight: true } }],
+  });
+  // „Tomēr braukt”: a proposal outside the profile or with a big detour
+  // (`EditProposal.accept`) is taken only by this chip — what ✓ would do,
+  // one ↶ step; ✓ itself is off while it waits (`useProposalWarn`).
+  if (edit?.proposal?.phase === "proposed" && edit.proposal.proposal.accept) choices.push({
+    key: "override", label: t(locale, "editOverrideLabel"), action: true,
+    options: [{ key: "override", label: t(locale, "editOverrideAccept"), selected: false, act: { override: true } }],
   });
   const choicesKey = choices.map((g) => `${g.key}:${g.options.map((o) => `${o.key}${o.selected ? "*" : ""}${o.label}`).join(",")}`).join("|");
   /** Why no stop fits, whole: the „+”'s name and tooltip, the field's at the cap. */
@@ -2695,6 +2714,11 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
             if ("kind" in act) h?.switchKind(act.kind);
             else if ("leg" in act) h?.chooseLeg(act.leg);
             else if ("wide" in act) h?.wide();
+            else if ("straight" in act) edit?.onStraight?.();
+            // With the mark still pending, confirmed as ✓ would (the composer
+            // lets the mark go); once ✓ already let it go (pressed while it
+            // routed), the page commits the armed proposal itself.
+            else if ("override" in act) { const confirm = pending?.onConfirm; edit?.onOverride?.(!confirm); confirm?.(); }
             else h?.moveChoice(act.remove);
           },
         })),
