@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { reverseGeocode, searchPlaces } from "@/lib/chat/photon";
+import { USER_SEARCH_TIMEOUT_MS, reverseGeocode, searchPlacesDetailed } from "@/lib/chat/photon";
 
 /**
  * Place suggestions for the ride form.
@@ -44,5 +44,9 @@ export async function GET(req: NextRequest) {
   const near = params.get("near")?.split(",").map(Number);
   const home =
     near?.length === 2 && near.every(Number.isFinite) ? { lat: near[0], lon: near[1] } : ipLocation(req) ?? undefined;
-  return NextResponse.json({ places: await searchPlaces(q, home) });
+  // A rider is waiting on this list: a longer limit and one retry on a
+  // timeout. When Photon did not answer, say so (`unavailable`) — an empty
+  // list would read as "no such place" for a town that exists.
+  const { places, status } = await searchPlacesDetailed(q, home, { timeoutMs: USER_SEARCH_TIMEOUT_MS, retries: 1 });
+  return NextResponse.json(status === "ok" ? { places } : { places, unavailable: status });
 }

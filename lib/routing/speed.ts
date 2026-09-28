@@ -1,3 +1,4 @@
+import { DRAWN_KMH } from "@/lib/routing/drawn";
 import { haversineMeters } from "@/lib/geo/geometry";
 import type { RouteIntent, RoutePath } from "@/lib/types";
 
@@ -111,7 +112,9 @@ export function waySpeedKmh(tags: Record<string, string>): number {
  * started, because the spur was taken out at the average and put in at trail
  * speed. Only the ratios between segments matter there.
  */
-export function segmentSpeedKmh(props: { roadClass: string; surface: string; trackGrade?: string }): number {
+export function segmentSpeedKmh(props: { roadClass: string; surface: string; trackGrade?: string; drawn?: boolean }): number {
+  // Drawn straight, no road: stated at 15 km/h wherever the time is shown.
+  if (props.drawn) return DRAWN_KMH;
   if (props.surface === "sand") return SPEED.sand;
   if (props.roadClass === "trail") return SPEED.trail;
   if (props.roadClass === "track") {

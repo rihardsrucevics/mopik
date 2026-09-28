@@ -18,7 +18,7 @@ import { useLocale } from "@/lib/i18n/use-locale";
 import { messages as uiMessages } from "@/lib/i18n/messages";
 import { fi } from "@/lib/i18n/format";
 import { RideComposer } from "@/components/ride-composer";
-import { ChatMessage, ChatQuickReply, ChatResponse, RidePlan, planSummary } from "@/lib/chat/ride-plan";
+import { ChatMessage, ChatQuickReply, ChatResponse, RidePlan, planSummary, planToIntent } from "@/lib/chat/ride-plan";
 import { describeInfeasible, describeUnplannable, minutesLabel } from "@/lib/chat/feasibility";
 import { seedPlanFromProfile } from "@/lib/chat/ride-profile";
 import { planForFullSearch } from "@/lib/chat/compose-plan";
@@ -34,6 +34,7 @@ import { useMapLayer } from "@/lib/map/layer-prefs";
 import type { SplicedRoute } from "@/lib/routing/detour";
 import {
   NO_EDITS,
+  anchorsOf,
   applyRuns,
   applyShapeEdit,
   asGeneratedRoute,
@@ -60,6 +61,7 @@ import {
   spanEnds,
   lineBreaks,
   spliceIsSound,
+  throughBlockedPlaces,
   summariseSegments,
   undoEdit,
   type EditHistory,
@@ -75,6 +77,7 @@ import { cumulative, lineMeters, pointAtDistance } from "@/lib/routing/detour";
 import {
   IDLE_PROPOSAL,
   editDelta,
+  mayCommit,
   proposalReducer,
   type EditProposal,
   type ProposalAction,
@@ -83,7 +86,12 @@ import {
   type ProposalView,
   type Segments,
 } from "@/lib/map/edit-proposal";
-import { changeKey, changedAlong, isKindSwitch, NOTE_JOINER, proposalView, proposeDelay, staleWhileRouting, newStretches, wideNeedsAsking } from "@/lib/map/proposal-view";
+import { markOutsideProfile, farthestFrom, detourRisk, reachOf } from "@/lib/map/edit-reach";
+import { drawnIntervals, straightRun } from "@/lib/map/straight";
+import { drawnMeters } from "@/lib/routing/drawn";
+import { profileAt, type RelaxDrop } from "@/lib/routing/relax";
+import { buildMotoProfileOptions } from "@/lib/routing/moto-profile";
+import { bendMissed, changeKey, changedAlong, isKindSwitch, NOTE_JOINER, proposalView, proposeDelay, staleWhileRouting, newStretches, wideNeedsAsking, renamePlaces, renamesBetween, sameGeometry, type Renames } from "@/lib/map/proposal-view";
 import type { Point } from "@/lib/geo/geometry";
 import type { PlaceRoles } from "@/lib/map/place-roles";
 import type { RideEdit } from "@/components/ride-composer";
@@ -92,6 +100,16 @@ import { MAX_SHAPE_POINTS, MAX_STOPS } from "@/lib/chat/ride-limits";
 import { LoaderCircle } from "lucide-react";
 // „Labot” opens the phone map full screen first: inline it is a preview.
 import { openMapFullscreen } from "@/lib/map/fullscreen";
+import { passOnLine } from "@/lib/map/line-sheet";
+import { joinGuide, proposalGuide } from "@/lib/map/edit-guidance";
+
+/** A proposal ready to land, with what `live.landed` records for its commit. */
+type Landing = { proposal: EditProposal; addedAt: number; runs: number };
+
+/** The words for what a relaxed profile rung drops (`relaxedProfiles`), in the warning's list. */
+const RELAX_WORDS: Record<RelaxDrop, "relaxMainRoads" | "relaxMotorways" | "relaxSand" | "relaxTowns" | "relaxRough" | "relaxAccess" | "relaxCar"> = {
+  mainRoads: "relaxMainRoads", motorways: "relaxMotorways", sand: "relaxSand", towns: "relaxTowns", rough: "relaxRough", access: "relaxAccess", car: "relaxCar",
+};
 
 type Retry = { stage: "chat"; messages: ChatMessage[]; plan: RidePlan | null } | { stage: "route"; messages: ChatMessage[]; plan: RidePlan };
 
@@ -186,6 +204,9 @@ type LiveProposal = {
   base: Segments;
   routeId: string;
   landed: { addedAt: number; runs: number; startedAt: number } | null;
+  /** The change as last sent, and the names it has had since it was routed (a pin named after it was dropped). */
+  change: ProposedChange;
+  renames: Renames;
 };
 /** A ✓ pressed before its proposal landed: answered when it lands or is refused. */
 type CommitWaiter = { token: number; resolve: (ok: boolean) => void; keepOnFailure: boolean; pressedAt: number };
@@ -448,6 +469,10 @@ export function HomePage() {
   };
   /** The last token issued; an answer under any other is stale and dropped. */
   /** „Pārrēķināt posmu” on offer: the refused change it would re-route as a whole span (`askWide`). */
+  /** „Tomēr braukt” pressed: the token of the warned proposal it may commit (`mayCommit`). */
+  const overrideArmed = useRef<number | null>(null);
+  /** „Vest pa taisno” on offer: the refused change no road reaches (`askStraight`). */
+  const [straightAsk, setStraightAsk] = useState<{ token: number; change: ProposedChange; level: number } | null>(null);
   const [wideAsk, setWideAsk] = useState<{ token: number; change: ProposedChange } | null>(null);
   const proposalSeq = useRef(0);
   const live = useRef<LiveProposal | null>(null);
@@ -1255,10 +1280,12 @@ export function HomePage() {
    * no ride state is touched. `delay` is the drag debounce; `confirm` is a ✓
    * already pressed for this change (the proposal commits the moment it lands).
    */
-  function proposePlaces(change: ProposedChange, opts: { delay?: number; confirm?: Omit<CommitWaiter, "token">; wide?: boolean } = {}) {
+  function proposePlaces(change: ProposedChange, opts: { delay?: number; confirm?: Omit<CommitWaiter, "token">; wide?: boolean; straight?: number } = {}) {
     stopProposalWork();
     const token = ++proposalSeq.current;
+    overrideArmed.current = null;
     setWideAsk(null);
+    setStraightAsk(null);
     if (!plan || !result || !route || !ridePlaces) {
       live.current = null;
       opts.confirm?.resolve(false);
@@ -1266,7 +1293,7 @@ export function HomePage() {
     }
     const before = ridePlaces;
     const baseSegments = edited?.segments ?? route.segments;
-    live.current = { token, key: changeKey(change), base: baseSegments, routeId: route.id, landed: null };
+    live.current = { token, key: changeKey(change), base: baseSegments, routeId: route.id, landed: null, change, renames: {} };
     if (opts.confirm) { commitWaiter.current = { ...opts.confirm, token }; setCommitting(true); }
     // A new proposal: whatever the last one said goes with it.
     setEditNote(null);
@@ -1278,7 +1305,8 @@ export function HomePage() {
     const target = placesForChange(change, before, line);
     if ("note" in target) { refuseNow(target.how, target.note, target.reason); return; }
     if (line.length < 2) { refuseNow("move-stop", ui.resEditFailed, "degenerate"); return; }
-    const planned = planEdit({ line, cum: cumulative(line), before, after: target.after, keepOrder: target.keepOrder });
+    // Drawn straight stretches are fixed: no window re-routes them (design C).
+    const planned = planEdit({ line, cum: cumulative(line), before, after: target.after, keepOrder: target.keepOrder, fixed: drawnIntervals(baseSegments) });
     if (!planned) {
       // Nothing about the line changes: nothing to preview, nothing to commit.
       live.current = null;
@@ -1292,24 +1320,79 @@ export function HomePage() {
     if (opts.confirm) dispatchProposal({ type: "confirm" });
     const run = () => {
       proposeTimer.current = null;
-      void routeProposal({ token, before, planned, baseSegments, line, shape: change.kind === "shape", change, wide: opts.wide === true });
+      void routeProposal({ token, before, planned, baseSegments, line, shape: change.kind === "shape", change, wide: opts.wide === true, ...(opts.straight !== undefined ? { straight: true, relax: opts.straight } : {}) });
     };
     if (opts.delay) proposeTimer.current = { timer: setTimeout(run, opts.delay), run };
     else run();
   }
 
   /** The request itself, and the proposal its answer becomes. Stale answers (an older token) are dropped. */
-  async function routeProposal(p: { token: number; before: RidePlaces; planned: EditPlan; baseSegments: Segments; line: Point[]; shape: boolean; change: ProposedChange; wide: boolean }) {
+  async function routeProposal(p: { token: number; before: RidePlaces; planned: EditPlan; baseSegments: Segments; line: Point[]; shape: boolean; change: ProposedChange; wide: boolean; relax?: number; bestOff?: number; fallback?: Landing; keepSpurs?: boolean; straight?: boolean }): Promise<void> {
     if (!plan || !route) return;
     const { token, before, planned, baseSegments, line } = p;
+    // The profile rung this attempt routes on: 0 is the rider's own; past
+    // it, `relaxedProfiles` — only after his reached no road through the
+    // point (rider, 2026-09-28, `lib/map/edit-reach.ts`).
+    const level = p.relax ?? 0;
     const current = () => proposalSeq.current === token;
     const abort = new AbortController();
     proposalAbort.current = abort;
     const nextPlan = planWithPlaces(plan, planned.places);
     const startedAt = startClock();
     const refuse = (note: string, reason: string) => { refuseProposal(token, planned.kind, note, reason); };
+    const ownProfile = buildMotoProfileOptions(planToIntent(nextPlan));
+    // Where the edit asks the ride to go: the places it adds or moves, or
+    // the bend's drop — and how far that is from the ride it has.
+    const known = [before.start, ...before.vias, ...(before.finish ? [before.finish] : [])];
+    const asked: Point[] = p.change.kind === "shape" && (p.change.op.kind === "add" || p.change.op.kind === "move")
+      ? [[p.change.op.lon, p.change.op.lat]]
+      : [planned.places.start, ...planned.places.vias, ...(planned.places.finish ? [planned.places.finish] : [])]
+        .filter((q) => !known.some((k) => k.lat === q.lat && k.lon === q.lon)).map((q): Point => [q.lon, q.lat]);
+    const reachM = reachOf(asked, line);
+    /**
+     * No road of this profile reaches the point, `offM` from it: the next
+     * rung is tried; past the last, it is said plainly (rules 1 and 3) —
+     * with the nearest any attempt came.
+     */
+    const unreached = async (offM: number): Promise<void> => {
+      const bestOff = Math.min(p.bestOff ?? Infinity, offM);
+      // The straight line itself would not join: said as it is.
+      if (p.straight) return refuse(ui.editBrokenLine, "broken-line");
+      if (profileAt(ownProfile, level + 1)) return routeProposal({ ...p, relax: level + 1, bestOff, keepSpurs: false });
+      // A lower rung reached the point only by a dead end: that is still a
+      // road that reaches it (rule 1), offered with the dead end said.
+      if (p.fallback) return land(p.fallback);
+      // No road at all, even on car-fast (rule 3, as the rider changed it):
+      // said, and „Vest pa taisno” offered — as far as a road goes, then
+      // straight (`lib/map/straight.ts`). One new point only: a batch or a
+      // move is said as it is.
+      const addsOne = asked.length === 1 && (planned.kind === "add-stop");
+      if (addsOne) return askStraight(token, planned.kind, fi(ui.editNoRoadStraight, { m: Math.round(bestOff) }), p.change, level);
+      return refuse(fi(ui.editNoRoad, { m: Math.round(bestOff) }), "no-road");
+    };
+    /** A proposal into the reducer — or ✓ already pressed, committed (never one that needs „Tomēr braukt”). */
+    const land = (l: Landing) => {
+      const { proposal } = l;
+      if (!current()) return;
+      if (live.current?.token === token) live.current.landed = { addedAt: l.addedAt, runs: l.runs, startedAt };
+      const next = dispatchProposal({ type: "landed", proposal });
+      track("route_edit_proposed", {
+        how: planned.kind,
+        ms: elapsedMsSince(startedAt),
+        km_delta: Math.round((proposal.delta.kmAfter - proposal.delta.kmBefore) * 10) / 10,
+        repeated_before: proposal.delta.repeatedBefore,
+        repeated_after: proposal.delta.repeatedAfter,
+      });
+      // ✓ pressed while it routed: committed the moment it lands — unless
+      // it turned out to need „Tomēr braukt”: that ✓ was pressed before the
+      // warning existed, so it is answered no and the warning is shown.
+      if (next.phase === "proposed" && next.proposal === proposal && next.confirmNow) {
+        if (proposal.accept) settleWaiter(token, false);
+        else commitProposal(proposal, true);
+      }
+    };
     try {
-      type Routed = { runs: (RoutedRun & { deadEndMeters?: number; deadEndUnchecked?: boolean })[] };
+      type Routed = { runs: (RoutedRun & { deadEndMeters?: number; deadEndUnchecked?: boolean; deadEndAtShape?: boolean })[] };
       // Every place in every stretch is ridden through, not out to and back
       // (rider, 2026-09-25): the server routes a stretch leg by leg and looks
       // for a way through each place whose way in and way out share road
@@ -1325,23 +1408,66 @@ export function HomePage() {
             runs: runs.map((run) => run.points.map(([lon, lat]) => ({ lat, lon }))),
             loops: runs.map((run) => run.points.length >= 3),
             shapes: runs.map((run) => shapeFlags(run, planned.places)),
+            ...(level ? { relax: level } : {}),
+            ...(p.keepSpurs ? { keepSpurs: true } : {}),
           }),
         });
-        return response.ok ? ((await response.json()) as Routed) : { status: response.status };
+        if (!response.ok) return { status: response.status };
+        const routed = (await response.json()) as Routed;
+        // A relaxed rung: its new metres are outside the profile, ⚠️ on the map.
+        return !level ? routed : { runs: routed.runs.map((r) => ({ ...r, segments: markOutsideProfile(r.segments, line).segments })) };
       };
+      // The kept ride's places: a join never slides past one (`retraceAtJoins`).
+      const keep = anchorsOf(before, line[line.length - 1]);
       const splice = (runs: typeof planned.runs, routed: Routed) => applyRuns({
         segments: baseSegments,
         distanceMeters: edited?.distanceMeters ?? route.distanceMeters,
         durationSeconds: edited?.durationSeconds ?? route.durationSeconds,
         runs,
         routed: routed.runs,
+        keep,
       });
       // „Pārrēķināt posmu” (the rider asked for it): the whole span at once.
       let runs = p.wide ? [spanRun({ line, cum: cumulative(line), before, after: planned.places, runs: planned.runs })] : planned.runs;
-      let data = await request(runs);
+      let data: Routed | { status: number };
+      // „Vest pa taisno”: as far as a road goes toward the point (the router
+      // ends a leg to a pin in a field at the nearest road it can reach),
+      // then straight to it and back along the same line.
+      let straight: { meters: number } | null = null;
+      if (p.straight && asked.length === 1) {
+        const lc = cumulative(line);
+        const near = nearestAlong(asked[0], line, lc);
+        const join = pointAtDistance(line, lc, near.alongMeters).point as Point;
+        const toward = await request([{ fromMeters: near.alongMeters, toMeters: near.alongMeters, points: [join, asked[0]] }]).catch((): { status: number } => ({ status: 0 }));
+        if (!current()) return;
+        const s = straightRun({ line, point: asked[0], road: "status" in toward ? null : toward.runs[0] });
+        runs = [s.run];
+        data = { runs: [s.routed] };
+        straight = { meters: s.straightMeters };
+      } else if (runs.every((r) => r.drop)) {
+        // A straight point taken out: its stretch simply goes, nothing routed.
+        data = { runs: runs.map(() => ({ segments: { type: "FeatureCollection" as const, features: [] }, distanceMeters: 0, durationSeconds: 0 })) };
+      } else {
+        data = await request(runs);
+      }
       if (!current()) return;
-      if ("status" in data) return refuse(ui.resEditFailed, String(data.status));
+      // 422: the router reached no road through the point on this profile.
+      if ("status" in data) return data.status === 422 ? unreached(reachM) : refuse(ui.resEditFailed, String(data.status));
       let spliced = splice(runs, data);
+      // A stretch cut at a neighbouring place that came back leaving it the
+      // way the kept ride came in: routed again THROUGH that place, so the
+      // place is not left at the tip of a spur (`throughBlockedPlaces`).
+      const through = straight ? null : throughBlockedPlaces({ line, cum: cumulative(line), before, runs, blocked: spliced.blocked });
+      if (through) {
+        const again = await request(through);
+        if (!current()) return;
+        if (!("status" in again)) {
+          const wider = splice(through, again);
+          if (wider.blocked.every((b) => !b.head && !b.tail) && lineBreaks(wider.segments, baseSegments).length === 0) {
+            runs = through; data = again; spliced = wider;
+          }
+        }
+      }
       // The invariant (rider, 2026-09-25): the edited ride is ONE continuous
       // line through every place in order. A stretch the router began or
       // ended somewhere other than the cut — a nudged or snapped endpoint —
@@ -1351,7 +1477,9 @@ export function HomePage() {
       // the ride keeps the line it had.
       const sound = (candidate: typeof spliced) => spliceIsSound({ segments: candidate.segments, original: baseSegments, places: planned.places, before, toleranceMeters: MOVE_OFFER_MAX_M });
       let verdict = sound(spliced);
-      if (!verdict.ok && !p.wide) {
+      // Not on a relaxed rung: a whole span re-routed on a profile that is
+      // not his would reshape the ride far from the point he asked for.
+      if (!verdict.ok && !p.wide && !level) {
         console.warn("mopik: edited line broke", { kind: planned.kind, breaks: verdict.breaks, missesPlaces: verdict.missesPlaces, offRoadMeters: verdict.offRoadMeters, runs: runs.map((r, i) => ({ i, from: Math.round(r.fromMeters), to: Math.round(r.toMeters) })) });
         track("route_edit_failed", { reason: "broken-line" });
         const span = spanRun({ line, cum: cumulative(line), before, after: planned.places, runs });
@@ -1379,8 +1507,10 @@ export function HomePage() {
       }
       // The line is whole and rides every kept place; only the place the
       // edit added or moved is out of reach — said as that, with how far.
-      if (!verdict.ok && verdict.offRoadMeters) return refuse(fi(ui.pickOffRoadTitle, { m: verdict.offRoadMeters }), "too-far");
-      if (!verdict.ok) return refuse(ui.editBrokenLine, "broken-line");
+      if (!verdict.ok && verdict.offRoadMeters) return unreached(verdict.offRoadMeters);
+      // On a relaxed rung a line that will not join is one more way that
+      // did not reach the point; on his own profile it is said as it is.
+      if (!verdict.ok) return level ? unreached(reachM) : refuse(ui.editBrokenLine, "broken-line");
       // Where the line actually reaches each changed place. A point in a
       // field is answered by the router with a line that turns back at the
       // nearest track, silently; the place follows the line and the rider is
@@ -1405,10 +1535,26 @@ export function HomePage() {
           }
         : planned.places;
       const snapped = snapToLine({ line: spliced.coordinates, before, after: withJoins, maxMoveMeters: MOVE_OFFER_MAX_M });
-      if ("error" in snapped) return refuse(fi(ui.pickOffRoadTitle, { m: snapped.meters }), "too-far");
+      if ("error" in snapped) return unreached(snapped.meters);
+      // A bend the router could not take nearer to where it was dropped is
+      // no solution (rule 5): what it re-routed on the way is noise
+      // (`bendMissed`) — a more relaxed rung is tried towards the drop.
+      if (p.change.kind === "shape" && (p.change.op.kind === "add" || p.change.op.kind === "move")) {
+        const drop: Point = [p.change.op.lon, p.change.op.lat];
+        const offAfter = nearestAlong(drop, spliced.coordinates, cumulative(spliced.coordinates)).meters;
+        // Taking the bend off a spur can leave it nowhere near the drop: the
+        // only road there is a dead end. That still reaches the point (rule
+        // 1) — asked once more with the bend kept on it, said as a dead end.
+        if (bendMissed(reachM, offAfter) && !p.keepSpurs && !p.fallback) return routeProposal({ ...p, keepSpurs: true });
+        if (bendMissed(reachM, offAfter)) return unreached(offAfter);
+      }
       // Where a grabbed line point was taken only mattered to this edit's
       // plan; the shaping point it became is an ordinary one from here on.
-      const settled = { ...snapped.places, vias: snapped.places.vias.map((v) => { const { grabbedAt: _g, ...rest } = v; void _g; return rest; }) };
+      const settled = { ...snapped.places, vias: snapped.places.vias.map((v) => {
+        const { grabbedAt: _g, ...rest } = v; void _g;
+        // The point reached straight carries it: taking it out takes its stretch out.
+        return straight && v.lon === asked[0][0] && v.lat === asked[0][1] ? { ...rest, reach: "straight" as const } : rest;
+      }) };
       const ride: EditedRide = {
         ...spliced,
         overlap: recomputeOverlap(spliced.coordinates),
@@ -1437,13 +1583,43 @@ export function HomePage() {
       const deadEndRun = data.runs.reduce<(typeof data.runs)[number] | null>((worst, r) => ((r.deadEndMeters ?? 0) > (worst?.deadEndMeters ?? 0) ? r : worst), null);
       const deadEnd = deadEndRun?.deadEndMeters ?? 0;
       const deadEndKm = new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(deadEnd / 1000);
+      const deadEndNote = deadEnd > 0 ? fi(deadEndRun?.deadEndUnchecked
+        ? (deadEndRun?.deadEndAtShape ? ui.editSameWayBackShape : ui.editSameWayBack)
+        : (deadEndRun?.deadEndAtShape ? ui.editDeadEndShape : ui.editDeadEnd), { km: deadEndKm }) : "";
       const notes = [
         snapped.movedMeters > 0 ? fi(ui.resEditMoved, { m: snapped.movedMeters }) : "",
-        deadEnd > 0 ? fi(deadEndRun?.deadEndUnchecked
-          ? (p.shape ? ui.editSameWayBackShape : ui.editSameWayBack)
-          : (p.shape ? ui.editDeadEndShape : ui.editDeadEnd), { km: deadEndKm }) : "",
+        // Named by whose spur it is (the server says), not by the kind of
+        // edit: a bend can leave a neighbouring stop on one.
+        deadEndNote,
       ].filter(Boolean);
       const beforeRide = { distanceMeters: edited?.distanceMeters ?? route.distanceMeters, durationSeconds: edited?.durationSeconds ?? route.durationSeconds, overlap: edited?.overlap ?? route.overlap };
+      // Rules 2 and 4: outside the profile, or a big detour — said with what
+      // and how much, and only „Tomēr braukt” takes it.
+      const kmFormat = new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+      const outsideM = data.runs.reduce((sum, r) => sum + r.segments.features.reduce((m, f) => m + (f.properties.outsideProfile ? lineMeters(f.geometry.coordinates as Point[]) : 0), 0), 0);
+      const rung = level ? profileAt(ownProfile, level) : null;
+      if (rung && outsideM > 0) {
+        notes.push(fi(ui.editOutsideProfile, { what: rung.drops.map((d) => ui[RELAX_WORDS[d]]).join(", "), km: kmFormat.format(outsideM / 1000) }));
+      }
+      const risk = detourRisk({
+        metersBefore: beforeRide.distanceMeters,
+        metersAfter: spliced.distanceMeters,
+        farthestM: farthestFrom(data.runs.flatMap((r) => coordinatesOf(r.segments)), line),
+        reachM,
+      });
+      if (risk) {
+        const plus = risk.plusMeters / 1000;
+        notes.push(fi(ui.editBigDetour, { km: `${plus >= 0 ? "+" : "−"}${kmFormat.format(Math.abs(plus))}`, far: kmFormat.format(risk.farthestM / 1000) }));
+      }
+      if (straight) {
+        const name = planned.places.vias.find((v) => v.lon === asked[0][0] && v.lat === asked[0][1]);
+        const m = Math.round(straight.meters);
+        notes.push(fi(ui.editStraightNote, { m: new Intl.NumberFormat(locale).format(m), name: name?.name || ui.shapePointName }));
+        if (m > 1000) notes.push(fi(ui.editStraightRisk, { km: kmFormat.format(m / 1000) }));
+      }
+      // The rider asked for the straight line himself: it waits for „Tomēr
+      // braukt” only for a big detour, not for leaving his profile.
+      const accept: EditProposal["accept"] = rung && outsideM > 0 && !straight ? "profile" : risk ? "detour" : undefined;
       const proposal: EditProposal = {
         token,
         how: planned.kind,
@@ -1455,19 +1631,25 @@ export function HomePage() {
           newStretches(coordinatesOf(r.segments), line))),
         delta: editDelta(beforeRide, ride),
         notes,
+        ...(accept ? { accept } : {}),
+        ...(level ? { relax: level } : {}),
       };
-      if (!current()) return;
-      if (live.current?.token === token) live.current.landed = { addedAt, runs: runs.length, startedAt };
-      const next = dispatchProposal({ type: "landed", proposal });
-      track("route_edit_proposed", {
-        how: planned.kind,
-        ms: elapsedMsSince(startedAt),
-        km_delta: Math.round((proposal.delta.kmAfter - proposal.delta.kmBefore) * 10) / 10,
-        repeated_before: proposal.delta.repeatedBefore,
-        repeated_after: proposal.delta.repeatedAfter,
-      });
-      // ✓ pressed while it routed: committed the moment it lands.
-      if (next.phase === "proposed" && next.proposal === proposal && next.confirmNow) commitProposal(proposal, true);
+      // A pass-through point left at the tip of a spur is no solution while
+      // another rung may ride through it (rule 5); kept as the fallback,
+      // with the dead end said and „Tomēr braukt”, if none does.
+      // The first such (the least relaxed rung) is the one kept.
+      if (deadEnd > 0 && deadEndRun?.deadEndAtShape) {
+        const asked = { ...proposal, accept: accept ?? ("deadEnd" as const), notes: notes.map((n) => (n === deadEndNote ? fi(ui.editDeadEndShapeAsk, { km: deadEndKm }) : n)) };
+        const fallback: Landing = { proposal: asked, addedAt, runs: runs.length };
+        if (profileAt(ownProfile, level + 1)) return routeProposal({ ...p, relax: level + 1, bestOff: Math.min(p.bestOff ?? Infinity, reachM), fallback: p.fallback ?? fallback, keepSpurs: false });
+        return land(p.fallback ?? fallback);
+      }
+      // A stop the rider placed at a real dead end (rider, 2026-09-28): the
+      // out-and-back is kept and said in its note („Pietura ir strupceļā –
+      // atpakaļ pa to pašu ceļu 0,2 km.”) — a plain proposal, ✓ takes it, no
+      // „Tomēr braukt”. Only a pass-through point left on a spur (above), or
+      // a profile / detour warning, waits for the override.
+      land({ proposal, addedAt, runs: runs.length });
     } catch (e) {
       if (!current() || (e instanceof DOMException && e.name === "AbortError")) return;
       refuse(ui.resEditFailed, "network");
@@ -1505,6 +1687,35 @@ export function HomePage() {
    * chip stays usable — a single mark confirmed while routing is let go
    * with the reason said, as any refusal is.
    */
+  /**
+   * No road reaches the point on any profile: said as the guidance line, and
+   * „Vest pa taisno” offered in the notice area (`straightAsk`); a tap routes
+   * as far as a road goes and draws the rest straight, as a proposal (✓, one
+   * ↶ step). `level` is the rung the road part is routed on.
+   */
+  function askStraight(token: number, how: EditKind, note: string, change: ProposedChange, level: number) {
+    if (proposalSeq.current !== token) return;
+    dispatchProposal({ type: "refused", token, reason: note });
+    track("route_edit_refused", { how, reason: "no-road" });
+    const waiter = settleWaiter(token, false);
+    if (waiter && !waiter.keepOnFailure) {
+      live.current = null;
+      dispatchProposal({ type: "discard" });
+      setEditNote(note);
+      reseed();
+      return;
+    }
+    setStraightAsk({ token, change, level });
+  }
+
+  /** „Vest pa taisno”: the refused change, as far as a road goes and then straight — proposed. */
+  function acceptStraight() {
+    const ask = straightAsk;
+    if (!ask || proposalRef.current.phase !== "refused") return;
+    track("route_edit_straight_asked", {});
+    proposePlaces(ask.change, { straight: ask.level });
+  }
+
   function askWide(token: number, how: EditKind, note: string, change: ProposedChange) {
     if (proposalSeq.current !== token) return;
     dispatchProposal({ type: "refused", token, reason: note });
@@ -1529,8 +1740,12 @@ export function HomePage() {
   function commitProposal(proposal: EditProposal, whileRouting: boolean): boolean {
     const mine = live.current;
     if (!plan || !route || !mine || mine.token !== proposal.token || !mine.landed || mine.routeId !== route.id || mine.base !== (edited?.segments ?? route.segments)) return false;
+    // A warned proposal enters the ride only through „Tomēr braukt” (`mayCommit`).
+    if (!mayCommit(proposal, overrideArmed.current)) return false;
+    overrideArmed.current = null;
     const { addedAt, runs, startedAt } = mine.landed;
-    const next = proposal.ride;
+    // Named after it was routed: the stop keeps the name it has now.
+    const next: EditedRide = { ...proposal.ride, places: renamePlaces(proposal.ride.places, mine.renames) };
     setEditsFor((prev) => {
       const own = prev.routeId === route.id;
       return {
@@ -1550,6 +1765,7 @@ export function HomePage() {
     reseed(addedAt >= 0 ? addedAt + 1 : undefined);
     const waiter = settleWaiter(proposal.token, true);
     track("route_edit_confirmed", { how: proposal.how, while_routing: whileRouting });
+    if (proposal.accept) track("route_edit_override_accepted", { why: proposal.accept, relax: proposal.relax ?? 0 });
     // Timed from ✓ to the frame the new line is painted in — the wait the
     // rider actually sees (≈ 0 for a landed preview; the rest of the routing
     // when ✓ was pressed while it routed).
@@ -1574,7 +1790,9 @@ export function HomePage() {
    */
   function discardProposal() {
     stopProposalWork();
+    overrideArmed.current = null;
     setWideAsk(null);
+    setStraightAsk(null);
     const token = proposalSeq.current;
     proposalSeq.current += 1;
     live.current = null;
@@ -1605,6 +1823,16 @@ export function HomePage() {
     if (isKindSwitch(change) || commitWaiter.current || !route) return;
     const mine = live.current;
     if (mine && mine.key === changeKey(change) && mine.base === (edited?.segments ?? route.segments) && proposalRef.current.phase !== "idle") return;
+    // ── edit-routing ── The dropped pin's name arrived: the same line, so
+    // the routing already under way (or landed) stands — the name goes into
+    // the places it commits, and ✓ recognises the renamed change as its own.
+    if (mine && mine.base === (edited?.segments ?? route.segments) && proposalRef.current.phase !== "idle" && sameGeometry(mine.change, change)) {
+      mine.renames = renamesBetween(mine.change, change, mine.renames);
+      mine.change = change;
+      mine.key = changeKey(change);
+      return;
+    }
+    // ── /edit-routing ──
     const now = performance.now();
     const delay = proposeDelay(lastProposeAt.current, now);
     lastProposeAt.current = now;
@@ -1699,8 +1927,20 @@ export function HomePage() {
     };
     // `EditedRide.how` has no "demote" (yet): both switches are the undo's
     // "promote", a change of a point's kind; `point_kind_switched` says which.
+    commitPlacesOnLine(switched, "promote");
+    track("point_kind_switched", { to: op.kind === "promote" ? "stop" : "pass", mode: "edit" });
+  }
+
+  /**
+   * New places on the SAME line — a kind switch, a pass-through point dropped
+   * on the line — committed at once as one step of the undo: the ride keeps
+   * its line and numbers, only its places change.
+   */
+  function commitPlacesOnLine(next: RidePlaces, how: EditedRide["how"]) {
+    if (!plan || !route) return;
+    const baseLine = edited?.coordinates ?? (route.geometry.coordinates as Point[]);
     const keep: EditedRide = edited
-      ? { ...edited, places: switched, kind: "edit", how: "promote" }
+      ? { ...edited, places: next, kind: "edit", how }
       : {
           coordinates: baseLine,
           segments: route.segments,
@@ -1708,20 +1948,66 @@ export function HomePage() {
           durationSeconds: route.durationSeconds,
           overlap: route.overlap,
           summary: summariseSegments(route.segments, route.quality.gateCount !== undefined),
-          places: switched,
+          places: next,
           kind: "edit",
-          how: "promote",
+          how,
         };
     setEditsFor((prev) => {
       const mine = prev.routeId === route.id;
       return { routeId: route.id, history: pushEdit(mine ? prev.history : NO_EDITS, keep), original: mine && prev.original ? prev.original : { plan, places } };
     });
-    setPlan(planWithPlaces(plan, switched));
-    setPlaces(resolvedOf(switched));
+    setPlan(planWithPlaces(plan, next));
+    setPlaces(resolvedOf(next));
     setEditNote(null);
     reseed();
-    track("point_kind_switched", { to: op.kind === "promote" ? "stop" : "pass", mode: "edit" });
   }
+
+  // ── edit-routing ──
+  /**
+   * A place committed under its spot — ✓ pressed while the pin was still
+   * being named (rider, 2026-09-28: the routing never waits for the name) —
+   * gets its name: in the proposal still routing, for when it commits; in the
+   * ride it already went into, in place, without a step of the undo.
+   */
+  function renamePlace(from: ResolvedPlace, to: ResolvedPlace) {
+    const mine = live.current;
+    if (mine && mine.change.kind === "rows") mine.renames = renamesBetween({ kind: "rows", rows: { names: [from.name], picked: { 0: from } } }, { kind: "rows", rows: { names: [to.name], picked: { 0: to } } }, mine.renames);
+    const current = edited;
+    if (!current || !route || !plan) return;
+    const all = [current.places.start, ...current.places.vias, current.places.finish];
+    if (!all.some((v) => v && v.name === from.name)) return;
+    const renamed = renamePlaces(current.places, { [from.name]: { name: to.name, label: to.label } });
+    setEditsFor((prev) => (prev.routeId !== route.id || prev.history.current !== current ? prev
+      : { ...prev, history: { ...prev.history, current: { ...current, places: renamed } } }));
+    setPlan(planWithPlaces(plan, renamed));
+    setPlaces(resolvedOf(renamed));
+  }
+  const renameRef = useRef(renamePlace);
+  useEffect(() => { renameRef.current = renamePlace; });
+  // ── /edit-routing ──
+
+  // ── line-sheet ──
+  /**
+   * „Pievienot punktu šeit” on the line's sheet (lib/map/line-sheet.ts): a
+   * pass-through point exactly on the line at the tapped spot, in the leg it
+   * is in. The line already rides through it, so nothing is routed — one
+   * commit, one step of the undo, the line identical.
+   */
+  function dropPassHere(spot: { lat: number; lon: number; alongMeters: number }) {
+    if (!plan || !result || !route || !ridePlaces || commitWaiter.current) return;
+    const baseLine = edited?.coordinates ?? (route.geometry.coordinates as Point[]);
+    const next = passOnLine(ridePlaces, baseLine, spot);
+    if ("error" in next) {
+      track("route_edit_failed", { reason: next.error });
+      setEditNote(next.error === "shape-cap" ? fi(ui.shapeCapNote, { n: MAX_SHAPE_POINTS }) : ui.resEditFailed);
+      return;
+    }
+    // Whatever was previewed was cut from the places this changes.
+    discardProposal();
+    commitPlacesOnLine(next.places, "add-stop");
+    track("line_point_added", {});
+  }
+  // ── /line-sheet ──
 
   /**
    * One step back: the ride exactly as it was on screen before the last edit.
@@ -1764,6 +2050,9 @@ export function HomePage() {
    */
   function searchBetterLoop() {
     if (busyRef.current || !plan) return;
+    // Design F2: never on a ride with drawn stretches — the search would drop
+    // them (the panel's button is off and says so; this is the belt).
+    if (drawnMeters((edited?.segments ?? route?.segments)?.features ?? []) > 0) return;
     // Already-present names are dropped rather than duplicated: the rider may
     // have ticked something a previous pass put in the ride.
     const fresh = selectedPois.filter((p) => !plan.viaPlaces.includes(p.name));
@@ -2110,9 +2399,17 @@ export function HomePage() {
    * cannot be made) in the notice slot, and the proposed line over the
    * dimmed ride. Only while editing.
    */
+  const wideNow = Boolean(wideAsk && proposal.phase === "refused" && proposal.token === wideAsk.token);
+  const straightNow = Boolean(straightAsk && proposal.phase === "refused" && proposal.token === straightAsk.token);
   const proposalNow = useMemo(
-    () => (wiring.editing ? proposalView(proposal, { routing: ui.previewRouting, delta: ui.previewDelta, deltaTitle: ui.previewDeltaTitle }, locale) : null),
-    [wiring.editing, proposal, ui.previewRouting, ui.previewDelta, ui.previewDeltaTitle, locale],
+    () => (wiring.editing ? proposalView(proposal, {
+      routing: ui.previewRouting, delta: ui.previewDelta, deltaTitle: ui.previewDeltaTitle,
+      // ── edit-guidance ── what to do, after what is happening.
+      guide: proposalGuide((k) => ui[k]),
+      wide: wideNow,
+      straight: straightNow,
+    }, locale) : null),
+    [wiring.editing, proposal, ui, wideNow, straightNow, locale],
   );
   // The last proposal that landed stays on the map while the next change
   // routes — its line, halo and numbers, with the spinner — so there is
@@ -2121,6 +2418,7 @@ export function HomePage() {
   // with the proposal (✕, the mark gone) or a refusal.
   const [landedView, setLandedView] = useState<ProposalView | null>(null);
   const wideOffered = wideAsk && proposal.phase === "refused" && proposal.token === wideAsk.token ? wideAsk : null;
+  const straightOffered = straightAsk && proposal.phase === "refused" && proposal.token === straightAsk.token ? straightAsk : null;
   if (proposalNow && !proposalNow.tone && proposalNow !== landedView) setLandedView(proposalNow);
   if ((!proposalNow || proposalNow.tone === "refused") && landedView) setLandedView(null);
   const proposalShown = staleWhileRouting(landedView, proposalNow);
@@ -2224,6 +2522,9 @@ export function HomePage() {
         </div>
       )}
       <p data-edit-summary className="text-xs font-medium tabular-nums text-stone-800">{editSummary}</p>
+      {edited && edited.summary.drawnKm > 0 && (
+        <p data-drawn-line className="text-[11px] leading-snug text-stone-600">{fi(ui.panelDrawn, { km: new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(edited.summary.drawnKm) })}</p>
+      )}
       {/* The preview, said here as well as on the map: routing, refused, or its chip and notes. */}
       {proposalShown?.tone === "routing" && (
         <p role="status" className="flex items-center gap-1.5 text-[11px] text-stone-500">
@@ -2231,7 +2532,7 @@ export function HomePage() {
         </p>
       )}
       {proposalShown && proposalShown.tone !== "routing" && (
-        <p data-edit-proposal role="status" title={proposalShown.title} className={`text-[11px] leading-snug tabular-nums ${proposalShown.tone === "refused" ? "text-[#bd4b00]" : "text-stone-700"}`}>{proposalShown.notes ? `${proposalShown.text}${NOTE_JOINER}${proposalShown.notes}` : proposalShown.text}</p>
+        <p data-edit-proposal role="status" title={proposalShown.title} className={`text-[11px] leading-snug tabular-nums ${proposalShown.tone === "refused" ? "text-[#bd4b00]" : "text-stone-700"}`}>{/* ── edit-guidance ── the same „what – what to do” as the map's chip, then the notes. */}{proposalShown.guide ? joinGuide(proposalShown.text, proposalShown.guide) : proposalShown.text}{proposalShown.notes ? `${proposalShown.guide ? " " : NOTE_JOINER}${proposalShown.notes}` : ""}</p>
       )}
       {editNote && !proposalShown && <p role="status" className="text-[11px] leading-snug text-[#bd4b00]">{editNote}</p>}
     </div>
@@ -2250,6 +2551,16 @@ export function HomePage() {
         proposal,
         // „Pārrēķināt posmu”, on offer while its refusal is shown (`askWide`).
         onWide: wideOffered ? acceptWide : undefined,
+        onPassHere: dropPassHere,
+        onRename: (from, to) => renameRef.current(from, to),
+        // „Vest pa taisno”, on offer while its guidance line is shown (`askStraight`).
+        onStraight: straightOffered ? acceptStraight : undefined,
+        // „Tomēr braukt”: arms the shown warned proposal; the chip then confirms it like ✓.
+        onOverride: (commitNow) => {
+          const s = proposalRef.current;
+          overrideArmed.current = s.phase === "proposed" && s.proposal.accept ? s.proposal.token : null;
+          if (commitNow && s.phase === "proposed" && overrideArmed.current !== null) commitProposal(s.proposal, false);
+        },
         onDone: finishEdit,
         onCancel: cancelEdit,
         status: editStatus,

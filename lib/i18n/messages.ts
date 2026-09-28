@@ -724,6 +724,42 @@ export type MessageKey =
   | "mapSearchHintShort"
   | "pointMoveHintShort"
   // ── /P1-insert ──
+  // ── spur-0928 ──
+  /**
+   * An edit that asks the ride to go somewhere (rider, 2026-09-28,
+   * `lib/map/edit-reach.ts`): no road at all (`editNoRoad`, {m}); only roads
+   * outside the profile (`editOutsideProfile`: {what} a list of `relax*`,
+   * {km} their length); a big detour (`editBigDetour`: {km} the signed km
+   * added, „+9,1”, {far} the farthest from the old line). `editOverrideAccept` is the chip that takes
+   * either (`editOverrideLabel` its group); ✓ reads `previewConfirmOverride`
+   * meanwhile. The stretch keeps ⚠️ `badgeOutsideProfile` on the map.
+   */
+  | "editNoRoad"
+  | "editDeadEndShapeAsk"
+  | "editDeadEndAsk"
+  | "editOutsideProfile"
+  | "editBigDetour"
+  | "editOverrideAccept"
+  | "editOverrideLabel"
+  | "previewConfirmOverride"
+  | "relaxMainRoads"
+  | "relaxMotorways"
+  | "relaxSand"
+  | "relaxTowns"
+  | "relaxRough"
+  | "relaxAccess"
+  | "relaxCar"
+  | "badgeOutsideProfile"
+  | "badgeOutsideProfileDetail"
+  /** „Vest pa taisno” (2026-09-28, `lib/routing/drawn.ts`): {m} metres to the nearest road, {name} the point, {km} the drawn km. */
+  | "editNoRoadStraight"
+  | "editStraightAccept"
+  | "editStraightLabel"
+  | "editStraightNote"
+  | "editStraightRisk"
+  | "legendDrawn"
+  | "panelDrawn"
+  // ── /spur-0928 ──
   /** The gate card (tap a gate on the map) and the gate rows in the segment
    *  card and RISKI. Kinds name OSM's `barrier=*`; access lines put the node's
    *  own `access=*` in plain words, `gateAccessRaw` shows any other value
@@ -750,7 +786,74 @@ export type MessageKey =
   | "gateFromStart"
   | "gateAtKm"
   | "gateOsmLink"
-  | "gateListMore";
+  | "gateListMore"
+  // ── line-sheet ──
+  /**
+   * Tap the line (rider, 2026-09-28; lib/map/line-sheet.ts). `lineSheetTitle`
+   * heads the line's sheet in edit mode, {km} the tapped stretch's length;
+   * the road's kind (`segmentHeading`) follows it as the name. `lineVia` asks
+   * for a new place to ride through, and `lineViaHint` says what the next
+   * tap does; `linePassHere` drops a pass-through point on the line. The
+   * one-time hint on entering edit mode is `editTip`; `lineHoverTip` is the
+   * desktop's words beside the cursor over the line. Latvian never says
+   * „piesit”; „ ” quotes, en dashes.
+   */
+  | "lineSheetTitle"
+  | "lineVia"
+  | "lineViaHint"
+  | "linePassHere"
+  | "editTip"
+  | "lineHoverTip"
+  // ── /line-sheet ──
+  // ── edit-guidance ──
+  /**
+   * What the rider is looking at and what to do (rider, 2026-09-28;
+   * lib/map/edit-guidance.ts). `guideSelected*` + `guideChoose`, `guideMoving`
+   * + `guideTapNew`, `guideVia` + `guideTapVia`, `previewRouting` +
+   * `guideRouting`, the delta chip + `guideProposed`, the refusal +
+   * `guideRefused*` — joined by an en dash („ – ”). `explain*` is the line
+   * under a sheet's title; `detail*` the line under each action;
+   * `lineSheetTitleKind` the line sheet's title with the road's kind in
+   * lower case, `lineObjectName` its name in the guidance. Latvian never says
+   * „piesit”; en dashes, never em dashes.
+   */
+  | "guideSelectedStop"
+  | "guideSelectedPass"
+  | "guideSelectedLine"
+  | "guideSelectedStart"
+  | "guideSelectedFinish"
+  | "guideChoose"
+  | "guideMoving"
+  | "guideTapNew"
+  | "guideVia"
+  | "guideTapVia"
+  | "guideRouting"
+  | "guideProposed"
+  | "guideRefused"
+  | "guideRefusedWide"
+  | "guideWarned"
+  | "guideRefusedStraight"
+  | "searchDrawnBlocked"
+  | "explainStop"
+  | "explainPass"
+  | "explainLine"
+  | "explainStart"
+  | "explainFinish"
+  | "detailMove"
+  | "detailDemote"
+  | "detailPromote"
+  | "detailRemoveStop"
+  | "detailRemovePass"
+  | "detailVia"
+  | "detailPassHere"
+  | "lineSheetTitleKind"
+  | "lineObjectName"
+  // ── /edit-guidance ──
+  // ── place-search ── The form's place search got no answer (Photon timed
+  // out or failed) — said as that, not as "nothing found".
+  | "placeSearchSlow"
+  // ── /place-search ──
+  ;
 
 type Messages = Record<MessageKey, string>;
 
@@ -1126,7 +1229,7 @@ const lv: Messages = {
   footerOsm: "Maršruti balstīti",
   footerOsmTail: " datos.",
   footerNav: "Kājene",
-  footerProduct: "Ko Mopik prot",
+  footerProduct: "Par Mopiku",
   composerEyebrow: "Tavs nākamais brauciens",
   composerTitle: "Kur un cik ilgi brauksim?",
   composerHint: "Pārējo nosaka tavs profils. Maršrutu varēsi precizēt pēc ģenerēšanas.",
@@ -1204,11 +1307,11 @@ const lv: Messages = {
   editHint: "Izvēlies rindu, atzīmē kartē jauno vietu un apstiprini — pārzīmējas tikai posms ap to.",
   editDone: "Pabeigt labošanu",
   editCancel: "Atcelt labošanu",
-  editDeadEnd: "Pietura ir strupceļā — atpakaļ pa to pašu ceļu {km} km.",
+  editDeadEnd: "Pietura ir strupceļā – atpakaļ pa to pašu ceļu {km} km.",
   editBrokenLine: "Šo labojumu neizdevās savienot ar maršrutu vienā līnijā — maršruts palika, kāds bija.",
-  editSameWayBack: "Uz pieturu un atpakaļ pa to pašu ceļu {km} km — citu ceļu laikus atrast neizdevās.",
-  editDeadEndShape: "Caurbraucamais punkts ir strupceļā — atpakaļ pa to pašu ceļu {km} km.",
-  editSameWayBackShape: "Uz caurbraucamo punktu un atpakaļ pa to pašu ceļu {km} km — citu ceļu laikus atrast neizdevās.",
+  editSameWayBack: "Uz pieturu un atpakaļ pa to pašu ceļu {km} km – citu ceļu laikus atrast neizdevās.",
+  editDeadEndShape: "Caurbraucamais punkts ir strupceļā – atpakaļ pa to pašu ceļu {km} km.",
+  editSameWayBackShape: "Uz caurbraucamo punktu un atpakaļ pa to pašu ceļu {km} km – citu ceļu laikus atrast neizdevās.",
   resSearchBetterLink: "Meklēt labāku apli ar šīm pieturām →",
   editNeedsPlace: "Šai rindai vajag vietu — atzīmē to kartē vai izvēlies no saraksta.",
   editNoRide: "Bez šīs pieturas no apļa nekas nepaliek — pievieno citu vai meklē jaunu apli.",
@@ -1302,6 +1405,32 @@ const lv: Messages = {
   mapSearchHintShort: "Meklē…",
   pointMoveHintShort: "Atzīmē kartē",
   // ── /P1-insert ──
+  // ── spur-0928 ──
+  editNoRoad: "Šeit nevar izbraukt, tuvākais ceļš ir ~{m} m nostāk.",
+  editDeadEndShapeAsk: "Līdz šejienei ved tikai strupceļš – atpakaļ pa to pašu ceļu {km} km.",
+  editDeadEndAsk: "Pieturu sasniedz tikai strupceļš – atpakaļ pa to pašu ceļu {km} km.",
+  editOutsideProfile: "Šeit ved tikai ceļi ārpus tava profila ({what}, {km} km ⚠️).",
+  editBigDetour: "{km} km, līdz {far} km no līdzšinējā maršruta.",
+  editOverrideAccept: "Tomēr braukt",
+  editOverrideLabel: "Maršruts ārpus profila vai ar lielu līkumu",
+  previewConfirmOverride: "Apstiprini ar „Tomēr braukt” vai atmet",
+  relaxMainRoads: "lielie ceļi",
+  relaxMotorways: "automaģistrāles",
+  relaxSand: "smiltis",
+  relaxTowns: "apdzīvotas vietas",
+  relaxRough: "grūtāki meža ceļi",
+  relaxAccess: "ceļi ar nepārbaudītu piekļuvi",
+  relaxCar: "ceļi, pa kuriem brauktu auto",
+  badgeOutsideProfile: "Ārpus tava profila",
+  badgeOutsideProfileDetail: "Šo posmu tavs profils neizmantotu – tu to izvēlējies ar „Tomēr braukt”.",
+  editNoRoadStraight: "Pa ceļu šeit nevar izbraukt, tuvākais ceļš ir ~{m} m nostāk.",
+  editStraightAccept: "Vest pa taisno",
+  editStraightLabel: "Kā tikt līdz šai vietai",
+  editStraightNote: "Pēdējie {m} m līdz „{name}” – taisni, bez ceļa, un atpakaļ pa to pašu līniju.",
+  editStraightRisk: "{km} km taisni pāri mežam vai ūdenim",
+  legendDrawn: "Zīmēts taisni",
+  panelDrawn: "Zīmēti posmi: {km} km · laiks rēķināts ar 15 km/h · Mopik nav pārbaudījis, vai tur var izbraukt un vai tas ir atļauts.",
+  // ── /spur-0928 ──
   gateKindGate: "Vārti",
   gateKindLiftGate: "Barjera ar pacēlāju",
   gateKindSwingGate: "Pagriežama barjera",
@@ -1325,6 +1454,50 @@ const lv: Messages = {
   gateAtKm: "{name} {km} km",
   gateOsmLink: "Skatīt OSM",
   gateListMore: "vēl {n}",
+  // ── line-sheet ──
+  lineSheetTitle: "Ceļa posms · {km} km",
+  lineVia: "Virzīt caur citu vietu",
+  lineViaHint: "Norādi kartē, caur kurieni braukt",
+  linePassHere: "Pievienot punktu šeit",
+  editTip: "Pieskaries līnijai vai punktam, lai to mainītu",
+  lineHoverTip: "Velc, lai virzītu caur citu vietu · pieskaries, lai redzētu iespējas",
+  // ── /line-sheet ──
+  // ── edit-guidance ──
+  guideSelectedStop: "{name} izvēlēta",
+  guideSelectedPass: "{name} izvēlēts",
+  guideSelectedLine: "{name} izvēlēts",
+  guideSelectedStart: "{name} izvēlēts",
+  guideSelectedFinish: "{name} izvēlēts",
+  guideChoose: "izvēlies darbību.",
+  guideMoving: "Pārvieto „{name}”",
+  guideTapNew: "pieskaries jaunajai vietai kartē.",
+  guideVia: "Virzi posmu",
+  guideTapVia: "pieskaries vietai, caur kuru braukt.",
+  guideRouting: "vari jau spiest ✓, apstiprināšu, tiklīdz būs gatavs.",
+  guideProposed: "✓ apstiprina, ✕ atmet.",
+  guideRefused: "izvēlies citu vietu.",
+  guideRefusedWide: "spied „Pārrēķināt posmu” vai ✕ atmet.",
+  guideWarned: "spied „Tomēr braukt” vai ✕ atmet.",
+  guideRefusedStraight: "spied „Vest pa taisno” vai ✕ atmet.",
+  searchDrawnBlocked: "Braucienā ir zīmēti posmi – pilnā meklēšana tos izmestu. Labo uz kartes.",
+  explainStop: "Maršruts iet caur šo vietu, un tā ir GPX failā.",
+  explainPass: "Tikai virza līniju, bez numura un bez apstāšanās.",
+  explainLine: "Šo gabalu var virzīt citur vai pievienot tam punktu.",
+  explainStart: "Šeit brauciens sākas, un tas ir GPX failā.",
+  explainFinish: "Šeit brauciens beidzas, un tas ir GPX failā.",
+  detailMove: "Pieskaries jaunajai vietai kartē",
+  detailDemote: "Vairs nebūs numura un nebūs GPX pieturas",
+  detailPromote: "Saņems numuru un būs GPX failā kā pietura",
+  detailRemoveStop: "Maršruts vairs neies caur šo vietu",
+  detailRemovePass: "Līnija vairs netiks virzīta caur šo punktu",
+  detailVia: "Pieskaries kartē vietai, caur kuru braukt",
+  detailPassHere: "Līnija nemainās – punktu varēs pārvietot",
+  lineSheetTitleKind: "Ceļa posms · {km} km {kind}",
+  lineObjectName: "Ceļa posms",
+  // ── /edit-guidance ──
+  // ── place-search ──
+  placeSearchSlow: "Vietu meklēšana šobrīd atbild lēni – mēģini vēlreiz",
+  // ── /place-search ──
 };
 
 const lt: Messages = {
@@ -1665,7 +1838,7 @@ const lt: Messages = {
   footerOsm: "Maršrutai remiasi",
   footerOsmTail: " duomenimis.",
   footerNav: "Poraštė",
-  footerProduct: "Ką moka Mopik",
+  footerProduct: "Apie Mopik",
   composerEyebrow: "Tavo kitas maršrutas",
   composerTitle: "Kur ir kiek laiko važiuosim?",
   composerHint: "Kita nustato tavo profilis. Maršrutą galėsi patikslinti sugeneravęs.",
@@ -1743,11 +1916,11 @@ const lt: Messages = {
   editHint: "Pasirinkite eilutę, pažymėkite naują vietą žemėlapyje ir patvirtinkite — perbraižoma tik atkarpa aplink ją.",
   editDone: "Baigti taisyti",
   editCancel: "Atšaukti taisymą",
-  editDeadEnd: "Sustojimas yra akligatvyje — atgal tuo pačiu keliu {km} km.",
+  editDeadEnd: "Sustojimas yra akligatvyje – atgal tuo pačiu keliu {km} km.",
   editBrokenLine: "Šio pataisymo nepavyko sujungti su maršrutu viena linija — maršrutas liko toks, koks buvo.",
-  editSameWayBack: "Į sustojimą ir atgal tuo pačiu keliu {km} km — kito kelio laiku rasti nepavyko.",
-  editDeadEndShape: "Pravažiavimo taškas yra akligatvyje — atgal tuo pačiu keliu {km} km.",
-  editSameWayBackShape: "Į pravažiavimo tašką ir atgal tuo pačiu keliu {km} km — kito kelio laiku rasti nepavyko.",
+  editSameWayBack: "Į sustojimą ir atgal tuo pačiu keliu {km} km – kito kelio laiku rasti nepavyko.",
+  editDeadEndShape: "Pravažiavimo taškas yra akligatvyje – atgal tuo pačiu keliu {km} km.",
+  editSameWayBackShape: "Į pravažiavimo tašką ir atgal tuo pačiu keliu {km} km – kito kelio laiku rasti nepavyko.",
   resSearchBetterLink: "Ieškoti geresnio rato su šiais sustojimais →",
   editNeedsPlace: "Šiai eilutei reikia vietos — pažymėkite ją žemėlapyje arba pasirinkite iš sąrašo.",
   editNoRide: "Be šio sustojimo iš rato nieko nelieka — pridėkite kitą arba ieškokite naujo rato.",
@@ -1845,6 +2018,32 @@ const lt: Messages = {
   mapSearchHintShort: "Ieškoti…",
   pointMoveHintShort: "Pažymėkite",
   // ── /P1-insert ──
+  // ── spur-0928 ──
+  editNoRoad: "Čia nuvažiuoti negalima, artimiausias kelias yra už ~{m} m.",
+  editDeadEndShapeAsk: "Čia veda tik akligatvis – atgal tuo pačiu keliu {km} km.",
+  editDeadEndAsk: "Sustojimą pasiekia tik akligatvis – atgal tuo pačiu keliu {km} km.",
+  editOutsideProfile: "Čia veda tik keliai už jūsų profilio ribų ({what}, {km} km ⚠️).",
+  editBigDetour: "{km} km, iki {far} km nuo ankstesnio maršruto.",
+  editOverrideAccept: "Vis tiek važiuoti",
+  editOverrideLabel: "Maršrutas už profilio ribų arba su dideliu lankstu",
+  previewConfirmOverride: "Patvirtinkite „Vis tiek važiuoti“ arba atmeskite",
+  relaxMainRoads: "dideli keliai",
+  relaxMotorways: "automagistralės",
+  relaxSand: "smėlis",
+  relaxTowns: "gyvenvietės",
+  relaxRough: "sunkesni miško keliai",
+  relaxAccess: "keliai su nepatikrinta prieiga",
+  relaxCar: "keliai, kuriais važiuotų automobilis",
+  badgeOutsideProfile: "Už jūsų profilio ribų",
+  badgeOutsideProfileDetail: "Šios atkarpos jūsų profilis nenaudotų – pasirinkote ją „Vis tiek važiuoti“.",
+  editNoRoadStraight: "Keliu čia nuvažiuoti negalima, artimiausias kelias yra už ~{m} m.",
+  editStraightAccept: "Vesti tiesiai",
+  editStraightLabel: "Kaip pasiekti šią vietą",
+  editStraightNote: "Paskutiniai {m} m iki „{name}“ – tiesiai, be kelio, ir atgal ta pačia linija.",
+  editStraightRisk: "{km} km tiesiai per mišką ar vandenį",
+  legendDrawn: "Nubrėžta tiesiai",
+  panelDrawn: "Nubrėžtos atkarpos: {km} km · laikas skaičiuotas 15 km/h · Mopik nepatikrino, ar ten galima pravažiuoti ir ar tai leidžiama.",
+  // ── /spur-0928 ──
   gateKindGate: "Vartai",
   gateKindLiftGate: "Pakeliamas užtvaras",
   gateKindSwingGate: "Pasukamas užtvaras",
@@ -1868,6 +2067,50 @@ const lt: Messages = {
   gateAtKm: "{name} {km} km",
   gateOsmLink: "Žiūrėti OSM",
   gateListMore: "dar {n}",
+  // ── line-sheet ──
+  lineSheetTitle: "Kelio atkarpa · {km} km",
+  lineVia: "Vesti per kitą vietą",
+  lineViaHint: "Pažymėkite žemėlapyje, per kur važiuoti",
+  linePassHere: "Pridėti tašką čia",
+  editTip: "Palieskite liniją arba tašką, kad jį pakeistumėte",
+  lineHoverTip: "Vilkite, kad vestumėte per kitą vietą · palieskite, kad pamatytumėte parinktis",
+  // ── /line-sheet ──
+  // ── edit-guidance ──
+  guideSelectedStop: "{name} pasirinktas",
+  guideSelectedPass: "{name} pasirinktas",
+  guideSelectedLine: "{name} pasirinkta",
+  guideSelectedStart: "{name} pasirinktas",
+  guideSelectedFinish: "{name} pasirinktas",
+  guideChoose: "pasirinkite veiksmą.",
+  guideMoving: "Perkeliamas „{name}”",
+  guideTapNew: "palieskite naują vietą žemėlapyje.",
+  guideVia: "Atkarpa nukreipiama",
+  guideTapVia: "palieskite vietą, per kurią važiuoti.",
+  guideRouting: "jau galite spausti ✓, patvirtinsiu, kai bus paruošta.",
+  guideProposed: "✓ patvirtina, ✕ atmeta.",
+  guideRefused: "pasirinkite kitą vietą.",
+  guideRefusedWide: "spauskite „Perskaičiuoti atkarpą” arba ✕ atmeskite.",
+  guideWarned: "spauskite „Vis tiek važiuoti“ arba ✕ atmeskite.",
+  guideRefusedStraight: "spauskite „Vesti tiesiai“ arba ✕ atmeskite.",
+  searchDrawnBlocked: "Kelionėje yra nubrėžtų atkarpų – visa paieška jas išmestų. Taisykite žemėlapyje.",
+  explainStop: "Maršrutas eina per šią vietą, ir ji yra GPX faile.",
+  explainPass: "Tik nukreipia liniją – be numerio ir be sustojimo.",
+  explainLine: "Šią atkarpą galima nukreipti kitur arba pridėti jai tašką.",
+  explainStart: "Čia kelionė prasideda, ir tai yra GPX faile.",
+  explainFinish: "Čia kelionė baigiasi, ir tai yra GPX faile.",
+  detailMove: "Palieskite naują vietą žemėlapyje",
+  detailDemote: "Nebeturės numerio ir nebus GPX sustojimo",
+  detailPromote: "Gaus numerį ir bus GPX faile kaip sustojimas",
+  detailRemoveStop: "Maršrutas nebeis per šią vietą",
+  detailRemovePass: "Linija nebebus nukreipta per šį tašką",
+  detailVia: "Palieskite žemėlapyje vietą, per kurią važiuoti",
+  detailPassHere: "Linija nesikeičia – tašką galėsite perkelti",
+  lineSheetTitleKind: "Kelio atkarpa · {km} km {kind}",
+  lineObjectName: "Kelio atkarpa",
+  // ── /edit-guidance ──
+  // ── place-search ──
+  placeSearchSlow: "Vietų paieška šiuo metu atsako lėtai – bandykite dar kartą",
+  // ── /place-search ──
 };
 
 const et: Messages = {
@@ -2208,7 +2451,7 @@ const et: Messages = {
   footerOsm: "Marsruudid põhinevad",
   footerOsmTail: " andmetel.",
   footerNav: "Jalus",
-  footerProduct: "Mida Mopik oskab",
+  footerProduct: "Mopikust",
   composerEyebrow: "Sinu järgmine sõit",
   composerTitle: "Kuhu ja kui kauaks sõidame?",
   composerHint: "Ülejäänu määrab sinu profiil. Marsruuti saad täpsustada pärast koostamist.",
@@ -2286,11 +2529,11 @@ const et: Messages = {
   editHint: "Vali rida, märgi kaardil uus koht ja kinnita — ümber joonistatakse ainult lõik selle ümber.",
   editDone: "Lõpeta muutmine",
   editCancel: "Tühista muutmine",
-  editDeadEnd: "Peatus on umbteel — tagasi sama teed {km} km.",
+  editDeadEnd: "Peatus on umbteel – tagasi sama teed {km} km.",
   editBrokenLine: "Seda muudatust ei õnnestunud marsruudiga üheks jooneks ühendada — marsruut jäi endiseks.",
-  editSameWayBack: "Peatusesse ja tagasi sama teed {km} km — teist teed ei õnnestunud õigel ajal leida.",
-  editDeadEndShape: "Läbisõidupunkt on umbteel — tagasi sama teed {km} km.",
-  editSameWayBackShape: "Läbisõidupunkti ja tagasi sama teed {km} km — teist teed ei õnnestunud õigel ajal leida.",
+  editSameWayBack: "Peatusesse ja tagasi sama teed {km} km – teist teed ei õnnestunud õigel ajal leida.",
+  editDeadEndShape: "Läbisõidupunkt on umbteel – tagasi sama teed {km} km.",
+  editSameWayBackShape: "Läbisõidupunkti ja tagasi sama teed {km} km – teist teed ei õnnestunud õigel ajal leida.",
   resSearchBetterLink: "Otsi parem ring nende peatustega →",
   editNeedsPlace: "Sellel real peab olema koht — märgi see kaardile või vali loendist.",
   editNoRide: "Ilma selle peatuseta ei jää ringist midagi järele — lisa teine või otsi uus ring.",
@@ -2384,6 +2627,32 @@ const et: Messages = {
   mapSearchHintShort: "Otsi…",
   pointMoveHintShort: "Märgi kaardil",
   // ── /P1-insert ──
+  // ── spur-0928 ──
+  editNoRoad: "Siia ei saa sõita, lähim tee on ~{m} m eemal.",
+  editDeadEndShapeAsk: "Siia viib ainult umbtee – tagasi sama teed {km} km.",
+  editDeadEndAsk: "Peatuseni viib ainult umbtee – tagasi sama teed {km} km.",
+  editOutsideProfile: "Siia viivad ainult teed väljaspool sinu profiili ({what}, {km} km ⚠️).",
+  editBigDetour: "{km} km, kuni {far} km senisest marsruudist.",
+  editOverrideAccept: "Sõida ikkagi",
+  editOverrideLabel: "Marsruut väljaspool profiili või suure ringiga",
+  previewConfirmOverride: "Kinnita „Sõida ikkagi“ või loobu",
+  relaxMainRoads: "suured teed",
+  relaxMotorways: "kiirteed",
+  relaxSand: "liiv",
+  relaxTowns: "asulad",
+  relaxRough: "raskemad metsateed",
+  relaxAccess: "kontrollimata ligipääsuga teed",
+  relaxCar: "teed, mida sõidaks auto",
+  badgeOutsideProfile: "Väljaspool sinu profiili",
+  badgeOutsideProfileDetail: "Seda lõiku sinu profiil ei kasutaks – valisid selle „Sõida ikkagi“-ga.",
+  editNoRoadStraight: "Teed mööda siia sõita ei saa, lähim tee on ~{m} m eemal.",
+  editStraightAccept: "Vii otse",
+  editStraightLabel: "Kuidas selle kohani jõuda",
+  editStraightNote: "Viimased {m} m kohani „{name}“ – otse, teeta, ja tagasi sama joont mööda.",
+  editStraightRisk: "{km} km otse üle metsa või vee",
+  legendDrawn: "Joonistatud otse",
+  panelDrawn: "Joonistatud lõigud: {km} km · aeg arvestatud 15 km/h · Mopik pole kontrollinud, kas seal saab sõita ja kas see on lubatud.",
+  // ── /spur-0928 ──
   gateKindGate: "Värav",
   gateKindLiftGate: "Tõkkepuu",
   gateKindSwingGate: "Pööratav tõkkepuu",
@@ -2407,6 +2676,50 @@ const et: Messages = {
   gateAtKm: "{name} {km} km",
   gateOsmLink: "Vaata OSM-is",
   gateListMore: "veel {n}",
+  // ── line-sheet ──
+  lineSheetTitle: "Teelõik · {km} km",
+  lineVia: "Suuna läbi teise koha",
+  lineViaHint: "Märgi kaardile, kust kaudu sõita",
+  linePassHere: "Lisa punkt siia",
+  editTip: "Puuduta joont või punkti, et seda muuta",
+  lineHoverTip: "Lohista, et suunata läbi teise koha · puuduta, et näha valikuid",
+  // ── /line-sheet ──
+  // ── edit-guidance ──
+  guideSelectedStop: "{name} valitud",
+  guideSelectedPass: "{name} valitud",
+  guideSelectedLine: "{name} valitud",
+  guideSelectedStart: "{name} valitud",
+  guideSelectedFinish: "{name} valitud",
+  guideChoose: "vali tegevus.",
+  guideMoving: "Liigutad punkti „{name}”",
+  guideTapNew: "puuduta kaardil uut kohta.",
+  guideVia: "Suunad lõiku",
+  guideTapVia: "puuduta kohta, mille kaudu sõita.",
+  guideRouting: "võid juba vajutada ✓, kinnitan, kui valmis.",
+  guideProposed: "✓ kinnitab, ✕ loobub.",
+  guideRefused: "vali teine koht.",
+  guideRefusedWide: "vajuta „Arvuta lõik ümber” või ✕ loobu.",
+  guideWarned: "vajuta „Sõida ikkagi“ või ✕ loobu.",
+  guideRefusedStraight: "vajuta „Vii otse“ või ✕ loobu.",
+  searchDrawnBlocked: "Sõidus on joonistatud lõike – täisotsing viskaks need välja. Paranda kaardil.",
+  explainStop: "Marsruut läheb läbi selle koha ja see on GPX-failis.",
+  explainPass: "Ainult suunab joont – ilma numbri ja peatuseta.",
+  explainLine: "Seda lõiku saab suunata mujale või lisada sellele punkti.",
+  explainStart: "Siit sõit algab ja see on GPX-failis.",
+  explainFinish: "Siin sõit lõpeb ja see on GPX-failis.",
+  detailMove: "Puuduta kaardil uut kohta",
+  detailDemote: "Pole enam numbrit ega GPX-peatust",
+  detailPromote: "Saab numbri ja on GPX-failis peatusena",
+  detailRemoveStop: "Marsruut ei läbi enam seda kohta",
+  detailRemovePass: "Joont ei suunata enam selle punkti kaudu",
+  detailVia: "Puuduta kaardil kohta, mille kaudu sõita",
+  detailPassHere: "Joon ei muutu – punkti saab hiljem liigutada",
+  lineSheetTitleKind: "Teelõik · {km} km {kind}",
+  lineObjectName: "Teelõik",
+  // ── /edit-guidance ──
+  // ── place-search ──
+  placeSearchSlow: "Kohaotsing vastab praegu aeglaselt – proovi uuesti",
+  // ── /place-search ──
 };
 
 const en: Messages = {
@@ -2745,7 +3058,7 @@ const en: Messages = {
   footerOsm: "Routes are based on",
   footerOsmTail: " data.",
   footerNav: "Footer",
-  footerProduct: "What Mopik does",
+  footerProduct: "About Mopik",
   composerEyebrow: "Your next ride",
   composerTitle: "Where and how long?",
   composerHint: "Your profile decides the rest. You can adjust the route afterwards.",
@@ -2823,11 +3136,11 @@ const en: Messages = {
   editHint: "Pick a row, mark the new spot on the map and confirm — only the stretch around it is re-routed.",
   editDone: "Done editing",
   editCancel: "Discard edits",
-  editDeadEnd: "The stop is on a dead end — back the same way for {km} km.",
+  editDeadEnd: "The stop is on a dead end – back the same way for {km} km.",
   editBrokenLine: "This change couldn't be joined into one line with the route — the route stays as it was.",
-  editSameWayBack: "To the stop and back the same way for {km} km — no other way was found in time.",
-  editDeadEndShape: "The pass-through point is on a dead end — back the same way for {km} km.",
-  editSameWayBackShape: "To the pass-through point and back the same way for {km} km — no other way was found in time.",
+  editSameWayBack: "To the stop and back the same way for {km} km – no other way was found in time.",
+  editDeadEndShape: "The pass-through point is on a dead end – back the same way for {km} km.",
+  editSameWayBackShape: "To the pass-through point and back the same way for {km} km – no other way was found in time.",
   resSearchBetterLink: "Find a better loop with these stops →",
   editNeedsPlace: "This row needs a place — mark it on the map or pick one from the list.",
   editNoRide: "Without this stop nothing is left of the loop — add another or search for a new one.",
@@ -2921,6 +3234,32 @@ const en: Messages = {
   mapSearchHintShort: "Search…",
   pointMoveHintShort: "Mark the map",
   // ── /P1-insert ──
+  // ── spur-0928 ──
+  editNoRoad: "You can’t ride here, the nearest road is ~{m} m away.",
+  editDeadEndShapeAsk: "Only a dead end reaches this – back the same way for {km} km.",
+  editDeadEndAsk: "Only a dead end reaches the stop – back the same way for {km} km.",
+  editOutsideProfile: "Only roads outside your profile reach this ({what}, {km} km ⚠️).",
+  editBigDetour: "{km} km, up to {far} km from the current route.",
+  editOverrideAccept: "Ride it anyway",
+  editOverrideLabel: "Route outside your profile or a big detour",
+  previewConfirmOverride: "Confirm with “Ride it anyway” or discard",
+  relaxMainRoads: "big roads",
+  relaxMotorways: "motorways",
+  relaxSand: "sand",
+  relaxTowns: "towns",
+  relaxRough: "rougher forest tracks",
+  relaxAccess: "roads with unverified access",
+  relaxCar: "roads a car would take",
+  badgeOutsideProfile: "Outside your profile",
+  badgeOutsideProfileDetail: "Your profile would not use this stretch – you chose it with “Ride it anyway”.",
+  editNoRoadStraight: "You can’t reach this by road, the nearest road is ~{m} m away.",
+  editStraightAccept: "Go straight",
+  editStraightLabel: "How to reach this spot",
+  editStraightNote: "The last {m} m to “{name}” – straight, no road, and back along the same line.",
+  editStraightRisk: "{km} km straight across forest or water",
+  legendDrawn: "Drawn straight",
+  panelDrawn: "Drawn stretches: {km} km · time at 15 km/h · Mopik has not checked whether you can ride there or whether it is allowed.",
+  // ── /spur-0928 ──
   gateKindGate: "Gate",
   gateKindLiftGate: "Boom barrier",
   gateKindSwingGate: "Swing gate",
@@ -2944,6 +3283,50 @@ const en: Messages = {
   gateAtKm: "{name} {km} km",
   gateOsmLink: "View on OSM",
   gateListMore: "{n} more",
+  // ── line-sheet ──
+  lineSheetTitle: "Road stretch · {km} km",
+  lineVia: "Route via somewhere else",
+  lineViaHint: "Tap the map where to ride through",
+  linePassHere: "Add a point here",
+  editTip: "Tap the line or a point to change it",
+  lineHoverTip: "Drag to route via somewhere else · tap to see options",
+  // ── /line-sheet ──
+  // ── edit-guidance ──
+  guideSelectedStop: "{name} selected",
+  guideSelectedPass: "{name} selected",
+  guideSelectedLine: "{name} selected",
+  guideSelectedStart: "{name} selected",
+  guideSelectedFinish: "{name} selected",
+  guideChoose: "choose an action.",
+  guideMoving: "Moving “{name}”",
+  guideTapNew: "tap its new place on the map.",
+  guideVia: "Routing the stretch elsewhere",
+  guideTapVia: "tap the place to ride through.",
+  guideRouting: "you can press ✓ now, I’ll confirm as soon as it’s ready.",
+  guideProposed: "✓ confirms, ✕ discards.",
+  guideRefused: "choose another place.",
+  guideRefusedWide: "press “Re-route the stretch” or ✕ to discard.",
+  guideWarned: "press “Ride it anyway” or ✕ to discard.",
+  guideRefusedStraight: "press “Go straight” or ✕ to discard.",
+  searchDrawnBlocked: "This ride has drawn stretches – a full search would drop them. Fix it on the map.",
+  explainStop: "The route rides through this place, and it is in the GPX file.",
+  explainPass: "Only steers the line – no number, no stop.",
+  explainLine: "This stretch can be routed elsewhere or given a point.",
+  explainStart: "The ride starts here, and it is in the GPX file.",
+  explainFinish: "The ride ends here, and it is in the GPX file.",
+  detailMove: "Tap its new place on the map",
+  detailDemote: "No number any more and no GPX stop",
+  detailPromote: "Gets a number and is a stop in the GPX file",
+  detailRemoveStop: "The route no longer rides through this place",
+  detailRemovePass: "The line is no longer steered through this point",
+  detailVia: "Tap the place on the map to ride through",
+  detailPassHere: "The line stays as it is – the point can be moved later",
+  lineSheetTitleKind: "Road stretch · {km} km {kind}",
+  lineObjectName: "Road stretch",
+  // ── /edit-guidance ──
+  // ── place-search ──
+  placeSearchSlow: "Place search is slow to answer right now – try again",
+  // ── /place-search ──
 };
 
 const MESSAGES: Record<UiLocale, Messages> = { lv, lt, et, en };

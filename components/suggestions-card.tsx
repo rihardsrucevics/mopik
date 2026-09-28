@@ -60,7 +60,7 @@ export type SelectedPoi = { id: string; name: string; lat: number; lon: number; 
  */
 export function SuggestionsCard({
   pois, loading, failed = false, expanded, onToggle, onShow,
-  selected = [], onToggleSelect, onClearSelection, onCommit, onSearchBetter, shapesDropped = false, committable = false, viaCount = 0, includedNames = [], busy,
+  selected = [], onToggleSelect, onClearSelection, onCommit, onSearchBetter, searchBlocked, shapesDropped = false, committable = false, viaCount = 0, includedNames = [], busy,
   detours = {}, detoursLoading = false, refusedIds = [],
 }: {
   /** null until the first expand has answered; both lists may be empty. */
@@ -104,6 +104,11 @@ export function SuggestionsCard({
    * the common case fast would trade one of his asks for the other.
    */
   onSearchBetter?: () => void;
+  /**
+   * Why the full search is off, said under its button (design F2: a ride
+   * with drawn stretches — the search would drop them). Absent: on offer.
+   */
+  searchBlocked?: string;
   /** The ride has shaping points, which the full search drops — said under its button. */
   shapesDropped?: boolean;
   /**
@@ -268,12 +273,16 @@ export function SuggestionsCard({
                   <button
                     type="button"
                     onClick={onSearchBetter}
-                    disabled={busy || overCap}
+                    disabled={busy || overCap || Boolean(searchBlocked)}
+                    title={searchBlocked}
+                    data-search-better={searchBlocked ? "blocked" : "open"}
                     className="flex h-9 w-full items-center justify-center rounded-full border border-[#f56300] px-3 text-xs font-semibold text-[#bd4b00] transition hover:bg-[#fff4ec] disabled:opacity-40"
                   >
                     {m.resSearchBetter}
                   </button>
-                  <p className="text-[10px] leading-snug text-stone-400">{m.resSearchBetterHint}{shapesDropped ? ` ${m.resSearchDropsShapes}` : ""}</p>
+                  {searchBlocked
+                    ? <p data-search-blocked className="text-[10px] leading-snug text-stone-500">{searchBlocked}</p>
+                    : <p className="text-[10px] leading-snug text-stone-400">{m.resSearchBetterHint}{shapesDropped ? ` ${m.resSearchDropsShapes}` : ""}</p>}
                 </>
               )}
             </div>

@@ -142,6 +142,12 @@ export function PlaceInput({ value, onChange, onPick, placeholder, icon, label, 
   const [locale] = useLocale();
   const m = messages(locale);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  /**
+   * The search did not get an answer (Photon timed out or failed): said as
+   * that, „Vietu meklēšana šobrīd atbild lēni – mēģini vēlreiz”, never as an
+   * empty list, which reads as "no such place" (2026-09-28).
+   */
+  const [searchSlow, setSearchSlow] = useState(false);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
   const listId = useId();
@@ -167,7 +173,7 @@ export function PlaceInput({ value, onChange, onPick, placeholder, icon, label, 
     const q = value.trim();
     const controller = new AbortController();
     const timer = setTimeout(async () => {
-      if (q.length < 2) { setSuggestions([]); return; }
+      if (q.length < 2) { setSuggestions([]); setSearchSlow(false); return; }
       try {
         // Coordinates are a place too. A rider with a point and no name — a
         // pin dropped in Google Maps, a waypoint off a GPS — used to have
@@ -195,8 +201,9 @@ export function PlaceInput({ value, onChange, onPick, placeholder, icon, label, 
         const nearParam = near ? `&near=${near.lat.toFixed(4)},${near.lon.toFixed(4)}` : "";
         const res = await fetch(`/api/places?q=${encodeURIComponent(q)}${nearParam}`, { signal: controller.signal });
         if (!res.ok) return;
-        const data = (await res.json()) as { places: Suggestion[] };
+        const data = (await res.json()) as { places: Suggestion[]; unavailable?: "timeout" | "error" };
         setSuggestions(data.places);
+        setSearchSlow(Boolean(data.unavailable));
         setActive(-1);
       } catch {
         // aborted or offline: keep whatever is shown
@@ -249,6 +256,7 @@ export function PlaceInput({ value, onChange, onPick, placeholder, icon, label, 
         : confirmed!.label
     : "";
 
+  const slowShown = open && searchSlow && value.trim().length >= 2 && suggestions.length === 0;
   const show = open && listed.length > 0;
 
   return (
@@ -312,6 +320,12 @@ export function PlaceInput({ value, onChange, onPick, placeholder, icon, label, 
         </span>
         {trailing}
       </label>
+      {slowShown && (
+        <p role="status" data-place-search-slow
+          className={`absolute left-0 right-0 z-20 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 shadow-lg ${placement === "above" ? "bottom-full mb-1" : `top-full mt-1 ${placement === "above-on-phone" ? "max-md:top-auto max-md:bottom-full max-md:mt-0 max-md:mb-1" : ""}`}`}>
+          {m.placeSearchSlow}
+        </p>
+      )}
       {show && (
         <ul id={listId} role="listbox" className={`absolute left-0 right-0 z-20 rounded-xl border border-stone-200 bg-white shadow-lg ${placement === "above" ? "bottom-full mb-1 max-h-52 overflow-y-auto" : `top-full mt-1 overflow-hidden ${placement === "above-on-phone" ? "max-md:top-auto max-md:bottom-full max-md:mt-0 max-md:mb-1 max-md:max-h-52 max-md:overflow-y-auto" : ""}`}`}>
           {listed.map((s, i) => (

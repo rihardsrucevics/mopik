@@ -140,7 +140,9 @@ test("a busy ✓ keeps slot 3: a spinner in the same button, still pressable, ne
   assert.match(confirmSlot, /<button [^>]*data-slot=\{slot\}/);
   assert.match(confirmSlot, /busy\s*\? <LoaderCircle [^>]*animate-spin/);
   // Busy is still pressable: only a missing onConfirm or a refusal disables.
-  assert.match(confirmSlot, /const onConfirm = refused \|\| idle \? null : pending!\.onConfirm;/);
+  // …and off while a proposal waits for „Tomēr braukt” (2026-09-28, `useProposalWarn`).
+  assert.match(confirmSlot, /const onConfirm = refused \|\| warned \|\| idle \? null : pending!\.onConfirm;/);
+  assert.match(confirmSlot, /warned \? m\.previewConfirmOverride/);
   assert.match(confirmSlot, /disabled=\{!onConfirm\}/);
   assert.match(confirmSlot, /busy \? m\.previewConfirmQueued/);
   assert.match(confirmSlot, /refused \? m\.previewConfirmRefused/);
@@ -165,7 +167,7 @@ test("the proposal chip renders in the notice slot, above the bar and clear of t
   assert.match(slot, /max-md:mr-16/);
   // Routing: a quiet spinner. Refused: the warning's amber, not a badge.
   assert.match(slot, /proposal\.tone === "routing" && <LoaderCircle/);
-  assert.match(slot, /proposal\.tone === "refused" \? "border-amber-300 bg-amber-50\/95 text-amber-900"/);
+  assert.match(slot, /proposal\.tone === "refused" \|\| proposal\.warn \? "border-amber-300 bg-amber-50\/95 text-amber-900"/);
 });
 
 test("the proposal's yellow halo covers exactly the changed metres", async () => {

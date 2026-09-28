@@ -52,6 +52,14 @@ export type MotoProfileOptions = {
   trails: RouteIntent["trailPreference"];
   /** permits bare OSM paths; never permits explicitly forbidden access */
   accessPolicy?: RouteIntent["accessPolicy"];
+  /**
+   * Route on one of BRouter's own built-in profiles instead of ours, by name
+   * (`uploadProfile` then uploads nothing and every dial above is ignored).
+   * Only an edit that no road of the rider's profile reaches uses it — the
+   * last rung of `relaxedProfiles` (`lib/routing/relax.ts`), and only with
+   * the rider's say-so.
+   */
+  stock?: "car-fast";
 };
 
 export function buildMotoProfileOptions(intent: RouteIntent): MotoProfileOptions {

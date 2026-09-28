@@ -23,7 +23,24 @@ export const DEFAULT_HOME = { lat: 56.9496, lon: 24.1052 };
  * enough to plan a ride across Europe from the Baltics.
  */
 const FAR_KM = 2500;
-const CACHE_TTL_MS = 10 * 60 * 1000;
+/** How long a real answer with places in it is kept. */
+export const CACHE_TTL_MS = 10 * 60 * 1000;
+/**
+ * How long a real answer with NO places is kept (2026-09-28). Short: "nothing
+ * found" is sometimes Photon's index being partial or a moment of trouble
+ * that still answered 200, and a rider re-typing a real town must not be told
+ * "nothing" for ten minutes.
+ */
+export const EMPTY_TTL_MS = 60 * 1000;
+/**
+ * Photon's time limit. The background paths (the chat, geocoding a typed
+ * plan, the pre-search checks) keep 6 s: they have budgets of their own. The
+ * form's search — a rider waiting on a list — gets 9 s and one retry, because
+ * Photon was measured answering in 7–10 s on 2026-09-28, and at 6 s every
+ * search then failed.
+ */
+export const SEARCH_TIMEOUT_MS = 6_000;
+export const USER_SEARCH_TIMEOUT_MS = 9_000;
 
 type PhotonFeature = {
   geometry: { coordinates: [number, number] };
@@ -137,14 +154,71 @@ function distanceKm(home: { lat: number; lon: number }, [lon, lat]: [number, num
   return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+/**
+ * Answers kept per query and bias point. **Only real answers go in** (bug
+ * found 2026-09-28: a Photon timeout used to be cached as an empty list and
+ * served for ten minutes — "nothing found" for Sigulda until the server
+ * restarted). A timeout, an error or an aborted request is never cached; a
+ * real empty answer only for `EMPTY_TTL_MS`.
+ */
 const cache = new Map<string, { at: number; places: PlaceSuggestion[] }>();
 
-export async function searchPlaces(q: string, home = DEFAULT_HOME): Promise<PlaceSuggestion[]> {
+/** Tests only: forget every cached answer. */
+export function clearPlaceCache(): void { cache.clear(); }
+
+/**
+ * `ok`: Photon answered (the places may be none). `timeout`: it did not
+ * answer in time, even after the retry. `error`: it answered with an error,
+ * or could not be reached. Only `ok` says anything about the place.
+ */
+export type PlaceSearchStatus = "ok" | "timeout" | "error";
+
+export type PlaceSearchOptions = {
+  timeoutMs?: number;
+  /** Tries after a timeout (not after an error, which a retry rarely cures). */
+  retries?: number;
+  /** For tests: the network, and the clock. */
+  fetcher?: typeof fetch;
+  now?: () => number;
+};
+
+const isTimeout = (err: unknown) => err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
+
+async function photonFeatures(url: URL, opts: PlaceSearchOptions): Promise<{ status: PlaceSearchStatus; features: PhotonFeature[] }> {
+  const fetcher = opts.fetcher ?? fetch;
+  const tries = 1 + Math.max(0, opts.retries ?? 0);
+  let status: PlaceSearchStatus = "error";
+  for (let i = 0; i < tries; i++) {
+    try {
+      const res = await fetcher(url, { signal: AbortSignal.timeout(opts.timeoutMs ?? SEARCH_TIMEOUT_MS), headers: { "User-Agent": "Mopik/0.1 (adventure motorcycle route planner)" } });
+      if (!res.ok) { console.warn("place search failed:", res.status); return { status: "error", features: [] }; }
+      return { status: "ok", features: ((await res.json()) as { features?: PhotonFeature[] }).features ?? [] };
+    } catch (err) {
+      console.warn("place search failed:", err);
+      status = isTimeout(err) ? "timeout" : "error";
+      if (status !== "timeout") break;
+    }
+  }
+  return { status, features: [] };
+}
+
+/** The picker's list — `searchPlacesDetailed` without the status, for the background callers. */
+export async function searchPlaces(q: string, home = DEFAULT_HOME, opts: PlaceSearchOptions = {}): Promise<PlaceSuggestion[]> {
+  return (await searchPlacesDetailed(q, home, opts)).places;
+}
+
+/**
+ * Places for what was typed, and whether Photon actually answered — so the
+ * form can say „Vietu meklēšana šobrīd atbild lēni – mēģini vēlreiz” instead
+ * of an empty list that reads as "no such place".
+ */
+export async function searchPlacesDetailed(q: string, home = DEFAULT_HOME, opts: PlaceSearchOptions = {}): Promise<{ places: PlaceSuggestion[]; status: PlaceSearchStatus }> {
+  const now = opts.now ?? Date.now;
   const query = q.trim();
-  if (query.length < 2) return [];
+  if (query.length < 2) return { places: [], status: "ok" };
   const key = `${query.toLowerCase()}|${home.lat.toFixed(1)},${home.lon.toFixed(1)}`;
   const hit = cache.get(key);
-  if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.places;
+  if (hit && now() - hit.at < (hit.places.length ? CACHE_TTL_MS : EMPTY_TTL_MS)) return { places: hit.places, status: "ok" };
 
   const url = new URL(PHOTON);
   url.searchParams.set("q", query);
@@ -157,13 +231,9 @@ export async function searchPlaces(q: string, home = DEFAULT_HOME): Promise<Plac
   // wanted too. KIND_GROUP below decides what is rideable and in what order,
   // so a settlement still outranks a railway platform of the same name.
 
-  let features: PhotonFeature[] = [];
-  try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(6000), headers: { "User-Agent": "Mopik/0.1 (adventure motorcycle route planner)" } });
-    if (res.ok) features = ((await res.json()) as { features?: PhotonFeature[] }).features ?? [];
-  } catch (err) {
-    console.warn("place search failed:", err);
-  }
+  const answer = await photonFeatures(url, opts);
+  if (answer.status !== "ok") return { places: [], status: answer.status };
+  const features = answer.features;
 
   const seen = new Set<string>();
   const places: PlaceSuggestion[] = features
@@ -215,8 +285,8 @@ export async function searchPlaces(q: string, home = DEFAULT_HOME): Promise<Plac
     .slice(0, 8)
     .map(({ name, label, lat, lon, kind }) => ({ name, label, lat, lon, kind }));
 
-  cache.set(key, { at: Date.now(), places });
-  return places;
+  cache.set(key, { at: now(), places });
+  return { places, status: "ok" };
 }
 
 /** The most likely place for a typed name, or null when Photon has nothing. */

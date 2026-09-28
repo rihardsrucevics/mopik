@@ -10,7 +10,16 @@ import { cumulative } from "@/lib/routing/detour";
  */
 
 /** The copy the view is built from — `previewRouting`, `previewDelta`, `previewDeltaTitle`. */
-export type ProposalCopy = { routing: string; delta: string; deltaTitle: string };
+export type ProposalCopy = {
+  routing: string; delta: string; deltaTitle: string;
+  // ── edit-guidance ── what to do, per phase (`guideRouting`, `guideProposed`, `guideRefused`, `guideRefusedWide`).
+  // `warned` and `refusedStraight` (spur-0928) are optional so older callers keep their copy.
+  guide?: { routing: string; proposed: string; refused: string; refusedWide: string; warned?: string; refusedStraight?: string };
+  /** „Pārrēķināt posmu” is on offer with this refusal. */
+  wide?: boolean;
+  /** „Vest pa taisno” is on offer with this refusal. */
+  straight?: boolean;
+};
 
 /** Between the chip and its notes where both are said as one line of text (the edit panel's). */
 export const NOTE_JOINER = " — ";
@@ -29,8 +38,10 @@ export const NOTE_JOINER = " — ";
  */
 export function proposalView(state: ProposalState, copy: ProposalCopy, locale: UiLocale): ProposalView | null {
   if (state.phase === "idle") return null;
-  if (state.phase === "routing") return { text: copy.routing, title: copy.routing, tone: "routing", line: null, changed: [] };
-  if (state.phase === "refused") return { text: state.reason, title: state.reason, tone: "refused", line: null, changed: [] };
+  const g = copy.guide;
+  if (state.phase === "routing") return { text: copy.routing, title: copy.routing, tone: "routing", line: null, changed: [], ...(g ? { guide: g.routing } : {}) };
+  // A refusal's sentence loses its full stop before the dash („…nostāk – izvēlies citu vietu.”).
+  if (state.phase === "refused") return { text: g ? state.reason.trim().replace(/\.+$/u, "") : state.reason, title: state.reason, tone: "refused", line: null, changed: [], ...(g ? { guide: copy.straight && g.refusedStraight ? g.refusedStraight : copy.wide ? g.refusedWide : g.refused } : {}) };
   const { proposal } = state;
   const notes = proposal.notes.filter(Boolean).join(" ");
   const chip = formatEditDelta(copy.delta, proposal.delta, locale);
@@ -41,9 +52,45 @@ export function proposalView(state: ProposalState, copy: ProposalCopy, locale: U
     text: chip,
     ...(notes ? { notes } : {}),
     title: notes ? `${sentence} ${notes}` : sentence,
+    ...(proposal.accept ? { warn: true as const } : {}),
     line: proposal.ride.segments,
     changed: proposal.changed,
+    // A warned proposal's notes say what is wrong; what to do is said once, here.
+    ...(g ? { guide: proposal.accept && g.warned ? g.warned : g.proposed } : {}),
   };
+}
+
+/**
+ * A bend is a request to take the line to where the finger let go. When the
+ * routed line comes no nearer to that point than the ride already was, the
+ * router found no road there the ride can pass through — and whatever it
+ * re-routed on the way is not the bend, it is noise (rider, 2026-09-28:
+ * bending the line „sometimes regenerates the route very atypically and
+ * chaotically”).
+ *
+ * Measured on 59 bends (150-470 m) on four real rides against production
+ * BRouter: the worst re-routes were exactly these — Antiņciems 21 %, dropped
+ * 453 m off, re-routed 12.4 km of road up to 4.5 km away (+9.1 km) and ended
+ * 416 m from the drop, as far as before; Mālpils 21 %: 9.6 km, 3.2 km away,
+ * 453 m → 453 m. Of the 22 bends that changed the line, 11 were such — 38.5
+ * of the 72 km of new road — and 35 more changed nothing. A bend that
+ * brings the line at least `BEND_GAIN_M` (or `BEND_GAIN_SHARE` of the
+ * distance) nearer is a bend and is proposed as before. One that is not is
+ * no solution (rider's rule 5, `lib/map/edit-reach.ts`): the next, more
+ * relaxed profile is tried towards the drop, and only when none gets nearer
+ * is it said that no road reaches the point.
+ *
+ * Only for a point dropped off the line (`BEND_OFF_LINE_M`): one put on the
+ * line itself is answered by the composer („Vest caur šejieni”).
+ */
+export const BEND_OFF_LINE_M = 60;
+export const BEND_GAIN_M = 50;
+export const BEND_GAIN_SHARE = 0.25;
+
+/** Whether a bend dropped `offBefore` metres from the ride came back `offAfter` metres from it — no nearer. */
+export function bendMissed(offBefore: number, offAfter: number): boolean {
+  if (offBefore <= BEND_OFF_LINE_M) return false;
+  return offBefore - offAfter < Math.max(BEND_GAIN_M, BEND_GAIN_SHARE * offBefore);
 }
 
 /**
@@ -74,7 +121,8 @@ export function wideNeedsAsking(beforeMeters: number, afterMeters: number): bool
  */
 export function staleWhileRouting(landed: ProposalView | null, view: ProposalView | null): ProposalView | null {
   if (!view || view.tone !== "routing" || !landed?.line) return view;
-  return { ...landed, tone: "routing", title: view.title };
+  // The landed numbers stay; what to do is the routing's („vari jau spiest ✓…”).
+  return { ...landed, tone: "routing", title: view.title, ...(view.guide ? { guide: view.guide } : {}) };
 }
 
 /**
@@ -219,3 +267,49 @@ export const PROPOSE_DEBOUNCE_MS = 250;
 export function proposeDelay(lastAt: number | null, now: number, windowMs = PROPOSE_DEBOUNCE_MS): number {
   return lastAt !== null && now - lastAt < windowMs ? windowMs : 0;
 }
+
+// ── edit-routing ──
+/**
+ * Whether two pending changes route the same line: the same points in the
+ * same rows, whatever the places are called (rider, 2026-09-28: a dropped pin
+ * is routed at once, under its spot, while its name is still being looked
+ * up — the name arriving must not route it again). A point operation is its
+ * own geometry.
+ */
+export function sameGeometry(a: ProposedChange, b: ProposedChange): boolean {
+  if (a.kind !== b.kind) return false;
+  if (a.kind === "shape" || b.kind === "shape") return changeKey(a) === changeKey(b);
+  if (a.rows.names.length !== b.rows.names.length) return false;
+  const keys = new Set([...Object.keys(a.rows.picked), ...Object.keys(b.rows.picked)]);
+  for (const k of keys) {
+    const p = a.rows.picked[Number(k)] ?? null;
+    const q = b.rows.picked[Number(k)] ?? null;
+    if (!p !== !q) return false;
+    if (p && q && (p.lat !== q.lat || p.lon !== q.lon)) return false;
+  }
+  return true;
+}
+
+/** Old name → the place's name and label now, for every row `next` renamed without moving. */
+export type Renames = Record<string, { name: string; label: string }>;
+
+export function renamesBetween(prev: ProposedChange, next: ProposedChange, known: Renames = {}): Renames {
+  if (prev.kind !== "rows" || next.kind !== "rows") return known;
+  const out: Renames = { ...known };
+  for (const [k, p] of Object.entries(prev.rows.picked)) {
+    const q = next.rows.picked[Number(k)];
+    if (!p || !q || p.lat !== q.lat || p.lon !== q.lon || (p.name === q.name && p.label === q.label)) continue;
+    // A name renamed twice keeps pointing from the one the routing used.
+    const first = Object.keys(out).find((old) => out[old].name === p.name) ?? p.name;
+    out[first] = { name: q.name, label: q.label };
+  }
+  return out;
+}
+
+/** The places with the renamed stops' names put in (the routing was done under the old ones). */
+export function renamePlaces<T extends { name: string; label: string }>(places: { start: T; vias: T[]; finish: T | null; roundTrip: boolean }, renames: Renames) {
+  if (!Object.keys(renames).length) return places;
+  const fix = (v: T): T => (renames[v.name] ? { ...v, ...renames[v.name] } : v);
+  return { ...places, start: fix(places.start), vias: places.vias.map(fix), finish: places.finish ? fix(places.finish) : null };
+}
+// ── /edit-routing ──
