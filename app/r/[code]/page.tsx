@@ -24,6 +24,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const resolved = await resolveShare(code);
   if (!resolved) return { title: t(DEFAULT_SHARE_LOCALE, "shareCardNotFound") };
   const { share } = resolved;
+  const path = decodeURIComponent(code).replace(/~/g, "%7E");
   /**
    * The card speaks the language of the rider who made the ride.
    *
@@ -46,7 +47,13 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   return {
     title,
     description,
-    openGraph: { title, description, type: "article", images: [{ url: `/r/${code}/opengraph-image`, width: 1200, height: 630 }] },
+    // og:url, the image's type and alt: WhatsApp builds its card from these
+    // tags alone. The link and the image go by the short id whenever the
+    // page was opened by one (a long code keeps its own, with `~` encoded).
+    openGraph: {
+      title, description, type: "article", siteName: "Mopik", url: `/r/${path}`,
+      images: [{ url: `/r/${path}/opengraph-image`, width: 1200, height: 630, type: "image/png", alt: title }],
+    },
     twitter: { card: "summary_large_image", title, description },
     robots: { index: false, follow: true },
   };
