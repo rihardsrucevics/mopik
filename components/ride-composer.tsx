@@ -206,6 +206,13 @@ export type RideEdit = {
   onPropose?: (change: ProposedChange | null) => void;
   /** The page's proposal for the pending mark: ✓ spins (`confirmBusy`) while routing, is disabled when refused. */
   proposal?: ProposalState;
+  /**
+   * The change could only be made by re-routing the whole stretch between
+   * two kept places, which would reshape the ride: refused with the numbers,
+   * and this — „Pārrēķināt posmu”, a chip in the notice area — makes that
+   * the proposal. Absent unless it is on offer.
+   */
+  onWide?: () => void;
 };
 
 export function RideComposer({ initialPlan, initialPlaces, profile, onProfileChange, busy: busyProp, onGenerate, onUseChat, onPlacesChange, map, mapShown: mapOnPage = false, onPickModeChange, pickPoint, onMapControlsChange, edit }: {
@@ -2128,7 +2135,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
    * stay put). What each does is named here (`act`) and wired to the
    * handlers in the controls effect below, as every other control is.
    */
-  type ChoiceAct = { kind: "stop" | "pass" } | { leg: string } | { remove: boolean };
+  type ChoiceAct = { kind: "stop" | "pass" } | { leg: string } | { remove: boolean } | { wide: true };
   type ChoiceSpec = Omit<MapChoiceGroup, "options"> & { options: (Omit<MapChoiceGroup["options"][number], "onSelect"> & { act: ChoiceAct })[] };
   const choices: ChoiceSpec[] = [];
   if (canSwitchKind && newPoint) choices.push({
@@ -2151,6 +2158,10 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
       { key: "keep", label: t(locale, "moveKeepHere"), title: t(locale, "moveChoiceLabel"), selected: !removeMoved, act: { remove: false } },
       { key: "remove", label: t(locale, "moveRemovePoint"), title: t(locale, "moveChoiceLabel"), selected: removeMoved, act: { remove: true } },
     ],
+  });
+  if (edit?.onWide) choices.push({
+    key: "wide", label: t(locale, "editWideAccept"), action: true,
+    options: [{ key: "wide", label: t(locale, "editWideAccept"), selected: false, act: { wide: true } }],
   });
   const choicesKey = choices.map((g) => `${g.key}:${g.options.map((o) => `${o.key}${o.selected ? "*" : ""}${o.label}`).join(",")}`).join("|");
   /** Why no stop fits, whole: the „+”'s name and tooltip, the field's at the cap. */
@@ -2239,7 +2250,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     selectBatch: (id: number) => void; moveBatch: (id: number, at: { lat: number; lon: number }) => void; dropBatch: (id: number) => void;
     moveSelectedToRoad: () => void; dropSelected: () => void;
     undo: () => void;
-    switchKind: (to: "stop" | "pass") => void; chooseLeg: (key: string) => void; moveChoice: (remove: boolean) => void;
+    switchKind: (to: "stop" | "pass") => void; chooseLeg: (key: string) => void; moveChoice: (remove: boolean) => void; wide: () => void;
   } | null>(null);
   /**
    * What the map's header shows in place of "+" — Confirm and Cancel — or
@@ -2488,6 +2499,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
             const h = pendingHandlers.current;
             if ("kind" in act) h?.switchKind(act.kind);
             else if ("leg" in act) h?.chooseLeg(act.leg);
+            else if ("wide" in act) h?.wide();
             else h?.moveChoice(act.remove);
           },
         })),
@@ -2709,6 +2721,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
       dropSelected: () => { if (selectedItem) dropBatchItem(selectedItem.id); },
       undo: undoStep,
       switchKind: switchNewKind,
+      wide: () => edit?.onWide?.(),
       chooseLeg,
       moveChoice: (remove: boolean) => { if (remove !== removeMoved) setMoveRemove(remove ? moveKey : null); },
       type: (value: string) => {

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { formatEditDelta, IDLE_PROPOSAL, type EditProposal, type ProposalState } from "../lib/map/edit-proposal";
-import { changeKey, changedAlong, isKindSwitch, NOTE_JOINER, proposalView, proposeDelay, staleWhileRouting, unchangedEnds } from "../lib/map/proposal-view";
+import { changeKey, changedAlong, isKindSwitch, NOTE_JOINER, proposalView, proposeDelay, staleWhileRouting, unchangedEnds, WIDE_ASK_M, WIDE_ASK_SHARE, wideNeedsAsking } from "../lib/map/proposal-view";
 import { cumulative } from "../lib/routing/detour";
 import type { Point } from "../lib/geo/geometry";
 import { messages } from "../lib/i18n/messages";
@@ -159,4 +159,39 @@ test("stale while it re-routes: the last landed proposal stays, with the spinner
   assert.equal(staleWhileRouting(landed, null), null);
   // The next landed replaces it.
   assert.equal(staleWhileRouting(landed, landed), landed);
+});
+
+test("the whole-span re-route is asked for when it changes the ride by > 20 % or > 5 km, proposed when less", () => {
+  assert.equal(WIDE_ASK_SHARE, 0.2);
+  assert.equal(WIDE_ASK_M, 5_000);
+  // The measured case: 67 → 35 km.
+  assert.equal(wideNeedsAsking(67_000, 35_000), true);
+  // Over 5 km on a long ride, though under 20 %.
+  assert.equal(wideNeedsAsking(100_000, 105_500), true);
+  assert.equal(wideNeedsAsking(100_000, 94_400), true);
+  // Over 20 % on a short ride, though under 5 km.
+  assert.equal(wideNeedsAsking(10_000, 12_100), true);
+  assert.equal(wideNeedsAsking(10_000, 7_900), true);
+  // Within both: proposed as today (its chip shows the delta).
+  assert.equal(wideNeedsAsking(100_000, 104_900), false);
+  assert.equal(wideNeedsAsking(10_000, 11_900), false);
+  assert.equal(wideNeedsAsking(10_000, 8_100), false);
+  // On the lines themselves: not more than, so proposed.
+  assert.equal(wideNeedsAsking(100_000, 105_000), false);
+  assert.equal(wideNeedsAsking(10_000, 12_000), false);
+});
+
+test("the span's ends are named by the kept places it runs between", async () => {
+  const { spanEnds } = await import("../lib/routing/reroute-leg");
+  const line: Point[] = Array.from({ length: 301 }, (_, i) => [24 + (i * 100) / 60_630, 57]);
+  const at = (km: number, name: string) => ({ name, label: name, lat: 57, lon: 24 + (km * 1000) / 60_630 });
+  const places = { start: at(0, "Sigulda"), vias: [at(10, "Līgatne"), at(20, "Cēsis")], finish: at(30, "Valmiera"), roundTrip: false } as RidePlaces;
+  const cum = cumulative(line);
+  const mid = spanEnds({ line, cum, before: places, span: { fromMeters: cum[100], toMeters: cum[200] } });
+  assert.equal(mid.from?.name, "Līgatne");
+  assert.equal(mid.to?.name, "Cēsis");
+  const whole = spanEnds({ line, cum, before: places, span: { fromMeters: 0, toMeters: cum[300] } });
+  assert.deepEqual([whole.from?.name, whole.to?.name], ["Sigulda", "Valmiera"]);
+  const open = spanEnds({ line, cum, before: { ...places, finish: null }, span: { fromMeters: cum[200], toMeters: cum[300] } });
+  assert.equal(open.to, null, "the line's own end is no place");
 });

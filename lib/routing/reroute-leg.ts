@@ -1196,6 +1196,22 @@ export function spanRun(params: {
 }
 
 /**
+ * The places at the two ends of a span (`spanRun`): the kept places the
+ * whole stretch is re-routed between, for saying which stretch it is. Null
+ * for an end that is no place — the drawn line's own end on a one-way ride
+ * with no finish.
+ */
+export function spanEnds(params: { line: Point[]; cum: number[]; before: RidePlaces; span: { fromMeters: number; toMeters: number } }): { from: RidePlace | null; to: RidePlace | null } {
+  const { line, cum, before, span } = params;
+  const along = anchorsAlong(anchorsOf(before, line[line.length - 1]), line, cum);
+  const list: (RidePlace | null)[] = [before.start, ...before.vias, before.roundTrip ? before.start : before.finish];
+  const first = along.findIndex((m) => Math.abs(m - span.fromMeters) <= 1);
+  let last = -1;
+  along.forEach((m, k) => { if (Math.abs(m - span.toMeters) <= 1) last = k; });
+  return { from: first >= 0 ? list[first] ?? null : null, to: last >= 0 ? list[last] ?? null : null };
+}
+
+/**
  * The ride's road classes, surfaces and flagged kilometres, from its segments.
  *
  * On the same denominator `classify.ts` uses — the sum of the segments' own

@@ -89,7 +89,8 @@ export type AnalyticsEvent =
   | "new_point_placed"        // a new point went into its nearest leg; props: unsure (null|far|close|beyond-finish), mode (plan|edit) — how often is Mopik not sure?
   | "new_point_leg_chosen"    // the rider picked the other choice chip; props: extend (a new finish) — do the chips get used, and which way?
   | "new_point_kind_toggled"  // „Pietura” ⇄ „Caurbraucams” while pending; props: to (stop|pass)
-  | "moved_point_on_line";    // a pass-through point moved onto the line elsewhere; props: choice (keep|remove) — what does the rider mean by it?
+  | "moved_point_on_line"     // a pass-through point moved onto the line elsewhere; props: choice (keep|remove) — what does the rider mean by it?
+  | "route_edit_wide_accepted"; // „Pārrēķināt posmu” on a change only the whole-span re-route could make (it was refused with the km, `wide-ask`)
 
 declare global {
   interface Window { gtag?: (...args: unknown[]) => void }

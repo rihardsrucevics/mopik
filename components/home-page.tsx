@@ -57,6 +57,7 @@ import {
   rowsOf,
   snapToLine,
   spanRun,
+  spanEnds,
   lineBreaks,
   spliceIsSound,
   summariseSegments,
@@ -82,7 +83,7 @@ import {
   type ProposalView,
   type Segments,
 } from "@/lib/map/edit-proposal";
-import { changeKey, changedAlong, isKindSwitch, NOTE_JOINER, proposalView, proposeDelay, staleWhileRouting, unchangedEnds } from "@/lib/map/proposal-view";
+import { changeKey, changedAlong, isKindSwitch, NOTE_JOINER, proposalView, proposeDelay, staleWhileRouting, unchangedEnds, wideNeedsAsking } from "@/lib/map/proposal-view";
 import type { Point } from "@/lib/geo/geometry";
 import type { PlaceRoles } from "@/lib/map/place-roles";
 import type { RideEdit } from "@/components/ride-composer";
@@ -446,6 +447,8 @@ export function HomePage() {
     return next;
   };
   /** The last token issued; an answer under any other is stale and dropped. */
+  /** „Pārrēķināt posmu” on offer: the refused change it would re-route as a whole span (`askWide`). */
+  const [wideAsk, setWideAsk] = useState<{ token: number; change: ProposedChange } | null>(null);
   const proposalSeq = useRef(0);
   const live = useRef<LiveProposal | null>(null);
   const proposalAbort = useRef<AbortController | null>(null);
@@ -1252,9 +1255,10 @@ export function HomePage() {
    * no ride state is touched. `delay` is the drag debounce; `confirm` is a ✓
    * already pressed for this change (the proposal commits the moment it lands).
    */
-  function proposePlaces(change: ProposedChange, opts: { delay?: number; confirm?: Omit<CommitWaiter, "token"> } = {}) {
+  function proposePlaces(change: ProposedChange, opts: { delay?: number; confirm?: Omit<CommitWaiter, "token">; wide?: boolean } = {}) {
     stopProposalWork();
     const token = ++proposalSeq.current;
+    setWideAsk(null);
     if (!plan || !result || !route || !ridePlaces) {
       live.current = null;
       opts.confirm?.resolve(false);
@@ -1288,14 +1292,14 @@ export function HomePage() {
     if (opts.confirm) dispatchProposal({ type: "confirm" });
     const run = () => {
       proposeTimer.current = null;
-      void routeProposal({ token, before, planned, baseSegments, line, shape: change.kind === "shape" });
+      void routeProposal({ token, before, planned, baseSegments, line, shape: change.kind === "shape", change, wide: opts.wide === true });
     };
     if (opts.delay) proposeTimer.current = { timer: setTimeout(run, opts.delay), run };
     else run();
   }
 
   /** The request itself, and the proposal its answer becomes. Stale answers (an older token) are dropped. */
-  async function routeProposal(p: { token: number; before: RidePlaces; planned: EditPlan; baseSegments: Segments; line: Point[]; shape: boolean }) {
+  async function routeProposal(p: { token: number; before: RidePlaces; planned: EditPlan; baseSegments: Segments; line: Point[]; shape: boolean; change: ProposedChange; wide: boolean }) {
     if (!plan || !route) return;
     const { token, before, planned, baseSegments, line } = p;
     const current = () => proposalSeq.current === token;
@@ -1332,7 +1336,8 @@ export function HomePage() {
         runs,
         routed: routed.runs,
       });
-      let runs = planned.runs;
+      // „Pārrēķināt posmu” (the rider asked for it): the whole span at once.
+      let runs = p.wide ? [spanRun({ line, cum: cumulative(line), before, after: planned.places, runs: planned.runs })] : planned.runs;
       let data = await request(runs);
       if (!current()) return;
       if ("status" in data) return refuse(ui.resEditFailed, String(data.status));
@@ -1346,7 +1351,7 @@ export function HomePage() {
       // the ride keeps the line it had.
       const sound = (candidate: typeof spliced) => spliceIsSound({ segments: candidate.segments, original: baseSegments, places: planned.places, before, toleranceMeters: MOVE_OFFER_MAX_M });
       let verdict = sound(spliced);
-      if (!verdict.ok) {
+      if (!verdict.ok && !p.wide) {
         console.warn("mopik: edited line broke", { kind: planned.kind, breaks: verdict.breaks, missesPlaces: verdict.missesPlaces, offRoadMeters: verdict.offRoadMeters, runs: runs.map((r, i) => ({ i, from: Math.round(r.fromMeters), to: Math.round(r.toMeters) })) });
         track("route_edit_failed", { reason: "broken-line" });
         const span = spanRun({ line, cum: cumulative(line), before, after: planned.places, runs });
@@ -1355,6 +1360,15 @@ export function HomePage() {
         if (!("status" in again)) {
           const whole = splice([span], again);
           const second = sound(whole);
+          // A whole-span line that reshapes the ride is the rider's to ask
+          // for, never proposed on its own (rider, 2026-09-28: 67 → 35 km).
+          const kmBefore = edited?.distanceMeters ?? route.distanceMeters;
+          if (second.ok && wideNeedsAsking(kmBefore, whole.distanceMeters)) {
+            const ends = spanEnds({ line, cum: cumulative(line), before, span });
+            const name = (v: RidePlace | null, fallback: string) => (v ? v.name || (isShape(v) ? ui.shapePointName : fallback) : fallback);
+            const km = new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+            return askWide(token, planned.kind, fi(ui.editWideAsk, { a: name(ends.from, ui.mapStart), b: name(ends.to, ui.mapFinish), km1: km.format(kmBefore / 1000), km2: km.format(whole.distanceMeters / 1000) }), p.change);
+          }
           if (second.ok) { runs = [span]; data = again; spliced = whole; verdict = second; }
           else {
             console.warn("mopik: edited line broke again on the whole span", { breaks: second.breaks, missesPlaces: second.missesPlaces, offRoadMeters: second.offRoadMeters });
@@ -1483,6 +1497,30 @@ export function HomePage() {
   }
 
   /**
+   * The splice broke and only re-routing the whole span would make the
+   * change — which would reshape the ride. Said as a refusal with the
+   * numbers, and „Pārrēķināt posmu” offered in the notice area
+   * (`wideAsk`); only a tap on it makes the whole span the proposal. A ✓
+   * already waiting on it is answered no; a batch keeps its marks, so the
+   * chip stays usable — a single mark confirmed while routing is let go
+   * with the reason said, as any refusal is.
+   */
+  function askWide(token: number, how: EditKind, note: string, change: ProposedChange) {
+    if (proposalSeq.current !== token) return;
+    dispatchProposal({ type: "refused", token, reason: note });
+    track("route_edit_refused", { how, reason: "wide-ask" });
+    const waiter = settleWaiter(token, false);
+    if (waiter && !waiter.keepOnFailure) {
+      live.current = null;
+      dispatchProposal({ type: "discard" });
+      setEditNote(note);
+      reseed();
+      return;
+    }
+    setWideAsk({ token, change });
+  }
+
+  /**
    * ✓ on a landed proposal: the one place a routed edit enters the ride and
    * the undo. Nothing is routed again — what was previewed is what is kept.
    * Refused (returns false) when the ride under it changed since it was
@@ -1536,6 +1574,7 @@ export function HomePage() {
    */
   function discardProposal() {
     stopProposalWork();
+    setWideAsk(null);
     const token = proposalSeq.current;
     proposalSeq.current += 1;
     live.current = null;
@@ -1552,6 +1591,14 @@ export function HomePage() {
    * changes (a pin being dragged) routes the first at once and then waits
    * for 250 ms of quiet.
    */
+  /** „Pārrēķināt posmu”: the refused change, re-routed as the whole span and proposed. */
+  function acceptWide() {
+    const ask = wideAsk;
+    if (!ask || proposalRef.current.phase !== "refused") return;
+    track("route_edit_wide_accepted", {});
+    proposePlaces(ask.change, { wide: true });
+  }
+
   function proposeChange(change: ProposedChange | null) {
     if (!change) { discardProposal(); return; }
     // A kind switch changes no line: it is committed at once, never previewed.
@@ -2073,6 +2120,7 @@ export function HomePage() {
   // state, adjusted during render as a prop-derived value is; gone at once
   // with the proposal (✕, the mark gone) or a refusal.
   const [landedView, setLandedView] = useState<ProposalView | null>(null);
+  const wideOffered = wideAsk && proposal.phase === "refused" && proposal.token === wideAsk.token ? wideAsk : null;
   if (proposalNow && !proposalNow.tone && proposalNow !== landedView) setLandedView(proposalNow);
   if ((!proposalNow || proposalNow.tone === "refused") && landedView) setLandedView(null);
   const proposalShown = staleWhileRouting(landedView, proposalNow);
@@ -2200,6 +2248,8 @@ export function HomePage() {
         onShape: (op) => { commitShape(op); },
         onPropose: proposeChange,
         proposal,
+        // „Pārrēķināt posmu”, on offer while its refusal is shown (`askWide`).
+        onWide: wideOffered ? acceptWide : undefined,
         onDone: finishEdit,
         onCancel: cancelEdit,
         status: editStatus,

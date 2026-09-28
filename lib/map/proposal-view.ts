@@ -48,6 +48,23 @@ export function proposalView(state: ProposalState, copy: ProposalCopy, locale: U
 }
 
 /**
+ * When the stretch-by-stretch splice breaks, the page can re-route the whole
+ * span between the nearest kept places instead — which may reshape the ride
+ * (measured 67 → 35 km). That is the rider's choice, never automatic (rider,
+ * 2026-09-28): a wide result that changes the ride by more than
+ * `WIDE_ASK_SHARE` of its length or more than `WIDE_ASK_M` is not proposed;
+ * the notice says what it would do and „Pārrēķināt posmu” makes it the
+ * proposal. A smaller change is proposed as before — its chip shows the
+ * delta.
+ */
+export const WIDE_ASK_SHARE = 0.2;
+export const WIDE_ASK_M = 5_000;
+export function wideNeedsAsking(beforeMeters: number, afterMeters: number): boolean {
+  const change = Math.abs(afterMeters - beforeMeters);
+  return change > WIDE_ASK_M || change > WIDE_ASK_SHARE * beforeMeters;
+}
+
+/**
  * Stale while it re-routes (rider, 2026-09-28: in a batch the chip and the
  * halo vanished for ~0.7 s while the next stop was named and routed, then
  * came back). While a newer change routes, the last landed proposal stays

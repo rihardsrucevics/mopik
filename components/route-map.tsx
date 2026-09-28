@@ -285,6 +285,8 @@ export type MapControls = {
 export type MapChoiceGroup = {
   key: string;
   label: string;
+  /** Plain buttons that do something once („Pārrēķināt posmu”), not a choice among options. */
+  action?: boolean;
   options: { key: string; label: string; title?: string; selected: boolean; onSelect: () => void }[];
 };
 
@@ -4244,12 +4246,12 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
       {controls?.choices && controls.choices.length > 0 && (
         <div data-map-choices className="flex w-max min-w-0 max-w-full flex-wrap items-center gap-1.5 self-start max-md:-ml-16 max-md:mr-16">
           {controls.choices.map((group) => (
-            <div key={group.key} role="radiogroup" aria-label={group.label} data-choice-group={group.key}
+            <div key={group.key} role={group.action ? "group" : "radiogroup"} aria-label={group.label} data-choice-group={group.key}
               className="flex min-w-0 max-w-full items-center rounded-full border border-[#ececf0] bg-white/95 p-0.5 shadow-sm backdrop-blur">
               {group.options.map((option) => (
-                <button key={option.key} type="button" role="radio" aria-checked={option.selected} data-choice={option.key}
+                <button key={option.key} type="button" role={group.action ? undefined : "radio"} aria-checked={group.action ? undefined : option.selected} data-choice={option.key}
                   title={option.title ?? option.label} onClick={option.onSelect}
-                  className={`min-w-0 max-w-[11rem] shrink truncate rounded-full px-2.5 py-1 text-xs font-medium leading-tight transition max-md:px-2 max-md:text-[11px] ${option.selected ? "bg-stone-900 text-white" : "text-stone-600 hover:text-stone-900"}`}>
+                  className={`min-w-0 max-w-[11rem] shrink truncate rounded-full px-2.5 py-1 text-xs font-medium leading-tight transition max-md:px-2 max-md:text-[11px] ${group.action ? "bg-[#f56300] text-white hover:bg-[#d85600]" : option.selected ? "bg-stone-900 text-white" : "text-stone-600 hover:text-stone-900"}`}>
                   {option.label}
                 </button>
               ))}

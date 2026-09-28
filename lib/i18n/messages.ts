@@ -702,7 +702,16 @@ export type MessageKey =
   | "kindChoiceLabel"
   | "moveKeepHere"
   | "moveRemovePoint"
-  | "moveChoiceLabel";
+  | "moveChoiceLabel"
+  /**
+   * The wide retry, the rider's to ask for (2026-09-28): a splice that broke
+   * could only be made by re-routing the whole stretch between two kept
+   * places, which would change the ride a lot — {a} {b} the places, {km1}
+   * {km2} the ride before → after. `editWideAccept` is the chip that makes
+   * it the proposal.
+   */
+  | "editWideAsk"
+  | "editWideAccept";
   // ── /P1-insert ──
 
 type Messages = Record<MessageKey, string>;
@@ -1247,6 +1256,8 @@ const lv: Messages = {
   moveKeepHere: "Vest caur šejieni",
   moveRemovePoint: "Izņemt punktu",
   moveChoiceLabel: "Līnija jau iet šeit — ko darīt ar punktu?",
+  editWideAsk: "Šo izmaiņu var ievietot tikai, pārrēķinot visu posmu starp „{a}” un „{b}” ({km1} → {km2} km).",
+  editWideAccept: "Pārrēķināt posmu",
   // ── /P1-insert ──
 };
 
@@ -1760,6 +1771,8 @@ const lt: Messages = {
   moveKeepHere: "Vesti per čia",
   moveRemovePoint: "Pašalinti tašką",
   moveChoiceLabel: "Linija jau eina čia — ką daryti su tašku?",
+  editWideAsk: "Šį pakeitimą galima įterpti tik perskaičiavus visą atkarpą tarp „{a}“ ir „{b}“ ({km1} → {km2} km).",
+  editWideAccept: "Perskaičiuoti atkarpą",
   // ── /P1-insert ──
 };
 
@@ -2269,6 +2282,8 @@ const et: Messages = {
   moveKeepHere: "Vii siit läbi",
   moveRemovePoint: "Eemalda punkt",
   moveChoiceLabel: "Joon juba läheb siit — mida punktiga teha?",
+  editWideAsk: "Seda muudatust saab lisada ainult kogu lõigu „{a}“ ja „{b}“ vahel ümber arvutades ({km1} → {km2} km).",
+  editWideAccept: "Arvuta lõik ümber",
   // ── /P1-insert ──
 };
 
@@ -2776,6 +2791,8 @@ const en: Messages = {
   moveKeepHere: "Route through here",
   moveRemovePoint: "Remove the point",
   moveChoiceLabel: "The line already goes here — what to do with the point?",
+  editWideAsk: "This change only fits by re-routing the whole stretch between “{a}” and “{b}” ({km1} → {km2} km).",
+  editWideAccept: "Re-route the stretch",
   // ── /P1-insert ──
 };
 
