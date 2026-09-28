@@ -86,8 +86,11 @@ export type GuideState =
   | { kind: "move"; name: string }
   | { kind: "via" }
   | { kind: "routing" }
-  | { kind: "proposed" }
-  | { kind: "refused"; reason: string; wide?: boolean };
+  // `warned`: the proposal waits for „Tomēr braukt” (outside the profile, a
+  // dead end, a big detour) — its notes say what, this says what to do, once.
+  | { kind: "proposed"; warned?: boolean }
+  // `wide`: „Pārrēķināt posmu” is on offer; `straight`: „Vest pa taisno” is.
+  | { kind: "refused"; reason: string; wide?: boolean; straight?: boolean };
 
 /** Just the "what to do" part of a state — what the chip adds after its own words. */
 export function guideAction(t: T, state: GuideState): string {
@@ -96,9 +99,26 @@ export function guideAction(t: T, state: GuideState): string {
     case "move": return t("guideTapNew");
     case "via": return t("guideTapVia");
     case "routing": return t("guideRouting");
-    case "proposed": return t("guideProposed");
-    case "refused": return t(state.wide ? "guideRefusedWide" : "guideRefused");
+    case "proposed": return t(state.warned ? "guideWarned" : "guideProposed");
+    case "refused": return t(state.straight ? "guideRefusedStraight" : state.wide ? "guideRefusedWide" : "guideRefused");
   }
+}
+
+/**
+ * What to do for each phase of a proposal, as the chip needs it
+ * (`ProposalCopy.guide` in lib/map/proposal-view.ts): one tail per state, so
+ * a warned proposal with several notes (a dead end and a profile note) says
+ * „Tomēr braukt” once, after its numbers — never once per note.
+ */
+export function proposalGuide(t: T): { routing: string; proposed: string; warned: string; refused: string; refusedWide: string; refusedStraight: string } {
+  return {
+    routing: guideAction(t, { kind: "routing" }),
+    proposed: guideAction(t, { kind: "proposed" }),
+    warned: guideAction(t, { kind: "proposed", warned: true }),
+    refused: guideAction(t, { kind: "refused", reason: "" }),
+    refusedWide: guideAction(t, { kind: "refused", reason: "", wide: true }),
+    refusedStraight: guideAction(t, { kind: "refused", reason: "", straight: true }),
+  };
 }
 
 /** The whole guidance line: what is happening – what to do. */

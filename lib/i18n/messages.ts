@@ -831,6 +831,9 @@ export type MessageKey =
   | "guideProposed"
   | "guideRefused"
   | "guideRefusedWide"
+  | "guideWarned"
+  | "guideRefusedStraight"
+  | "searchDrawnBlocked"
   | "explainStop"
   | "explainPass"
   | "explainLine"
@@ -1403,11 +1406,11 @@ const lv: Messages = {
   pointMoveHintShort: "Atzīmē kartē",
   // ── /P1-insert ──
   // ── spur-0928 ──
-  editNoRoad: "Šeit nevar izbraukt – tuvākais ceļš ir ~{m} m nostāk.",
-  editDeadEndShapeAsk: "Līdz šejienei ved tikai strupceļš – atpakaļ pa to pašu ceļu {km} km. „Tomēr braukt” vai atmet ar ✕.",
-  editDeadEndAsk: "Pieturu sasniedz tikai strupceļš – atpakaļ pa to pašu ceļu {km} km. „Tomēr braukt” vai atmet ar ✕.",
-  editOutsideProfile: "Šeit ved tikai ceļi ārpus tava profila ({what}, {km} km ⚠️) – „Tomēr braukt” vai atmet ar ✕.",
-  editBigDetour: "{km} km, līdz {far} km no līdzšinējā maršruta – „Tomēr braukt” vai atmet ar ✕.",
+  editNoRoad: "Šeit nevar izbraukt, tuvākais ceļš ir ~{m} m nostāk.",
+  editDeadEndShapeAsk: "Līdz šejienei ved tikai strupceļš – atpakaļ pa to pašu ceļu {km} km.",
+  editDeadEndAsk: "Pieturu sasniedz tikai strupceļš – atpakaļ pa to pašu ceļu {km} km.",
+  editOutsideProfile: "Šeit ved tikai ceļi ārpus tava profila ({what}, {km} km ⚠️).",
+  editBigDetour: "{km} km, līdz {far} km no līdzšinējā maršruta.",
   editOverrideAccept: "Tomēr braukt",
   editOverrideLabel: "Maršruts ārpus profila vai ar lielu līkumu",
   previewConfirmOverride: "Apstiprini ar „Tomēr braukt” vai atmet",
@@ -1420,7 +1423,7 @@ const lv: Messages = {
   relaxCar: "ceļi, pa kuriem brauktu auto",
   badgeOutsideProfile: "Ārpus tava profila",
   badgeOutsideProfileDetail: "Šo posmu tavs profils neizmantotu – tu to izvēlējies ar „Tomēr braukt”.",
-  editNoRoadStraight: "Šeit nevar izbraukt pa ceļu – tuvākais ceļš ir ~{m} m nostāk. „Vest pa taisno” vai atmet ar ✕.",
+  editNoRoadStraight: "Pa ceļu šeit nevar izbraukt, tuvākais ceļš ir ~{m} m nostāk.",
   editStraightAccept: "Vest pa taisno",
   editStraightLabel: "Kā tikt līdz šai vietai",
   editStraightNote: "Pēdējie {m} m līdz „{name}” – taisni, bez ceļa, un atpakaļ pa to pašu līniju.",
@@ -1474,6 +1477,9 @@ const lv: Messages = {
   guideProposed: "✓ apstiprina, ✕ atmet.",
   guideRefused: "izvēlies citu vietu.",
   guideRefusedWide: "spied „Pārrēķināt posmu” vai ✕ atmet.",
+  guideWarned: "spied „Tomēr braukt” vai ✕ atmet.",
+  guideRefusedStraight: "spied „Vest pa taisno” vai ✕ atmet.",
+  searchDrawnBlocked: "Braucienā ir zīmēti posmi – pilnā meklēšana tos izmestu. Labo uz kartes.",
   explainStop: "Maršruts iet caur šo vietu, un tā ir GPX failā.",
   explainPass: "Tikai virza līniju, bez numura un bez apstāšanās.",
   explainLine: "Šo gabalu var virzīt citur vai pievienot tam punktu.",
@@ -2013,11 +2019,11 @@ const lt: Messages = {
   pointMoveHintShort: "Pažymėkite",
   // ── /P1-insert ──
   // ── spur-0928 ──
-  editNoRoad: "Čia nuvažiuoti negalima – artimiausias kelias yra už ~{m} m.",
-  editDeadEndShapeAsk: "Čia veda tik akligatvis – atgal tuo pačiu keliu {km} km. „Vis tiek važiuoti“ arba atmeskite ✕.",
-  editDeadEndAsk: "Sustojimą pasiekia tik akligatvis – atgal tuo pačiu keliu {km} km. „Vis tiek važiuoti“ arba atmeskite ✕.",
-  editOutsideProfile: "Čia veda tik keliai už jūsų profilio ribų ({what}, {km} km ⚠️) – „Vis tiek važiuoti“ arba atmeskite ✕.",
-  editBigDetour: "{km} km, iki {far} km nuo ankstesnio maršruto – „Vis tiek važiuoti“ arba atmeskite ✕.",
+  editNoRoad: "Čia nuvažiuoti negalima, artimiausias kelias yra už ~{m} m.",
+  editDeadEndShapeAsk: "Čia veda tik akligatvis – atgal tuo pačiu keliu {km} km.",
+  editDeadEndAsk: "Sustojimą pasiekia tik akligatvis – atgal tuo pačiu keliu {km} km.",
+  editOutsideProfile: "Čia veda tik keliai už jūsų profilio ribų ({what}, {km} km ⚠️).",
+  editBigDetour: "{km} km, iki {far} km nuo ankstesnio maršruto.",
   editOverrideAccept: "Vis tiek važiuoti",
   editOverrideLabel: "Maršrutas už profilio ribų arba su dideliu lankstu",
   previewConfirmOverride: "Patvirtinkite „Vis tiek važiuoti“ arba atmeskite",
@@ -2030,7 +2036,7 @@ const lt: Messages = {
   relaxCar: "keliai, kuriais važiuotų automobilis",
   badgeOutsideProfile: "Už jūsų profilio ribų",
   badgeOutsideProfileDetail: "Šios atkarpos jūsų profilis nenaudotų – pasirinkote ją „Vis tiek važiuoti“.",
-  editNoRoadStraight: "Čia keliu nuvažiuoti negalima – artimiausias kelias yra už ~{m} m. „Vesti tiesiai“ arba atmeskite ✕.",
+  editNoRoadStraight: "Keliu čia nuvažiuoti negalima, artimiausias kelias yra už ~{m} m.",
   editStraightAccept: "Vesti tiesiai",
   editStraightLabel: "Kaip pasiekti šią vietą",
   editStraightNote: "Paskutiniai {m} m iki „{name}“ – tiesiai, be kelio, ir atgal ta pačia linija.",
@@ -2084,6 +2090,9 @@ const lt: Messages = {
   guideProposed: "✓ patvirtina, ✕ atmeta.",
   guideRefused: "pasirinkite kitą vietą.",
   guideRefusedWide: "spauskite „Perskaičiuoti atkarpą” arba ✕ atmeskite.",
+  guideWarned: "spauskite „Vis tiek važiuoti“ arba ✕ atmeskite.",
+  guideRefusedStraight: "spauskite „Vesti tiesiai“ arba ✕ atmeskite.",
+  searchDrawnBlocked: "Kelionėje yra nubrėžtų atkarpų – visa paieška jas išmestų. Taisykite žemėlapyje.",
   explainStop: "Maršrutas eina per šią vietą, ir ji yra GPX faile.",
   explainPass: "Tik nukreipia liniją – be numerio ir be sustojimo.",
   explainLine: "Šią atkarpą galima nukreipti kitur arba pridėti jai tašką.",
@@ -2619,11 +2628,11 @@ const et: Messages = {
   pointMoveHintShort: "Märgi kaardil",
   // ── /P1-insert ──
   // ── spur-0928 ──
-  editNoRoad: "Siia ei saa sõita – lähim tee on ~{m} m eemal.",
-  editDeadEndShapeAsk: "Siia viib ainult umbtee – tagasi sama teed {km} km. „Sõida ikkagi“ või loobu ✕-ga.",
-  editDeadEndAsk: "Peatuseni viib ainult umbtee – tagasi sama teed {km} km. „Sõida ikkagi“ või loobu ✕-ga.",
-  editOutsideProfile: "Siia viivad ainult teed väljaspool sinu profiili ({what}, {km} km ⚠️) – „Sõida ikkagi“ või loobu ✕-ga.",
-  editBigDetour: "{km} km, kuni {far} km senisest marsruudist – „Sõida ikkagi“ või loobu ✕-ga.",
+  editNoRoad: "Siia ei saa sõita, lähim tee on ~{m} m eemal.",
+  editDeadEndShapeAsk: "Siia viib ainult umbtee – tagasi sama teed {km} km.",
+  editDeadEndAsk: "Peatuseni viib ainult umbtee – tagasi sama teed {km} km.",
+  editOutsideProfile: "Siia viivad ainult teed väljaspool sinu profiili ({what}, {km} km ⚠️).",
+  editBigDetour: "{km} km, kuni {far} km senisest marsruudist.",
   editOverrideAccept: "Sõida ikkagi",
   editOverrideLabel: "Marsruut väljaspool profiili või suure ringiga",
   previewConfirmOverride: "Kinnita „Sõida ikkagi“ või loobu",
@@ -2636,7 +2645,7 @@ const et: Messages = {
   relaxCar: "teed, mida sõidaks auto",
   badgeOutsideProfile: "Väljaspool sinu profiili",
   badgeOutsideProfileDetail: "Seda lõiku sinu profiil ei kasutaks – valisid selle „Sõida ikkagi“-ga.",
-  editNoRoadStraight: "Siia ei saa teed mööda sõita – lähim tee on ~{m} m eemal. „Vii otse“ või loobu ✕-ga.",
+  editNoRoadStraight: "Teed mööda siia sõita ei saa, lähim tee on ~{m} m eemal.",
   editStraightAccept: "Vii otse",
   editStraightLabel: "Kuidas selle kohani jõuda",
   editStraightNote: "Viimased {m} m kohani „{name}“ – otse, teeta, ja tagasi sama joont mööda.",
@@ -2690,6 +2699,9 @@ const et: Messages = {
   guideProposed: "✓ kinnitab, ✕ loobub.",
   guideRefused: "vali teine koht.",
   guideRefusedWide: "vajuta „Arvuta lõik ümber” või ✕ loobu.",
+  guideWarned: "vajuta „Sõida ikkagi“ või ✕ loobu.",
+  guideRefusedStraight: "vajuta „Vii otse“ või ✕ loobu.",
+  searchDrawnBlocked: "Sõidus on joonistatud lõike – täisotsing viskaks need välja. Paranda kaardil.",
   explainStop: "Marsruut läheb läbi selle koha ja see on GPX-failis.",
   explainPass: "Ainult suunab joont – ilma numbri ja peatuseta.",
   explainLine: "Seda lõiku saab suunata mujale või lisada sellele punkti.",
@@ -3223,11 +3235,11 @@ const en: Messages = {
   pointMoveHintShort: "Mark the map",
   // ── /P1-insert ──
   // ── spur-0928 ──
-  editNoRoad: "You can’t ride here – the nearest road is ~{m} m away.",
-  editDeadEndShapeAsk: "Only a dead end reaches this – back the same way for {km} km. “Ride it anyway” or discard with ✕.",
-  editDeadEndAsk: "Only a dead end reaches the stop – back the same way for {km} km. “Ride it anyway” or discard with ✕.",
-  editOutsideProfile: "Only roads outside your profile reach this ({what}, {km} km ⚠️) – “Ride it anyway” or discard with ✕.",
-  editBigDetour: "{km} km, up to {far} km from the current route – “Ride it anyway” or discard with ✕.",
+  editNoRoad: "You can’t ride here, the nearest road is ~{m} m away.",
+  editDeadEndShapeAsk: "Only a dead end reaches this – back the same way for {km} km.",
+  editDeadEndAsk: "Only a dead end reaches the stop – back the same way for {km} km.",
+  editOutsideProfile: "Only roads outside your profile reach this ({what}, {km} km ⚠️).",
+  editBigDetour: "{km} km, up to {far} km from the current route.",
   editOverrideAccept: "Ride it anyway",
   editOverrideLabel: "Route outside your profile or a big detour",
   previewConfirmOverride: "Confirm with “Ride it anyway” or discard",
@@ -3240,7 +3252,7 @@ const en: Messages = {
   relaxCar: "roads a car would take",
   badgeOutsideProfile: "Outside your profile",
   badgeOutsideProfileDetail: "Your profile would not use this stretch – you chose it with “Ride it anyway”.",
-  editNoRoadStraight: "You can’t reach this by road – the nearest road is ~{m} m away. “Go straight” or discard with ✕.",
+  editNoRoadStraight: "You can’t reach this by road, the nearest road is ~{m} m away.",
   editStraightAccept: "Go straight",
   editStraightLabel: "How to reach this spot",
   editStraightNote: "The last {m} m to “{name}” – straight, no road, and back along the same line.",
@@ -3294,6 +3306,9 @@ const en: Messages = {
   guideProposed: "✓ confirms, ✕ discards.",
   guideRefused: "choose another place.",
   guideRefusedWide: "press “Re-route the stretch” or ✕ to discard.",
+  guideWarned: "press “Ride it anyway” or ✕ to discard.",
+  guideRefusedStraight: "press “Go straight” or ✕ to discard.",
+  searchDrawnBlocked: "This ride has drawn stretches – a full search would drop them. Fix it on the map.",
   explainStop: "The route rides through this place, and it is in the GPX file.",
   explainPass: "Only steers the line – no number, no stop.",
   explainLine: "This stretch can be routed elsewhere or given a point.",

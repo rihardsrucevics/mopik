@@ -13,9 +13,12 @@ import { cumulative } from "@/lib/routing/detour";
 export type ProposalCopy = {
   routing: string; delta: string; deltaTitle: string;
   // ── edit-guidance ── what to do, per phase (`guideRouting`, `guideProposed`, `guideRefused`, `guideRefusedWide`).
-  guide?: { routing: string; proposed: string; refused: string; refusedWide: string };
+  // `warned` and `refusedStraight` (spur-0928) are optional so older callers keep their copy.
+  guide?: { routing: string; proposed: string; refused: string; refusedWide: string; warned?: string; refusedStraight?: string };
   /** „Pārrēķināt posmu” is on offer with this refusal. */
   wide?: boolean;
+  /** „Vest pa taisno” is on offer with this refusal. */
+  straight?: boolean;
 };
 
 /** Between the chip and its notes where both are said as one line of text (the edit panel's). */
@@ -38,7 +41,7 @@ export function proposalView(state: ProposalState, copy: ProposalCopy, locale: U
   const g = copy.guide;
   if (state.phase === "routing") return { text: copy.routing, title: copy.routing, tone: "routing", line: null, changed: [], ...(g ? { guide: g.routing } : {}) };
   // A refusal's sentence loses its full stop before the dash („…nostāk – izvēlies citu vietu.”).
-  if (state.phase === "refused") return { text: g ? state.reason.trim().replace(/\.+$/u, "") : state.reason, title: state.reason, tone: "refused", line: null, changed: [], ...(g ? { guide: copy.wide ? g.refusedWide : g.refused } : {}) };
+  if (state.phase === "refused") return { text: g ? state.reason.trim().replace(/\.+$/u, "") : state.reason, title: state.reason, tone: "refused", line: null, changed: [], ...(g ? { guide: copy.straight && g.refusedStraight ? g.refusedStraight : copy.wide ? g.refusedWide : g.refused } : {}) };
   const { proposal } = state;
   const notes = proposal.notes.filter(Boolean).join(" ");
   const chip = formatEditDelta(copy.delta, proposal.delta, locale);
@@ -52,7 +55,8 @@ export function proposalView(state: ProposalState, copy: ProposalCopy, locale: U
     ...(proposal.accept ? { warn: true as const } : {}),
     line: proposal.ride.segments,
     changed: proposal.changed,
-    ...(g ? { guide: g.proposed } : {}),
+    // A warned proposal's notes say what is wrong; what to do is said once, here.
+    ...(g ? { guide: proposal.accept && g.warned ? g.warned : g.proposed } : {}),
   };
 }
 

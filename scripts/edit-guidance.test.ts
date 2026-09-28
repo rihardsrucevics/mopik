@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { OBJECT_COLOR, actionDetail, guidance, guideAction, joinGuide, objectExplainer } from "../lib/map/edit-guidance";
+import { OBJECT_COLOR, actionDetail, guidance, guideAction, joinGuide, objectExplainer, proposalGuide } from "../lib/map/edit-guidance";
 import { proposalView, staleWhileRouting } from "../lib/map/proposal-view";
 import { t, type MessageKey } from "../lib/i18n/messages";
 import type { UiLocale } from "../lib/i18n/locale";
@@ -59,7 +59,7 @@ test("the chip carries what to do after its numbers, in every phase", () => {
 });
 
 test("every locale has the copy, Latvian in its own punctuation", () => {
-  const keys: MessageKey[] = ["guideSelectedStop", "guideSelectedPass", "guideSelectedLine", "guideSelectedStart", "guideSelectedFinish", "guideChoose", "guideMoving", "guideTapNew", "guideVia", "guideTapVia", "guideRouting", "guideProposed", "guideRefused", "guideRefusedWide", "explainStop", "explainPass", "explainLine", "explainStart", "explainFinish", "detailMove", "detailDemote", "detailPromote", "detailRemoveStop", "detailRemovePass", "detailVia", "detailPassHere", "lineSheetTitleKind", "lineObjectName", "lineSheetTitle", "lineVia", "lineViaHint", "linePassHere", "editTip", "lineHoverTip"];
+  const keys: MessageKey[] = ["guideSelectedStop", "guideSelectedPass", "guideSelectedLine", "guideSelectedStart", "guideSelectedFinish", "guideChoose", "guideMoving", "guideTapNew", "guideVia", "guideTapVia", "guideRouting", "guideProposed", "guideRefused", "guideRefusedWide", "guideWarned", "guideRefusedStraight", "searchDrawnBlocked", "explainStop", "explainPass", "explainLine", "explainStart", "explainFinish", "detailMove", "detailDemote", "detailPromote", "detailRemoveStop", "detailRemovePass", "detailVia", "detailPassHere", "lineSheetTitleKind", "lineObjectName", "lineSheetTitle", "lineVia", "lineViaHint", "linePassHere", "editTip", "lineHoverTip"];
   for (const locale of ["lv", "lt", "et", "en"] as UiLocale[]) {
     for (const k of keys) {
       const v = t(locale, k);
@@ -88,4 +88,36 @@ test("the sheets and the map wear the object's own colour", () => {
   assert.match(sheets, /hint: guidance\(tk, \{ kind: "via" \}\)/);
   assert.match(sheets, /hint: guidance\(tk, \{ kind: "move", name: pointTitle \}\)/);
   assert.ok(sheets.split("detailed(").length - 1 >= 5, "every action row has its detail");
+});
+
+test("spur-0928's warned, dead-end, straight and no-road copy go through the guidance, one tail", () => {
+  const copy = { routing: "R", delta: "{a} → {b} km", deltaTitle: "{b} km", guide: proposalGuide(lv) };
+  const delta = { kmBefore: 10, kmAfter: 12, minutesBefore: 20, minutesAfter: 24, repeatedBefore: 0, repeatedAfter: 0 };
+  // A dead end and a profile note on one proposal: „Tomēr braukt” said once.
+  const notes = [lv("editDeadEndAsk").replace("{km}", "0,8"), lv("editOutsideProfile").replace("{what}", "smiltis").replace("{km}", "1,2")];
+  const proposal = { token: 1, how: "add-stop", ride: { segments: { type: "FeatureCollection", features: [] } }, changed: [], delta, notes, accept: "deadEnd" } as never;
+  const view = proposalView({ phase: "proposed", proposal, confirmNow: false }, copy, "lv")!;
+  const said = `${joinGuide(view.text, view.guide!)} ${view.notes}`;
+  assert.equal(said.split("Tomēr braukt").length - 1, 1, said);
+  assert.equal(said.split("✕").length - 1, 1, said);
+  assert.equal(view.guide, "spied „Tomēr braukt” vai ✕ atmet.");
+  // Not warned: the plain ✓/✕.
+  const plain = proposalView({ phase: "proposed", proposal: { ...(proposal as object), accept: undefined } as never, confirmNow: false }, copy, "lv")!;
+  assert.equal(plain.guide, lv("guideProposed"));
+  // No road, „Vest pa taisno” on offer / not.
+  const reason = lv("editNoRoadStraight").replace("{m}", "340");
+  const straight = proposalView({ phase: "refused", token: 1, how: "add-stop", reason }, { ...copy, straight: true }, "lv")!;
+  assert.equal(joinGuide(straight.text, straight.guide!), "Pa ceļu šeit nevar izbraukt, tuvākais ceļš ir ~340 m nostāk – spied „Vest pa taisno” vai ✕ atmet.");
+  const noRoad = proposalView({ phase: "refused", token: 1, how: "add-stop", reason: lv("editNoRoad").replace("{m}", "340") }, copy, "lv")!;
+  assert.equal(joinGuide(noRoad.text, noRoad.guide!), "Šeit nevar izbraukt, tuvākais ceļš ir ~340 m nostāk – izvēlies citu vietu.");
+  for (const locale of ["lv", "lt", "et", "en"] as UiLocale[]) {
+    const tl = (k: MessageKey) => t(locale, k);
+    for (const k of ["editNoRoad", "editNoRoadStraight", "editDeadEndAsk", "editDeadEndShapeAsk", "editOutsideProfile", "editBigDetour"] as MessageKey[]) {
+      assert.doesNotMatch(tl(k), /✕/, `${locale}.${k}: the tail is the guidance's`);
+      assert.doesNotMatch(tl(k), /—/, `${locale}.${k}: en dashes`);
+    }
+  }
+  const page = src("components/home-page.tsx");
+  assert.match(page, /guide: proposalGuide\(\(k\) => ui\[k\]\),/);
+  assert.match(page, /straight: straightNow,/);
 });

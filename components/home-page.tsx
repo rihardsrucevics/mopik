@@ -100,6 +100,7 @@ import { LoaderCircle } from "lucide-react";
 // „Labot” opens the phone map full screen first: inline it is a preview.
 import { openMapFullscreen } from "@/lib/map/fullscreen";
 import { passOnLine } from "@/lib/map/line-sheet";
+import { joinGuide, proposalGuide } from "@/lib/map/edit-guidance";
 
 /** A proposal ready to land, with what `live.landed` records for its commit. */
 type Landing = { proposal: EditProposal; addedAt: number; runs: number };
@@ -2396,14 +2397,16 @@ export function HomePage() {
    * dimmed ride. Only while editing.
    */
   const wideNow = Boolean(wideAsk && proposal.phase === "refused" && proposal.token === wideAsk.token);
+  const straightNow = Boolean(straightAsk && proposal.phase === "refused" && proposal.token === straightAsk.token);
   const proposalNow = useMemo(
     () => (wiring.editing ? proposalView(proposal, {
       routing: ui.previewRouting, delta: ui.previewDelta, deltaTitle: ui.previewDeltaTitle,
       // ── edit-guidance ── what to do, after what is happening.
-      guide: { routing: ui.guideRouting, proposed: ui.guideProposed, refused: ui.guideRefused, refusedWide: ui.guideRefusedWide },
+      guide: proposalGuide((k) => ui[k]),
       wide: wideNow,
+      straight: straightNow,
     }, locale) : null),
-    [wiring.editing, proposal, ui, wideNow, locale],
+    [wiring.editing, proposal, ui, wideNow, straightNow, locale],
   );
   // The last proposal that landed stays on the map while the next change
   // routes — its line, halo and numbers, with the spinner — so there is
@@ -2526,7 +2529,7 @@ export function HomePage() {
         </p>
       )}
       {proposalShown && proposalShown.tone !== "routing" && (
-        <p data-edit-proposal role="status" title={proposalShown.title} className={`text-[11px] leading-snug tabular-nums ${proposalShown.tone === "refused" ? "text-[#bd4b00]" : "text-stone-700"}`}>{proposalShown.notes ? `${proposalShown.text}${NOTE_JOINER}${proposalShown.notes}` : proposalShown.text}</p>
+        <p data-edit-proposal role="status" title={proposalShown.title} className={`text-[11px] leading-snug tabular-nums ${proposalShown.tone === "refused" ? "text-[#bd4b00]" : "text-stone-700"}`}>{/* ── edit-guidance ── the same „what – what to do” as the map's chip, then the notes. */}{proposalShown.guide ? joinGuide(proposalShown.text, proposalShown.guide) : proposalShown.text}{proposalShown.notes ? `${proposalShown.guide ? " " : NOTE_JOINER}${proposalShown.notes}` : ""}</p>
       )}
       {editNote && !proposalShown && <p role="status" className="text-[11px] leading-snug text-[#bd4b00]">{editNote}</p>}
     </div>

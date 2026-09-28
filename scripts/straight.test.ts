@@ -150,7 +150,8 @@ test("the map: drawn has its own style, no badges, and the class layers leave it
 
 test("the copy: four languages, en dashes, the rider's words", () => {
   const lv = messages("lv");
-  assert.equal(lv.editNoRoadStraight.replace("{m}", "340"), "Šeit nevar izbraukt pa ceļu – tuvākais ceļš ir ~340 m nostāk. „Vest pa taisno” vai atmet ar ✕.");
+  assert.equal(lv.editNoRoadStraight.replace("{m}", "340"), "Pa ceļu šeit nevar izbraukt, tuvākais ceļš ir ~340 m nostāk.");
+  assert.equal(lv.guideRefusedStraight, "spied „Vest pa taisno” vai ✕ atmet.");
   assert.equal(lv.editStraightNote.replace("{m}", "340").replace("{name}", "Caurbraucams punkts"), "Pēdējie 340 m līdz „Caurbraucams punkts” – taisni, bez ceļa, un atpakaļ pa to pašu līniju.");
   assert.equal(lv.legendDrawn, "Zīmēts taisni");
   assert.equal(lv.panelDrawn.replace("{km}", "0,7"), "Zīmēti posmi: 0,7 km · laiks rēķināts ar 15 km/h · Mopik nav pārbaudījis, vai tur var izbraukt un vai tas ir atļauts.");

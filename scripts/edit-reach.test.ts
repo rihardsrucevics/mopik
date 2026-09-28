@@ -106,10 +106,16 @@ test("the copy: four languages, en dashes, the rider's own words", () => {
       assert.ok(m[k] && m[k].length > 1, `${locale}.${k}`);
       assert.ok(!/ - /.test(m[k]), `${locale}.${k} uses an en dash, not a hyphen`);
     }
-    for (const k of ["editNoRoad", "editOutsideProfile", "editBigDetour"] as const) assert.ok(m[k].includes(" – "), `${locale}.${k}: „what – what to do”`);
+    // „What is happening” only: what to do is the guidance's tail
+    // (lib/map/edit-guidance.ts), said once however many notes there are.
+    for (const k of ["editNoRoad", "editOutsideProfile", "editBigDetour", "editDeadEndShapeAsk", "editDeadEndAsk"] as const) {
+      assert.ok(!m[k].includes("✕"), `${locale}.${k}: no tail of its own`);
+      assert.ok(!m[k].includes(m.editOverrideAccept), `${locale}.${k}: „${m.editOverrideAccept}” is the guidance's`);
+    }
+    assert.ok(m.guideWarned.includes(m.editOverrideAccept), `${locale}.guideWarned names the chip`);
   }
   const lv = messages("lv");
-  assert.equal(lv.editNoRoad.replace("{m}", "340"), "Šeit nevar izbraukt – tuvākais ceļš ir ~340 m nostāk.");
+  assert.equal(lv.editNoRoad.replace("{m}", "340"), "Šeit nevar izbraukt, tuvākais ceļš ir ~340 m nostāk.");
   assert.ok(lv.editBigDetour.replace("{km}", "+9,1").replace("{far}", "4,5").startsWith("+9,1 km, līdz 4,5 km no līdzšinējā maršruta"));
   assert.equal(lv.editOverrideAccept, "Tomēr braukt");
   for (const k of Object.keys(lv) as (keyof typeof lv)[]) assert.ok(!/piesit/i.test(lv[k]), `lv.${k} never says „piesit”`);
