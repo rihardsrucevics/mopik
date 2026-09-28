@@ -3016,9 +3016,10 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
    * top-left, and a searched address had no Confirm anywhere near it). The
    * marker lands wherever the rider tapped, and a tap high on a phone map put
    * the pin behind the header — he could not see what he was confirming. So
-   * when the marker's body is under the header (or the off-road verdict below
-   * it, about twice as tall), the map is panned down just enough to stand it
-   * clear. Only then: a pin already in view is left where the finger put it.
+   * when the marker's body is under the bar (or the off-road verdict above
+   * it, about twice as tall), the map is panned just enough to stand it
+   * clear, above the bar. Only then: a pin already in view is left where the
+   * finger put it — the camera never follows a move.
    *
    * Keyed on what the header shows as well as on the point: the verdict comes
    * a moment after Confirm and is the taller of the two.
@@ -3036,19 +3037,16 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
       const clearance = 12;
       const rows = header.getBoundingClientRect();
       const marker = el.getBoundingClientRect();
-      // On a phone the header row is at the bottom: the marker must stand
-      // above it, so the map is panned up instead of down.
-      if (window.matchMedia(PHONE_QUERY).matches) {
-        const rowsTop = rows.top - box.top;
-        const markerBottom = marker.bottom - box.top;
-        if (markerBottom <= rowsTop - clearance) return;
-        map.panBy([0, markerBottom - (rowsTop - clearance)], { duration: 300 });
-        return;
-      }
-      const headerBottom = rows.bottom - box.top;
-      const markerTop = marker.top - box.top;
-      if (markerTop >= headerBottom + clearance) return;
-      map.panBy([0, markerTop - (headerBottom + clearance)], { duration: 300 });
+      // The bar is at the bottom at every width (ad96622): the marker must
+      // stand above it, so the map is panned up just enough — on the desktop
+      // too. The desktop branch still assumed a bar at the top and panned
+      // every pending mark DOWN past the bottom bar, off the map (rider,
+      // 2026-09-28: "when I move the line somewhere else, the map goes off
+      // screen" — measured: a bend on Sigulda → Cēsis panned 415 px).
+      const rowsTop = rows.top - box.top;
+      const markerBottom = marker.bottom - box.top;
+      if (markerBottom <= rowsTop - clearance) return;
+      map.panBy([0, markerBottom - (rowsTop - clearance)], { duration: 300 });
     };
     // A place picked from the search arrives with its own `easeTo` (see
     // `pickCenter`), and the header's buttons change while that is still
@@ -3391,7 +3389,9 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
       const top = header.top - p.box.top - 28;
       const bottom = header.bottom - p.box.top + 28;
       if (p.at.y < top || p.at.y > bottom) return;
-      const target = phone ? Math.max(40, top / 2) : bottom + (p.box.height - bottom) / 2;
+      // Above the bottom bar: on a phone into the free half, on the desktop
+      // just clear of it (the old target, below a bar at the top, was off the map).
+      const target = phone ? Math.max(40, top / 2) : Math.max(40, top);
       map.panBy([0, p.at.y - target], { duration: 250 });
     });
     return () => cancelAnimationFrame(frame);
