@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { formatEditDelta, IDLE_PROPOSAL, type EditProposal, type ProposalState } from "../lib/map/edit-proposal";
-import { changeKey, changedAlong, isKindSwitch, NOTE_JOINER, proposalView, proposeDelay, staleWhileRouting, unchangedEnds, WIDE_ASK_M, WIDE_ASK_SHARE, wideNeedsAsking } from "../lib/map/proposal-view";
+import { changeKey, changedAlong, isKindSwitch, NOTE_JOINER, proposalView, proposeDelay, staleWhileRouting, newStretches, WIDE_ASK_M, WIDE_ASK_SHARE, wideNeedsAsking } from "../lib/map/proposal-view";
 import { cumulative } from "../lib/routing/detour";
 import type { Point } from "../lib/geo/geometry";
 import { messages } from "../lib/i18n/messages";
@@ -94,28 +94,51 @@ const east = (fromM: number, toM: number, north = 0): Point[] => {
   return out;
 };
 
-test("unchangedEnds: a 6 km window whose middle 600 m left the road is haloed on those 600 m only (rider, 2026-09-28)", () => {
-  // Replaced: 0–6000 m of the road. Routed: the same road to 2700 m, a
-  // detour 300 m north for 2700–3300 m, and the same road again to 6000 m.
-  const replaced = east(0, 6000);
-  const routed = [...east(0, 2700), ...east(2800, 3200, 300), ...east(3300, 6000)];
-  const { head, tail } = unchangedEnds(routed, replaced);
+test("newStretches: a 6 km window whose middle 600 m left the road is haloed on those 600 m only (rider, 2026-09-28)", () => {
+  // Ride: 0–10 km of the road. Routed over 2–8 km: the same road to 4700 m,
+  // a detour 300 m north for 4700–5300 m, and the same road again to 8000 m.
+  const ride = east(0, 10_000);
+  const routed = [...east(2000, 4700), ...east(4800, 5200, 300), ...east(5300, 8000)];
+  const parts = newStretches(routed, ride);
+  assert.equal(parts.length, 1);
+  const [[a, b]] = parts;
+  assert.ok(Math.abs(a - 2700) < 5, `from ${a}`);
   const total = cumulative(routed).at(-1)!;
-  assert.ok(Math.abs(head - 2700) < 5, `head ${head}`);
-  assert.ok(Math.abs(tail - 2700) < 5, `tail ${tail}`);
-  const [[a, b]] = changedAlong([{ fromMeters: 10_000, toMeters: 16_000 }], [total], [{ head, tail }]);
-  assert.ok(Math.abs(a - 12_700) < 5 && b - a < total - 5000, `halo ${a}–${b} of a ${Math.round(total)} m stretch`);
+  assert.ok(Math.abs(total - b - 2700) < 5, `to ${b} of ${Math.round(total)}`);
+  const [[x, y]] = changedAlong([{ fromMeters: 2000, toMeters: 8000 }], [total], [parts]);
+  assert.ok(Math.abs(x - 4700) < 5 && Math.abs(y - (2000 + b)) < 1, `halo ${x}–${y}`);
 });
 
-test("unchangedEnds: the same road ridden back the other way is new, and all-old road leaves no halo", () => {
-  const replaced = east(0, 3000);
-  // Out along the road to 1500 m and straight back to 0 — not the replaced direction after the turn.
-  const uturn = [...east(0, 1500), ...east(0, 1400).reverse()];
-  const { head } = unchangedEnds(uturn, replaced);
-  assert.ok(head <= 1500 + 1, `head stops at the turn: ${head}`);
-  const same = unchangedEnds(east(0, 3000), replaced);
-  const [[a, b]] = changedAlong([{ fromMeters: 0, toMeters: 3000 }], [cumulative(east(0, 3000)).at(-1)!], [same]);
-  assert.ok(b - a < 1, "nothing new, nothing haloed");
+test("newStretches: old road inside the stretch is not new — two detours, the road between them, and a way in past the cut (release check, 2026-09-28)", () => {
+  // Measured on Sigulda → Līgatne → Cēsis: leaving the road, rejoining it
+  // for 1,7 km and leaving again haloed the whole loop (3,9 km for +2 km);
+  // a stop reached past the cut along the kept ride and back haloed 2,3 km
+  // of old road. Only the pieces off the ride are new.
+  const ride = east(0, 10_000);
+  const routed = [
+    ...east(2000, 3000),        // old road
+    ...east(3100, 3400, 300),   // detour 1
+    ...east(3500, 6000),        // old road again, 2,5 km
+    ...east(6100, 6400, 300),   // detour 2
+    ...east(6500, 9000),        // old road past the window's end
+    ...east(8000, 8900).reverse(), // and back along it the other way
+  ];
+  const parts = newStretches(routed, ride);
+  assert.equal(parts.length, 2, JSON.stringify(parts));
+  const len = parts.reduce((s, [a, b]) => s + b - a, 0);
+  // Each detour: 300 m out, 300 m along, 300 m back — no old road in the halo.
+  assert.ok(len < 2 * 1000, `haloed ${Math.round(len)} m`);
+});
+
+test("newStretches: all-old road leaves no halo; no ride makes it all new", () => {
+  assert.deepEqual(newStretches(east(0, 3000), east(0, 3000)), []);
+  assert.deepEqual(newStretches(east(0, 3000).reverse(), east(0, 3000)), [], "the same road the other way is the same line on the map");
+  const [[a, b]] = newStretches(east(0, 1000), []);
+  assert.ok(a === 0 && Math.abs(b - cumulative(east(0, 1000)).at(-1)!) < 1e-6, `${a}–${b}`);
+  // A crossing of the old road in the middle of a detour does not split it.
+  const cross = [...east(0, 500, 200), ...east(600, 1000, -200)];
+  const ride = [[24 + 550 / (111_320 * Math.cos((57 * Math.PI) / 180)), 56.99], [24 + 550 / (111_320 * Math.cos((57 * Math.PI) / 180)), 57.01]] as Point[];
+  assert.equal(newStretches(cross, ride).length, 1);
 });
 
 test("changeKey: the same rows are the same change, a moved row is not", () => {

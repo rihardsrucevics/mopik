@@ -2,7 +2,6 @@ import type { UiLocale } from "@/lib/i18n/locale";
 import { formatEditDelta, type ProposalState, type ProposalView, type ProposedChange } from "@/lib/map/edit-proposal";
 import type { Point } from "@/lib/geo/geometry";
 import { cumulative } from "@/lib/routing/detour";
-import { nearestAlong } from "@/lib/routing/reroute-leg";
 
 /**
  * The page's half of preview-before-commit (docs/DESIGN-route-editing.md B4,
@@ -79,17 +78,18 @@ export function staleWhileRouting(landed: ProposalView | null, view: ProposalVie
 }
 
 /**
- * Where the spliced line is new, in metres along it: one [from, to] per
- * routed stretch. `runs` are the replaced stretches in metres along the old
- * line (`EditRun.fromMeters/toMeters`), `routedMeters` the drawn length of
- * each routed replacement, index for index — `applyRuns` keeps the old line
- * up to each run and puts the routed stretch in its place, in riding order.
+ * Where the spliced line is new, in metres along it. `runs` are the replaced
+ * stretches in metres along the old line (`EditRun.fromMeters/toMeters`),
+ * `routedMeters` the drawn length of each routed replacement, index for
+ * index — `applyRuns` keeps the old line up to each run and puts the routed
+ * stretch in its place, in riding order. `fresh`, per run, is where along
+ * its routed stretch the line is new (`newStretches`); without it the whole
+ * routed stretch counts as new.
  */
 export function changedAlong(
   runs: { fromMeters: number; toMeters: number }[],
   routedMeters: number[],
-  /** Per run: metres at its start and its end that ride the very road it replaced (`unchangedEnds`). */
-  ends?: ({ head: number; tail: number } | undefined)[],
+  fresh?: ([number, number][] | undefined)[],
 ): [number, number][] {
   const order = runs.map((r, i) => ({ ...r, i })).sort((a, b) => a.fromMeters - b.fromMeters);
   const out: [number, number][] = [];
@@ -98,9 +98,12 @@ export function changedAlong(
   for (const run of order) {
     newCursor += Math.max(0, run.fromMeters - oldCursor);
     const length = Math.max(0, routedMeters[run.i] ?? 0);
-    const head = Math.min(length, Math.max(0, ends?.[run.i]?.head ?? 0));
-    const tail = Math.min(length - head, Math.max(0, ends?.[run.i]?.tail ?? 0));
-    out.push([newCursor + head, newCursor + length - tail]);
+    const parts = fresh?.[run.i] ?? [[0, length]];
+    for (const [a, b] of parts) {
+      const from = Math.max(0, Math.min(length, a));
+      const to = Math.max(0, Math.min(length, b));
+      if (to > from) out.push([newCursor + from, newCursor + to]);
+    }
     newCursor += length;
     oldCursor = Math.max(oldCursor, run.toMeters);
   }
@@ -109,32 +112,78 @@ export function changedAlong(
 
 /** A routed vertex this close to the road it replaced is that road. */
 export const SAME_ROAD_M = 5;
+/** Two new pieces this close together are one stretch on the map (a crossing, a shared junction). */
+export const NEW_GAP_M = 30;
 
 /**
- * How much of a routed stretch, from its start and from its end, rides the
- * very road it replaced, in the same direction — metres along the routed
- * line. An edit re-routes a window of kilometres each way round the point
+ * Where along a routed stretch the line is new: the metre ranges of
+ * `routed` that lie farther than `tolerance` from every part of `ride`, the
+ * whole line before the edit.
+ *
+ * An edit re-routes a window of kilometres each way round the point
  * (`EDIT_WINDOW_M`), and the router mostly gives the same road back: halo
  * the whole window and a 0.5 km change is drawn as 6 km of new line (rider,
- * 2026-09-28). The halo marks what is new, so these ends are trimmed off.
- * A stretch that is all old road comes back with `head` its whole length.
+ * 2026-09-28). Trimming only the two ends that follow the replaced road
+ * (the first version) still haloed old road in two cases the release check
+ * measured on Sigulda → Līgatne → Cēsis: a stop whose way in runs past the
+ * cut along the kept ride and back (3,9 km haloed, 1,6 km new), and a
+ * stretch that leaves the old road, rejoins it for 1,7 km and leaves it
+ * again (a whole loop haloed for a +2 km change). Measured against the whole
+ * ride and anywhere along the stretch, the halo is where the map shows a
+ * line that was not there — the same road ridden again, either way, is not
+ * new line; the chip's „atkārtoti” says that part.
  */
-export function unchangedEnds(routed: Point[], replaced: Point[], tolerance = SAME_ROAD_M): { head: number; tail: number } {
-  if (routed.length < 2 || replaced.length < 2) return { head: 0, tail: 0 };
-  const walk = (r: Point[], o: Point[]) => {
-    const rc = cumulative(r), oc = cumulative(o);
-    let along = 0, i = 0;
-    for (; i < r.length; i++) {
-      const n = nearestAlong(r[i], o, oc, Math.max(0, along - 1));
-      if (n.meters > tolerance) break;
-      along = n.alongMeters;
+export function newStretches(routed: Point[], ride: Point[], tolerance = SAME_ROAD_M): [number, number][] {
+  if (routed.length < 2) return [];
+  const rc = cumulative(routed);
+  const total = rc[rc.length - 1];
+  if (ride.length < 2) return total > 0 ? [[0, total]] : [];
+  // Local flat metres round the stretch's own latitude; a grid of cells so
+  // each sample is measured against the few ride segments near it.
+  const M = 111_320;
+  const cosLat = Math.cos((routed[0][1] * Math.PI) / 180) || 1;
+  const xy = (p: Point): [number, number] => [p[0] * cosLat * M, p[1] * M];
+  const CELL = 100;
+  const cells = new Map<string, number[]>();
+  const R = ride.map(xy);
+  for (let i = 0; i < R.length - 1; i++) {
+    const [ax, ay] = R[i], [bx, by] = R[i + 1];
+    const x0 = Math.floor((Math.min(ax, bx) - tolerance) / CELL), x1 = Math.floor((Math.max(ax, bx) + tolerance) / CELL);
+    const y0 = Math.floor((Math.min(ay, by) - tolerance) / CELL), y1 = Math.floor((Math.max(ay, by) + tolerance) / CELL);
+    // A ride segment longer than a few km (a drawn straight, a gap) is left
+    // to the scan below rather than filling thousands of cells.
+    if ((x1 - x0 + 1) * (y1 - y0 + 1) > 400) { const k = "long"; (cells.get(k) ?? cells.set(k, []).get(k)!).push(i); continue; }
+    for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) {
+      const k = `${x},${y}`;
+      (cells.get(k) ?? cells.set(k, []).get(k)!).push(i);
     }
-    return i === 0 ? 0 : rc[i - 1];
+  }
+  const near = (p: [number, number]): boolean => {
+    const cand = [...(cells.get(`${Math.floor(p[0] / CELL)},${Math.floor(p[1] / CELL)}`) ?? []), ...(cells.get("long") ?? [])];
+    for (const i of cand) {
+      const [ax, ay] = R[i], [bx, by] = R[i + 1];
+      const dx = bx - ax, dy = by - ay;
+      const L2 = dx * dx + dy * dy;
+      const t = L2 > 0 ? Math.max(0, Math.min(1, ((p[0] - ax) * dx + (p[1] - ay) * dy) / L2)) : 0;
+      if (Math.hypot(p[0] - ax - t * dx, p[1] - ay - t * dy) <= tolerance) return true;
+    }
+    return false;
   };
-  const total = cumulative(routed)[routed.length - 1];
-  const head = walk(routed, replaced);
-  if (head >= total) return { head: total, tail: 0 };
-  return { head, tail: walk([...routed].reverse(), [...replaced].reverse()) };
+  // Each routed segment is new when its midpoint or either end is off the
+  // ride — a vertex-only test would miss a new link between two old nodes.
+  const P = routed.map(xy);
+  const onRide = P.map(near);
+  const out: [number, number][] = [];
+  for (let i = 0; i < P.length - 1; i++) {
+    if (rc[i + 1] - rc[i] <= 0) continue;
+    const mid: [number, number] = [(P[i][0] + P[i + 1][0]) / 2, (P[i][1] + P[i + 1][1]) / 2];
+    const isNew = !onRide[i] || !onRide[i + 1] || !near(mid);
+    if (!isNew) continue;
+    const last = out[out.length - 1];
+    if (last && rc[i] - last[1] <= NEW_GAP_M) last[1] = rc[i + 1];
+    else out.push([rc[i], rc[i + 1]]);
+  }
+  return out;
 }
 
 /**
