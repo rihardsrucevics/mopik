@@ -183,3 +183,22 @@ test("the cap covers the longest ride the planner can build", () => {
   // start + 10 stops + 20 shapes + 8 ticked sights + finish
   assert.equal(MAX_ROUTE_POINTS, 10 + 20 + 8 + 2);
 });
+
+test("a saved or shared ride's file: stops and pass-through points from its share code (release check, 2026-09-28)", async () => {
+  const { sharedRideGpx } = await import("../lib/gpx/share-gpx");
+  // Sigulda → Līgatne (pass-through) → Cēsis, one way, as a code carries it.
+  const planCode = Buffer.from(JSON.stringify({ pl: [["Sigulda", "Sigulda", 57.154, 24.857], ["Cēsis", "Cēsis", 57.313, 25.275]] })).toString("base64url");
+  const share = {
+    name: "Sigulda → Cēsis", variant: "direct", km: 55, minutes: 70, unpavedPercent: 10, repeatedPercent: 0, startLabel: "Sigulda",
+    points: [[24.857, 57.154], [25.04, 57.233], [25.275, 57.313]] as [number, number][], classes: [],
+    plan: { returnToStart: false, shapePoints: [{ lat: 57.233, lon: 25.04, afterPlace: 0 }] },
+  } as unknown as Parameters<typeof sharedRideGpx>[0]["share"];
+  const { waypoints, routePoints } = sharedRideGpx({ share, planCode, locale: "lv", line: share.points });
+  assert.deepEqual(routePoints?.map((p) => p.kind), ["via", "shape", "via"]);
+  assert.equal(routePoints?.[2].name, "Finišs · Cēsis");
+  assert.ok(waypoints.length >= 1);
+  const gpx = generateGpx(share.name, share.points, undefined, waypoints, routePoints);
+  assert.match(gpx, /<\/wpt>\s*<rte>[\s\S]*<trp:ViaPoint\/>[\s\S]*<trp:ShapingPoint\/>[\s\S]*<trp:ViaPoint\/>[\s\S]*<\/rte>\s*<trk>/);
+  // An old code with no places and an open line: no route rather than a wrong one.
+  assert.equal(sharedRideGpx({ share, planCode: null, locale: "lv", line: share.points }).routePoints, undefined);
+});
