@@ -750,7 +750,71 @@ export type MessageKey =
   | "gateFromStart"
   | "gateAtKm"
   | "gateOsmLink"
-  | "gateListMore";
+  | "gateListMore"
+  // ── line-sheet ──
+  /**
+   * Tap the line (rider, 2026-09-28; lib/map/line-sheet.ts). `lineSheetTitle`
+   * heads the line's sheet in edit mode, {km} the tapped stretch's length;
+   * the road's kind (`segmentHeading`) follows it as the name. `lineVia` asks
+   * for a new place to ride through, and `lineViaHint` says what the next
+   * tap does; `linePassHere` drops a pass-through point on the line. The
+   * one-time hint on entering edit mode is `editTip`; `lineHoverTip` is the
+   * desktop's words beside the cursor over the line. Latvian never says
+   * „piesit”; „ ” quotes, en dashes.
+   */
+  | "lineSheetTitle"
+  | "lineVia"
+  | "lineViaHint"
+  | "linePassHere"
+  | "editTip"
+  | "lineHoverTip"
+  // ── /line-sheet ──
+  // ── edit-guidance ──
+  /**
+   * What the rider is looking at and what to do (rider, 2026-09-28;
+   * lib/map/edit-guidance.ts). `guideSelected*` + `guideChoose`, `guideMoving`
+   * + `guideTapNew`, `guideVia` + `guideTapVia`, `previewRouting` +
+   * `guideRouting`, the delta chip + `guideProposed`, the refusal +
+   * `guideRefused*` — joined by an en dash („ – ”). `explain*` is the line
+   * under a sheet's title; `detail*` the line under each action;
+   * `lineSheetTitleKind` the line sheet's title with the road's kind in
+   * lower case, `lineObjectName` its name in the guidance. Latvian never says
+   * „piesit”; en dashes, never em dashes.
+   */
+  | "guideSelectedStop"
+  | "guideSelectedPass"
+  | "guideSelectedLine"
+  | "guideSelectedStart"
+  | "guideSelectedFinish"
+  | "guideChoose"
+  | "guideMoving"
+  | "guideTapNew"
+  | "guideVia"
+  | "guideTapVia"
+  | "guideRouting"
+  | "guideProposed"
+  | "guideRefused"
+  | "guideRefusedWide"
+  | "explainStop"
+  | "explainPass"
+  | "explainLine"
+  | "explainStart"
+  | "explainFinish"
+  | "detailMove"
+  | "detailDemote"
+  | "detailPromote"
+  | "detailRemoveStop"
+  | "detailRemovePass"
+  | "detailVia"
+  | "detailPassHere"
+  | "lineSheetTitleKind"
+  | "lineObjectName"
+  // ── /edit-guidance ──
+  // ── place-search ── The form's place search got no answer (Photon timed
+  // out or failed) — said as that, not as "nothing found".
+  | "placeSearchSlow"
+  // ── /place-search ──
+  ;
 
 type Messages = Record<MessageKey, string>;
 
@@ -1325,6 +1389,47 @@ const lv: Messages = {
   gateAtKm: "{name} {km} km",
   gateOsmLink: "Skatīt OSM",
   gateListMore: "vēl {n}",
+  // ── line-sheet ──
+  lineSheetTitle: "Ceļa posms · {km} km",
+  lineVia: "Virzīt caur citu vietu",
+  lineViaHint: "Norādi kartē, caur kurieni braukt",
+  linePassHere: "Pievienot punktu šeit",
+  editTip: "Pieskaries līnijai vai punktam, lai to mainītu",
+  lineHoverTip: "Velc, lai virzītu caur citu vietu · pieskaries, lai redzētu iespējas",
+  // ── /line-sheet ──
+  // ── edit-guidance ──
+  guideSelectedStop: "{name} izvēlēta",
+  guideSelectedPass: "{name} izvēlēts",
+  guideSelectedLine: "{name} izvēlēts",
+  guideSelectedStart: "{name} izvēlēts",
+  guideSelectedFinish: "{name} izvēlēts",
+  guideChoose: "izvēlies darbību.",
+  guideMoving: "Pārvieto „{name}”",
+  guideTapNew: "pieskaries jaunajai vietai kartē.",
+  guideVia: "Virzi posmu",
+  guideTapVia: "pieskaries vietai, caur kuru braukt.",
+  guideRouting: "vari jau spiest ✓, apstiprināšu, tiklīdz būs gatavs.",
+  guideProposed: "✓ apstiprina, ✕ atmet.",
+  guideRefused: "izvēlies citu vietu.",
+  guideRefusedWide: "spied „Pārrēķināt posmu” vai ✕ atmet.",
+  explainStop: "Maršruts iet caur šo vietu, un tā ir GPX failā.",
+  explainPass: "Tikai virza līniju, bez numura un bez apstāšanās.",
+  explainLine: "Šo gabalu var virzīt citur vai pievienot tam punktu.",
+  explainStart: "Šeit brauciens sākas, un tas ir GPX failā.",
+  explainFinish: "Šeit brauciens beidzas, un tas ir GPX failā.",
+  detailMove: "Pieskaries jaunajai vietai kartē",
+  detailDemote: "Vairs nebūs numura un nebūs GPX pieturas",
+  detailPromote: "Saņems numuru un būs GPX failā kā pietura",
+  detailRemoveStop: "Maršruts vairs neies caur šo vietu",
+  detailRemovePass: "Līnija vairs netiks virzīta caur šo punktu",
+  detailVia: "Pieskaries kartē vietai, caur kuru braukt",
+  detailPassHere: "Līnija nemainās – punktu varēs pārvietot",
+  lineSheetTitleKind: "Ceļa posms · {km} km {kind}",
+  lineObjectName: "Ceļa posms",
+  // ── /edit-guidance ──
+  // ── place-search ──
+  placeSearchSlow: "Vietu meklēšana šobrīd atbild lēni – mēģini vēlreiz",
+  // ── /place-search ──
 };
 
 const lt: Messages = {
@@ -1868,6 +1973,47 @@ const lt: Messages = {
   gateAtKm: "{name} {km} km",
   gateOsmLink: "Žiūrėti OSM",
   gateListMore: "dar {n}",
+  // ── line-sheet ──
+  lineSheetTitle: "Kelio atkarpa · {km} km",
+  lineVia: "Vesti per kitą vietą",
+  lineViaHint: "Pažymėkite žemėlapyje, per kur važiuoti",
+  linePassHere: "Pridėti tašką čia",
+  editTip: "Palieskite liniją arba tašką, kad jį pakeistumėte",
+  lineHoverTip: "Vilkite, kad vestumėte per kitą vietą · palieskite, kad pamatytumėte parinktis",
+  // ── /line-sheet ──
+  // ── edit-guidance ──
+  guideSelectedStop: "{name} pasirinktas",
+  guideSelectedPass: "{name} pasirinktas",
+  guideSelectedLine: "{name} pasirinkta",
+  guideSelectedStart: "{name} pasirinktas",
+  guideSelectedFinish: "{name} pasirinktas",
+  guideChoose: "pasirinkite veiksmą.",
+  guideMoving: "Perkeliamas „{name}”",
+  guideTapNew: "palieskite naują vietą žemėlapyje.",
+  guideVia: "Atkarpa nukreipiama",
+  guideTapVia: "palieskite vietą, per kurią važiuoti.",
+  guideRouting: "jau galite spausti ✓, patvirtinsiu, kai bus paruošta.",
+  guideProposed: "✓ patvirtina, ✕ atmeta.",
+  guideRefused: "pasirinkite kitą vietą.",
+  guideRefusedWide: "spauskite „Perskaičiuoti atkarpą” arba ✕ atmeskite.",
+  explainStop: "Maršrutas eina per šią vietą, ir ji yra GPX faile.",
+  explainPass: "Tik nukreipia liniją – be numerio ir be sustojimo.",
+  explainLine: "Šią atkarpą galima nukreipti kitur arba pridėti jai tašką.",
+  explainStart: "Čia kelionė prasideda, ir tai yra GPX faile.",
+  explainFinish: "Čia kelionė baigiasi, ir tai yra GPX faile.",
+  detailMove: "Palieskite naują vietą žemėlapyje",
+  detailDemote: "Nebeturės numerio ir nebus GPX sustojimo",
+  detailPromote: "Gaus numerį ir bus GPX faile kaip sustojimas",
+  detailRemoveStop: "Maršrutas nebeis per šią vietą",
+  detailRemovePass: "Linija nebebus nukreipta per šį tašką",
+  detailVia: "Palieskite žemėlapyje vietą, per kurią važiuoti",
+  detailPassHere: "Linija nesikeičia – tašką galėsite perkelti",
+  lineSheetTitleKind: "Kelio atkarpa · {km} km {kind}",
+  lineObjectName: "Kelio atkarpa",
+  // ── /edit-guidance ──
+  // ── place-search ──
+  placeSearchSlow: "Vietų paieška šiuo metu atsako lėtai – bandykite dar kartą",
+  // ── /place-search ──
 };
 
 const et: Messages = {
@@ -2407,6 +2553,47 @@ const et: Messages = {
   gateAtKm: "{name} {km} km",
   gateOsmLink: "Vaata OSM-is",
   gateListMore: "veel {n}",
+  // ── line-sheet ──
+  lineSheetTitle: "Teelõik · {km} km",
+  lineVia: "Suuna läbi teise koha",
+  lineViaHint: "Märgi kaardile, kust kaudu sõita",
+  linePassHere: "Lisa punkt siia",
+  editTip: "Puuduta joont või punkti, et seda muuta",
+  lineHoverTip: "Lohista, et suunata läbi teise koha · puuduta, et näha valikuid",
+  // ── /line-sheet ──
+  // ── edit-guidance ──
+  guideSelectedStop: "{name} valitud",
+  guideSelectedPass: "{name} valitud",
+  guideSelectedLine: "{name} valitud",
+  guideSelectedStart: "{name} valitud",
+  guideSelectedFinish: "{name} valitud",
+  guideChoose: "vali tegevus.",
+  guideMoving: "Liigutad punkti „{name}”",
+  guideTapNew: "puuduta kaardil uut kohta.",
+  guideVia: "Suunad lõiku",
+  guideTapVia: "puuduta kohta, mille kaudu sõita.",
+  guideRouting: "võid juba vajutada ✓, kinnitan, kui valmis.",
+  guideProposed: "✓ kinnitab, ✕ loobub.",
+  guideRefused: "vali teine koht.",
+  guideRefusedWide: "vajuta „Arvuta lõik ümber” või ✕ loobu.",
+  explainStop: "Marsruut läheb läbi selle koha ja see on GPX-failis.",
+  explainPass: "Ainult suunab joont – ilma numbri ja peatuseta.",
+  explainLine: "Seda lõiku saab suunata mujale või lisada sellele punkti.",
+  explainStart: "Siit sõit algab ja see on GPX-failis.",
+  explainFinish: "Siin sõit lõpeb ja see on GPX-failis.",
+  detailMove: "Puuduta kaardil uut kohta",
+  detailDemote: "Pole enam numbrit ega GPX-peatust",
+  detailPromote: "Saab numbri ja on GPX-failis peatusena",
+  detailRemoveStop: "Marsruut ei läbi enam seda kohta",
+  detailRemovePass: "Joont ei suunata enam selle punkti kaudu",
+  detailVia: "Puuduta kaardil kohta, mille kaudu sõita",
+  detailPassHere: "Joon ei muutu – punkti saab hiljem liigutada",
+  lineSheetTitleKind: "Teelõik · {km} km {kind}",
+  lineObjectName: "Teelõik",
+  // ── /edit-guidance ──
+  // ── place-search ──
+  placeSearchSlow: "Kohaotsing vastab praegu aeglaselt – proovi uuesti",
+  // ── /place-search ──
 };
 
 const en: Messages = {
@@ -2944,6 +3131,47 @@ const en: Messages = {
   gateAtKm: "{name} {km} km",
   gateOsmLink: "View on OSM",
   gateListMore: "{n} more",
+  // ── line-sheet ──
+  lineSheetTitle: "Road stretch · {km} km",
+  lineVia: "Route via somewhere else",
+  lineViaHint: "Tap the map where to ride through",
+  linePassHere: "Add a point here",
+  editTip: "Tap the line or a point to change it",
+  lineHoverTip: "Drag to route via somewhere else · tap to see options",
+  // ── /line-sheet ──
+  // ── edit-guidance ──
+  guideSelectedStop: "{name} selected",
+  guideSelectedPass: "{name} selected",
+  guideSelectedLine: "{name} selected",
+  guideSelectedStart: "{name} selected",
+  guideSelectedFinish: "{name} selected",
+  guideChoose: "choose an action.",
+  guideMoving: "Moving “{name}”",
+  guideTapNew: "tap its new place on the map.",
+  guideVia: "Routing the stretch elsewhere",
+  guideTapVia: "tap the place to ride through.",
+  guideRouting: "you can press ✓ now, I’ll confirm as soon as it’s ready.",
+  guideProposed: "✓ confirms, ✕ discards.",
+  guideRefused: "choose another place.",
+  guideRefusedWide: "press “Re-route the stretch” or ✕ to discard.",
+  explainStop: "The route rides through this place, and it is in the GPX file.",
+  explainPass: "Only steers the line – no number, no stop.",
+  explainLine: "This stretch can be routed elsewhere or given a point.",
+  explainStart: "The ride starts here, and it is in the GPX file.",
+  explainFinish: "The ride ends here, and it is in the GPX file.",
+  detailMove: "Tap its new place on the map",
+  detailDemote: "No number any more and no GPX stop",
+  detailPromote: "Gets a number and is a stop in the GPX file",
+  detailRemoveStop: "The route no longer rides through this place",
+  detailRemovePass: "The line is no longer steered through this point",
+  detailVia: "Tap the place on the map to ride through",
+  detailPassHere: "The line stays as it is – the point can be moved later",
+  lineSheetTitleKind: "Road stretch · {km} km {kind}",
+  lineObjectName: "Road stretch",
+  // ── /edit-guidance ──
+  // ── place-search ──
+  placeSearchSlow: "Place search is slow to answer right now – try again",
+  // ── /place-search ──
 };
 
 const MESSAGES: Record<UiLocale, Messages> = { lv, lt, et, en };

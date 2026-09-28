@@ -83,7 +83,7 @@ import {
   type ProposalView,
   type Segments,
 } from "@/lib/map/edit-proposal";
-import { changeKey, changedAlong, isKindSwitch, NOTE_JOINER, proposalView, proposeDelay, staleWhileRouting, newStretches, wideNeedsAsking } from "@/lib/map/proposal-view";
+import { changeKey, changedAlong, isKindSwitch, NOTE_JOINER, proposalView, proposeDelay, staleWhileRouting, newStretches, wideNeedsAsking, renamePlaces, renamesBetween, sameGeometry, type Renames } from "@/lib/map/proposal-view";
 import type { Point } from "@/lib/geo/geometry";
 import type { PlaceRoles } from "@/lib/map/place-roles";
 import type { RideEdit } from "@/components/ride-composer";
@@ -92,6 +92,7 @@ import { MAX_SHAPE_POINTS, MAX_STOPS } from "@/lib/chat/ride-limits";
 import { LoaderCircle } from "lucide-react";
 // „Labot” opens the phone map full screen first: inline it is a preview.
 import { openMapFullscreen } from "@/lib/map/fullscreen";
+import { passOnLine } from "@/lib/map/line-sheet";
 
 type Retry = { stage: "chat"; messages: ChatMessage[]; plan: RidePlan | null } | { stage: "route"; messages: ChatMessage[]; plan: RidePlan };
 
@@ -186,6 +187,9 @@ type LiveProposal = {
   base: Segments;
   routeId: string;
   landed: { addedAt: number; runs: number; startedAt: number } | null;
+  /** The change as last sent, and the names it has had since it was routed (a pin named after it was dropped). */
+  change: ProposedChange;
+  renames: Renames;
 };
 /** A ✓ pressed before its proposal landed: answered when it lands or is refused. */
 type CommitWaiter = { token: number; resolve: (ok: boolean) => void; keepOnFailure: boolean; pressedAt: number };
@@ -1266,7 +1270,7 @@ export function HomePage() {
     }
     const before = ridePlaces;
     const baseSegments = edited?.segments ?? route.segments;
-    live.current = { token, key: changeKey(change), base: baseSegments, routeId: route.id, landed: null };
+    live.current = { token, key: changeKey(change), base: baseSegments, routeId: route.id, landed: null, change, renames: {} };
     if (opts.confirm) { commitWaiter.current = { ...opts.confirm, token }; setCommitting(true); }
     // A new proposal: whatever the last one said goes with it.
     setEditNote(null);
@@ -1530,7 +1534,8 @@ export function HomePage() {
     const mine = live.current;
     if (!plan || !route || !mine || mine.token !== proposal.token || !mine.landed || mine.routeId !== route.id || mine.base !== (edited?.segments ?? route.segments)) return false;
     const { addedAt, runs, startedAt } = mine.landed;
-    const next = proposal.ride;
+    // Named after it was routed: the stop keeps the name it has now.
+    const next: EditedRide = { ...proposal.ride, places: renamePlaces(proposal.ride.places, mine.renames) };
     setEditsFor((prev) => {
       const own = prev.routeId === route.id;
       return {
@@ -1605,6 +1610,16 @@ export function HomePage() {
     if (isKindSwitch(change) || commitWaiter.current || !route) return;
     const mine = live.current;
     if (mine && mine.key === changeKey(change) && mine.base === (edited?.segments ?? route.segments) && proposalRef.current.phase !== "idle") return;
+    // ── edit-routing ── The dropped pin's name arrived: the same line, so
+    // the routing already under way (or landed) stands — the name goes into
+    // the places it commits, and ✓ recognises the renamed change as its own.
+    if (mine && mine.base === (edited?.segments ?? route.segments) && proposalRef.current.phase !== "idle" && sameGeometry(mine.change, change)) {
+      mine.renames = renamesBetween(mine.change, change, mine.renames);
+      mine.change = change;
+      mine.key = changeKey(change);
+      return;
+    }
+    // ── /edit-routing ──
     const now = performance.now();
     const delay = proposeDelay(lastProposeAt.current, now);
     lastProposeAt.current = now;
@@ -1699,8 +1714,20 @@ export function HomePage() {
     };
     // `EditedRide.how` has no "demote" (yet): both switches are the undo's
     // "promote", a change of a point's kind; `point_kind_switched` says which.
+    commitPlacesOnLine(switched, "promote");
+    track("point_kind_switched", { to: op.kind === "promote" ? "stop" : "pass", mode: "edit" });
+  }
+
+  /**
+   * New places on the SAME line — a kind switch, a pass-through point dropped
+   * on the line — committed at once as one step of the undo: the ride keeps
+   * its line and numbers, only its places change.
+   */
+  function commitPlacesOnLine(next: RidePlaces, how: EditedRide["how"]) {
+    if (!plan || !route) return;
+    const baseLine = edited?.coordinates ?? (route.geometry.coordinates as Point[]);
     const keep: EditedRide = edited
-      ? { ...edited, places: switched, kind: "edit", how: "promote" }
+      ? { ...edited, places: next, kind: "edit", how }
       : {
           coordinates: baseLine,
           segments: route.segments,
@@ -1708,20 +1735,66 @@ export function HomePage() {
           durationSeconds: route.durationSeconds,
           overlap: route.overlap,
           summary: summariseSegments(route.segments, route.quality.gateCount !== undefined),
-          places: switched,
+          places: next,
           kind: "edit",
-          how: "promote",
+          how,
         };
     setEditsFor((prev) => {
       const mine = prev.routeId === route.id;
       return { routeId: route.id, history: pushEdit(mine ? prev.history : NO_EDITS, keep), original: mine && prev.original ? prev.original : { plan, places } };
     });
-    setPlan(planWithPlaces(plan, switched));
-    setPlaces(resolvedOf(switched));
+    setPlan(planWithPlaces(plan, next));
+    setPlaces(resolvedOf(next));
     setEditNote(null);
     reseed();
-    track("point_kind_switched", { to: op.kind === "promote" ? "stop" : "pass", mode: "edit" });
   }
+
+  // ── edit-routing ──
+  /**
+   * A place committed under its spot — ✓ pressed while the pin was still
+   * being named (rider, 2026-09-28: the routing never waits for the name) —
+   * gets its name: in the proposal still routing, for when it commits; in the
+   * ride it already went into, in place, without a step of the undo.
+   */
+  function renamePlace(from: ResolvedPlace, to: ResolvedPlace) {
+    const mine = live.current;
+    if (mine && mine.change.kind === "rows") mine.renames = renamesBetween({ kind: "rows", rows: { names: [from.name], picked: { 0: from } } }, { kind: "rows", rows: { names: [to.name], picked: { 0: to } } }, mine.renames);
+    const current = edited;
+    if (!current || !route || !plan) return;
+    const all = [current.places.start, ...current.places.vias, current.places.finish];
+    if (!all.some((v) => v && v.name === from.name)) return;
+    const renamed = renamePlaces(current.places, { [from.name]: { name: to.name, label: to.label } });
+    setEditsFor((prev) => (prev.routeId !== route.id || prev.history.current !== current ? prev
+      : { ...prev, history: { ...prev.history, current: { ...current, places: renamed } } }));
+    setPlan(planWithPlaces(plan, renamed));
+    setPlaces(resolvedOf(renamed));
+  }
+  const renameRef = useRef(renamePlace);
+  useEffect(() => { renameRef.current = renamePlace; });
+  // ── /edit-routing ──
+
+  // ── line-sheet ──
+  /**
+   * „Pievienot punktu šeit” on the line's sheet (lib/map/line-sheet.ts): a
+   * pass-through point exactly on the line at the tapped spot, in the leg it
+   * is in. The line already rides through it, so nothing is routed — one
+   * commit, one step of the undo, the line identical.
+   */
+  function dropPassHere(spot: { lat: number; lon: number; alongMeters: number }) {
+    if (!plan || !result || !route || !ridePlaces || commitWaiter.current) return;
+    const baseLine = edited?.coordinates ?? (route.geometry.coordinates as Point[]);
+    const next = passOnLine(ridePlaces, baseLine, spot);
+    if ("error" in next) {
+      track("route_edit_failed", { reason: next.error });
+      setEditNote(next.error === "shape-cap" ? fi(ui.shapeCapNote, { n: MAX_SHAPE_POINTS }) : ui.resEditFailed);
+      return;
+    }
+    // Whatever was previewed was cut from the places this changes.
+    discardProposal();
+    commitPlacesOnLine(next.places, "add-stop");
+    track("line_point_added", {});
+  }
+  // ── /line-sheet ──
 
   /**
    * One step back: the ride exactly as it was on screen before the last edit.
@@ -2110,9 +2183,15 @@ export function HomePage() {
    * cannot be made) in the notice slot, and the proposed line over the
    * dimmed ride. Only while editing.
    */
+  const wideNow = Boolean(wideAsk && proposal.phase === "refused" && proposal.token === wideAsk.token);
   const proposalNow = useMemo(
-    () => (wiring.editing ? proposalView(proposal, { routing: ui.previewRouting, delta: ui.previewDelta, deltaTitle: ui.previewDeltaTitle }, locale) : null),
-    [wiring.editing, proposal, ui.previewRouting, ui.previewDelta, ui.previewDeltaTitle, locale],
+    () => (wiring.editing ? proposalView(proposal, {
+      routing: ui.previewRouting, delta: ui.previewDelta, deltaTitle: ui.previewDeltaTitle,
+      // ── edit-guidance ── what to do, after what is happening.
+      guide: { routing: ui.guideRouting, proposed: ui.guideProposed, refused: ui.guideRefused, refusedWide: ui.guideRefusedWide },
+      wide: wideNow,
+    }, locale) : null),
+    [wiring.editing, proposal, ui, wideNow, locale],
   );
   // The last proposal that landed stays on the map while the next change
   // routes — its line, halo and numbers, with the spinner — so there is
@@ -2250,6 +2329,8 @@ export function HomePage() {
         proposal,
         // „Pārrēķināt posmu”, on offer while its refusal is shown (`askWide`).
         onWide: wideOffered ? acceptWide : undefined,
+        onPassHere: dropPassHere,
+        onRename: (from, to) => renameRef.current(from, to),
         onDone: finishEdit,
         onCancel: cancelEdit,
         status: editStatus,

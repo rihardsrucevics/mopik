@@ -101,6 +101,8 @@ export type ProposalView = {
   tone?: "routing" | "refused";
   line: Segments | null;
   changed: [number, number][];
+  /** What to do now, said after `text` with an en dash (lib/map/edit-guidance.ts): „✓ apstiprina, ✕ atmet.” */
+  guide?: string;
 };
 
 /**
