@@ -24,6 +24,40 @@ If `gh` is on `tronems`, `git push` fails with 403 — that one is loud.
 symptom is that www.mopik.eu does not change. When a deploy "did not work",
 check the account before you check the code.
 
+## Where this stands — handover, 2026-09-28
+
+**Shipping: route-editing Phase 1** (design: `docs/DESIGN-route-editing.md`,
+which also holds Phases 2–4). Every line-changing edit is now a **proposal**:
+routed in the background, drawn over the dimmed ride with a yellow halo on
+the new metres only (`lib/map/proposal-view.ts` `newStretches`), a chip
+„a → b km · ±t · atkārtoti r1 → r2 %”, and ✓ commits it without routing
+again (`lib/map/edit-proposal.ts` reducer; `home-page.tsx`
+`proposePlaces`/`commitProposal`). Points switch both ways: „Padarīt
+caurbraucamu” / „Padarīt par pieturu” (edit and planning; planning dots feed
+`plan.shapePoints`). A new point goes into its nearest leg with live
+numbering and choice chips when unsure (`lib/map/insert-leg.ts`); a
+„Pietura | Caurbraucams” chip while pending; moving a pass-through point
+onto the line asks „Vest caur šejieni” / „Izņemt punktu”. A splice that
+only a whole-span re-route can make is the rider's choice („Pārrēķināt
+posmu”) when it changes > 20 % or > 5 km. Splices now meet BRouter where it
+really starts (`meetRuns`), and an unreachable new point says „nevar
+piebraukt ~N m” instead of „neizdevās savienot”. GPX carries a Garmin
+`<rte>` (ViaPoint / ShapingPoint) from result, shared page and saved rides.
+Gates: tap for a card with the OSM type, access, km and node link; SVG
+glyphs (boom / field gate) instead of 🚪; LV/LT/EE gate data enriched with
+node ids (`scripts/enrich-gates-osm.ts`; `publish-gates.ts` keeps them).
+
+**Rider's rules added 2026-09-27/28:** every button in the map bar/column is
+always shown, disabled (grey) when it has no logic — no gaps, nothing jumps.
+Phone column ✓ ↶ +, ✕ right of the field; desktop [field][✓][↶][+][✕].
+Switches in one row at the top (TET · 📷 · Leģenda · ⓘ). Small phone map is a
+preview; editing is full screen. Inputs ≥ 16 px (iOS zoom).
+
+**Next:** the product page (`/funkcijas` etc., branch `product-page`, per-
+locale screenshots in progress), then design Phase 2 (straight legs), 3
+(drawing), 4 (stretch actions); backlog 44–46. Known: saved/shared GPX of a
+one-way ride is named „… loks”.
+
 ## Where this stands — handover, 2026-09-25 (evening)
 
 **Shipped this evening** (read the commit messages; each has its numbers):
@@ -853,6 +887,16 @@ job. The response carries `sparsePlaceData` and the panel says so out loud.
 happened on 2026-09-12; keys were restored from the production environment
 (`vercel env pull` to a temp file, then append). Pull to a temp path, never
 to `.env.local` directly.
+
+**Gate data (2026-09-28):** `public/gates/{LV,LT,EE}.json` carry each gate's
+OSM node id and `access=*` (the gate card's „Skatīt OSM” link and access line),
+added by `scripts/enrich-gates-osm.ts`; `build_gates_dataset.py` now writes
+both itself. `data/` is untracked, so any checkout's `data/gates-*.json` may be
+an older, id-less copy (the main checkout's is). `scripts/publish-gates.ts`
+therefore never downgrades: a source older than the published file is skipped
+and the published file kept; a source row without an id takes the id and
+access of the published row at the same coordinates and `barrier=*`. It prints
+what it kept or carried — read that line. `--force` is a deliberate rollback.
 
 ## BRouter runs locally
 

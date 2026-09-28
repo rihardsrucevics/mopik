@@ -13,6 +13,7 @@ import { listSaved, markSavedSeen, removeRide, decodeSaved, type SavedRide } fro
 import { decodePlanShare, planPart } from "@/lib/share/route-code";
 import { planSummary } from "@/lib/chat/ride-plan";
 import { gpxFilename } from "@/lib/gpx/filename";
+import { sharedRideGpx } from "@/lib/gpx/share-gpx";
 
 // A function of the language: the labels are shown in four, and a module
 // constant is built before one is known.
@@ -120,6 +121,8 @@ export function SavedRidesPage() {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: ride.name, coordinates: share.points, km: ride.km, places: share.startLabel ? [share.startLabel] : undefined,
+        // The same stops and `<rte>` (Via / Shaping points) as the shared page's file.
+        ...sharedRideGpx({ share, planCode: planPart(ride.code), locale, line: share.points }),
         description: `${ride.name} · ${ride.km} km · ${duration(ride.minutes)} · ${ride.unpavedPercent} % ${m.resGravelPct}\n${m.savSaved} ${savedOn(ride.savedAt, locale)} · Mopik (mopik.eu)`,
       }),
     });
