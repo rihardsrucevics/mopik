@@ -92,6 +92,17 @@ export type ProposalAction =
   /** The page committed the proposal into the ride and the history. */
   | { type: "committed" };
 
+/**
+ * Whether a landed proposal may enter the ride now. One that waits for
+ * „Tomēr braukt” (`accept`) only when that chip armed it — by its token —
+ * whatever path asks: ✓ (disabled for it anyway), a batch's confirm-all, a
+ * ✓ pressed while it routed, a whole-span proposal. `commitProposal` asks
+ * this first; the chip arms, then confirms like ✓.
+ */
+export function mayCommit(proposal: Pick<EditProposal, "accept" | "token">, armedToken: number | null): boolean {
+  return !proposal.accept || armedToken === proposal.token;
+}
+
 export const IDLE_PROPOSAL: ProposalState = { phase: "idle" };
 
 /**

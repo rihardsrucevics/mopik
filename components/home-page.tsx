@@ -77,6 +77,7 @@ import { cumulative, lineMeters, pointAtDistance } from "@/lib/routing/detour";
 import {
   IDLE_PROPOSAL,
   editDelta,
+  mayCommit,
   proposalReducer,
   type EditProposal,
   type ProposalAction,
@@ -461,6 +462,8 @@ export function HomePage() {
   };
   /** The last token issued; an answer under any other is stale and dropped. */
   /** „Pārrēķināt posmu” on offer: the refused change it would re-route as a whole span (`askWide`). */
+  /** „Tomēr braukt” pressed: the token of the warned proposal it may commit (`mayCommit`). */
+  const overrideArmed = useRef<number | null>(null);
   const [wideAsk, setWideAsk] = useState<{ token: number; change: ProposedChange } | null>(null);
   const proposalSeq = useRef(0);
   const live = useRef<LiveProposal | null>(null);
@@ -1271,6 +1274,7 @@ export function HomePage() {
   function proposePlaces(change: ProposedChange, opts: { delay?: number; confirm?: Omit<CommitWaiter, "token">; wide?: boolean } = {}) {
     stopProposalWork();
     const token = ++proposalSeq.current;
+    overrideArmed.current = null;
     setWideAsk(null);
     if (!plan || !result || !route || !ridePlaces) {
       live.current = null;
@@ -1652,6 +1656,9 @@ export function HomePage() {
   function commitProposal(proposal: EditProposal, whileRouting: boolean): boolean {
     const mine = live.current;
     if (!plan || !route || !mine || mine.token !== proposal.token || !mine.landed || mine.routeId !== route.id || mine.base !== (edited?.segments ?? route.segments)) return false;
+    // A warned proposal enters the ride only through „Tomēr braukt” (`mayCommit`).
+    if (!mayCommit(proposal, overrideArmed.current)) return false;
+    overrideArmed.current = null;
     const { addedAt, runs, startedAt } = mine.landed;
     const next = proposal.ride;
     setEditsFor((prev) => {
@@ -1698,6 +1705,7 @@ export function HomePage() {
    */
   function discardProposal() {
     stopProposalWork();
+    overrideArmed.current = null;
     setWideAsk(null);
     const token = proposalSeq.current;
     proposalSeq.current += 1;
@@ -2374,6 +2382,12 @@ export function HomePage() {
         proposal,
         // „Pārrēķināt posmu”, on offer while its refusal is shown (`askWide`).
         onWide: wideOffered ? acceptWide : undefined,
+        // „Tomēr braukt”: arms the shown warned proposal; the chip then confirms it like ✓.
+        onOverride: (commitNow) => {
+          const s = proposalRef.current;
+          overrideArmed.current = s.phase === "proposed" && s.proposal.accept ? s.proposal.token : null;
+          if (commitNow && s.phase === "proposed" && overrideArmed.current !== null) commitProposal(s.proposal, false);
+        },
         onDone: finishEdit,
         onCancel: cancelEdit,
         status: editStatus,

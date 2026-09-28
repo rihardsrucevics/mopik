@@ -213,6 +213,12 @@ export type RideEdit = {
    * the proposal. Absent unless it is on offer.
    */
   onWide?: () => void;
+  /**
+   * „Tomēr braukt” on a warned proposal: arms it (the page's `mayCommit`),
+   * and the chip then confirms it the way ✓ would. Without it nothing
+   * commits a warned proposal.
+   */
+  onOverride?: (commitNow: boolean) => void;
 };
 
 export function RideComposer({ initialPlan, initialPlaces, profile, onProfileChange, busy: busyProp, onGenerate, onUseChat, onPlacesChange, map, mapShown: mapOnPage = false, onPickModeChange, pickPoint, onMapControlsChange, edit }: {
@@ -2507,7 +2513,10 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
             if ("kind" in act) h?.switchKind(act.kind);
             else if ("leg" in act) h?.chooseLeg(act.leg);
             else if ("wide" in act) h?.wide();
-            else if ("override" in act) pending?.onConfirm?.();
+            // With the mark still pending, confirmed as ✓ would (the composer
+            // lets the mark go); once ✓ already let it go (pressed while it
+            // routed), the page commits the armed proposal itself.
+            else if ("override" in act) { const confirm = pending?.onConfirm; edit?.onOverride?.(!confirm); confirm?.(); }
             else h?.moveChoice(act.remove);
           },
         })),
