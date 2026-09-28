@@ -30,37 +30,45 @@ import { useProposalRefused } from "@/components/map/proposal-layer";
 /**
  * ✓ in slot 3, desktop row and phone column alike (Phase 1 preview, B4).
  *
+ * Always drawn, in every state (rider, 2026-09-28: every button of the bar
+ * and the column is always there — never hidden, never invisible; one with
+ * nothing to do is disabled, so there are no gaps and each button is always
+ * where the thumb expects it):
+ *
  * - `confirmBusy` — the proposal is still routing: a spinner in the SAME
- *   button, still pressable (a press confirms it the moment it lands), named
- *   `previewConfirmQueued`.
+ *   button, enabled (orange), still pressable (a press confirms it the moment
+ *   it lands), named `previewConfirmQueued`.
  * - A refused proposal — disabled, named `previewConfirmRefused`; the reason
  *   is the chip in the notice slot.
+ * - Nothing pending, or the off-road verdict in the bar — disabled.
  * - Otherwise the mark's own `confirmLabel` / `onConfirm`, as before.
  *
- * Never `hidden`: the slot keeps its place in every state. On the phone a ✓
- * with nothing to do (the routable-point check in flight) is `invisible`,
- * the column's stable-slot rule; on the desktop it is dimmed, as it was.
+ * Disabled is a neutral grey fill with a grey icon, not a faded orange:
+ * orange means it can be pressed.
  */
+const SLOT_DISABLED = "disabled:cursor-default disabled:border-stone-200 disabled:bg-stone-200 disabled:text-stone-400 disabled:shadow-none disabled:hover:bg-stone-200";
+
 function ConfirmSlot({ pending, round, phone = false, "data-slot": slot }: {
-  pending: MapPendingMark;
+  pending: MapPendingMark | null;
   round: string;
   phone?: boolean;
   "data-slot": "3";
 }) {
   const [locale] = useLocale();
   const m = messages(locale);
-  const refused = useProposalRefused();
-  const busy = !refused && Boolean(pending.confirmBusy);
-  const onConfirm = refused ? null : pending.onConfirm;
-  const label = refused ? m.previewConfirmRefused : busy ? m.previewConfirmQueued : pending.confirmLabel;
-  const idle = !onConfirm && !busy && !refused;
+  const refused = useProposalRefused() && Boolean(pending);
+  const idle = !pending || Boolean(pending.offRoad);
+  const busy = !refused && !idle && Boolean(pending?.confirmBusy);
+  const onConfirm = refused || idle ? null : pending!.onConfirm;
+  const label = !pending ? m.pickOnMapConfirm
+    : pending.offRoad ? pending.offRoad.title
+    : refused ? m.previewConfirmRefused : busy ? m.previewConfirmQueued : pending.confirmLabel;
   const icon = phone ? "size-6" : "size-5";
   return (
-    <button type="button" onClick={onConfirm ?? undefined} disabled={!onConfirm} data-slot={slot}
-      data-confirm={refused ? "refused" : busy ? "busy" : "ready"} aria-busy={busy || undefined}
+    <button type="button" onClick={onConfirm ?? undefined} disabled={!onConfirm} aria-disabled={!onConfirm || undefined} data-slot={slot}
+      data-confirm={refused ? "refused" : busy ? "busy" : onConfirm ? "ready" : "idle"} aria-busy={busy || undefined}
       aria-label={label} title={label}
-      aria-hidden={(phone && idle) || undefined} tabIndex={phone && idle ? -1 : undefined}
-      className={`${round} bg-[#f56300] text-white transition hover:bg-[#d85600] disabled:opacity-60 disabled:hover:bg-[#f56300] ${phone && idle ? "invisible" : ""}`}>
+      className={`${round} border border-[#f56300] bg-[#f56300] text-white transition hover:bg-[#d85600] ${SLOT_DISABLED}`}>
       {busy
         ? <LoaderCircle aria-hidden="true" className={`${icon} animate-spin`} />
         : <Check aria-hidden="true" className={icon} />}
@@ -126,7 +134,7 @@ export type MapPendingMark = {
   /**
    * Preview before commit (Phase 1): the proposal is still routing. ✓ spins
    * in its own slot and stays pressable — a press confirms it when it lands.
-   * The slot never moves or disappears for it (`invisible`, never `hidden`).
+   * The slot never moves or disappears for it — no slot ever does.
    */
   confirmBusy?: boolean;
   cancelLabel: string;
@@ -2029,17 +2037,15 @@ const SURFACE_COLOR_EXPR: maplibregl.ExpressionSpecification = [
  * slots, counted from the bottom, so nothing ever jumps (rider, 2026-09-27:
  * "one moment there's an X in the left corner, the next there isn't"):
  *
- *   3 (top)    ✓   only while something is pending and Confirm can act
+ *   3 (top)    ✓   enabled while something is pending and Confirm can act
  *   2          ↶   the batch's own while pending, the history's otherwise
  *   1 (bottom) ✕ while something is pending, „+” when idle — one slot, the
  *              content swapped, so the two never show together
  *
- * A slot that has nothing to do right now keeps its place (`invisible`, which
- * also takes no taps), so ✓ appearing or going never moves ↶ or ✕, and ↶
- * going never drops ✓ onto it. The column is `flex-col-reverse`: DOM order is
- * bottom-up, and what is absent at the top leaves empty map, not a gap
- * between controls. While the field has focus and nothing is pending, „+” and
- * ↶ stand aside (still in place) for the field's suggestions.
+ * Every slot is drawn in every state (rider, 2026-09-28): one with nothing to
+ * do is disabled — grey, `aria-disabled`, not pressable — never hidden and
+ * never `invisible`, so there are no gaps and nothing moves. The column is
+ * `flex-col-reverse`: DOM order is bottom-up.
  *
  * The desktop draws the same controls in the row instead (`md:` above).
  */
@@ -2081,16 +2087,18 @@ function MapSwitch({ on, onToggle, label, name, swatch, labelClass = "" }: {
 function DesktopBar({ controls }: { controls: MapControls }) {
   const pending = controls.pending;
   const round = "flex size-10 shrink-0 items-center justify-center rounded-full shadow-sm";
-  const plain = `${round} border border-[#ececf0] bg-white/95 backdrop-blur transition-colors hover:bg-white disabled:hover:bg-white/95`;
+  const plain = `${round} border border-[#ececf0] bg-white/95 backdrop-blur transition-colors hover:bg-white ${SLOT_DISABLED}`;
   const undo = pending ? pending.undo ? { label: pending.undo.label, onUndo: pending.undo.onUndo as (() => void) | null } : null : controls.undo ?? null;
+  const [locale] = useLocale();
+  const undoLabel = undo?.label ?? messages(locale).mapUndo;
   return (
     <div data-desktop-bar className="flex shrink-0 items-center gap-1.5 max-md:hidden">
       {/* ── P1-D: desktop-confirm ── */}
-      {pending && !pending.offRoad && <ConfirmSlot pending={pending} round={round} data-slot="3" />}
+      <ConfirmSlot pending={pending} round={round} data-slot="3" />
       {/* ── /P1-D: desktop-confirm ── */}
-      <button type="button" onClick={undo?.onUndo ?? undefined} disabled={!undo?.onUndo} data-slot="2"
-        aria-label={undo?.label} title={undo?.label}
-        className={`${plain} text-stone-700 disabled:text-stone-300 ${undo ? "" : "invisible"}`}>
+      <button type="button" onClick={undo?.onUndo ?? undefined} disabled={!undo?.onUndo} aria-disabled={!undo?.onUndo || undefined} data-slot="2"
+        aria-label={undoLabel} title={undoLabel}
+        className={`${plain} text-stone-700`}>
         <Undo2 aria-hidden="true" className="size-4" />
       </button>
       {pending ? (
@@ -2099,10 +2107,10 @@ function DesktopBar({ controls }: { controls: MapControls }) {
           <X aria-hidden="true" className="size-5" />
         </button>
       ) : (
-        <button type="button" onClick={controls.onAddStop ?? undefined} disabled={!controls.onAddStop} data-slot="1"
+        <button type="button" onClick={controls.onAddStop ?? undefined} disabled={!controls.onAddStop} aria-disabled={!controls.onAddStop || undefined} data-slot="1"
           aria-label={controls.onAddStop ? controls.addStopLabel : controls.addStopFullLabel}
           title={controls.onAddStop ? controls.addStopLabel : controls.addStopFullLabel}
-          className={`${plain} text-[#bd4b00] disabled:text-stone-400`}>
+          className={`${plain} text-[#bd4b00]`}>
           <Plus aria-hidden="true" className="size-5" />
         </button>
       )}
@@ -2113,9 +2121,10 @@ function DesktopBar({ controls }: { controls: MapControls }) {
 function PhoneColumn({ controls }: { controls: MapControls }) {
   const pending = controls.pending;
   const round = "flex size-14 shrink-0 items-center justify-center rounded-full shadow-md";
-  const plain = `${round} border border-[#ececf0] bg-white/95 backdrop-blur transition-colors hover:bg-white`;
-  const idleAside = pending ? "" : "group-has-[input:focus]:invisible";
+  const plain = `${round} border border-[#ececf0] bg-white/95 backdrop-blur transition-colors hover:bg-white ${SLOT_DISABLED}`;
   const undo = pending ? pending.undo ? { label: pending.undo.label, onUndo: pending.undo.onUndo as (() => void) | null } : null : controls.undo ?? null;
+  const [locale] = useLocale();
+  const undoLabel = undo?.label ?? messages(locale).mapUndo;
   return (
     <div data-phone-column className="absolute bottom-full right-0 mb-2 flex flex-col-reverse gap-2 md:hidden">
       {pending ? (
@@ -2124,20 +2133,20 @@ function PhoneColumn({ controls }: { controls: MapControls }) {
           <X aria-hidden="true" className="size-6" />
         </button>
       ) : (
-        <button type="button" onClick={controls.onAddStop ?? undefined} disabled={!controls.onAddStop} data-slot="1"
+        <button type="button" onClick={controls.onAddStop ?? undefined} disabled={!controls.onAddStop} aria-disabled={!controls.onAddStop || undefined} data-slot="1"
           aria-label={controls.onAddStop ? controls.addStopLabel : controls.addStopFullLabel}
           title={controls.onAddStop ? controls.addStopLabel : controls.addStopFullLabel}
-          className={`${plain} text-[#bd4b00] disabled:invisible ${idleAside}`}>
+          className={`${plain} text-[#bd4b00]`}>
           <Plus aria-hidden="true" className="size-7" />
         </button>
       )}
-      <button type="button" onClick={undo?.onUndo ?? undefined} disabled={!undo?.onUndo} data-slot="2"
-        aria-label={undo?.label} title={undo?.label} aria-hidden={!undo?.onUndo || undefined} tabIndex={undo?.onUndo ? undefined : -1}
-        className={`${plain} text-stone-700 disabled:invisible ${idleAside}`}>
+      <button type="button" onClick={undo?.onUndo ?? undefined} disabled={!undo?.onUndo} aria-disabled={!undo?.onUndo || undefined} data-slot="2"
+        aria-label={undoLabel} title={undoLabel}
+        className={`${plain} text-stone-700`}>
         <Undo2 aria-hidden="true" className="size-6" />
       </button>
       {/* ── P1-D: phone-confirm ── */}
-      {pending && !pending.offRoad && <ConfirmSlot pending={pending} round={round} phone data-slot="3" />}
+      <ConfirmSlot pending={pending} round={round} phone data-slot="3" />
       {/* ── /P1-D: phone-confirm ── */}
     </div>
   );

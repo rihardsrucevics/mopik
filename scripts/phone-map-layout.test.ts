@@ -30,9 +30,34 @@ test("the right column: ✕ or „+” in one bottom slot, ↶ above, ✓ on top
   assert.ok(i1 > 0 && i1 < i2 && i2 < i3, "slots in bottom-up order");
   // ✕ and „+” are the two faces of slot 1, never both.
   assert.match(col, /\{pending \? \(\s*<button[^>]*onClick=\{pending\.onCancel\} data-slot="1"/);
-  // A slot with nothing to do stays in place, invisible — never removed.
-  assert.match(col, /disabled:invisible/);
-  assert.doesNotMatch(col, /disabled:hidden/);
+});
+
+/** Class strings in a slice of JSX, so `aria-hidden` never counts as `hidden`. */
+const classesOf = (jsx: string): string => [...jsx.matchAll(/className=\{?[`"]([^`"]*)[`"]/g)].map((x) => x[1]).join(" ");
+
+test("every slot of the bar and the column is always rendered: never conditional, never hidden or invisible (rider, 2026-09-28)", () => {
+  const bar = routeMap.slice(routeMap.indexOf("function DesktopBar"), routeMap.indexOf("function PhoneColumn"));
+  const col = routeMap.slice(routeMap.indexOf("function PhoneColumn"), routeMap.indexOf("export function RouteMap("));
+  const confirm = routeMap.slice(routeMap.indexOf("function ConfirmSlot"), routeMap.indexOf("// ── /P1-D: imports ──"));
+  for (const [name, jsx] of [["desktop bar", bar], ["phone column", col]] as const) {
+    // ✓ in slot 3 unconditionally — pending or not, off-road verdict or not.
+    assert.match(jsx, /\n\s*<ConfirmSlot pending=\{pending\} round=\{round\}( phone)? data-slot="3" \/>/, `${name}: ✓ always drawn`);
+    // ↶ in slot 2 unconditionally, always labelled.
+    assert.match(jsx, /\n\s*<button type="button" onClick=\{undo\?\.onUndo \?\? undefined\} disabled=\{!undo\?\.onUndo\} aria-disabled=\{!undo\?\.onUndo \|\| undefined\} data-slot="2"\s*aria-label=\{undoLabel\}/, `${name}: ↶ always drawn`);
+    // Slot 1 is „+” or ✕ — one of the two faces, never neither.
+    assert.match(jsx, /\{pending \? \(\s*<button[^>]*onClick=\{pending\.onCancel\} data-slot="1"[\s\S]*?\) : \(\s*<button[^>]*data-slot="1"/, `${name}: slot 1 always drawn`);
+    // (The row's own `max-md:hidden` / the column's `md:hidden` pick the width, not a slot.)
+    assert.doesNotMatch(classesOf(jsx).replace(/(^|\s)(max-)?md:hidden(?=\s|$)/g, " "), /(^|[\s:])(invisible|hidden)(\s|$)/, `${name}: no slot hidden or invisible`);
+    assert.doesNotMatch(jsx, /aria-hidden=\{!/, `${name}: no slot hidden from screen readers`);
+  }
+  assert.doesNotMatch(classesOf(confirm) + confirm.replace(/aria-hidden="true"/g, ""), /invisible|(^|[\s:"`])hidden(\s|$|["`])/, "✓ is never hidden or invisible");
+  // Disabled reads as disabled: grey fill, grey icon — not a faded orange.
+  assert.match(routeMap, /const SLOT_DISABLED = "[^"]*disabled:bg-stone-200[^"]*disabled:text-stone-400/);
+  assert.doesNotMatch(confirm, /disabled:opacity-/);
+  assert.match(confirm, /\$\{SLOT_DISABLED\}/);
+  assert.match(bar, /\$\{SLOT_DISABLED\}/);
+  assert.match(col, /\$\{SLOT_DISABLED\}/);
+  assert.match(confirm, /aria-disabled=\{!onConfirm \|\| undefined\}/);
 });
 
 test("the bar is at the bottom at every width: field, then fixed slots (desktop row / phone column)", () => {
@@ -96,22 +121,21 @@ test("a busy ✓ keeps slot 3: a spinner in the same button, still pressable, ne
   const col = routeMap.slice(routeMap.indexOf("function PhoneColumn"), routeMap.indexOf("export function RouteMap("));
   // Both bars draw the one ✓ in slot 3, whatever its state — not only when
   // Confirm can act, and not swapped for another element while busy.
-  assert.match(bar, /\{pending && !pending\.offRoad && <ConfirmSlot pending=\{pending\} round=\{round\} data-slot="3" \/>\}/);
-  assert.match(col, /\{pending && !pending\.offRoad && <ConfirmSlot pending=\{pending\} round=\{round\} phone data-slot="3" \/>\}/);
+  assert.match(bar, /<ConfirmSlot pending=\{pending\} round=\{round\} data-slot="3" \/>/);
+  assert.match(col, /<ConfirmSlot pending=\{pending\} round=\{round\} phone data-slot="3" \/>/);
   // One <button>, one data-slot, the icon swapped inside it.
   assert.equal(confirmSlot.match(/<button /g)?.length, 1);
   assert.match(confirmSlot, /<button [^>]*data-slot=\{slot\}/);
   assert.match(confirmSlot, /busy\s*\? <LoaderCircle [^>]*animate-spin/);
   // Busy is still pressable: only a missing onConfirm or a refusal disables.
-  assert.match(confirmSlot, /const onConfirm = refused \? null : pending\.onConfirm;/);
+  assert.match(confirmSlot, /const onConfirm = refused \|\| idle \? null : pending!\.onConfirm;/);
   assert.match(confirmSlot, /disabled=\{!onConfirm\}/);
   assert.match(confirmSlot, /busy \? m\.previewConfirmQueued/);
   assert.match(confirmSlot, /refused \? m\.previewConfirmRefused/);
-  // Never hidden; `invisible` only on the phone, the column's own rule.
+  // Never hidden, never invisible (rider, 2026-09-28).
   // (The desktop row's own `max-md:hidden` is the row itself, not a slot.)
   const fences = [bar, col].map((x) => x.slice(x.indexOf("── P1-D:"), x.indexOf("── /P1-D:"))).join("\n");
-  for (const jsx of [confirmSlot, fences]) assert.doesNotMatch(classNames(jsx) + " " + jsx.replace(/aria-hidden/g, ""), /(^|[\s:"`])hidden(\s|$|["`])/);
-  assert.match(confirmSlot, /\$\{phone && idle \? "invisible" : ""\}/);
+  for (const jsx of [confirmSlot, fences]) assert.doesNotMatch(classNames(jsx) + " " + jsx.replace(/aria-hidden/g, ""), /(^|[\s:"`])(hidden|invisible)(\s|$|["`])/);
 });
 
 test("the proposal chip renders in the notice slot, above the bar and clear of the right column", () => {
