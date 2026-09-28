@@ -83,8 +83,9 @@ type GateFile = {
   builtAt?: string;
   barrierKinds?: string[];
   highwayKinds?: string[];
-  /** [lon, lat, barrierIndex, highwayIndex] */
-  gates?: [number, number, number, number][];
+  accessKinds?: string[];
+  /** [lon, lat, barrierIndex, highwayIndex, nodeId?, accessIndex?] — see `lib/geo/gates.ts` */
+  gates?: [number, number, number, number, number?, number?][];
 };
 
 function round6(n: number): number {

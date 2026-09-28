@@ -161,7 +161,25 @@ export type RouteSegmentProperties = {
    * of the stretches it kept. Present whenever `gates` is.
    */
   gatePoints?: [number, number][];
+  /**
+   * What OSM says about each of those gates — same length and order as
+   * `gatePoints`, entry `i` describing point `i`. Only explicit tags: the
+   * `barrier=*` value, the node id and the node's own `access=*` where the
+   * published file carries them. Absent on segments built before the gate
+   * card existed (a saved ride), which then shows the gate without them.
+   */
+  gateInfo?: GateInfo[];
   distanceMeters: number;
+};
+
+/** One gate's OSM facts, for the gate card. */
+export type GateInfo = {
+  /** `barrier=*` verbatim: gate, lift_gate, swing_gate, chain, bollard, cattle_grid */
+  barrier: string;
+  /** the OSM node id, for the "Skatīt OSM" link */
+  id?: number;
+  /** the node's `access=*` verbatim, only where OSM tags one */
+  access?: string;
 };
 
 export type RouteMix = {

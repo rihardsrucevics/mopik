@@ -23,6 +23,8 @@ import { nearestUnder } from "@/lib/map/pin-hit";
 import { neighboursAlong } from "@/lib/map/point-selection";
 import type { ProposalView } from "@/lib/map/edit-proposal";
 import { useProposalLayer } from "@/components/map/proposal-layer";
+import { gatesAlong, gateHighlightLine, type GateOnRide } from "@/lib/map/gates-along";
+import { gateAtLabel, gateCardHtml, gateGlyphFor, gateIconSvg, type GateGlyph } from "@/components/gate-card";
 // ── P1-D: imports ──
 import { LoaderCircle } from "lucide-react";
 import { useProposalRefused } from "@/components/map/proposal-layer";
@@ -798,18 +800,17 @@ const BADGE_KINDS: WarningKind[] = ["unverified", "trail"];
 const SHOW_GATE_MARKERS = true;
 
 /**
- * 🚪, and why it is a door rather than 🚧 or ⛩️.
+ * The gate glyph's size inside its 20 px pill.
  *
- * 🚧 is the roadworks barrier: it says "closed, works ahead", which is the one
- * thing a Latvian forest gate usually is not — it stands open more often than
- * not, and that is exactly why item 12 reports gates instead of avoiding them.
- * ⛩️ is a Shinto torii; it reads as a gateway but means a shrine, and its
- * crossbeams turn to mush at this size. 🚪 is a rectangle with a handle: almost
- * no internal detail, so it survives being drawn at 13 px in a 20 px pill, and
- * it means the thing the card says — something across your way that you can
- * open. Same glyph in the RISKI row (`GATE_ICON` in `result-panel.tsx`).
+ * Not an emoji any more: the rider replaced the 🚪 with two small drawings of
+ * our own, picked by `barrier=*` — a boom barrier (šlagbaums) for `lift_gate`
+ * and `chain`, a field gate for everything else (`gateIconSvg` in
+ * `components/gate-card.tsx` has both and why). 🚪 said "gate" but not which
+ * kind, and the kind is what the gate card is about. The same drawing heads
+ * the card and marks the gate in the segment card and in RISKI. The warning
+ * badges stay ⚠️ and 🔥 — only the gate changed.
  */
-const GATE_EMOJI = "🚪";
+const GATE_GLYPH_PX = 14;
 
 /**
  * Most gate markers one route may carry.
@@ -869,27 +870,76 @@ function RowBadge({ pin, label }: { pin: NonNullable<MapControls["pendingPin"]>;
   );
 }
 
-function gateElement(title: string): HTMLElement {
+/**
+ * The finger's target round a gate pill, in CSS px.
+ *
+ * The pill is 20 px and stays so; a phone tap on it missed as often as not.
+ * The button is this big and transparent, with the pill drawn in its middle,
+ * so a tap anywhere near the gate glyph is the gate's — and, being a marker, never
+ * reaches the line underneath (`onMarker` keeps a drag from grabbing it too).
+ */
+const GATE_HIT_PX = 44;
+
+function gateElement(title: string, glyph: GateGlyph): HTMLElement {
   const el = document.createElement("button");
   el.type = "button";
   el.title = title;
   el.setAttribute("aria-label", title);
+  el.dataset.gate = "";
   el.style.cssText =
     "display:flex;align-items:center;justify-content:center;" +
-    "width:20px;height:20px;border-radius:10px;" +
-    "background:rgba(255,255,255,0.92);box-shadow:0 1px 2px rgba(0,0,0,0.2);" +
-    "line-height:0;cursor:pointer;user-select:none;border:0;padding:0;opacity:0.9;" +
+    `width:${GATE_HIT_PX}px;height:${GATE_HIT_PX}px;background:transparent;` +
+    "line-height:0;cursor:pointer;user-select:none;border:0;padding:0;" +
+    "-webkit-tap-highlight-color:transparent;touch-action:manipulation;" +
     // Under the warning badges (1) and the stops (2).
     "z-index:0";
   el.innerHTML =
-    `<span aria-hidden="true" style="display:inline-flex;align-items:center;` +
-    `justify-content:center;width:14px;height:14px;font-size:13px;line-height:1">` +
-    `${GATE_EMOJI}</span>`;
+    `<span aria-hidden="true" style="display:flex;align-items:center;justify-content:center;` +
+    `width:20px;height:20px;border-radius:10px;` +
+    `background:rgba(255,255,255,0.92);box-shadow:0 1px 2px rgba(0,0,0,0.2);opacity:0.9">` +
+    `${gateIconSvg(glyph, GATE_GLYPH_PX)}</span>`;
   return el;
 }
 
-/** One gate to mark, and the run it belongs to so a click can open that card. */
-type GateMark = { point: [number, number]; segmentId: number | undefined };
+/**
+ * The yellow highlight round one tapped gate: ~50 m of the line, not the
+ * stretch it is on. Its own small source and layer, added the first time a
+ * gate is tapped and slotted just above `route-highlight`, so it paints the
+ * same way the segment highlight does.
+ */
+const GATE_HIGHLIGHT_ID = "gate-highlight";
+
+function showGateHighlight(map: maplibregl.Map, line: [number, number][]): void {
+  const data: GeoJSON.FeatureCollection = {
+    type: "FeatureCollection",
+    features: line.length >= 2
+      ? [{ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: line } }]
+      : [],
+  };
+  const source = map.getSource(GATE_HIGHLIGHT_ID) as maplibregl.GeoJSONSource | undefined;
+  if (source) { source.setData(data); return; }
+  if (!map.getLayer("route-highlight")) return;
+  map.addSource(GATE_HIGHLIGHT_ID, { type: "geojson", data });
+  const layers = map.getStyle().layers ?? [];
+  const above = layers[layers.findIndex((l) => l.id === "route-highlight") + 1]?.id;
+  map.addLayer({
+    id: GATE_HIGHLIGHT_ID,
+    type: "line",
+    source: GATE_HIGHLIGHT_ID,
+    layout: { "line-cap": "round", "line-join": "round" },
+    paint: {
+      "line-color": HIGHLIGHT_COLOR,
+      "line-width": HIGHLIGHT_WIDTH,
+      "line-opacity": 0.6,
+      "line-blur": 1,
+    },
+  }, above);
+}
+
+function clearGateHighlight(map: maplibregl.Map): void {
+  const source = map.getSource(GATE_HIGHLIGHT_ID) as maplibregl.GeoJSONSource | undefined;
+  source?.setData({ type: "FeatureCollection", features: [] });
+}
 
 /**
  * Every gate on the route, thinned to `GATE_MARKER_MAX`.
@@ -898,15 +948,9 @@ type GateMark = { point: [number, number]; segmentId: number | undefined };
  * are all in its last forest would otherwise show none of them. The count the
  * rider reads is the panel's, which is never thinned.
  */
-function gateMarksFor(segments: GeoJSON.FeatureCollection): GateMark[] {
-  const all: GateMark[] = [];
-  for (const f of segments.features) {
-    const props = (f.properties ?? {}) as SegmentProps;
-    const points = props.gatePoints;
-    if (!points?.length) continue;
-    const id = props[SEGMENT_ID];
-    for (const point of points) all.push({ point, segmentId: typeof id === "number" ? id : undefined });
-  }
+function gateMarksFor(segments: GeoJSON.FeatureCollection<GeoJSON.LineString>): GateOnRide[] {
+  // Each with its position along the ride, which the gate card names.
+  const all = gatesAlong(segments.features as Parameters<typeof gatesAlong>[0]);
   if (all.length <= GATE_MARKER_MAX) return all;
   const step = Math.ceil(all.length / GATE_MARKER_MAX);
   return all.filter((_, i) => i % step === 0).slice(0, GATE_MARKER_MAX);
@@ -1476,6 +1520,7 @@ function segmentInfoHtml(
   locale: UiLocale,
   props: SegmentProps,
   meters: number,
+  gates: GateOnRide[] = [],
 ): string {
   const grade = gradeBucket(props.trackGrade);
 
@@ -1511,14 +1556,19 @@ function segmentInfoHtml(
   // line says what that means for the riding, which the panel's bare number
   // cannot. Above the TET row and below the warnings: access first, then what
   // is on the road, then what the road is.
+  // One row per gate, named by its kind and its kilometre („Vārti 37,2 km”),
+  // rather than "this stretch has N gates". The count is the fallback for a
+  // caller that could not place them.
   const gateCount = props.gates ?? 0;
-  if (gateCount > 0) {
+  const gateRows: [string, GateGlyph][] = gates.length
+    ? gates.map((g) => [gateAtLabel(m, locale, g), gateGlyphFor(g.info?.barrier)])
+    : gateCount > 0 ? [[fi(m.segGates, { n: gateCount }), "field"]] : [];
+  for (const [row, glyph] of gateRows) {
     flags.push(
-      `<div style="display:flex;align-items:flex-start;gap:6px">` +
+      `<div style="display:flex;align-items:center;gap:6px">` +
       `<span aria-hidden="true" style="display:inline-flex;align-items:center;` +
-      `justify-content:center;width:${WARNING_ICON_PX}px;flex:none;` +
-      `font-size:${WARNING_EMOJI_FONT_PX}px;line-height:1">${GATE_EMOJI}</span>` +
-      `<span>${esc(fi(m.segGates, { n: gateCount }))}</span></div>`
+      `justify-content:center;width:${WARNING_ICON_PX}px;flex:none">${gateIconSvg(glyph, GATE_GLYPH_PX)}</span>` +
+      `<span>${esc(row)}</span></div>`
     );
   }
 
@@ -2813,12 +2863,31 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
       gateMarkersRef.current =
         enriched && SHOW_GATE_MARKERS
           ? gateMarksFor(enriched).map((g) => {
-              const el = gateElement(m.resGatesRow);
+              const el = gateElement(gateAtLabel(m, locale, g), gateGlyphFor(g.info?.barrier));
               el.addEventListener("click", (event) => {
                 // Same reason the badges stop it: otherwise the click also
                 // reaches the map and opens a second card underneath this one.
                 event.stopPropagation();
-                if (typeof g.segmentId === "number") openCardRef.current(g.point, g.segmentId);
+                // The gate's own card and ~50 m of highlight — not the
+                // stretch's. Tapping the same gate again puts both away.
+                const key = `gate:${g.point[0]},${g.point[1]}`;
+                const again = highlightKeyRef.current === key;
+                clearHighlightRef.current();
+                if (again) return;
+                const popup = new maplibregl.Popup({ offset: 14, maxWidth: "240px", closeButton: true })
+                  .setLngLat(g.point)
+                  .setHTML(gateCardHtml(m, locale, g))
+                  .addTo(map);
+                // Above the stop pins (z-index 2), which would otherwise sit
+                // on the card when a stop is near the gate.
+                popup.getElement().style.zIndex = "3";
+                popup.on("close", () => {
+                  if (highlightKeyRef.current === key) highlightKeyRef.current = null;
+                  clearGateHighlight(map);
+                });
+                infoPopupRef.current = popup;
+                highlightKeyRef.current = key;
+                showGateHighlight(map, gateHighlightLine(featuresRef.current, g.alongMeters));
               });
               return new maplibregl.Marker({ element: el }).setLngLat(g.point).addTo(map);
             })
@@ -3814,6 +3883,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
     const clearHighlight = () => {
       highlightKeyRef.current = null;
       if (map?.getLayer("route-highlight")) map.setFilter("route-highlight", HIGHLIGHT_NONE);
+      if (map) clearGateHighlight(map);
       infoPopupRef.current?.remove();
       infoPopupRef.current = null;
     };
@@ -3905,7 +3975,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
       infoPopupRef.current?.remove();
       const popup = new maplibregl.Popup({ offset: 12, maxWidth: "260px", closeButton: true })
         .setLngLat(lngLat)
-        .setHTML(segmentInfoHtml(m, locale, props, meters))
+        .setHTML(segmentInfoHtml(m, locale, props, meters, gatesAlong(featuresRef.current).filter((g) => g.segmentIndex === id)))
         .addTo(map);
       infoPopupRef.current = popup;
       // The card and the highlight are one gesture: the rider should see which

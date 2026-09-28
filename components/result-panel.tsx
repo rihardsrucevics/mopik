@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useLocale } from "@/lib/i18n/use-locale";
+import { GateIcon, GateRiskList } from "@/components/gate-card";
+import { gatesAlong } from "@/lib/map/gates-along";
 import { t, messages } from "@/lib/i18n/messages";
 import { fi } from "@/lib/i18n/format";
 import { ArrowLeft, ArrowUp, Download, LoaderCircle, RefreshCw } from "lucide-react";
@@ -47,26 +49,13 @@ const variantLabels = (m: ReturnType<typeof messages>): Record<string, { label: 
 
 
 /**
- * The gate glyph, and why it is a door.
- *
- * Three were weighed. 🚧 is the roadworks barrier — it means "works ahead,
- * closed", which is the one thing a Latvian forest gate usually is *not*: it
- * stands open more often than not, and the rider is being told a gate exists,
- * not that the road is shut. ⛩️ is a Shinto torii; at 14 px it reads as a
- * gateway, but it means a shrine entrance and looks like one anywhere the
- * rider might show the app.
- *
- * 🚪 is a door: a rectangle with a handle, which is legible at 14 px (the
- * RISKI row's size) precisely because it has almost no internal detail — the
- * torii's crossbeams and the barrier's diagonal stripes both turn to mush at
- * that size. And "a thing across your way that you can open" is exactly what
- * the row says: "var būt jāatver vai jāgriežas".
- *
- * Kept next to `Row` and duplicated in `route-map.tsx` and `shared-route.tsx`,
- * the way ⚠️ and 🔥 already are: the emoji are plain text and each surface
- * writes them into a different medium (JSX here, a DOM string on the map).
+ * The gate glyph in the RISKI count row: our own field-gate drawing, the one
+ * the map uses for a gate of any kind but a boom barrier (`gateIconSvg` in
+ * `components/gate-card.tsx`). It replaced 🚪 when the rider chose drawings by
+ * `barrier=*` (option D); the per-gate rows under it carry each gate's own.
+ * Also used by `shared-route.tsx`, where only the count is known.
  */
-export const GATE_ICON = "🚪";
+export const GATE_ICON = <GateIcon glyph="field" px={12} />;
 
 function duration(seconds: number): string {
   const m = Math.round(seconds / 60);
@@ -84,7 +73,7 @@ function duration(seconds: number): string {
  * read out as words. The explicit font-size keeps a colour emoji, which draws
  * wider than its type size, from outgrowing the 12 px row.
  */
-function Row({ label, value, icon }: { label: string; value: string; icon?: string }) {
+function Row({ label, value, icon }: { label: string; value: string; icon?: ReactNode }) {
   return (
     <div className="flex justify-between gap-3 py-0.5 text-xs">
       <span className="flex min-w-0 items-center gap-1 text-stone-500">
@@ -876,6 +865,12 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
                     gates", which is the `sparsePlaceData` rule again. */}
                 {(q.gateCount ?? 0) > 0 && (
                   <Row label={m.resGatesRow} value={`${q.gateCount}`} icon={GATE_ICON} />
+                )}
+                {/* …and each of them by kind and kilometre, „Vārti 37,2 km”,
+                    counted along the line the map is drawing so the list and
+                    a tapped gate's card name the same number. */}
+                {(q.gateCount ?? 0) > 0 && (
+                  <GateRiskList gates={gatesAlong((spliced?.segments ?? route.segments).features)} m={m} locale={locale} />
                 )}
               </div>
             )}
