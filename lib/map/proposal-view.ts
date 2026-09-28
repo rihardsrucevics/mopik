@@ -48,6 +48,20 @@ export function proposalView(state: ProposalState, copy: ProposalCopy, locale: U
 }
 
 /**
+ * Stale while it re-routes (rider, 2026-09-28: in a batch the chip and the
+ * halo vanished for ~0.7 s while the next stop was named and routed, then
+ * came back). While a newer change routes, the last landed proposal stays
+ * on the map — its line, its halo, its numbers — with the routing spinner
+ * in its chip; the new one replaces it the moment it lands. `landed` is the
+ * last view that had landed (no `tone`), or null. A refusal, or no proposal
+ * at all (✕, the mark gone), is shown as it is: nothing stale survives it.
+ */
+export function staleWhileRouting(landed: ProposalView | null, view: ProposalView | null): ProposalView | null {
+  if (!view || view.tone !== "routing" || !landed?.line) return view;
+  return { ...landed, tone: "routing", title: view.title };
+}
+
+/**
  * Where the spliced line is new, in metres along it: one [from, to] per
  * routed stretch. `runs` are the replaced stretches in metres along the old
  * line (`EditRun.fromMeters/toMeters`), `routedMeters` the drawn length of

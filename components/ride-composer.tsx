@@ -2344,15 +2344,20 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   // on screen only to route the next one a moment later (the page debounces
   // a stream of drags; a discard between each would break the stream up).
   const holdPropose = naming && activeRow !== null && !batch.length && !shapePending;
+  // A batch's newest stop is still being named: its change does not exist
+  // yet, and the one on screen stays until it does — a null here was the
+  // gap between two proposals (rider, 2026-09-28).
+  const batchNaming = batch.some((b) => !b.place || b.check !== "ok");
   useEffect(() => {
     const propose = proposeRef.current;
     if (!propose || holdPropose || proposeKey === proposedRef.current) return;
+    if (!proposeKey && batchNaming && proposedRef.current) return;
     const had = proposedRef.current !== "";
     proposedRef.current = proposeKey;
     if (proposeKey) { committedRef.current = false; propose(proposedChangeRef.current); return; }
     if (committedRef.current) { committedRef.current = false; return; }
     if (had) propose(null);
-  }, [proposeKey, holdPropose]);
+  }, [proposeKey, holdPropose, batchNaming]);
   /**
    * The page's answer for the pending change: ✓ spins while it routes
    * (`confirmBusy`) and stays pressable — a press then confirms it when it

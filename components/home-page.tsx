@@ -79,9 +79,10 @@ import {
   type ProposalAction,
   type ProposalState,
   type ProposedChange,
+  type ProposalView,
   type Segments,
 } from "@/lib/map/edit-proposal";
-import { changeKey, changedAlong, isKindSwitch, NOTE_JOINER, proposalView, proposeDelay, unchangedEnds } from "@/lib/map/proposal-view";
+import { changeKey, changedAlong, isKindSwitch, NOTE_JOINER, proposalView, proposeDelay, staleWhileRouting, unchangedEnds } from "@/lib/map/proposal-view";
 import type { Point } from "@/lib/geo/geometry";
 import type { PlaceRoles } from "@/lib/map/place-roles";
 import type { RideEdit } from "@/components/ride-composer";
@@ -2062,10 +2063,19 @@ export function HomePage() {
    * cannot be made) in the notice slot, and the proposed line over the
    * dimmed ride. Only while editing.
    */
-  const proposalShown = useMemo(
+  const proposalNow = useMemo(
     () => (wiring.editing ? proposalView(proposal, { routing: ui.previewRouting, delta: ui.previewDelta, deltaTitle: ui.previewDeltaTitle }, locale) : null),
     [wiring.editing, proposal, ui.previewRouting, ui.previewDelta, ui.previewDeltaTitle, locale],
   );
+  // The last proposal that landed stays on the map while the next change
+  // routes — its line, halo and numbers, with the spinner — so there is
+  // never an empty gap between two proposals (`staleWhileRouting`). Kept in
+  // state, adjusted during render as a prop-derived value is; gone at once
+  // with the proposal (✕, the mark gone) or a refusal.
+  const [landedView, setLandedView] = useState<ProposalView | null>(null);
+  if (proposalNow && !proposalNow.tone && proposalNow !== landedView) setLandedView(proposalNow);
+  if ((!proposalNow || proposalNow.tone === "refused") && landedView) setLandedView(null);
+  const proposalShown = staleWhileRouting(landedView, proposalNow);
   // The proposal owns the notice while there is one (the map puts its view
   // there); otherwise the last refusal of a ✓ whose mark is gone, then the
   // composer's own. ✓ spins in its slot while the proposal routes.

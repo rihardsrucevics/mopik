@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { formatEditDelta, IDLE_PROPOSAL, type EditProposal, type ProposalState } from "../lib/map/edit-proposal";
-import { changeKey, changedAlong, isKindSwitch, NOTE_JOINER, proposalView, proposeDelay, unchangedEnds } from "../lib/map/proposal-view";
+import { changeKey, changedAlong, isKindSwitch, NOTE_JOINER, proposalView, proposeDelay, staleWhileRouting, unchangedEnds } from "../lib/map/proposal-view";
 import { cumulative } from "../lib/routing/detour";
 import type { Point } from "../lib/geo/geometry";
 import { messages } from "../lib/i18n/messages";
@@ -140,4 +140,23 @@ test("proposeDelay: leading edge at once, a drag stream waits 250 ms", () => {
   assert.equal(proposeDelay(0, 1000), 0);
   assert.equal(proposeDelay(900, 1000), 250);
   assert.equal(proposeDelay(750, 1000), 0);
+});
+
+test("stale while it re-routes: the last landed proposal stays, with the spinner, until the next lands", () => {
+  const landed = proposalView({ phase: "proposed", proposal: proposal(["Punkts pārvietots 40 m."]), confirmNow: false }, copy, "lv")!;
+  const routing = proposalView({ phase: "routing", token: 4, how: "add-stops", confirmWhenReady: false }, copy, "lv")!;
+  const shown = staleWhileRouting(landed, routing)!;
+  assert.equal(shown.tone, "routing", "the spinner");
+  assert.equal(shown.line, landed.line, "the line stays");
+  assert.deepEqual(shown.changed, landed.changed, "and its halo");
+  assert.equal(shown.text, landed.text, "and its numbers");
+  assert.equal(shown.title, copy.routing, "said as routing");
+  // The first proposal of all: nothing stale to show.
+  assert.deepEqual(staleWhileRouting(null, routing), routing);
+  // A refusal and no proposal are shown as they are — nothing stale survives ✕.
+  const refused = proposalView({ phase: "refused", token: 4, how: "add-stops", reason: "Neizdevās." }, copy, "lv")!;
+  assert.deepEqual(staleWhileRouting(landed, refused), refused);
+  assert.equal(staleWhileRouting(landed, null), null);
+  // The next landed replaces it.
+  assert.equal(staleWhileRouting(landed, landed), landed);
 });
