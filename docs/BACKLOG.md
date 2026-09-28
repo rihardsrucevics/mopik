@@ -1533,3 +1533,50 @@ before → after and which stretches changed → ✓/✕. The new point is a
 pass-through point (34), not a stop. If no clean way exists, say so and
 keep the ride. Related: 34, 36 (tap a stretch / exclude it), 41 (route
 between points vs drawn line), 32 („Optimizēt”).
+
+## 44. Saved rides: open by tapping the card, and „Labot” for every saved ride
+
+**Rider, 2026-09-28.**
+1. In „Saglabātie” the whole ride card opens the ride — not only its
+   „Atvērt” button. (Other controls on the card, e.g. delete, keep their own
+   tap target and stop the card's tap.)
+2. Every saved ride gets „Labot”, which opens it straight in edit mode.
+   - **His own ride** (saved from his own planning): edits change his saved
+     original — the saved entry is updated in place (its id follows the new
+     code, as `saveRide` already replaces entries), with undo inside the edit
+     session as usual.
+   - **Someone else's ride** (opened from a shared link and saved): „Labot”
+     creates a **duplicate** — a new saved ride „<name> (kopija)” that he
+     edits; the sender's ride and the original saved entry stay untouched.
+   Needs an "origin" on saved rides (own / shared-from-link), set when saving;
+   rides saved before this have no origin and count as shared (safe
+   default: duplicate, never overwrite).
+
+## 45. Honest time per segment from the router
+
+**Found 2026-09-28 while checking the edit preview's time** („62,6 → 66,1 km
+· −5 min”). `applyRuns` splits the kept part of a ride by
+`segmentSpeedKmh`, which counts all asphalt as 58 km/h, while the per-way
+table that timed the ride uses 75 (primary) … 32 (streets). The charged
+time of a thrown-away stretch was off by −1…+8 min on five real rides.
+Fix: the server returns seconds per segment (a `seconds` field on the
+segments `classifyRoute` produces), carried in the share code and types, so
+an edit subtracts exactly what it removes.
+
+## 46. „Pievienot” on a sight on the map only ticks it — it is not added
+
+**Rider, 2026-09-28.** Viewing or editing his ride, he opens a sight on the
+map and taps „Pievienot”. It looks added. But the side panel's „Apskates
+vietas” list shows it merely **ticked**, still waiting for that list's own
+„Pievienot” button. Had he not opened the panel he would never know the
+sight was not in the ride. Two steps that look like one — the rider's rule
+"never ship a control that does nothing" in a subtler form.
+
+Fix direction: „Pievienot” on the map card adds the sight to the ride
+itself, through the same path as the list's button (in edit mode: a
+proposal with preview, chip and ✓/✕ like every other edit; on a result:
+the existing background detour splice). If ticking-then-adding in batches
+stays useful in the list, the map card's wording must say what it does
+(„Atzīmēt” vs „Pievienot braucienam”), and a ticked-but-not-added state must
+be visible on the map and in the bar („2 atzīmētas · Pievienot”), never only
+in the side panel.
