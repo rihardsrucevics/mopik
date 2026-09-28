@@ -1,5 +1,8 @@
 import type { UiLocale } from "@/lib/i18n/locale";
 import { formatEditDelta, type ProposalState, type ProposalView, type ProposedChange } from "@/lib/map/edit-proposal";
+import type { Point } from "@/lib/geo/geometry";
+import { cumulative } from "@/lib/routing/detour";
+import { nearestAlong } from "@/lib/routing/reroute-leg";
 
 /**
  * The page's half of preview-before-commit (docs/DESIGN-route-editing.md B4,
@@ -48,7 +51,12 @@ export function proposalView(state: ProposalState, copy: ProposalCopy, locale: U
  * each routed replacement, index for index — `applyRuns` keeps the old line
  * up to each run and puts the routed stretch in its place, in riding order.
  */
-export function changedAlong(runs: { fromMeters: number; toMeters: number }[], routedMeters: number[]): [number, number][] {
+export function changedAlong(
+  runs: { fromMeters: number; toMeters: number }[],
+  routedMeters: number[],
+  /** Per run: metres at its start and its end that ride the very road it replaced (`unchangedEnds`). */
+  ends?: ({ head: number; tail: number } | undefined)[],
+): [number, number][] {
   const order = runs.map((r, i) => ({ ...r, i })).sort((a, b) => a.fromMeters - b.fromMeters);
   const out: [number, number][] = [];
   let oldCursor = 0;
@@ -56,11 +64,43 @@ export function changedAlong(runs: { fromMeters: number; toMeters: number }[], r
   for (const run of order) {
     newCursor += Math.max(0, run.fromMeters - oldCursor);
     const length = Math.max(0, routedMeters[run.i] ?? 0);
-    out.push([newCursor, newCursor + length]);
+    const head = Math.min(length, Math.max(0, ends?.[run.i]?.head ?? 0));
+    const tail = Math.min(length - head, Math.max(0, ends?.[run.i]?.tail ?? 0));
+    out.push([newCursor + head, newCursor + length - tail]);
     newCursor += length;
     oldCursor = Math.max(oldCursor, run.toMeters);
   }
   return out;
+}
+
+/** A routed vertex this close to the road it replaced is that road. */
+export const SAME_ROAD_M = 5;
+
+/**
+ * How much of a routed stretch, from its start and from its end, rides the
+ * very road it replaced, in the same direction — metres along the routed
+ * line. An edit re-routes a window of kilometres each way round the point
+ * (`EDIT_WINDOW_M`), and the router mostly gives the same road back: halo
+ * the whole window and a 0.5 km change is drawn as 6 km of new line (rider,
+ * 2026-09-28). The halo marks what is new, so these ends are trimmed off.
+ * A stretch that is all old road comes back with `head` its whole length.
+ */
+export function unchangedEnds(routed: Point[], replaced: Point[], tolerance = SAME_ROAD_M): { head: number; tail: number } {
+  if (routed.length < 2 || replaced.length < 2) return { head: 0, tail: 0 };
+  const walk = (r: Point[], o: Point[]) => {
+    const rc = cumulative(r), oc = cumulative(o);
+    let along = 0, i = 0;
+    for (; i < r.length; i++) {
+      const n = nearestAlong(r[i], o, oc, Math.max(0, along - 1));
+      if (n.meters > tolerance) break;
+      along = n.alongMeters;
+    }
+    return i === 0 ? 0 : rc[i - 1];
+  };
+  const total = cumulative(routed)[routed.length - 1];
+  const head = walk(routed, replaced);
+  if (head >= total) return { head: total, tail: 0 };
+  return { head, tail: walk([...routed].reverse(), [...replaced].reverse()) };
 }
 
 /**

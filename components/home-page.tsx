@@ -69,7 +69,7 @@ import {
   type RidePlaces,
   type ShapeEdit,
 } from "@/lib/routing/reroute-leg";
-import { cumulative, lineMeters, pointAtDistance } from "@/lib/routing/detour";
+import { cumulative, lineMeters, pointAtDistance, sliceBetween } from "@/lib/routing/detour";
 import {
   IDLE_PROPOSAL,
   editDelta,
@@ -80,7 +80,7 @@ import {
   type ProposedChange,
   type Segments,
 } from "@/lib/map/edit-proposal";
-import { changeKey, changedAlong, isKindSwitch, proposalView, proposeDelay } from "@/lib/map/proposal-view";
+import { changeKey, changedAlong, isKindSwitch, proposalView, proposeDelay, unchangedEnds } from "@/lib/map/proposal-view";
 import type { Point } from "@/lib/geo/geometry";
 import type { PlaceRoles } from "@/lib/map/place-roles";
 import type { RideEdit } from "@/components/ride-composer";
@@ -1423,13 +1423,16 @@ export function HomePage() {
           ? (p.shape ? ui.editSameWayBackShape : ui.editSameWayBack)
           : (p.shape ? ui.editDeadEndShape : ui.editDeadEnd), { km: deadEndKm }) : "",
       ].filter(Boolean);
+      const lineCum = cumulative(line);
       const beforeRide = { distanceMeters: edited?.distanceMeters ?? route.distanceMeters, durationSeconds: edited?.durationSeconds ?? route.durationSeconds, overlap: edited?.overlap ?? route.overlap };
       const proposal: EditProposal = {
         token,
         how: planned.kind,
         before,
         ride,
-        changed: changedAlong(spliced.runs, data.runs.map((r) => lineMeters(coordinatesOf(r.segments)))),
+        // Only what is new: the ends of each stretch that ride the old road are not.
+        changed: changedAlong(spliced.runs, data.runs.map((r) => lineMeters(coordinatesOf(r.segments))), spliced.runs.map((r, i) =>
+          unchangedEnds(coordinatesOf(data.runs[i].segments), sliceBetween(line, lineCum, r.fromMeters, r.toMeters)))),
         delta: editDelta(beforeRide, ride),
         notes,
       };

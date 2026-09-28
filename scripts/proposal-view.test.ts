@@ -1,7 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { formatEditDelta, IDLE_PROPOSAL, type EditProposal, type ProposalState } from "../lib/map/edit-proposal";
-import { changeKey, changedAlong, isKindSwitch, NOTE_JOINER, proposalView, proposeDelay } from "../lib/map/proposal-view";
+import { changeKey, changedAlong, isKindSwitch, NOTE_JOINER, proposalView, proposeDelay, unchangedEnds } from "../lib/map/proposal-view";
+import { cumulative } from "../lib/routing/detour";
+import type { Point } from "../lib/geo/geometry";
 import { messages } from "../lib/i18n/messages";
 import type { EditedRide, RidePlaces } from "../lib/routing/reroute-leg";
 
@@ -81,6 +83,37 @@ test("changedAlong: two stretches, the second shifted by the first's growth; run
 
 test("changedAlong: a run from 0 (moved start)", () => {
   assert.deepEqual(changedAlong([{ fromMeters: 0, toMeters: 800 }], [300]), [[0, 300]]);
+});
+
+// A due-east road at 57° N, a vertex every 100 m.
+const east = (fromM: number, toM: number, north = 0): Point[] => {
+  const out: Point[] = [];
+  for (let m = fromM; m <= toM + 1e-6; m += 100) out.push([24 + m / (111_320 * Math.cos((57 * Math.PI) / 180)), 57 + north / 110_540]);
+  return out;
+};
+
+test("unchangedEnds: a 6 km window whose middle 600 m left the road is haloed on those 600 m only (rider, 2026-09-28)", () => {
+  // Replaced: 0–6000 m of the road. Routed: the same road to 2700 m, a
+  // detour 300 m north for 2700–3300 m, and the same road again to 6000 m.
+  const replaced = east(0, 6000);
+  const routed = [...east(0, 2700), ...east(2800, 3200, 300), ...east(3300, 6000)];
+  const { head, tail } = unchangedEnds(routed, replaced);
+  const total = cumulative(routed).at(-1)!;
+  assert.ok(Math.abs(head - 2700) < 5, `head ${head}`);
+  assert.ok(Math.abs(tail - 2700) < 5, `tail ${tail}`);
+  const [[a, b]] = changedAlong([{ fromMeters: 10_000, toMeters: 16_000 }], [total], [{ head, tail }]);
+  assert.ok(Math.abs(a - 12_700) < 5 && b - a < total - 5000, `halo ${a}–${b} of a ${Math.round(total)} m stretch`);
+});
+
+test("unchangedEnds: the same road ridden back the other way is new, and all-old road leaves no halo", () => {
+  const replaced = east(0, 3000);
+  // Out along the road to 1500 m and straight back to 0 — not the replaced direction after the turn.
+  const uturn = [...east(0, 1500), ...east(0, 1400).reverse()];
+  const { head } = unchangedEnds(uturn, replaced);
+  assert.ok(head <= 1500 + 1, `head stops at the turn: ${head}`);
+  const same = unchangedEnds(east(0, 3000), replaced);
+  const [[a, b]] = changedAlong([{ fromMeters: 0, toMeters: 3000 }], [cumulative(east(0, 3000)).at(-1)!], [same]);
+  assert.ok(b - a < 1, "nothing new, nothing haloed");
 });
 
 test("changeKey: the same rows are the same change, a moved row is not", () => {
