@@ -56,7 +56,7 @@ test("Escape goes through leaveTransient", () => {
   const start = source.indexOf('if (e.key !== "Escape") return;');
   assert.ok(start >= 0);
   const escape = source.slice(start, source.indexOf("\n  };\n", start));
-  assert.match(escape, /if \(shapePending \|\| pointSel\) \{ leaveTransient\(\); return; \}/);
+  assert.match(escape, /if \(shapePending \|\| pointSel \|\| lineSel\) \{ leaveTransient\(\); return; \}/);
   assert.match(escape, /discardBatch\(\)/);
   assert.match(escape, /leaveTransient\(\{ dropMark: true \}\)/);
   assert.doesNotMatch(escape, /cancelPicking\(\)|cancelShape\(\)/, "no exit of its own");

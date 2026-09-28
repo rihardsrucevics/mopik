@@ -92,6 +92,7 @@ import { MAX_SHAPE_POINTS, MAX_STOPS } from "@/lib/chat/ride-limits";
 import { LoaderCircle } from "lucide-react";
 // „Labot” opens the phone map full screen first: inline it is a preview.
 import { openMapFullscreen } from "@/lib/map/fullscreen";
+import { passOnLine } from "@/lib/map/line-sheet";
 
 type Retry = { stage: "chat"; messages: ChatMessage[]; plan: RidePlan | null } | { stage: "route"; messages: ChatMessage[]; plan: RidePlan };
 
@@ -1699,8 +1700,20 @@ export function HomePage() {
     };
     // `EditedRide.how` has no "demote" (yet): both switches are the undo's
     // "promote", a change of a point's kind; `point_kind_switched` says which.
+    commitPlacesOnLine(switched, "promote");
+    track("point_kind_switched", { to: op.kind === "promote" ? "stop" : "pass", mode: "edit" });
+  }
+
+  /**
+   * New places on the SAME line — a kind switch, a pass-through point dropped
+   * on the line — committed at once as one step of the undo: the ride keeps
+   * its line and numbers, only its places change.
+   */
+  function commitPlacesOnLine(next: RidePlaces, how: EditedRide["how"]) {
+    if (!plan || !route) return;
+    const baseLine = edited?.coordinates ?? (route.geometry.coordinates as Point[]);
     const keep: EditedRide = edited
-      ? { ...edited, places: switched, kind: "edit", how: "promote" }
+      ? { ...edited, places: next, kind: "edit", how }
       : {
           coordinates: baseLine,
           segments: route.segments,
@@ -1708,20 +1721,42 @@ export function HomePage() {
           durationSeconds: route.durationSeconds,
           overlap: route.overlap,
           summary: summariseSegments(route.segments, route.quality.gateCount !== undefined),
-          places: switched,
+          places: next,
           kind: "edit",
-          how: "promote",
+          how,
         };
     setEditsFor((prev) => {
       const mine = prev.routeId === route.id;
       return { routeId: route.id, history: pushEdit(mine ? prev.history : NO_EDITS, keep), original: mine && prev.original ? prev.original : { plan, places } };
     });
-    setPlan(planWithPlaces(plan, switched));
-    setPlaces(resolvedOf(switched));
+    setPlan(planWithPlaces(plan, next));
+    setPlaces(resolvedOf(next));
     setEditNote(null);
     reseed();
-    track("point_kind_switched", { to: op.kind === "promote" ? "stop" : "pass", mode: "edit" });
   }
+
+  // ── line-sheet ──
+  /**
+   * „Pievienot punktu šeit” on the line's sheet (lib/map/line-sheet.ts): a
+   * pass-through point exactly on the line at the tapped spot, in the leg it
+   * is in. The line already rides through it, so nothing is routed — one
+   * commit, one step of the undo, the line identical.
+   */
+  function dropPassHere(spot: { lat: number; lon: number; alongMeters: number }) {
+    if (!plan || !result || !route || !ridePlaces || commitWaiter.current) return;
+    const baseLine = edited?.coordinates ?? (route.geometry.coordinates as Point[]);
+    const next = passOnLine(ridePlaces, baseLine, spot);
+    if ("error" in next) {
+      track("route_edit_failed", { reason: next.error });
+      setEditNote(next.error === "shape-cap" ? fi(ui.shapeCapNote, { n: MAX_SHAPE_POINTS }) : ui.resEditFailed);
+      return;
+    }
+    // Whatever was previewed was cut from the places this changes.
+    discardProposal();
+    commitPlacesOnLine(next.places, "add-stop");
+    track("line_point_added", {});
+  }
+  // ── /line-sheet ──
 
   /**
    * One step back: the ride exactly as it was on screen before the last edit.
@@ -2250,6 +2285,7 @@ export function HomePage() {
         proposal,
         // „Pārrēķināt posmu”, on offer while its refusal is shown (`askWide`).
         onWide: wideOffered ? acceptWide : undefined,
+        onPassHere: dropPassHere,
         onDone: finishEdit,
         onCancel: cancelEdit,
         status: editStatus,

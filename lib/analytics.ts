@@ -90,7 +90,12 @@ export type AnalyticsEvent =
   | "new_point_leg_chosen"    // the rider picked the other choice chip; props: extend (a new finish) — do the chips get used, and which way?
   | "new_point_kind_toggled"  // „Pietura” ⇄ „Caurbraucams” while pending; props: to (stop|pass)
   | "moved_point_on_line"     // a pass-through point moved onto the line elsewhere; props: choice (keep|remove) — what does the rider mean by it?
-  | "route_edit_wide_accepted"; // „Pārrēķināt posmu” on a change only the whole-span re-route could make (it was refused with the km, `wide-ask`)
+  | "route_edit_wide_accepted" // „Pārrēķināt posmu” on a change only the whole-span re-route could make (it was refused with the km, `wide-ask`)
+  // ── line-sheet ── Tap the line (2026-09-28): is the line's sheet found, and which row is used?
+  | "line_tapped"             // edit mode: a tap on the drawn line opened its sheet
+  | "line_via_asked"          // „Virzīt caur citu vietu”: the line grabbed at the tapped spot, waiting for the tap where to ride through
+  | "line_point_added";       // „Pievienot punktu šeit”: a pass-through point on the line, committed at once
+  // ── /line-sheet ──
 
 declare global {
   interface Window { gtag?: (...args: unknown[]) => void }

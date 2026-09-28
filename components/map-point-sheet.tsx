@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { CircleDot, MapPinned, MapPinPlus, Move, Trash2, X, type LucideIcon } from "lucide-react";
+import { CircleDot, CirclePlus, MapPinned, MapPinPlus, Move, Route, Trash2, X, type LucideIcon } from "lucide-react";
 
 /**
  * What the map shows for the point the rider tapped (rider, 2026-09-25: act
@@ -22,8 +22,12 @@ import { CircleDot, MapPinned, MapPinPlus, Move, Trash2, X, type LucideIcon } fr
  *
  * Built by the composer from its selection (lib/map/point-selection.ts).
  */
-/** `pass`: „Padarīt caurbraucamu” — a stop made a pass-through point (Phase 1). */
-export type MapPointSheetIcon = "move" | "stop" | "remove" | "pass";
+/**
+ * `pass`: „Padarīt caurbraucamu” — a stop made a pass-through point (Phase 1).
+ * `via` / `addPass`: the line sheet's „Virzīt caur citu vietu” and
+ * „Pievienot punktu šeit” (lib/map/line-sheet.ts).
+ */
+export type MapPointSheetIcon = "move" | "stop" | "remove" | "pass" | "via" | "addPass";
 
 export type MapPointSheetRow = {
   key: string;
@@ -38,6 +42,8 @@ export type MapPointSheetRow = {
 export type MapPointSheetModel =
   | {
       mode: "menu";
+      /** A point's sheet, or the line's (a tapped stretch in edit mode). Absent: a point. */
+      kind?: "point" | "line";
       /** Which point: „Pietura 3”, „Starts”, „Maršruta punkts”. */
       title: string;
       /** The place's own name, where it has one. */
@@ -54,7 +60,7 @@ export type MapPointSheetModel =
       onClose: () => void;
     };
 
-const ICONS: Record<MapPointSheetIcon, LucideIcon> = { move: Move, stop: MapPinPlus, remove: Trash2, pass: CircleDot };
+const ICONS: Record<MapPointSheetIcon, LucideIcon> = { move: Move, stop: MapPinPlus, remove: Trash2, pass: CircleDot, via: Route, addPass: CirclePlus };
 
 const PHONE = "(max-width: 767px)";
 /** Between the point's title and its name — punctuation, not words. */
@@ -90,7 +96,7 @@ export function MapPointSheet({ sheet }: { sheet: MapPointSheetModel }) {
 
   const nameAfter = sheet.name ? NAME_SEPARATOR + sheet.name : "";
   const menu = (
-    <div role="dialog" aria-label={sheet.name ? `${sheet.title} · ${sheet.name}` : sheet.title} data-point-sheet="menu"
+    <div role="dialog" aria-label={sheet.name ? `${sheet.title} · ${sheet.name}` : sheet.title} data-point-sheet="menu" data-sheet-kind={sheet.kind ?? "point"}
       className={phone
         ? "fixed inset-x-0 bottom-0 z-50 touch-none rounded-t-3xl border-t border-stone-200 bg-stone-100 px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-2 shadow-[0_-8px_24px_rgba(0,0,0,0.18)]"
         : "w-full max-w-xs rounded-2xl border border-stone-200 bg-stone-100 p-3 shadow-lg"}>

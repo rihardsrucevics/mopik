@@ -22,6 +22,9 @@ import type { Point } from "@/lib/geo/geometry";
 import { onLineElsewhere, placeNewPoint, stopNumbers, type InsertOption, type Placement } from "@/lib/map/insert-leg";
 import type { ProposalState, ProposedChange } from "@/lib/map/edit-proposal";
 import { stepShape, type ShapePending } from "@/lib/map/shape-pending";
+// ── line-sheet ──
+import { editTipDue, lineSheetRows, markEditTipSeen, type LineSpot } from "@/lib/map/line-sheet";
+// ── /line-sheet ──
 import { stepBatch } from "@/lib/map/batch-commit";
 // On a phone the inline map is a preview: a row's pin and "+ Pietura" open it
 // full screen first (rider, 2026-09-25).
@@ -213,7 +216,20 @@ export type RideEdit = {
    * the proposal. Absent unless it is on offer.
    */
   onWide?: () => void;
+  // ── line-sheet ──
+  /**
+   * „Pievienot punktu šeit” on the line's sheet (lib/map/line-sheet.ts): a
+   * pass-through point dropped on the line at the tapped spot. The line does
+   * not change, so the page commits it at once, one step of the undo.
+   */
+  onPassHere?: (spot: { lat: number; lon: number; alongMeters: number }) => void;
+  // ── /line-sheet ──
 };
+
+/** This device's storage for the one-time edit hint, or nothing (a private window, blocked site data). */
+function tipStore(): Storage | null {
+  try { return typeof window === "undefined" ? null : window.localStorage; } catch { return null; }
+}
 
 export function RideComposer({ initialPlan, initialPlaces, profile, onProfileChange, busy: busyProp, onGenerate, onUseChat, onPlacesChange, map, mapShown: mapOnPage = false, onPickModeChange, pickPoint, onMapControlsChange, edit }: {
   initialPlan: RidePlan | null;
@@ -477,6 +493,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     setShapePending(null);
     shapeAddRef.current = false;
     setPointSel(null);
+    setLineSel(null);
     setNewPoint(null);
     setMoveRemove(null);
     const pinMove = sel?.kind === "pin" && sel.phase === "move";
@@ -493,6 +510,32 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
    * ends it; `shapeSelRef` lets the map's next mark find a selected dot.
    */
   const [pointSelSet, setPointSel] = useState<PointSelection | null>(null);
+  // ── line-sheet ──
+  /**
+   * Edit mode: the stretch of line the rider tapped (lib/map/line-sheet.ts).
+   * `menu`: its sheet is open — „Virzīt caur citu vietu”, „Pievienot punktu
+   * šeit”, Atcelt. `via`: „Virzīt caur citu vietu” was chosen — the line is
+   * grabbed at the spot exactly as a hold-drag grabs it, and the hint „Norādi
+   * kartē, caur kurieni braukt” stands until the next tap, which is the
+   * grab's mark (the drag's release). From then on it is the drag's own
+   * pending point, proposal and ✓/✕. Gone with every exit (`leaveTransient`).
+   */
+  type LineSel = { spot: LineSpot; km: string; heading: string; phase: "menu" | "via" };
+  const [lineSel, setLineSel] = useState<LineSel | null>(null);
+  /** The one-time hint on entering edit mode (once per device, lib/map/line-sheet.ts). */
+  const [tipOn, setTipOn] = useState(false);
+  // Shown the first time this device opens the editor's map, and marked
+  // seen at once: it stays up until its ✕ or the first tap on the line or a
+  // point, and never comes back.
+  // Decided during render, once (React's pattern for state that follows a
+  // prop, as `seenSeed` below); written back in an effect.
+  const [tipChecked, setTipChecked] = useState(false);
+  if (edit && mapLive && !tipChecked) {
+    setTipChecked(true);
+    setTipOn(editTipDue(tipStore()));
+  }
+  useEffect(() => { if (tipOn) markEditTipSeen(tipStore()); }, [tipOn]);
+  // ── /line-sheet ──
   /**
    * Planning's pass-through points (B1): a stop made „caurbraucams” leaves
    * the form and stays on the map as a white dot; the plan carries them as
@@ -1313,9 +1356,9 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
    * mark — or where a mouse drag of the line is let go — is where the point
    * goes, waiting for Confirm.
    */
-  const grabLine = ({ lat, lon, slot }: { lat: number; lon: number; slot: number }) => {
-    if (!edit || busy || edit.rerouting) return;
-    if (edit.shapePoints.length >= MAX_SHAPE_POINTS) return;
+  const grabLine = ({ lat, lon, slot }: { lat: number; lon: number; slot: number }): boolean => {
+    if (!edit || busy || edit.rerouting) return false;
+    if (edit.shapePoints.length >= MAX_SHAPE_POINTS) return false;
     track("route_line_grabbed", { slot });
     setPlaces(edit.seed.names);
     setPicked({ ...edit.seed.picked });
@@ -1329,7 +1372,48 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     setShapePending(stepShape(shapePending, { type: "grab", at: { lat, lon } }).pending);
     shapeAddRef.current = true;
     openPick({ at: null, marker: null });
+    return true;
   };
+  // ── line-sheet ──
+  /**
+   * A tap on the drawn line (edit mode): its sheet opens, and nothing else
+   * happens — a tap never grabs the line. Whatever was transient goes first,
+   * as a press on a pin lets it go; the rows go back to the ride's.
+   */
+  const tapLine = (tap: LineSpot & { km: string; heading: string }) => {
+    if (!edit || busy) return;
+    track("line_tapped", {});
+    setTipOn(false);
+    leaveTransient({ keepPick: true });
+    setPlaces(edit.seed.names);
+    setPicked({ ...edit.seed.picked });
+    setPreview(null);
+    setOffRoad(null);
+    setMapQuery(null);
+    setRowIsNew(false);
+    setChosenRow(null);
+    setLineSel({ spot: { lat: tap.lat, lon: tap.lon, slot: tap.slot, alongMeters: tap.alongMeters }, km: tap.km, heading: tap.heading, phase: "menu" });
+  };
+  /**
+   * „Virzīt caur citu vietu”: the hold-drag's own path (`grabLine`) at the
+   * tapped spot, so the next tap is exactly where a drag would have been
+   * let go — the same `ShapeEdit` add, the same proposal.
+   */
+  const lineVia = () => {
+    const sel = lineSel;
+    if (!sel || sel.phase !== "menu") return;
+    if (!grabLine({ lat: sel.spot.lat, lon: sel.spot.lon, slot: sel.spot.slot })) return;
+    track("line_via_asked", {});
+    setLineSel({ ...sel, phase: "via" });
+  };
+  /** „Pievienot punktu šeit”: the page drops a pass-through point on the line and commits it at once. */
+  const linePass = () => {
+    const sel = lineSel;
+    if (!sel || sel.phase !== "menu" || !edit?.onPassHere) return;
+    leaveTransient();
+    edit.onPassHere({ lat: sel.spot.lat, lon: sel.spot.lon, alongMeters: sel.spot.alongMeters });
+  };
+  // ── /line-sheet ──
   /**
    * A shaping point's dot dragged: it waits where it was let go for Confirm,
    * like every edit. Rows are let go as a grab lets them go.
@@ -1569,6 +1653,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   const pressShape = (index: number) => {
     if (busy || edit?.rerouting) return;
     track("shape_point_pressed", {});
+    setTipOn(false);
     leaveTransient({ keepPick: true });
     if (edit) {
       setPlaces(edit.seed.names);
@@ -1944,6 +2029,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     const row = rowOfPin(role, index);
     if (row < 0) return;
     track("map_pin_pressed", { role });
+    setTipOn(false);
     leaveTransient({ keepPick: true });
     let target: number | null = row;
     if (edit && (preview || offRoad)) {
@@ -2028,6 +2114,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     setBatch([]);
     setBatchSel(null);
     setNewPoint(null);
+    setLineSel(null);
     // No row stays none; a row the rows moved under follows its place.
     setChosenRow((row) => (row === null ? null : Math.min(edit.seed.active ?? row, names.length - 1)));
   }
@@ -2242,6 +2329,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     addStop: () => void;
     pinPress: (role: "start" | "via" | "finish", index: number) => void;
     lineGrab: (grab: { lat: number; lon: number; slot: number }) => void;
+    lineTap: (tap: LineSpot & { km: string; heading: string }) => void; lineVia: () => void; linePass: () => void; tipClose: () => void;
     shapeDrag: (index: number, at: { lat: number; lon: number }) => void;
     confirmShape: () => void; cancelShape: () => void;
     shapeRemove: (index: number) => void; shapePromote: (index: number) => void;
@@ -2300,8 +2388,12 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
    * neighbouring rows; a shaping point, which has no row, is placed along the
    * line by the map from `origin`. Gone on ✓ or ✕ with the pending state.
    */
+  // ── line-sheet ── „Virzīt caur citu vietu” waits for its tap.
+  const viaWaiting = lineSel?.phase === "via" && grab !== null && !grab.to;
+  const lineKey = !lineSel ? "" : [lineSel.phase, lineSel.spot.lat, lineSel.spot.lon, lineSel.km, lineSel.heading, viaWaiting ? 1 : 0].join("|");
+  // ── /line-sheet ──
   const movePreview = !edit || batch.length ? null
-    : shapePending?.kind === "add" ? { origin: shapePending.at, candidate: shapePending.to }
+    : shapePending?.kind === "add" ? { origin: shapePending.at, candidate: shapePending.to, ...(viaWaiting ? { follow: true } : {}) }
     : shapePending?.kind === "move" ? { origin: edit.shapePoints[shapePending.index] ?? null, candidate: shapePending.to }
     : pointSel?.kind === "shape" && pointSel.phase === "move" ? { origin: edit.shapePoints[pointSel.index] ?? null, candidate: null }
     : activeRow !== null && (preview || pointSel?.phase === "move" || rowIsNew) ? {
@@ -2475,7 +2567,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     const noRowWords = fieldMode === "new-stop" ? t(locale, "mapNoActiveRow") : atCap ? fi(t(locale, "mapStopCapShort"), { n: MAX_STOPS }) : t(locale, "mapFieldRerouting");
     onMapControlsChange?.({
       pending,
-      hint: batchActive ? insertWords ?? batchCount : removeHint ? removeHint : pointSel?.phase === "move" ? t(locale, "pointMoveHint") : shapePending?.kind === "move" ? t(locale, "shapeMoveHint") : grab ? insertWords ?? t(locale, "mapGrabHint") : activeRow === null ? noRowWords : fi(t(locale, "mapActiveRowHint"), { label: activeLabel }),
+      hint: batchActive ? insertWords ?? batchCount : removeHint ? removeHint : pointSel?.phase === "move" ? t(locale, "pointMoveHint") : shapePending?.kind === "move" ? t(locale, "shapeMoveHint") : viaWaiting ? t(locale, "lineViaHint") : grab ? insertWords ?? t(locale, "mapGrabHint") : activeRow === null ? noRowWords : fi(t(locale, "mapActiveRowHint"), { label: activeLabel }),
       rowLabel: activeRow === null || batchActive ? undefined : activeLabel,
       // The pin the active row's mark will become, and a stop's number: one
       // more than the filled, numbered stops above it — the order the map
@@ -2522,7 +2614,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
         // A batch has no field to type into — its count is the field's words
         // (and the cap, once it is reached).
         // The cap is said on its own line (`notice`); the field keeps the count.
-        placeholder: batchActive ? insertWords ?? batchCount : removeHint ? removeHint : pointSel?.phase === "move" ? t(locale, "pointMoveHint") : shapePending?.kind === "move" ? t(locale, "shapeMoveHint") : grab ? insertWords ?? t(locale, "mapGrabHint") : activeRow === null ? noRowWords : newRow === activeRow && insertWords ? insertWords : t(locale, "mapSearchHint"),
+        placeholder: batchActive ? insertWords ?? batchCount : removeHint ? removeHint : pointSel?.phase === "move" ? t(locale, "pointMoveHint") : shapePending?.kind === "move" ? t(locale, "shapeMoveHint") : viaWaiting ? t(locale, "lineViaHint") : grab ? insertWords ?? t(locale, "mapGrabHint") : activeRow === null ? noRowWords : newRow === activeRow && insertWords ? insertWords : t(locale, "mapSearchHint"),
         // The phone's shorter words for the two that were cut off at 320 px.
         placeholderPhone: batchActive || removeHint || shapePending || grab ? undefined
           : pointSel?.phase === "move" ? t(locale, "pointMoveHintShort")
@@ -2538,9 +2630,32 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
       onPinPress: (role: "start" | "via" | "finish", index: number) => pendingHandlers.current?.pinPress(role, index),
       activePlace: activeOwn ? { lat: activeOwn.lat, lon: activeOwn.lon } : null,
       // The tapped point: its ring, and its sheet of what can be done to it.
-      selectedPoint: selectedAt,
+      selectedPoint: selectedAt ?? (lineSel?.phase === "menu" ? { lat: lineSel.spot.lat, lon: lineSel.spot.lon } : null),
       // A removal waiting for ✓ has no sheet: its ✓ / ✕ are the bottom bar's.
-      pointSheet: !pointSel || pointSel.phase === "remove" ? null : pointSel.phase === "move" ? {
+      // ── line-sheet ── The line's sheet, and the hint while „Virzīt caur
+      // citu vietu” waits for its tap (its ✕ lets the grab go).
+      pointSheet: lineSel?.phase === "menu" ? {
+        mode: "menu" as const,
+        kind: "line" as const,
+        title: fi(t(locale, "lineSheetTitle"), { km: lineSel.km }),
+        name: lineSel.heading || undefined,
+        groups: [{ key: "line", rows: lineSheetRows({ shapeCount: passCount, rerouting: Boolean(edit?.rerouting) }).map(({ action, enabled, reason }): MapPointSheetRow => ({
+          key: action,
+          icon: action === "via" ? "via" as const : "addPass" as const,
+          label: t(locale, action === "via" ? "lineVia" : "linePassHere"),
+          onPress: !enabled ? null : action === "via" ? () => pendingHandlers.current?.lineVia() : () => pendingHandlers.current?.linePass(),
+          title: reason === "cap" ? fi(t(locale, "shapeCapNote"), { n: MAX_SHAPE_POINTS }) : reason === "busy" ? t(locale, "resEditRouting") : undefined,
+        })) }],
+        closeLabel: t(locale, "pointSheetClose"),
+        cancelLabel: t(locale, "pickOnMapCancel"),
+        onClose: () => pendingHandlers.current?.pointClose(),
+      } : viaWaiting ? {
+        mode: "move" as const,
+        hint: t(locale, "lineViaHint"),
+        closeLabel: t(locale, "pickOnMapCancel"),
+        onClose: () => pendingHandlers.current?.pointClose(),
+      // ── /line-sheet ──
+      } : !pointSel || pointSel.phase === "remove" ? null : pointSel.phase === "move" ? {
         mode: "move" as const,
         hint: t(locale, "pointMoveHint"),
         closeLabel: t(locale, "pickOnMapCancel"),
@@ -2602,6 +2717,12 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
         onShapeDrag: (index: number, at: { lat: number; lon: number }) => pendingHandlers.current?.shapeDrag(index, at),
         onShapePress: (index: number) => pendingHandlers.current?.shapePress(index),
         shapeLabel: t(locale, "shapePointLabel"),
+        // ── line-sheet ── A tap on the line opens its sheet (not while a
+        // batch is open: its marks are stops, and the map takes them first).
+        onLineTap: batchActive ? undefined : (tap: LineSpot & { segmentId: number; km: string; heading: string }) => pendingHandlers.current?.lineTap(tap),
+        lineHoverTip: t(locale, "lineHoverTip"),
+        tip: tipOn ? { text: t(locale, "editTip"), closeLabel: t(locale, "pointSheetClose"), onClose: () => pendingHandlers.current?.tipClose() } : null,
+        // ── /line-sheet ──
       } : {
         // Planning: the pass-through dots (B1). Pressed, they open the same
         // sheet; they do not drag, and there is no line to grab yet.
@@ -2613,7 +2734,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     // The parent's callback is an inline arrow and is rebuilt every render;
     // listing it would re-report the same controls on every keystroke.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapLive, activeRow, activeLabel, atCap, activeValue, activeConfirmed, anchor, locale, tripType, rowsKey, pendingKey, mapQuery, activeOwn?.lat, activeOwn?.lon, planKey, grab?.at.lat, grab?.at.lon, batchKey, fitAsk, undo.past.length, edit?.canUndo, edit?.rerouting, batchCommitting, shapeKey, stopCount, pointKey, movePreviewKey, proposalKey, proposeKey, passCount, pointTitle, choicesKey, insertWords, rowNumbers.join(",")]);
+  }, [mapLive, activeRow, activeLabel, atCap, activeValue, activeConfirmed, anchor, locale, tripType, rowsKey, pendingKey, mapQuery, activeOwn?.lat, activeOwn?.lon, planKey, grab?.at.lat, grab?.at.lon, batchKey, fitAsk, undo.past.length, edit?.canUndo, edit?.rerouting, batchCommitting, shapeKey, stopCount, pointKey, movePreviewKey, proposalKey, proposeKey, passCount, pointTitle, choicesKey, insertWords, rowNumbers.join(","), lineKey, tipOn]);
   // Nothing is offered once the form is gone. Without this the page would keep
   // drawing a map header for a form the rider has left.
   useEffect(() => () => onMapControlsChange?.(null),
@@ -2658,7 +2779,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     }
     if (e.key !== "Escape") return;
     // Escape is ✕: the one exit, whatever is open.
-    if (shapePending || pointSel) { leaveTransient(); return; }
+    if (shapePending || pointSel || lineSel) { leaveTransient(); return; }
     if (batchSel !== null) { setBatchSel(null); return; }
     if (batch.length) { discardBatch(); return; }
     if (activeRow !== null) leaveTransient({ dropMark: true });
@@ -2712,6 +2833,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   useEffect(() => {
     pendingHandlers.current = {
       confirm: confirmPick, cancel: () => leaveTransient({ dropMark: true }), move: acceptOffRoadMove, dismiss: () => setOffRoad(null), pinDrag: dragPin, addStop: addStopFromMap, pinPress: pressPin, lineGrab: grabLine,
+      lineTap: tapLine, lineVia, linePass, tipClose: () => setTipOn(false),
       shapeDrag: dragShape, confirmShape, cancelShape, shapeRemove: removeShape, shapePromote: promoteShape,
       shapePress: pressShape, pointClose: () => leaveTransient(), pointMove: movePoint,
       pointRemove: askRemove, confirmRemove,

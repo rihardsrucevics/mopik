@@ -749,7 +749,26 @@ export type MessageKey =
   | "gateFromStart"
   | "gateAtKm"
   | "gateOsmLink"
-  | "gateListMore";
+  | "gateListMore"
+  // ── line-sheet ──
+  /**
+   * Tap the line (rider, 2026-09-28; lib/map/line-sheet.ts). `lineSheetTitle`
+   * heads the line's sheet in edit mode, {km} the tapped stretch's length;
+   * the road's kind (`segmentHeading`) follows it as the name. `lineVia` asks
+   * for a new place to ride through, and `lineViaHint` says what the next
+   * tap does; `linePassHere` drops a pass-through point on the line. The
+   * one-time hint on entering edit mode is `editTip`; `lineHoverTip` is the
+   * desktop's words beside the cursor over the line. Latvian never says
+   * „piesit”; „ ” quotes, en dashes.
+   */
+  | "lineSheetTitle"
+  | "lineVia"
+  | "lineViaHint"
+  | "linePassHere"
+  | "editTip"
+  | "lineHoverTip"
+  // ── /line-sheet ──
+  ;
 
 type Messages = Record<MessageKey, string>;
 
@@ -1323,6 +1342,14 @@ const lv: Messages = {
   gateAtKm: "{name} {km} km",
   gateOsmLink: "Skatīt OSM",
   gateListMore: "vēl {n}",
+  // ── line-sheet ──
+  lineSheetTitle: "Ceļa posms · {km} km",
+  lineVia: "Virzīt caur citu vietu",
+  lineViaHint: "Norādi kartē, caur kurieni braukt",
+  linePassHere: "Pievienot punktu šeit",
+  editTip: "Pieskaries līnijai vai punktam, lai to mainītu",
+  lineHoverTip: "Velc, lai virzītu caur citu vietu · pieskaries, lai redzētu iespējas",
+  // ── /line-sheet ──
 };
 
 const lt: Messages = {
@@ -1865,6 +1892,14 @@ const lt: Messages = {
   gateAtKm: "{name} {km} km",
   gateOsmLink: "Žiūrėti OSM",
   gateListMore: "dar {n}",
+  // ── line-sheet ──
+  lineSheetTitle: "Kelio atkarpa · {km} km",
+  lineVia: "Vesti per kitą vietą",
+  lineViaHint: "Pažymėkite žemėlapyje, per kur važiuoti",
+  linePassHere: "Pridėti tašką čia",
+  editTip: "Palieskite liniją arba tašką, kad jį pakeistumėte",
+  lineHoverTip: "Vilkite, kad vestumėte per kitą vietą · palieskite, kad pamatytumėte parinktis",
+  // ── /line-sheet ──
 };
 
 const et: Messages = {
@@ -2403,6 +2438,14 @@ const et: Messages = {
   gateAtKm: "{name} {km} km",
   gateOsmLink: "Vaata OSM-is",
   gateListMore: "veel {n}",
+  // ── line-sheet ──
+  lineSheetTitle: "Teelõik · {km} km",
+  lineVia: "Suuna läbi teise koha",
+  lineViaHint: "Märgi kaardile, kust kaudu sõita",
+  linePassHere: "Lisa punkt siia",
+  editTip: "Puuduta joont või punkti, et seda muuta",
+  lineHoverTip: "Lohista, et suunata läbi teise koha · puuduta, et näha valikuid",
+  // ── /line-sheet ──
 };
 
 const en: Messages = {
@@ -2939,6 +2982,14 @@ const en: Messages = {
   gateAtKm: "{name} {km} km",
   gateOsmLink: "View on OSM",
   gateListMore: "{n} more",
+  // ── line-sheet ──
+  lineSheetTitle: "Road stretch · {km} km",
+  lineVia: "Route via somewhere else",
+  lineViaHint: "Tap the map where to ride through",
+  linePassHere: "Add a point here",
+  editTip: "Tap the line or a point to change it",
+  lineHoverTip: "Drag to route via somewhere else · tap to see options",
+  // ── /line-sheet ──
 };
 
 const MESSAGES: Record<UiLocale, Messages> = { lv, lt, et, en };

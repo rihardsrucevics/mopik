@@ -8,7 +8,7 @@ import { useMapLegend } from "@/lib/map/layer-prefs";
 import { setMapPendingCount } from "@/lib/map/fullscreen";
 import { RouteSegmentProperties } from "@/lib/types";
 import { haversineMeters, type Point } from "@/lib/geo/geometry";
-import { cumulative, pointAtDistance } from "@/lib/routing/detour";
+import { cumulative } from "@/lib/routing/detour";
 import { nearestAlong } from "@/lib/routing/reroute-leg";
 import { LINE_HOLD_MS, TAP_SETTLE_MS, lineDragStep, type LineDragEvent, type LineDragState } from "@/lib/map/line-drag";
 import { useLocale } from "@/lib/i18n/use-locale";
@@ -23,6 +23,9 @@ import { nearestUnder } from "@/lib/map/pin-hit";
 import { neighboursAlong } from "@/lib/map/point-selection";
 import type { ProposalView } from "@/lib/map/edit-proposal";
 import { useProposalLayer } from "@/components/map/proposal-layer";
+// ── line-sheet ──
+import { lineSpotAt, lineTapAction, markerNear, type LineSpot } from "@/lib/map/line-sheet";
+// ── /line-sheet ──
 import { gatesAlong, gateHighlightLine, type GateOnRide } from "@/lib/map/gates-along";
 import { gateAtLabel, gateCardHtml, gateGlyphFor, gateIconSvg, type GateGlyph } from "@/components/gate-card";
 // ── P1-D: imports ──
@@ -224,6 +227,28 @@ export type MapControls = {
   onLineGrab?: (grab: { lat: number; lon: number; slot: number }) => void;
   /** The grabbed point while it waits for its new spot: a dot on the line. */
   grab?: { lat: number; lon: number } | null;
+  // ── line-sheet ──
+  /**
+   * Edit mode: a TAP on the drawn line (rider, 2026-09-28, lib/map/line-sheet.ts)
+   * — the line's own sheet, instead of the segment card the result and the
+   * shared maps keep. The spot is on the line (`lineSpotAt`, the same the
+   * drag takes); `segmentId`, `km` and `heading` name the stretch tapped.
+   * A tap on or next to a pin, a dot or a gate goes to that marker instead.
+   */
+  onLineTap?: (tap: LineSpot & { segmentId: number; km: string; heading: string }) => void;
+  /**
+   * Edit mode, on the desktop: the words beside the cursor over the line
+   * („Velc, lai virzītu caur citu vietu · pieskaries, lai redzētu iespējas”),
+   * with the grab cursor. Absent: the plain pointer and the warnings only.
+   */
+  lineHoverTip?: string;
+  /**
+   * The one-time hint on entering edit mode („Pieskaries līnijai vai
+   * punktam, lai to mainītu”): a small notice with ✕, above the bar and clear
+   * of the phone's button column. Null once dismissed or after the first tap.
+   */
+  tip?: { text: string; closeLabel: string; onClose: () => void } | null;
+  // ── /line-sheet ──
   /**
    * Edit mode: the ride's shaping points („maršruta punkti”, 2026-09-25) —
    * small white dots with a dark edge on the line, no number. A press
@@ -253,7 +278,7 @@ export type MapControls = {
    * the drawn line from `origin` (a shaping point: its old place, or where the
    * line was grabbed). Follows a dragged pending marker live.
    */
-  movePreview?: { origin?: { lat: number; lon: number } | null; neighbours?: { lat: number; lon: number }[]; candidate: { lat: number; lon: number } | null } | null;
+  movePreview?: { origin?: { lat: number; lon: number } | null; neighbours?: { lat: number; lon: number }[]; candidate: { lat: number; lon: number } | null; follow?: boolean } | null;
   /**
    * Batch adding (2026-09-25): while it is on, the single pending marker is
    * not drawn and nothing moves the camera; the batch's pending stops are
@@ -2391,6 +2416,15 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
   useEffect(() => { viaRef.current = via; }, [via]);
   const lineGrabRef = useRef(controls?.onLineGrab);
   useEffect(() => { lineGrabRef.current = controls?.onLineGrab; }, [controls?.onLineGrab]);
+  // ── line-sheet ──
+  const lineTapRef = useRef(controls?.onLineTap);
+  useEffect(() => { lineTapRef.current = controls?.onLineTap; }, [controls?.onLineTap]);
+  const lineHoverTipRef = useRef(controls?.lineHoverTip);
+  useEffect(() => { lineHoverTipRef.current = controls?.lineHoverTip; }, [controls?.lineHoverTip]);
+  /** While „Virzīt caur citu vietu” waits for its tap, the desktop's preview follows the cursor. */
+  const previewFollowRef = useRef(false);
+  useEffect(() => { previewFollowRef.current = Boolean(controls?.movePreview?.follow); });
+  // ── /line-sheet ──
   /** A grab is waiting for its spot: the next click is that spot, not a new grab. */
   const grabbingRef = useRef(false);
   useEffect(() => { grabbingRef.current = Boolean(controls?.grab); }, [controls?.grab]);
@@ -3508,6 +3542,14 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
   // is drawn. A phone's bottom sheet covers the page's lower part, so there
   // the page scrolls first, and the map pans for whatever scrolling cannot.
   const sheetMode = controls?.pointSheet?.mode ?? "";
+  // ── line-sheet ── The tapped stretch stays lit while its sheet is open
+  // and goes with it — ✕, Atcelt, a tap elsewhere or a chosen row.
+  const lineSheetOpen = controls?.pointSheet?.mode === "menu" && controls.pointSheet.kind === "line";
+  useEffect(() => {
+    if (lineSheetOpen) return;
+    if (highlightKeyRef.current?.startsWith("line:")) clearHighlightRef.current();
+  }, [lineSheetOpen]);
+  // ── /line-sheet ──
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready || !selectedAt) return;
@@ -3923,9 +3965,20 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
     };
 
     const onMouseMove = (e: maplibregl.MapMouseEvent) => {
+      // ── line-sheet ── „Virzīt caur citu vietu” waiting for its tap: the
+      // dashed lines from the neighbouring places follow the cursor.
+      if (previewFollowRef.current) movePreviewRef.current({ lat: e.lngLat.lat, lon: e.lngLat.lng });
       const feature = featureAt(e.point);
       const props = feature?.properties as SegmentProps | undefined;
       if (!props) { hideHover(); return; }
+      // Edit mode on the desktop: the line can be dragged, and says so — the
+      // grab cursor and one line of words before any warnings (rider,
+      // 2026-09-28: nobody found out the line moves).
+      // Only for a real pointer: a phone's tap makes up a mousemove too, and
+      // the words would then stand beside the finger under the sheet.
+      const pointer = performance.now() - lastTouchEndAt > 800 && window.matchMedia("(hover: hover)").matches;
+      const tip = pointer && lineGrabRef.current && !grabbingRef.current ? lineHoverTipRef.current : undefined;
+      // ── /line-sheet ──
 
       // Every segment is tappable (that is task D), but only a segment with
       // something to warn about earns a label that follows the cursor.
@@ -3936,10 +3989,10 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
       // the first. Same list and same filter the badges use, so the label and
       // the pill under the cursor never disagree.
       const warnings = badgeWarnings(warningsFor(m, props));
-      map.getCanvas().style.cursor = "pointer";
-      if (!warnings.length || !hover) { if (hover) hover.style.display = "none"; return; }
+      map.getCanvas().style.cursor = tip ? "grab" : "pointer";
+      if ((!warnings.length && !tip) || !hover) { if (hover) hover.style.display = "none"; return; }
 
-      const label = warnings.map((w) => w.title).join(" · ");
+      const label = [...(tip ? [tip] : []), ...warnings.map((w) => w.title)].join(" · ");
       // Direct DOM, no re-render: see the note on this effect. The icons are
       // emoji in a sized span, so building the label is string concatenation
       // and costs no React work in a mousemove handler.
@@ -3950,7 +4003,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
         // icons share a column and the words start at the same x whatever the
         // glyphs' widths — `auto 1fr` lets the icon column size to the widest
         // icon and gives the text the rest.
-        hover.innerHTML = warnings
+        hover.innerHTML = (tip ? `<span data-line-tip style="grid-column:1 / -1">${esc(tip)}</span>` : "") + warnings
           .map((w) => `${warningIcon(w.kind)}<span>${esc(w.title)}</span>`)
           .join("");
         hover.dataset.label = label;
@@ -4060,8 +4113,44 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
       // A click that opens a segment card also ends the "look at this place"
       // gesture: the rider has moved on to asking about the road.
       clearFocus();
+      // ── line-sheet ──
+      // Edit mode: the line's own sheet (lib/map/line-sheet.ts) — unless the
+      // finger landed on or beside a pin, a pass-through dot or a gate, which
+      // sit ON the line: then the tap is that marker's, exactly as if it had
+      // hit it (its sheet, its card), never the line's.
+      const lineTap = lineTapRef.current;
+      if (lineTap) {
+        const { clientX, clientY } = e.originalEvent;
+        const near = markerNear(nearMarkers(), (el) => (el.isConnected ? el.getBoundingClientRect() : null), clientX, clientY);
+        const action = lineTapAction({ editing: true, nearMarker: Boolean(near) });
+        if (action === "marker" && near) {
+          const r = near.getBoundingClientRect();
+          near.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 }));
+          return;
+        }
+        const spot = lineSpotOf(e.lngLat);
+        if (spot) {
+          const source = featuresRef.current[id];
+          const meters = typeof source?.properties?.distanceMeters === "number" ? source.properties.distanceMeters : lineMeters(source?.geometry.coordinates ?? []);
+          const tapped = { ...(props ?? {}), ...(source?.properties ?? {}) } as SegmentProps;
+          infoPopupRef.current?.remove();
+          infoPopupRef.current = null;
+          // The stretch the sheet is about, lit as the card lights it.
+          highlightKeyRef.current = null;
+          setHighlight([id], `line:${id}`);
+          lineTap({ ...spot, segmentId: id, km: kmLabel(locale, meters), heading: segmentHeading(m, tapped.roadClass, tapped.surface) });
+          return;
+        }
+      }
+      // ── /line-sheet ──
       openCard(e.lngLat, id, props);
     };
+    /** Every marker a tap on the line may have meant instead: the ride's pins, its pass-through dots, its gates. */
+    const nearMarkers = (): HTMLElement[] => [
+      ...pinTargetsRef.current.map((t) => t.el),
+      ...shapeMarkersRef.current.map((mk) => mk.getElement()),
+      ...gateMarkersRef.current.map((mk) => mk.getElement()),
+    ];
 
     /**
      * Whether a mouse event began on a marker — a pin or a shaping point's
@@ -4077,16 +4166,16 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
      * form is told (`onLineGrab`). Only the route's own layers count — a pin,
      * a sight or a badge is a marker above the canvas and never reaches here.
      */
+    const lineSpotOf = (lngLat: maplibregl.LngLat): LineSpot | null =>
+      lineSpotAt(featuresRef.current.flatMap((f, i) => (f.geometry.coordinates as Point[]).slice(i === 0 ? 0 : 1)), [lngLat.lng, lngLat.lat], viaRef.current ?? []);
     const grabLineAt = (point: maplibregl.Point, lngLat: maplibregl.LngLat): boolean => {
       const grab = lineGrabRef.current;
       if (!grab || !featureAt(point)) return false;
-      const line: Point[] = featuresRef.current.flatMap((f, i) => (f.geometry.coordinates as Point[]).slice(i === 0 ? 0 : 1));
-      if (line.length < 2) return false;
-      const cum = cumulative(line);
-      const near = nearestAlong([lngLat.lng, lngLat.lat], line, cum);
-      const on = pointAtDistance(line, cum, near.alongMeters).point;
-      const slot = (viaRef.current ?? []).filter((v) => nearestAlong([v.lon, v.lat], line, cum).alongMeters < near.alongMeters).length;
-      grab({ lat: on[1], lon: on[0], slot });
+      // The same spot a tap on the line offers („Virzīt caur citu vietu”):
+      // one function, so the two are one edit (lib/map/line-sheet.ts).
+      const spot = lineSpotOf(lngLat);
+      if (!spot) return false;
+      grab({ lat: spot.lat, lon: spot.lon, slot: spot.slot });
       return true;
     };
 
@@ -4398,6 +4487,19 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
           {controls.notice.text}
         </div>
       )}
+      {/* ── line-sheet ── The one-time hint on entering edit mode: a quiet
+          line with its ✕, in the notice stack above the bar — never over the
+          phone's button column (`mr-16`). */}
+      {controls?.tip && (
+        <div data-edit-tip className="flex max-w-full items-center gap-1 self-start rounded-2xl border border-[#ececf0] bg-white/95 py-0.5 pl-3 pr-0.5 text-xs font-medium leading-snug text-stone-700 shadow-sm backdrop-blur max-md:mr-16">
+          <span role="status" className="min-w-0">{controls.tip.text}</span>
+          <button type="button" onClick={controls.tip.onClose} aria-label={controls.tip.closeLabel} title={controls.tip.closeLabel}
+            className="flex size-7 shrink-0 items-center justify-center rounded-full text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-800">
+            <X aria-hidden="true" className="size-3.5" />
+          </button>
+        </div>
+      )}
+      {/* ── /line-sheet ── */}
       {/* ── /P1-D: notice ── */}
       {/* The off-road verdict, directly under the header it answers: the pin
           stays where he put it and the answer sits beside the Confirm he just
