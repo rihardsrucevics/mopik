@@ -55,6 +55,14 @@ export type EditProposal = {
   changed: [number, number][];
   delta: EditDelta;
   notes: string[];
+  /**
+   * Not ✓-able as it is: it rides roads outside the rider's profile, or it
+   * costs a big detour (`lib/map/edit-reach.ts`). The notes say what and how
+   * much; only „Tomēr braukt” commits it, ✕ drops it.
+   */
+  accept?: "profile" | "detour" | "deadEnd";
+  /** The profile rung it was routed on (`relaxedProfiles`); absent: the rider's own. */
+  relax?: number;
 };
 
 /**
@@ -99,6 +107,8 @@ export type ProposalView = {
   notes?: string;
   title: string;
   tone?: "routing" | "refused";
+  /** A proposal that waits for „Tomēr braukt” (`EditProposal.accept`): drawn, warned, ✓ off. */
+  warn?: true;
   line: Segments | null;
   changed: [number, number][];
 };

@@ -140,6 +140,13 @@ export type RouteSegmentProperties = {
    */
   unverified?: boolean;
   /**
+   * Routed on a profile relaxed beyond the rider's own, with his say-so
+   * („Tomēr braukt”, `lib/map/edit-reach.ts`): no road of his profile
+   * reached the point he asked for. Drawn with the same ⚠️ as `unverified`
+   * (map badges are ⚠️ and 🔥 only) and named on the segment card.
+   */
+  outsideProfile?: boolean;
+  /**
    * How many gates stand on this stretch — `barrier=gate|lift_gate|swing_gate|
    * chain|bollard|cattle_grid` nodes that are members of the way's own node
    * list, matched as **vertices of the route geometry**, never by proximity: a

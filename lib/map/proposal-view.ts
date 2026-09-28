@@ -41,6 +41,7 @@ export function proposalView(state: ProposalState, copy: ProposalCopy, locale: U
     text: chip,
     ...(notes ? { notes } : {}),
     title: notes ? `${sentence} ${notes}` : sentence,
+    ...(proposal.accept ? { warn: true as const } : {}),
     line: proposal.ride.segments,
     changed: proposal.changed,
   };
@@ -61,7 +62,10 @@ export function proposalView(state: ProposalState, copy: ProposalCopy, locale: U
  * 453 m → 453 m. Of the 22 bends that changed the line, 11 were such — 38.5
  * of the 72 km of new road — and 35 more changed nothing. A bend that
  * brings the line at least `BEND_GAIN_M` (or `BEND_GAIN_SHARE` of the
- * distance) nearer is a bend and is proposed as before.
+ * distance) nearer is a bend and is proposed as before. One that is not is
+ * no solution (rider's rule 5, `lib/map/edit-reach.ts`): the next, more
+ * relaxed profile is tried towards the drop, and only when none gets nearer
+ * is it said that no road reaches the point.
  *
  * Only for a point dropped off the line (`BEND_OFF_LINE_M`): one put on the
  * line itself is answered by the composer („Vest caur šejieni”).

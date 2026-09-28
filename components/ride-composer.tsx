@@ -2135,7 +2135,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
    * stay put). What each does is named here (`act`) and wired to the
    * handlers in the controls effect below, as every other control is.
    */
-  type ChoiceAct = { kind: "stop" | "pass" } | { leg: string } | { remove: boolean } | { wide: true };
+  type ChoiceAct = { kind: "stop" | "pass" } | { leg: string } | { remove: boolean } | { wide: true } | { override: true };
   type ChoiceSpec = Omit<MapChoiceGroup, "options"> & { options: (Omit<MapChoiceGroup["options"][number], "onSelect"> & { act: ChoiceAct })[] };
   const choices: ChoiceSpec[] = [];
   if (canSwitchKind && newPoint) choices.push({
@@ -2162,6 +2162,13 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   if (edit?.onWide) choices.push({
     key: "wide", label: t(locale, "editWideAccept"), action: true,
     options: [{ key: "wide", label: t(locale, "editWideAccept"), selected: false, act: { wide: true } }],
+  });
+  // „Tomēr braukt”: a proposal outside the profile or with a big detour
+  // (`EditProposal.accept`) is taken only by this chip — what ✓ would do,
+  // one ↶ step; ✓ itself is off while it waits (`useProposalWarn`).
+  if (edit?.proposal?.phase === "proposed" && edit.proposal.proposal.accept) choices.push({
+    key: "override", label: t(locale, "editOverrideLabel"), action: true,
+    options: [{ key: "override", label: t(locale, "editOverrideAccept"), selected: false, act: { override: true } }],
   });
   const choicesKey = choices.map((g) => `${g.key}:${g.options.map((o) => `${o.key}${o.selected ? "*" : ""}${o.label}`).join(",")}`).join("|");
   /** Why no stop fits, whole: the „+”'s name and tooltip, the field's at the cap. */
@@ -2500,6 +2507,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
             if ("kind" in act) h?.switchKind(act.kind);
             else if ("leg" in act) h?.chooseLeg(act.leg);
             else if ("wide" in act) h?.wide();
+            else if ("override" in act) pending?.onConfirm?.();
             else h?.moveChoice(act.remove);
           },
         })),

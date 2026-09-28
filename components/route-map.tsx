@@ -27,7 +27,7 @@ import { gatesAlong, gateHighlightLine, type GateOnRide } from "@/lib/map/gates-
 import { gateAtLabel, gateCardHtml, gateGlyphFor, gateIconSvg, type GateGlyph } from "@/components/gate-card";
 // ── P1-D: imports ──
 import { LoaderCircle } from "lucide-react";
-import { useProposalRefused } from "@/components/map/proposal-layer";
+import { useProposalRefused, useProposalWarn } from "@/components/map/proposal-layer";
 
 /**
  * ✓ in slot 3, desktop row and phone column alike (Phase 1 preview, B4).
@@ -59,16 +59,18 @@ function ConfirmSlot({ pending, round, phone = false, "data-slot": slot }: {
   const [locale] = useLocale();
   const m = messages(locale);
   const refused = useProposalRefused() && Boolean(pending);
+  // A proposal outside the profile or with a big detour: only „Tomēr braukt” takes it.
+  const warned = useProposalWarn() && Boolean(pending) && !refused;
   const idle = !pending || Boolean(pending.offRoad);
-  const busy = !refused && !idle && Boolean(pending?.confirmBusy);
-  const onConfirm = refused || idle ? null : pending!.onConfirm;
+  const busy = !refused && !warned && !idle && Boolean(pending?.confirmBusy);
+  const onConfirm = refused || warned || idle ? null : pending!.onConfirm;
   const label = !pending ? m.pickOnMapConfirm
     : pending.offRoad ? pending.offRoad.title
-    : refused ? m.previewConfirmRefused : busy ? m.previewConfirmQueued : pending.confirmLabel;
+    : refused ? m.previewConfirmRefused : warned ? m.previewConfirmOverride : busy ? m.previewConfirmQueued : pending.confirmLabel;
   const icon = phone ? "size-6" : "size-5";
   return (
     <button type="button" onClick={onConfirm ?? undefined} disabled={!onConfirm} aria-disabled={!onConfirm || undefined} data-slot={slot}
-      data-confirm={refused ? "refused" : busy ? "busy" : onConfirm ? "ready" : "idle"} aria-busy={busy || undefined}
+      data-confirm={refused ? "refused" : warned ? "warn" : busy ? "busy" : onConfirm ? "ready" : "idle"} aria-busy={busy || undefined}
       aria-label={label} title={label}
       className={`${round} border border-[#f56300] bg-[#f56300] text-white transition hover:bg-[#d85600] ${SLOT_DISABLED}`}>
       {busy
@@ -1122,7 +1124,14 @@ function warningsFor(
   props: SegmentProps
 ): Warning[] {
   const out: Warning[] = [];
-  if (props.unverified) {
+  // Ridden outside the profile on the rider's say-so: the same ⚠️ (map
+  // badges are ⚠️ and 🔥 only), its own words on the card.
+  // Both on one stretch: one ⚠️ saying both, never two identical icons.
+  if (props.outsideProfile && props.unverified) {
+    out.push({ kind: "unverified", title: `${m.badgeOutsideProfile} · ${m.badgeUnverified}`, detail: `${m.badgeOutsideProfileDetail} ${m.badgeUnverifiedDetail}` });
+  } else if (props.outsideProfile) {
+    out.push({ kind: "unverified", title: m.badgeOutsideProfile, detail: m.badgeOutsideProfileDetail });
+  } else if (props.unverified) {
     out.push({ kind: "unverified", title: m.badgeUnverified, detail: m.badgeUnverifiedDetail });
   }
   if (props.roadClass === "trail") {
@@ -4380,10 +4389,10 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
         </div>
       )}
       {controls && proposal ? (
-        <div role="status" data-proposal-chip={proposal.tone ?? "proposed"} title={proposal.title} aria-label={proposal.title}
-          className={`flex max-w-full items-start gap-1.5 self-start rounded-2xl border px-3 py-1 text-xs font-medium leading-snug shadow-sm backdrop-blur max-md:-ml-16 max-md:mr-16 ${proposal.tone === "refused" ? "border-amber-300 bg-amber-50/95 text-amber-900" : "border-[#ececf0] bg-white/95 text-foreground"}`}>
+        <div role="status" data-proposal-chip={proposal.tone ?? (proposal.warn ? "warn" : "proposed")} title={proposal.title} aria-label={proposal.title}
+          className={`flex max-w-full items-start gap-1.5 self-start rounded-2xl border px-3 py-1 text-xs font-medium leading-snug shadow-sm backdrop-blur max-md:-ml-16 max-md:mr-16 ${proposal.tone === "refused" || proposal.warn ? "border-amber-300 bg-amber-50/95 text-amber-900" : "border-[#ececf0] bg-white/95 text-foreground"}`}>
           {proposal.tone === "routing" && <LoaderCircle aria-hidden="true" className="mt-px size-3.5 shrink-0 animate-spin text-stone-400" />}
-          {proposal.tone === "refused" && <TriangleAlert aria-hidden="true" className="mt-px size-3.5 shrink-0" />}
+          {(proposal.tone === "refused" || proposal.warn) && <TriangleAlert aria-hidden="true" className="mt-px size-3.5 shrink-0" />}
           {/* The numbers on one line; the proposal's notes under them,
               smaller, at most two lines (the chip wrapped to four on a phone
               with the notes run on). */}
