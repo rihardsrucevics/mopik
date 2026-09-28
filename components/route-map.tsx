@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import * as maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { Check, Info, List, Plus, TriangleAlert, Undo2, X } from "lucide-react";
@@ -195,6 +195,12 @@ export type MapControls = {
     onPick: (place: ResolvedPlace | null) => void;
     near: { lat: number; lon: number } | null;
     placeholder: string;
+    /**
+     * The phone's shorter words for the same (rider, 2026-09-28: at 320 px
+     * „Meklē vai atzīmē pieturu” was cut off) — „Meklē pieturu”. Absent:
+     * `placeholder` on the phone too.
+     */
+    placeholderPhone?: string;
     /** The field cannot act (a batch, the cap with no row): off, and it looks it. */
     disabled?: boolean;
     /**
@@ -832,6 +838,36 @@ const GATE_MARKER_MAX = 30;
  * the thumb's reach, and TET at the top (rider, 2026-09-25).
  */
 const PHONE_QUERY = "(max-width: 767px)";
+/** Whether the map is laid out for a phone now (the `max-md` layout), kept live. */
+function usePhoneLayout(): boolean {
+  return useSyncExternalStore(
+    (onChange) => {
+      const q = window.matchMedia(PHONE_QUERY);
+      q.addEventListener("change", onChange);
+      return () => q.removeEventListener("change", onChange);
+    },
+    () => window.matchMedia(PHONE_QUERY).matches,
+    () => false,
+  );
+}
+
+/**
+ * The phone field's row tag (rider, 2026-09-28): the pin the row's mark
+ * becomes, small — a stop's number on its orange disc, the start's green and
+ * the finish's red disc — in place of „Caur (2)”, which left the field 80 px
+ * at 320 px. The words stay the tag's name for a screen reader and the
+ * desktop's tag.
+ */
+function RowBadge({ pin, label }: { pin: NonNullable<MapControls["pendingPin"]>; label: string }) {
+  const bg = pin.role === "start" ? START_PIN_COLOR : pin.role === "finish" ? FINISH_PIN_COLOR : pin.role === "shape" ? "#ffffff" : "#f56300";
+  return (
+    <span data-row-badge={pin.role} title={label} aria-label={label}
+      className={`flex size-6 shrink-0 items-center justify-center rounded-full border-2 text-[12px] font-bold tabular-nums leading-none text-white shadow-sm ${pin.role === "shape" ? "border-stone-900" : "border-white"}`}
+      style={{ background: bg }}>
+      {pin.role === "via" && pin.number !== null ? pin.number : null}
+    </span>
+  );
+}
 
 function gateElement(title: string): HTMLElement {
   const el = document.createElement("button");
@@ -2199,6 +2235,8 @@ function PhoneColumn({ controls }: { controls: MapControls }) {
 export function RouteMap({ segments, start, destination, via, focus, onFocusCleared, onFocusToggle, selectedPois, routePois, showTet, onToggleTet, showSights, onToggleSights, onShowPoi, onPickPoint, pickedPoint, onPickedPointMove, pickCenter, onGeolocated, controls, proposal }: Props) {
   const [locale] = useLocale();
   const m = messages(locale);
+  /** The phone's field: shorter words, the row as a small badge. */
+  const phoneLayout = usePhoneLayout();
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const markerRef = useRef<maplibregl.Marker | null>(null);
@@ -4208,14 +4246,14 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
             onPick={controls.search.onPick}
             confirmed={controls.search.confirmed}
             near={controls.search.near}
-            placeholder={controls.search.placeholder}
+            placeholder={phoneLayout ? controls.search.placeholderPhone ?? controls.search.placeholder : controls.search.placeholder}
             disabled={controls.search.disabled}
             onFocus={controls.search.onFocus ?? undefined}
             title={controls.hint}
             // At the bottom of a phone map the suggestions open upward, over
             // the map, instead of off its lower edge.
             placement="above"
-            leading={controls.rowLabel ? (
+            leading={controls.rowLabel && phoneLayout && controls.pendingPin ? <RowBadge pin={controls.pendingPin} label={controls.rowLabel} /> : controls.rowLabel ? (
               <span aria-hidden="true" className="shrink-0 rounded-full bg-[#fff3ea] px-2 py-0.5 text-[11px] font-semibold text-[#bd4b00]">
                 {controls.rowLabel}
               </span>

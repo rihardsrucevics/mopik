@@ -2523,6 +2523,11 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
         // (and the cap, once it is reached).
         // The cap is said on its own line (`notice`); the field keeps the count.
         placeholder: batchActive ? insertWords ?? batchCount : removeHint ? removeHint : pointSel?.phase === "move" ? t(locale, "pointMoveHint") : shapePending?.kind === "move" ? t(locale, "shapeMoveHint") : grab ? insertWords ?? t(locale, "mapGrabHint") : activeRow === null ? noRowWords : newRow === activeRow && insertWords ? insertWords : t(locale, "mapSearchHint"),
+        // The phone's shorter words for the two that were cut off at 320 px.
+        placeholderPhone: batchActive || removeHint || shapePending || grab ? undefined
+          : pointSel?.phase === "move" ? t(locale, "pointMoveHintShort")
+          : activeRow === null ? (fieldMode === "new-stop" ? t(locale, "mapNoActiveRowShort") : undefined)
+          : newRow === activeRow && insertWords ? undefined : t(locale, "mapSearchHintShort"),
         disabled: fieldMode === "off",
         onFocus: fieldMode === "new-stop" ? onAddStop : null,
       },

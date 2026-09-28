@@ -711,7 +711,16 @@ export type MessageKey =
    * it the proposal.
    */
   | "editWideAsk"
-  | "editWideAccept";
+  | "editWideAccept"
+  /**
+   * The phone's map field (rider, 2026-09-28: cut off at 320 px): with no
+   * row active „Meklē pieturu” for `mapNoActiveRow`, with a row active
+   * „Meklē…” for `mapSearchHint` (its row is the badge beside it), and
+   * „Atzīmē kartē” for `pointMoveHint`. The desktop keeps the longer words.
+   */
+  | "mapNoActiveRowShort"
+  | "mapSearchHintShort"
+  | "pointMoveHintShort";
   // ── /P1-insert ──
 
 type Messages = Record<MessageKey, string>;
@@ -1258,6 +1267,9 @@ const lv: Messages = {
   moveChoiceLabel: "Līnija jau iet šeit — ko darīt ar punktu?",
   editWideAsk: "Šo izmaiņu var ievietot tikai, pārrēķinot visu posmu starp „{a}” un „{b}” ({km1} → {km2} km).",
   editWideAccept: "Pārrēķināt posmu",
+  mapNoActiveRowShort: "Meklē pieturu",
+  mapSearchHintShort: "Meklē…",
+  pointMoveHintShort: "Atzīmē kartē",
   // ── /P1-insert ──
 };
 
@@ -1773,6 +1785,9 @@ const lt: Messages = {
   moveChoiceLabel: "Linija jau eina čia — ką daryti su tašku?",
   editWideAsk: "Šį pakeitimą galima įterpti tik perskaičiavus visą atkarpą tarp „{a}“ ir „{b}“ ({km1} → {km2} km).",
   editWideAccept: "Perskaičiuoti atkarpą",
+  mapNoActiveRowShort: "Ieškoti sustojimo",
+  mapSearchHintShort: "Ieškoti…",
+  pointMoveHintShort: "Pažymėkite",
   // ── /P1-insert ──
 };
 
@@ -2284,6 +2299,9 @@ const et: Messages = {
   moveChoiceLabel: "Joon juba läheb siit — mida punktiga teha?",
   editWideAsk: "Seda muudatust saab lisada ainult kogu lõigu „{a}“ ja „{b}“ vahel ümber arvutades ({km1} → {km2} km).",
   editWideAccept: "Arvuta lõik ümber",
+  mapNoActiveRowShort: "Otsi peatust",
+  mapSearchHintShort: "Otsi…",
+  pointMoveHintShort: "Märgi kaardil",
   // ── /P1-insert ──
 };
 
@@ -2793,6 +2811,9 @@ const en: Messages = {
   moveChoiceLabel: "The line already goes here — what to do with the point?",
   editWideAsk: "This change only fits by re-routing the whole stretch between “{a}” and “{b}” ({km1} → {km2} km).",
   editWideAccept: "Re-route the stretch",
+  mapNoActiveRowShort: "Search a stop",
+  mapSearchHintShort: "Search…",
+  pointMoveHintShort: "Mark the map",
   // ── /P1-insert ──
 };
 
