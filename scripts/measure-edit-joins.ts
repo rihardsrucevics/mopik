@@ -119,7 +119,8 @@ async function attempt(label: string, plan: RidePlan, base: Segs, route: Generat
   const t0 = Date.now();
   const data = await reroute(plan, planned.places, planned.runs);
   if ("status" in data) { console.log(`  ${label}: HTTP ${data.status} ${data.body.slice(0, 120)}`); return { label, first: "http", final: "http" }; }
-  const splice = (runs: EditRun[], r: Routed) => applyRuns({ segments: base, distanceMeters: route.distanceMeters, durationSeconds: route.durationSeconds, runs, routed: r.runs });
+  const keep = anchorsOf(before, line[line.length - 1]);
+  const splice = (runs: EditRun[], r: Routed) => applyRuns({ segments: base, distanceMeters: route.distanceMeters, durationSeconds: route.durationSeconds, runs, routed: r.runs, keep });
   const spliced = splice(planned.runs, data);
   const v1 = spliceIsSound({ segments: spliced.segments, original: base, places: planned.places, before, toleranceMeters: TOL });
   let final: string = v1.ok ? "ok" : "broken";

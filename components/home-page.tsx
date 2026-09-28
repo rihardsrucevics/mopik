@@ -34,6 +34,7 @@ import { useMapLayer } from "@/lib/map/layer-prefs";
 import type { SplicedRoute } from "@/lib/routing/detour";
 import {
   NO_EDITS,
+  anchorsOf,
   applyRuns,
   applyShapeEdit,
   asGeneratedRoute,
@@ -60,6 +61,7 @@ import {
   spanEnds,
   lineBreaks,
   spliceIsSound,
+  throughBlockedPlaces,
   summariseSegments,
   undoEdit,
   type EditHistory,
@@ -1309,7 +1311,7 @@ export function HomePage() {
     const startedAt = startClock();
     const refuse = (note: string, reason: string) => { refuseProposal(token, planned.kind, note, reason); };
     try {
-      type Routed = { runs: (RoutedRun & { deadEndMeters?: number; deadEndUnchecked?: boolean })[] };
+      type Routed = { runs: (RoutedRun & { deadEndMeters?: number; deadEndUnchecked?: boolean; deadEndAtShape?: boolean })[] };
       // Every place in every stretch is ridden through, not out to and back
       // (rider, 2026-09-25): the server routes a stretch leg by leg and looks
       // for a way through each place whose way in and way out share road
@@ -1329,12 +1331,15 @@ export function HomePage() {
         });
         return response.ok ? ((await response.json()) as Routed) : { status: response.status };
       };
+      // The kept ride's places: a join never slides past one (`retraceAtJoins`).
+      const keep = anchorsOf(before, line[line.length - 1]);
       const splice = (runs: typeof planned.runs, routed: Routed) => applyRuns({
         segments: baseSegments,
         distanceMeters: edited?.distanceMeters ?? route.distanceMeters,
         durationSeconds: edited?.durationSeconds ?? route.durationSeconds,
         runs,
         routed: routed.runs,
+        keep,
       });
       // „Pārrēķināt posmu” (the rider asked for it): the whole span at once.
       let runs = p.wide ? [spanRun({ line, cum: cumulative(line), before, after: planned.places, runs: planned.runs })] : planned.runs;
@@ -1342,6 +1347,20 @@ export function HomePage() {
       if (!current()) return;
       if ("status" in data) return refuse(ui.resEditFailed, String(data.status));
       let spliced = splice(runs, data);
+      // A stretch cut at a neighbouring place that came back leaving it the
+      // way the kept ride came in: routed again THROUGH that place, so the
+      // place is not left at the tip of a spur (`throughBlockedPlaces`).
+      const through = throughBlockedPlaces({ line, cum: cumulative(line), before, runs, blocked: spliced.blocked });
+      if (through) {
+        const again = await request(through);
+        if (!current()) return;
+        if (!("status" in again)) {
+          const wider = splice(through, again);
+          if (wider.blocked.every((b) => !b.head && !b.tail) && lineBreaks(wider.segments, baseSegments).length === 0) {
+            runs = through; data = again; spliced = wider;
+          }
+        }
+      }
       // The invariant (rider, 2026-09-25): the edited ride is ONE continuous
       // line through every place in order. A stretch the router began or
       // ended somewhere other than the cut — a nudged or snapped endpoint —
@@ -1439,9 +1458,11 @@ export function HomePage() {
       const deadEndKm = new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(deadEnd / 1000);
       const notes = [
         snapped.movedMeters > 0 ? fi(ui.resEditMoved, { m: snapped.movedMeters }) : "",
+        // Named by whose spur it is (the server says), not by the kind of
+        // edit: a bend can leave a neighbouring stop on one.
         deadEnd > 0 ? fi(deadEndRun?.deadEndUnchecked
-          ? (p.shape ? ui.editSameWayBackShape : ui.editSameWayBack)
-          : (p.shape ? ui.editDeadEndShape : ui.editDeadEnd), { km: deadEndKm }) : "",
+          ? (deadEndRun?.deadEndAtShape ? ui.editSameWayBackShape : ui.editSameWayBack)
+          : (deadEndRun?.deadEndAtShape ? ui.editDeadEndShape : ui.editDeadEnd), { km: deadEndKm }) : "",
       ].filter(Boolean);
       const beforeRide = { distanceMeters: edited?.distanceMeters ?? route.distanceMeters, durationSeconds: edited?.durationSeconds ?? route.durationSeconds, overlap: edited?.overlap ?? route.overlap };
       const proposal: EditProposal = {

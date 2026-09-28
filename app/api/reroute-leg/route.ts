@@ -213,7 +213,7 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json({
-    runs: paths.map(({ path, deadEndMeters, deadEndUnchecked }) => {
+    runs: paths.map(({ path, deadEndMeters, deadEndUnchecked, deadEndAtShape }) => {
       // The same classifier the ride's own segments came from, so the spliced
       // stretch carries surfaces, road classes, gates and unverified-access
       // flags in exactly the shape the map already draws and the panel counts.
@@ -236,6 +236,10 @@ export async function POST(req: NextRequest) {
         // search ran out of time: then the page says the way back is the way
         // in, without calling the stop a dead end it has not proved.
         ...(deadEndUnchecked ? { deadEndUnchecked } : {}),
+        // …and whether the place at the end of it is a shaping point (a bend
+        // that could not be taken off its spur) or a stop — the page names
+        // the right one, whatever kind of edit made it.
+        ...(deadEndAtShape ? { deadEndAtShape } : {}),
       };
     }),
     ms: Date.now() - startedAt,

@@ -283,6 +283,14 @@ export function spurLength(line: Point[], cum: number[], alongMeters: number, st
 }
 
 /**
+ * How far past a neighbouring place a stretch reaches when, cut at that
+ * place, it came back as an out-and-back from it (`throughBlockedPlaces`):
+ * enough road beyond the place for its way out to be a way on, not so much
+ * that an edit next to a stop re-routes the next leg too.
+ */
+export const THROUGH_NEIGHBOUR_M = 1_000;
+
+/**
  * The step `planEdit` walks a neighbouring place's spur in: fine enough to
  * see the 50-300 m out-and-backs `spurLength`'s 100 m step reads as none.
  */
@@ -706,6 +714,34 @@ export function spurBaseIndex(approach: Point[], departure: Point[]): number {
   return k;
 }
 
+/**
+ * Every out-and-back on a line: a stretch ridden to a tip and straight back
+ * along the same vertices. `apex` is the tip's index, `base` the index where
+ * the way in and the way out part (both in `coordinates`), `meters` the
+ * one-way length. The router never makes one inside a single leg — it is
+ * always a via at the tip, or a cut — so on a routed stretch each one is a
+ * place reached by a spur.
+ */
+export function outAndBacks(coordinates: Point[], minMeters = THROUGH_SHARED_MIN_M): { apex: number; base: number; meters: number }[] {
+  // Vertices closer than a metre are one: a via snapped mid-edge comes back twice.
+  const idx: number[] = [];
+  for (let i = 0; i < coordinates.length; i++) {
+    if (idx.length && haversineMeters(coordinates[idx[idx.length - 1]], coordinates[i]) < 1) continue;
+    idx.push(i);
+  }
+  const pts = idx.map((i) => coordinates[i]);
+  const cum = cumulative(pts);
+  const out: { apex: number; base: number; meters: number }[] = [];
+  for (let i = 1; i < pts.length - 1; i++) {
+    let k = 0;
+    while (i - k - 1 >= 0 && i + k + 1 < pts.length && haversineMeters(pts[i - k - 1], pts[i + k + 1]) < 3) k++;
+    if (k === 0) continue;
+    const meters = cum[i] - cum[i - k];
+    if (meters >= minMeters) out.push({ apex: idx[i], base: idx[i - k], meters });
+  }
+  return out;
+}
+
 /** Undirected keys of a line's consecutive pairs, at `recomputeOverlap`'s ~1 m. */
 function pairKey(p: Point, q: Point): string {
   const a = `${p[0].toFixed(5)},${p[1].toFixed(5)}`;
@@ -949,13 +985,33 @@ export function applyRuns(params: {
   segments: Segments;
   distanceMeters: number;
   durationSeconds: number;
-  runs: { fromMeters: number; toMeters: number }[];
+  /** With its points when the caller has them: the places inside a run bound `retraceAtJoins`. */
+  runs: { fromMeters: number; toMeters: number; points?: Point[] }[];
   routed: RoutedRun[];
-}): { coordinates: Point[]; segments: Segments; distanceMeters: number; durationSeconds: number; runs: { fromMeters: number; toMeters: number }[] } {
+  /**
+   * The places on the kept line (the ride's places before the edit). A join
+   * never slides past one (`retraceAtJoins`): the kept line must still reach it.
+   */
+  keep?: Point[];
+}): {
+  coordinates: Point[]; segments: Segments; distanceMeters: number; durationSeconds: number; runs: { fromMeters: number; toMeters: number }[];
+  /** Per run: metres ridden out along the kept ride and back at a cut that is a place (`retraceAtJoins`). */
+  blocked: { head: number; tail: number }[];
+} {
   const features = params.segments.features as Features;
   const line = coordinatesOf(params.segments);
-  // Cut where each routed stretch really meets the kept ride (`meetRuns`).
-  const runs = meetRuns(line, cumulative(line), params.runs, params.routed);
+  const lineCum = cumulative(line);
+  // Cut where each routed stretch really meets the kept ride (`meetRuns`),
+  // then past any road it rode out to the cut and back on (`retraceAtJoins`).
+  const met = meetRuns(line, lineCum, params.runs, params.routed);
+  const joined = retraceAtJoins({
+    line,
+    cum: lineCum,
+    runs: met.map((r, i) => ({ ...r, points: params.runs[i].points })),
+    routed: params.routed,
+    keep: params.keep ?? [],
+  });
+  const runs = joined.map(({ fromMeters, toMeters }) => ({ fromMeters, toMeters }));
   const drawn = lineMeters(line) || 1;
   const perMeter = params.distanceMeters / drawn;
   // Seconds per unit of "riding weight": metres over each segment's speed.
@@ -977,9 +1033,22 @@ export function applyRuns(params: {
   for (const run of order) {
     keep(cursor, run.fromMeters);
     const routed = params.routed[run.i];
-    out.push(...(routed.segments.features as Features));
-    meters += routed.distanceMeters;
-    seconds += routed.durationSeconds;
+    const { headMeters, tailMeters } = joined[run.i];
+    if (headMeters > 0 || tailMeters > 0) {
+      // The routed stretch without the road it rode out to its cut and back
+      // on: its own time and distance shrink in proportion to what is left.
+      const own = routed.segments.features as Features;
+      const drawnRun = own.reduce((sum, f) => sum + lineMeters(f.geometry.coordinates as Point[]), 0) || 1;
+      const piece = segmentsBetween(own, headMeters, drawnRun - tailMeters);
+      const share = Math.max(0, drawnRun - headMeters - tailMeters) / drawnRun;
+      out.push(...piece);
+      meters += routed.distanceMeters * share;
+      seconds += routed.durationSeconds * share;
+    } else {
+      out.push(...(routed.segments.features as Features));
+      meters += routed.distanceMeters;
+      seconds += routed.durationSeconds;
+    }
     cursor = run.toMeters;
   }
   keep(cursor, drawn + 1);
@@ -991,7 +1060,62 @@ export function applyRuns(params: {
     distanceMeters: Math.round(meters),
     durationSeconds: Math.round(seconds),
     runs,
+    blocked: joined.map((j) => ({ head: j.blockedHead, tail: j.blockedTail })),
   };
+}
+
+/**
+ * The stretches again, each one that came back as an out-and-back from a
+ * place it was cut at now taken THROUGH that place and `THROUGH_NEIGHBOUR_M`
+ * beyond it — or null when no stretch needs it.
+ *
+ * A window stops at the places either side of an edit (`planEdit`), which is
+ * right when the new line meets the kept ride there going on. Measured on
+ * Antiņciems → Puķes (2026-09-28): a bend 3 km after the stop Puķes came
+ * back leaving Puķes the way the kept ride arrived, 435-502 m, and back — a
+ * stop the rider had ridden through became the tip of a spur, silently.
+ * Taken into the stretch, the place is ridden through like any other
+ * (`routeThroughPlaces` fences its way in off its way out).
+ */
+export function throughBlockedPlaces(params: {
+  line: Point[];
+  cum: number[];
+  before: RidePlaces;
+  runs: EditRun[];
+  blocked: { head: number; tail: number }[];
+}): EditRun[] | null {
+  const { line, cum, before, runs, blocked } = params;
+  if (!blocked.some((b) => b.head > 0 || b.tail > 0)) return null;
+  const oldA = anchorsOf(before, line[line.length - 1]);
+  const along = anchorsAlong(oldA, line, cum);
+  const isVia = (k: number) => k > 0 && k < oldA.length - 1;
+  const at = (m: number): Point => pointAtDistance(line, cum, m).point;
+  const placeAt = (m: number) => along.findIndex((a, k) => isVia(k) && Math.abs(a - m) <= 30);
+  const sorted = runs.map((r) => r.fromMeters).sort((a, b) => a - b);
+  let changed = false;
+  const out = runs.map((run, i) => {
+    let { fromMeters, toMeters, points } = run;
+    const next = sorted.find((f) => f > run.fromMeters + 1) ?? Infinity;
+    const prev = runs.filter((r) => r.toMeters <= run.fromMeters + 1).reduce((m, r) => Math.max(m, r.toMeters), 0);
+    if (blocked[i]?.tail > 0) {
+      const k = placeAt(toMeters);
+      if (k > 0) {
+        toMeters = Math.min(along[k + 1], along[k] + THROUGH_NEIGHBOUR_M, next);
+        points = [...points.slice(0, -1), oldA[k], at(toMeters)];
+        changed = true;
+      }
+    }
+    if (blocked[i]?.head > 0) {
+      const k = placeAt(fromMeters);
+      if (k > 0) {
+        fromMeters = Math.max(along[k - 1], along[k] - THROUGH_NEIGHBOUR_M, prev);
+        points = [at(fromMeters), oldA[k], ...points.slice(1)];
+        changed = true;
+      }
+    }
+    return { fromMeters, toMeters, points };
+  });
+  return changed ? out : null;
 }
 
 /**
@@ -1064,6 +1188,96 @@ export function meetRuns(
     }
     out[run.i] = { fromMeters: from, toMeters: to };
     floor = to;
+  });
+  return out;
+}
+
+/**
+ * How far a join may slide to take a retrace off the line, and how exactly the
+ * two lines must agree to count as the same road ridden twice.
+ */
+export const RETRACE_STEP_M = 5;
+export const RETRACE_TOL_M = 8;
+/** Below this a "retrace" at a join is the router's own node rounding, not a stub. */
+export const RETRACE_MIN_M = 25;
+
+/**
+ * Where a routed stretch rides out along the kept ride to its cut and back —
+ * and the joins moved so that it does not.
+ *
+ * The rider's ride of 2026-09-28 (Antiņciems → Puķes, bent near Gailīšu
+ * purvs): a 1.17 km stub up a forest track, ridden out and back, with no
+ * place at its tip. The tip was a CUT: the edit window ended 3 km from the
+ * bend, on the old line, which came down that track from the north. The new
+ * stretch no longer wanted the track — it reached the old line at the
+ * junction below — but its end was pinned to the cut, so the router rode up
+ * the track to it, and the kept ride rode back down. A cut is not a place:
+ * nothing asked for the tip. So where the end of a routed stretch and the
+ * kept ride beyond its cut are the same road in opposite directions, both are
+ * cut back to where they part, and the stretch joins the kept ride there —
+ * the junction the router actually came to.
+ *
+ * Bounded both ways: never past a place inside the stretch (the run's own
+ * points), never past a place on the kept ride (`keep`), never into another
+ * stretch, and never past the ride's own ends. A cut AT a place (a window
+ * that stops on a stop) does not slide at all — the place must still be
+ * reached — and the retrace there is reported as `blocked`: the place has
+ * become the tip of a spur, and the page routes the stretch again through it
+ * (`throughBlockedPlaces`).
+ */
+export function retraceAtJoins(params: {
+  line: Point[];
+  cum: number[];
+  runs: { fromMeters: number; toMeters: number; points?: Point[] }[];
+  routed: RoutedRun[];
+  keep: Point[];
+}): { fromMeters: number; toMeters: number; headMeters: number; tailMeters: number; blockedHead: number; blockedTail: number }[] {
+  const { line, cum, runs, routed } = params;
+  const total = cum[cum.length - 1] ?? 0;
+  const keptAlong = params.keep
+    .map((p) => nearestAlong(p, line, cum))
+    .filter((n) => n.meters <= 30)
+    .map((n) => n.alongMeters);
+  const order = runs.map((r, i) => ({ ...r, i })).sort((a, b) => a.fromMeters - b.fromMeters);
+  const out = runs.map((r) => ({ fromMeters: r.fromMeters, toMeters: r.toMeters, headMeters: 0, tailMeters: 0, blockedHead: 0, blockedTail: 0 }));
+  order.forEach((run, k) => {
+    const coords = coordinatesOf(routed[run.i]?.segments ?? { type: "FeatureCollection", features: [] });
+    if (coords.length < 2) return;
+    const rc = cumulative(coords);
+    const length = rc[rc.length - 1];
+    // The places inside the stretch, as distances along what was routed.
+    const inner = (run.points ?? []).slice(1, -1).map((p) => nearestAlong(p, coords, rc).alongMeters);
+    const firstInner = inner.length ? Math.min(...inner) : length / 2;
+    const lastInner = inner.length ? Math.max(...inner) : length / 2;
+    const floor = k > 0 ? out[order[k - 1].i].toMeters : 0;
+    const ceiling = order[k + 1]?.fromMeters ?? total;
+    const walk = (runAt: (s: number) => number, lineAt: (s: number) => number, max: number, lineFrom: number, lineTo: number) => {
+      let good = 0;
+      for (let s = RETRACE_STEP_M; s <= max; s += RETRACE_STEP_M) {
+        const p = pointAtDistance(coords, rc, runAt(s)).point;
+        const m = nearestWithin(p, line, cum, lineFrom, lineTo);
+        if (m.meters > RETRACE_TOL_M || Math.abs(m.alongMeters - lineAt(s)) > RETRACE_TOL_M * 2) break;
+        good = s;
+      }
+      return good >= RETRACE_MIN_M ? good : 0;
+    };
+    const blocks = (from: number, to: number) => keptAlong.some((a) => a >= from - 1 && a <= to + 1);
+    // The tail: the stretch's last metres against the kept ride after its cut.
+    const to = run.toMeters;
+    if (to < total) {
+      const room = Math.min(length - lastInner, ceiling - to);
+      const s = walk((d) => length - d, (d) => to + d, room, to, Math.min(ceiling, to + room + 30));
+      if (s && blocks(to, to + s)) out[run.i] = { ...out[run.i], blockedTail: s };
+      else if (s) out[run.i] = { ...out[run.i], toMeters: to + s, tailMeters: s };
+    }
+    // The head: the stretch's first metres against the kept ride before its cut.
+    const from = run.fromMeters;
+    if (from > 0) {
+      const room = Math.min(firstInner, from - floor, length - out[run.i].tailMeters - RETRACE_MIN_M);
+      const s = walk((d) => d, (d) => from - d, room, Math.max(floor, from - room - 30), from);
+      if (s && blocks(from - s, from)) out[run.i] = { ...out[run.i], blockedHead: s };
+      else if (s) out[run.i] = { ...out[run.i], fromMeters: from - s, headMeters: s };
+    }
   });
   return out;
 }
