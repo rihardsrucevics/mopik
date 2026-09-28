@@ -291,3 +291,17 @@ test("a STOP at the same spot keeps its spur, and it is said, not hidden", async
   } finally { stub.restore(); }
 });
 
+
+test("when the only road to the bend is that dead end, it can be kept — and it is said (rule 1, 2026-09-28)", async () => {
+  // Measured: drops 68-100 m from a mapped track, 250-600 m off the ride,
+  // were refused as „no road” — the spur was cut, the bend went back to
+  // where it left the road, and the line came no nearer the drop.
+  const stub = stubBrouter(() => null);
+  try {
+    const r = await routeThroughPlaces({ points: [CUT_A, DROP, CUT_B], shapes: [false, true, false], profileOptions: OPTIONS, deadlineAt: Date.now() + 4_500, keepShapeSpurs: true });
+    const c = r.path.coordinates;
+    assert.ok(nearestAlong(TIP, c, cumulative(c)).meters < 10, "the line reaches the bend up the side track");
+    assert.ok(r.deadEndMeters > 1_000, `the dead end is reported, got ${r.deadEndMeters}`);
+    assert.equal(r.deadEndAtShape, true, "as the pass-through point's");
+  } finally { stub.restore(); }
+});

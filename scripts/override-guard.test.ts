@@ -85,3 +85,8 @@ test("„Tomēr braukt” arms the shown warned proposal only, then confirms lik
   // The chip is only on offer for a warned, landed proposal.
   assert.match(composer, /if \(edit\?\.proposal\?\.phase === "proposed" && edit\.proposal\.proposal\.accept\) choices\.push\(\{\s*key: "override"/);
 });
+
+test("a bend no nearer after its spur was cut is asked again with the spur kept, before the next rung", () => {
+  assert.match(page, /if \(bendMissed\(reachM, offAfter\) && !p\.keepSpurs && !p\.fallback\) return routeProposal\(\{ \.\.\.p, keepSpurs: true \}\);/);
+  assert.match(page, /\.\.\.\(p\.keepSpurs \? \{ keepSpurs: true \} : \{\}\)/);
+});

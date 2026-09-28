@@ -1316,7 +1316,7 @@ export function HomePage() {
   }
 
   /** The request itself, and the proposal its answer becomes. Stale answers (an older token) are dropped. */
-  async function routeProposal(p: { token: number; before: RidePlaces; planned: EditPlan; baseSegments: Segments; line: Point[]; shape: boolean; change: ProposedChange; wide: boolean; relax?: number; bestOff?: number; fallback?: Landing }): Promise<void> {
+  async function routeProposal(p: { token: number; before: RidePlaces; planned: EditPlan; baseSegments: Segments; line: Point[]; shape: boolean; change: ProposedChange; wide: boolean; relax?: number; bestOff?: number; fallback?: Landing; keepSpurs?: boolean }): Promise<void> {
     if (!plan || !route) return;
     const { token, before, planned, baseSegments, line } = p;
     // The profile rung this attempt routes on: 0 is the rider's own; past
@@ -1345,7 +1345,7 @@ export function HomePage() {
      */
     const unreached = async (offM: number): Promise<void> => {
       const bestOff = Math.min(p.bestOff ?? Infinity, offM);
-      if (profileAt(ownProfile, level + 1)) return routeProposal({ ...p, relax: level + 1, bestOff });
+      if (profileAt(ownProfile, level + 1)) return routeProposal({ ...p, relax: level + 1, bestOff, keepSpurs: false });
       // A lower rung reached the point only by a dead end: that is still a
       // road that reaches it (rule 1), offered with the dead end said.
       if (p.fallback) return land(p.fallback);
@@ -1390,6 +1390,7 @@ export function HomePage() {
             loops: runs.map((run) => run.points.length >= 3),
             shapes: runs.map((run) => shapeFlags(run, planned.places)),
             ...(level ? { relax: level } : {}),
+            ...(p.keepSpurs ? { keepSpurs: true } : {}),
           }),
         });
         if (!response.ok) return { status: response.status };
@@ -1502,6 +1503,10 @@ export function HomePage() {
       if (p.change.kind === "shape" && (p.change.op.kind === "add" || p.change.op.kind === "move")) {
         const drop: Point = [p.change.op.lon, p.change.op.lat];
         const offAfter = nearestAlong(drop, spliced.coordinates, cumulative(spliced.coordinates)).meters;
+        // Taking the bend off a spur can leave it nowhere near the drop: the
+        // only road there is a dead end. That still reaches the point (rule
+        // 1) — asked once more with the bend kept on it, said as a dead end.
+        if (bendMissed(reachM, offAfter) && !p.keepSpurs && !p.fallback) return routeProposal({ ...p, keepSpurs: true });
         if (bendMissed(reachM, offAfter)) return unreached(offAfter);
       }
       // Where a grabbed line point was taken only mattered to this edit's
@@ -1585,7 +1590,7 @@ export function HomePage() {
       if (deadEnd > 0 && deadEndRun?.deadEndAtShape) {
         const asked = { ...proposal, accept: accept ?? ("deadEnd" as const), notes: notes.map((n) => (n === deadEndNote ? fi(ui.editDeadEndShapeAsk, { km: deadEndKm }) : n)) };
         const fallback: Landing = { proposal: asked, addedAt, runs: runs.length };
-        if (profileAt(ownProfile, level + 1)) return routeProposal({ ...p, relax: level + 1, bestOff: Math.min(p.bestOff ?? Infinity, reachM), fallback: p.fallback ?? fallback });
+        if (profileAt(ownProfile, level + 1)) return routeProposal({ ...p, relax: level + 1, bestOff: Math.min(p.bestOff ?? Infinity, reachM), fallback: p.fallback ?? fallback, keepSpurs: false });
         return land(p.fallback ?? fallback);
       }
       // A stop reached only by riding out and back: offered, the dead end

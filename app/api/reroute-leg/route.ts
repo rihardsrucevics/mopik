@@ -128,6 +128,11 @@ const BodySchema = z.object({
    * outside his profile before anything is kept. Absent or 0: his profile.
    */
   relax: z.number().int().min(0).max(4).optional(),
+  /**
+   * Leave a shaping point on its spur (`routeThroughPlaces` `keepShapeSpurs`):
+   * asked for when taking it off left the bend nowhere near the drop.
+   */
+  keepSpurs: z.boolean().optional(),
 });
 
 /**
@@ -162,7 +167,7 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ error: "bad body" }, { status: 400 });
   }
-  const { plan, runs, loops, shapes, relax } = parsed.data;
+  const { plan, runs, loops, shapes, relax, keepSpurs } = parsed.data;
 
   let paths: ThroughResult[];
   try {
@@ -177,7 +182,7 @@ export async function POST(req: NextRequest) {
     const routing = Promise.all(runs.map((run, i) => {
       const points = run.map((c): Point => [c.lon, c.lat]);
       if (loops?.[i] && points.length >= 3) {
-        return routeThroughPlaces({ points, shapes: shapes?.[i], profileOptions, deadlineAt: startedAt + LOOP_DEADLINE_MS });
+        return routeThroughPlaces({ points, shapes: shapes?.[i], profileOptions, deadlineAt: startedAt + LOOP_DEADLINE_MS, keepShapeSpurs: keepSpurs });
       }
       return fetchRoutePath({
         points,

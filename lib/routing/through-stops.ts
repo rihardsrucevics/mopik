@@ -101,7 +101,26 @@ export async function routeThroughPlaces(params: {
   profileOptions: MotoProfileOptions;
   /** When the loop search must have answered (epoch ms). */
   deadlineAt: number;
+  /**
+   * Keep a shaping point on its spur instead of moving it to the spur's
+   * base — reported as a dead end (`deadEndAtShape`), never hidden. Asked
+   * for only when moving it would leave the bend nowhere near where it was
+   * dropped: the only road that reaches the point is a dead end, and the
+   * rider may still take it („Tomēr braukt”, rule 1 of 2026-09-28).
+   */
+  keepShapeSpurs?: boolean;
 }): Promise<ThroughResult> {
+  if (params.keepShapeSpurs && params.shapes?.some(Boolean)) {
+    // Every place ridden through where the map allows, as for a stop; what
+    // is left is the shaping point's dead end, said.
+    const kept = await routeThroughPlaces({ ...params, shapes: [], keepShapeSpurs: false });
+    const c = kept.path.coordinates;
+    const atShape = outAndBacks(c).some((o) => {
+      const j = nearestInner(params.points, c[o.apex]);
+      return j > 0 && params.shapes![j] === true && haversineMeters(params.points[j], c[o.apex]) <= SPUR_TIP_NEAR_M;
+    });
+    return atShape && kept.deadEndMeters > 0 ? { ...kept, deadEndAtShape: true } : kept;
+  }
   const { points, profileOptions, deadlineAt } = params;
   const shapes = params.shapes ?? [];
   const n = points.length;
