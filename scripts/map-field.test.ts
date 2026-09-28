@@ -44,8 +44,8 @@ test("the placeholder says what a tap does, in all four languages; Latvian never
   for (const locale of ["lv", "lt", "et", "en"] as const) {
     for (const k of keys) assert.ok(t(locale, k).trim().length > 0, `${locale}.${k}`);
   }
-  assert.equal(t("lv", "mapNoActiveRow"), "Meklē vai atzīmē jaunu pieturu");
-  assert.equal(t("en", "mapNoActiveRow"), "Search or mark a new stop");
+  assert.equal(t("lv", "mapNoActiveRow"), "Meklē vai atzīmē pieturu");
+  assert.equal(t("en", "mapNoActiveRow"), "Search or mark a stop");
   const lv = readFileSync(join(__dirname, "../lib/i18n/messages.ts"), "utf8");
   assert.doesNotMatch(lv.replace(/\/\*[\s\S]*?\*\//g, ""), /piesit/i);
 });

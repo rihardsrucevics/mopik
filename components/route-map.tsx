@@ -2039,8 +2039,9 @@ const SURFACE_COLOR_EXPR: maplibregl.ExpressionSpecification = [
  *
  *   3 (top)    ✓   enabled while something is pending and Confirm can act
  *   2          ↶   the batch's own while pending, the history's otherwise
- *   1 (bottom) ✕ while something is pending, „+” when idle — one slot, the
- *              content swapped, so the two never show together
+ *   1 (bottom) „+” enabled when nothing is pending
+ *   x (row)    ✕   in the bottom row right of the field, under „+”
+ *              (rider, 2026-09-28: „+” and ✕ each their own button)
  *
  * Every slot is drawn in every state (rider, 2026-09-28): one with nothing to
  * do is disabled — grey, `aria-disabled`, not pressable — never hidden and
@@ -2084,6 +2085,37 @@ function MapSwitch({ on, onToggle, label, name, swatch, labelClass = "" }: {
  * to take back); „+” and ✕ share the last slot. Confirm's words are its name
  * and tooltip.
  */
+/**
+ * „+” — a new stop, slot 1. Disabled while a mark is pending (it is ✓ or ✕
+ * first) and at the stop cap, where its label says why.
+ */
+function AddSlot({ controls, plain, icon }: { controls: MapControls; plain: string; icon: string }) {
+  const onAdd = controls.pending ? null : controls.onAddStop;
+  const label = controls.onAddStop ? controls.addStopLabel : controls.addStopFullLabel;
+  return (
+    <button type="button" onClick={onAdd ?? undefined} disabled={!onAdd} aria-disabled={!onAdd || undefined} data-slot="1"
+      aria-label={label} title={label} className={`${plain} text-[#bd4b00]`}>
+      <Plus aria-hidden="true" className={icon} />
+    </button>
+  );
+}
+
+/**
+ * ✕ — drop what is pending, its own slot `x` beside „+” (rider,
+ * 2026-09-28: „+” and ✕ no longer share one). Disabled when nothing is.
+ */
+function CancelSlot({ controls, plain, icon }: { controls: MapControls; plain: string; icon: string }) {
+  const [locale] = useLocale();
+  const pending = controls.pending;
+  const label = pending?.cancelLabel ?? messages(locale).pickOnMapCancel;
+  return (
+    <button type="button" onClick={pending?.onCancel} disabled={!pending} aria-disabled={!pending || undefined} data-slot="x"
+      aria-label={label} title={label} className={`${plain} text-stone-700`}>
+      <X aria-hidden="true" className={icon} />
+    </button>
+  );
+}
+
 function DesktopBar({ controls }: { controls: MapControls }) {
   const pending = controls.pending;
   const round = "flex size-10 shrink-0 items-center justify-center rounded-full shadow-sm";
@@ -2101,23 +2133,17 @@ function DesktopBar({ controls }: { controls: MapControls }) {
         className={`${plain} text-stone-700`}>
         <Undo2 aria-hidden="true" className="size-4" />
       </button>
-      {pending ? (
-        <button type="button" onClick={pending.onCancel} data-slot="1"
-          aria-label={pending.cancelLabel} title={pending.cancelLabel} className={`${plain} text-stone-700`}>
-          <X aria-hidden="true" className="size-5" />
-        </button>
-      ) : (
-        <button type="button" onClick={controls.onAddStop ?? undefined} disabled={!controls.onAddStop} aria-disabled={!controls.onAddStop || undefined} data-slot="1"
-          aria-label={controls.onAddStop ? controls.addStopLabel : controls.addStopFullLabel}
-          title={controls.onAddStop ? controls.addStopLabel : controls.addStopFullLabel}
-          className={`${plain} text-[#bd4b00]`}>
-          <Plus aria-hidden="true" className="size-5" />
-        </button>
-      )}
+      <AddSlot controls={controls} plain={plain} icon="size-5" />
+      <CancelSlot controls={controls} plain={plain} icon="size-5" />
     </div>
   );
 }
 
+/**
+ * The phone: ✓ ↶ „+” in the column over the right edge, top to bottom, and
+ * ✕ in the bottom row right of the field — directly under „+”, the same
+ * size at the same x.
+ */
 function PhoneColumn({ controls }: { controls: MapControls }) {
   const pending = controls.pending;
   const round = "flex size-14 shrink-0 items-center justify-center rounded-full shadow-md";
@@ -2126,29 +2152,22 @@ function PhoneColumn({ controls }: { controls: MapControls }) {
   const [locale] = useLocale();
   const undoLabel = undo?.label ?? messages(locale).mapUndo;
   return (
-    <div data-phone-column className="absolute bottom-full right-0 mb-2 flex flex-col-reverse gap-2 md:hidden">
-      {pending ? (
-        <button type="button" onClick={pending.onCancel} data-slot="1"
-          aria-label={pending.cancelLabel} title={pending.cancelLabel} className={`${plain} text-stone-700`}>
-          <X aria-hidden="true" className="size-6" />
+    <>
+      <div data-phone-column className="absolute bottom-full right-0 mb-2 flex flex-col-reverse gap-2 md:hidden">
+        <AddSlot controls={controls} plain={plain} icon="size-7" />
+        <button type="button" onClick={undo?.onUndo ?? undefined} disabled={!undo?.onUndo} aria-disabled={!undo?.onUndo || undefined} data-slot="2"
+          aria-label={undoLabel} title={undoLabel}
+          className={`${plain} text-stone-700`}>
+          <Undo2 aria-hidden="true" className="size-6" />
         </button>
-      ) : (
-        <button type="button" onClick={controls.onAddStop ?? undefined} disabled={!controls.onAddStop} aria-disabled={!controls.onAddStop || undefined} data-slot="1"
-          aria-label={controls.onAddStop ? controls.addStopLabel : controls.addStopFullLabel}
-          title={controls.onAddStop ? controls.addStopLabel : controls.addStopFullLabel}
-          className={`${plain} text-[#bd4b00]`}>
-          <Plus aria-hidden="true" className="size-7" />
-        </button>
-      )}
-      <button type="button" onClick={undo?.onUndo ?? undefined} disabled={!undo?.onUndo} aria-disabled={!undo?.onUndo || undefined} data-slot="2"
-        aria-label={undoLabel} title={undoLabel}
-        className={`${plain} text-stone-700`}>
-        <Undo2 aria-hidden="true" className="size-6" />
-      </button>
-      {/* ── P1-D: phone-confirm ── */}
-      <ConfirmSlot pending={pending} round={round} phone data-slot="3" />
-      {/* ── /P1-D: phone-confirm ── */}
-    </div>
+        {/* ── P1-D: phone-confirm ── */}
+        <ConfirmSlot pending={pending} round={round} phone data-slot="3" />
+        {/* ── /P1-D: phone-confirm ── */}
+      </div>
+      <div data-phone-cancel className="shrink-0 md:hidden">
+        <CancelSlot controls={controls} plain={plain} icon="size-6" />
+      </div>
+    </>
   );
 }
 
@@ -4177,8 +4196,9 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
             ) : undefined}
             compact
           />
-          {/* ✓ ↶ +/✕: one row after the field on the desktop, a column on
-              the right edge on a phone — both with fixed slots. */}
+          {/* ✓ ↶ + ✕: one row after the field on the desktop; on a phone
+              ✓ ↶ + in a column on the right edge and ✕ after the field —
+              every one always drawn, in fixed slots. */}
           <DesktopBar controls={controls} />
           <PhoneColumn controls={controls} />
         </div>

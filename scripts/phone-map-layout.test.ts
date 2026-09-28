@@ -22,14 +22,22 @@ test("the collapse button is drawn in every full-screen state, pending included"
   assert.match(panel, /className="absolute bottom-3 left-3 flex size-14/);
 });
 
-test("the right column: ✕ or „+” in one bottom slot, ↶ above, ✓ on top — slots keep their place", () => {
+test("the phone: ✓ ↶ „+” in the right column, ✕ its own button right of the field, under „+” (rider, 2026-09-28)", () => {
   const col = routeMap.slice(routeMap.indexOf("function PhoneColumn"), routeMap.indexOf("export function RouteMap("));
   assert.match(col, /flex-col-reverse/);
-  // DOM order is bottom-up: slot 1, slot 2, slot 3.
-  const i1 = col.indexOf('data-slot="1"'), i2 = col.indexOf('data-slot="2"'), i3 = col.indexOf('data-slot="3"');
-  assert.ok(i1 > 0 && i1 < i2 && i2 < i3, "slots in bottom-up order");
-  // ✕ and „+” are the two faces of slot 1, never both.
-  assert.match(col, /\{pending \? \(\s*<button[^>]*onClick=\{pending\.onCancel\} data-slot="1"/);
+  // Column DOM order is bottom-up: „+” (slot 1), ↶ (2), ✓ (3); then ✕ in the row.
+  const i1 = col.indexOf("<AddSlot "), i2 = col.indexOf('data-slot="2"'), i3 = col.indexOf('data-slot="3"'), ix = col.indexOf("<CancelSlot ");
+  assert.ok(i1 > 0 && i1 < i2 && i2 < i3 && i3 < ix, "„+” ↶ ✓ bottom-up, then ✕");
+  // ✕ sits outside the absolute column, in the row after the field: the same size, the row's right edge.
+  assert.ok(col.indexOf("data-phone-cancel") > col.indexOf("</div>"), "✕ is not in the column");
+  assert.match(col, /<div data-phone-cancel className="shrink-0 md:hidden">/);
+  assert.match(col, /data-phone-column className="absolute bottom-full right-0 /);
+  // „+” is disabled while something is pending; ✕ while nothing is.
+  const add = routeMap.slice(routeMap.indexOf("function AddSlot"), routeMap.indexOf("function CancelSlot"));
+  const cancel = routeMap.slice(routeMap.indexOf("function CancelSlot"), routeMap.indexOf("function DesktopBar"));
+  assert.match(add, /const onAdd = controls\.pending \? null : controls\.onAddStop;/);
+  assert.match(add, /disabled=\{!onAdd\} aria-disabled=\{!onAdd \|\| undefined\} data-slot="1"/);
+  assert.match(cancel, /disabled=\{!pending\} aria-disabled=\{!pending \|\| undefined\} data-slot="x"/);
 });
 
 /** Class strings in a slice of JSX, so `aria-hidden` never counts as `hidden`. */
@@ -44,13 +52,18 @@ test("every slot of the bar and the column is always rendered: never conditional
     assert.match(jsx, /\n\s*<ConfirmSlot pending=\{pending\} round=\{round\}( phone)? data-slot="3" \/>/, `${name}: ✓ always drawn`);
     // ↶ in slot 2 unconditionally, always labelled.
     assert.match(jsx, /\n\s*<button type="button" onClick=\{undo\?\.onUndo \?\? undefined\} disabled=\{!undo\?\.onUndo\} aria-disabled=\{!undo\?\.onUndo \|\| undefined\} data-slot="2"\s*aria-label=\{undoLabel\}/, `${name}: ↶ always drawn`);
-    // Slot 1 is „+” or ✕ — one of the two faces, never neither.
-    assert.match(jsx, /\{pending \? \(\s*<button[^>]*onClick=\{pending\.onCancel\} data-slot="1"[\s\S]*?\) : \(\s*<button[^>]*data-slot="1"/, `${name}: slot 1 always drawn`);
+    // „+” and ✕ each their own button, both unconditional.
+    assert.match(jsx, /\n\s*<AddSlot controls=\{controls\} plain=\{plain\} icon="[^"]+" \/>/, `${name}: „+” always drawn`);
+    assert.match(jsx, /\n\s*<CancelSlot controls=\{controls\} plain=\{plain\} icon="[^"]+" \/>/, `${name}: ✕ always drawn`);
+    assert.doesNotMatch(jsx, /\{pending \? \(/, `${name}: no slot swaps on pending`);
     // (The row's own `max-md:hidden` / the column's `md:hidden` pick the width, not a slot.)
     assert.doesNotMatch(classesOf(jsx).replace(/(^|\s)(max-)?md:hidden(?=\s|$)/g, " "), /(^|[\s:])(invisible|hidden)(\s|$)/, `${name}: no slot hidden or invisible`);
     assert.doesNotMatch(jsx, /aria-hidden=\{!/, `${name}: no slot hidden from screen readers`);
   }
-  assert.doesNotMatch(classesOf(confirm) + confirm.replace(/aria-hidden="true"/g, ""), /invisible|(^|[\s:"`])hidden(\s|$|["`])/, "✓ is never hidden or invisible");
+  const addCancel = routeMap.slice(routeMap.indexOf("function AddSlot"), routeMap.indexOf("function DesktopBar"));
+  for (const [what, jsx] of [["✓", confirm], ["„+” / ✕", addCancel]] as const) {
+    assert.doesNotMatch(classesOf(jsx) + jsx.replace(/aria-hidden="true"/g, ""), /invisible|(^|[\s:"`])hidden(\s|$|["`])/, `${what} never hidden or invisible`);
+  }
   // Disabled reads as disabled: grey fill, grey icon — not a faded orange.
   assert.match(routeMap, /const SLOT_DISABLED = "[^"]*disabled:bg-stone-200[^"]*disabled:text-stone-400/);
   assert.doesNotMatch(confirm, /disabled:opacity-/);
@@ -66,10 +79,9 @@ test("the bar is at the bottom at every width: field, then fixed slots (desktop 
   assert.match(routeMap, /ref=\{headerRef\} data-map-chrome className=\{controls \? "absolute bottom-3 left-3 right-3 z-20 flex flex-col-reverse/);
   assert.match(routeMap, /placement="above"/);
   const bar = routeMap.slice(routeMap.indexOf("function DesktopBar"), routeMap.indexOf("function PhoneColumn"));
-  // Left to right after the field: ✓, ↶, +/✕.
-  const i3 = bar.indexOf('data-slot="3"'), i2 = bar.indexOf('data-slot="2"'), i1 = bar.indexOf('data-slot="1"');
-  assert.ok(i3 > 0 && i3 < i2 && i2 < i1, "✓ ↶ +/✕ in that order");
-  assert.match(bar, /\{pending \? \(\s*<button[^>]*onClick=\{pending\.onCancel\} data-slot="1"/);
+  // Left to right after the field: ✓, ↶, +, ✕ — each its own button.
+  const i3 = bar.indexOf('data-slot="3"'), i2 = bar.indexOf('data-slot="2"'), i1 = bar.indexOf("<AddSlot "), ix = bar.indexOf("<CancelSlot ");
+  assert.ok(i3 > 0 && i3 < i2 && i2 < i1 && i1 < ix, "✓ ↶ + ✕ in that order");
   assert.match(bar, /size-10/);
 });
 
