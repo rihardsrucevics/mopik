@@ -854,6 +854,16 @@ happened on 2026-09-12; keys were restored from the production environment
 (`vercel env pull` to a temp file, then append). Pull to a temp path, never
 to `.env.local` directly.
 
+**Gate data (2026-09-28):** `public/gates/{LV,LT,EE}.json` carry each gate's
+OSM node id and `access=*` (the gate card's „Skatīt OSM” link and access line),
+added by `scripts/enrich-gates-osm.ts`; `build_gates_dataset.py` now writes
+both itself. `data/` is untracked, so any checkout's `data/gates-*.json` may be
+an older, id-less copy (the main checkout's is). `scripts/publish-gates.ts`
+therefore never downgrades: a source older than the published file is skipped
+and the published file kept; a source row without an id takes the id and
+access of the published row at the same coordinates and `barrier=*`. It prints
+what it kept or carried — read that line. `--force` is a deliberate rollback.
+
 ## BRouter runs locally
 
 `../brouter-server/start.sh` (outside the repo; BRouter 1.7.10 + Baltic

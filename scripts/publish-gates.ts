@@ -31,6 +31,25 @@
  * because the content is not GeoJSON and should not claim to be — the predecessor
  * `public/yards/*.geojson` files did, and they were not.
  *
+ * ## It never throws away what is already published
+ *
+ * `data/` is untracked and per checkout, so a stale copy of it can sit in any
+ * checkout. Two things protect `public/gates/` from one (release check,
+ * 2026-09-28: the main checkout's `data/gates-{LV,LT,EE}.json` predate the
+ * node ids and `access=*` that `scripts/enrich-gates-osm.ts` added to the
+ * published files, and a plain copy would have wiped them):
+ *
+ * - **An older build never replaces a newer one.** A source whose `builtAt`
+ *   is before the published file's is skipped with a warning and the
+ *   published file is kept as it is (and indexed as it is).
+ * - **Ids and access are carried over.** A source row with no node id takes
+ *   the id and `access=*` of the published row at the very same coordinates
+ *   with the same `barrier=*` — the row the enrichment matched, so a fact
+ *   carried and not a guess. Rows that match nothing, or match twice, stay
+ *   without them, exactly as the enrichment leaves them.
+ *
+ * `--force` publishes the sources as they are, for a deliberate rollback.
+ *
  * ## Backlog item 12, and what this replaced
  *
  * This is the gates-only build. Its predecessor (`publish-yards.ts`) shipped
@@ -85,14 +104,63 @@ type GateFile = {
   highwayKinds?: string[];
   accessKinds?: string[];
   /** [lon, lat, barrierIndex, highwayIndex, nodeId?, accessIndex?] — see `lib/geo/gates.ts` */
-  gates?: [number, number, number, number, number?, number?][];
+  gates?: GateRow[];
 };
+type GateRow = [number, number, number, number, number?, number?];
+
+export type PublishOptions = { force?: boolean; log?: (line: string) => void };
+
+/**
+ * What the published file at `out` says about the source `fc`: whether it is
+ * a newer build (keep it), and the source with node ids and access carried
+ * over from it where the source has none (see the header).
+ */
+export function mergePublished(fc: GateFile, published: GateFile | null): { file: GateFile; keepPublished: boolean; carried: number } {
+  if (!published) return { file: fc, keepPublished: false, carried: 0 };
+  const srcAt = fc.builtAt ? Date.parse(fc.builtAt) : NaN;
+  const pubAt = published.builtAt ? Date.parse(published.builtAt) : NaN;
+  if (Number.isFinite(srcAt) && Number.isFinite(pubAt) && srcAt < pubAt) return { file: published, keepPublished: true, carried: 0 };
+
+  const pubBarriers = published.barrierKinds ?? [];
+  const pubAccess = published.accessKinds ?? [];
+  const byPlace = new Map<string, { id: number; access: string | null }[]>();
+  for (const row of published.gates ?? []) {
+    const id = row[4];
+    if (typeof id !== "number" || !(id > 0)) continue;
+    const key = `${row[0]},${row[1]},${pubBarriers[row[2]] ?? row[2]}`;
+    const access = typeof row[5] === "number" && row[5] >= 0 ? pubAccess[row[5]] ?? null : null;
+    const list = byPlace.get(key);
+    if (list) list.push({ id, access });
+    else byPlace.set(key, [{ id, access }]);
+  }
+  if (!byPlace.size) return { file: fc, keepPublished: false, carried: 0 };
+
+  const barriers = fc.barrierKinds ?? [];
+  const accessKinds = [...(fc.accessKinds ?? [])];
+  const accessIndex = (value: string | null): number => {
+    if (!value) return -1;
+    let i = accessKinds.indexOf(value);
+    if (i < 0) { accessKinds.push(value); i = accessKinds.length - 1; }
+    return i;
+  };
+  let carried = 0;
+  const gates = (fc.gates ?? []).map((row): GateRow => {
+    if (typeof row[4] === "number" && row[4] > 0) return row;
+    const hits = byPlace.get(`${row[0]},${row[1]},${barriers[row[2]] ?? row[2]}`);
+    if (!hits || hits.length !== 1) return row;
+    carried++;
+    return [row[0], row[1], row[2], row[3], hits[0].id, accessIndex(hits[0].access)];
+  });
+  if (!carried) return { file: fc, keepPublished: false, carried: 0 };
+  return { file: { ...fc, accessKinds, gates }, keepPublished: false, carried };
+}
 
 function round6(n: number): number {
   return Math.round(n * 1e6) / 1e6;
 }
 
-export function publish(inDir = IN_DIR, outDir = OUT_DIR): GateIndex {
+export function publish(inDir = IN_DIR, outDir = OUT_DIR, options: PublishOptions = {}): GateIndex {
+  const say = options.log ?? ((line: string) => console.log(line));
   const files = fs.existsSync(inDir)
     ? fs
         .readdirSync(inDir)
@@ -114,7 +182,16 @@ export function publish(inDir = IN_DIR, outDir = OUT_DIR): GateIndex {
   for (const file of files) {
     const cc = file.slice(6, 8);
     const src = path.join(inDir, file);
-    const fc = JSON.parse(fs.readFileSync(src, "utf-8")) as GateFile;
+    const out = path.join(outDir, `${cc}.json`);
+    const source = JSON.parse(fs.readFileSync(src, "utf-8")) as GateFile;
+    const published = !options.force && fs.existsSync(out) ? (JSON.parse(fs.readFileSync(out, "utf-8")) as GateFile) : null;
+    const merged = mergePublished(source, published);
+    const fc = merged.file;
+    if (merged.keepPublished) {
+      say(`${cc}: kept public/gates/${cc}.json (built ${published?.builtAt}) — data/${file} is an older build (${source.builtAt}); --force to publish it anyway`);
+    } else if (merged.carried) {
+      say(`${cc}: ${merged.carried} node ids and access values carried over from the published file (data/${file} has none for them)`);
+    }
 
     const barrierKinds = fc.barrierKinds ?? [];
     const highwayKinds = fc.highwayKinds ?? [];
@@ -150,9 +227,8 @@ export function publish(inDir = IN_DIR, outDir = OUT_DIR): GateIndex {
     // The build already writes the packed form with no whitespace; this is a
     // re-serialisation rather than a transform, so the published bytes stay the
     // authority on what the loader sees.
-    const out = path.join(outDir, `${cc}.json`);
     const minified = JSON.stringify(fc);
-    fs.writeFileSync(out, minified);
+    if (!merged.keepPublished) fs.writeFileSync(out, minified);
     const bytes = Buffer.byteLength(minified);
 
     countries.push({
@@ -162,7 +238,7 @@ export function publish(inDir = IN_DIR, outDir = OUT_DIR): GateIndex {
       byHighway,
       bbox,
       cells,
-      builtAt: fc.builtAt ?? fs.statSync(src).mtime.toISOString(),
+      builtAt: fc.builtAt ?? fs.statSync(merged.keepPublished ? out : src).mtime.toISOString(),
       bytes,
     });
 
@@ -191,14 +267,14 @@ export function publish(inDir = IN_DIR, outDir = OUT_DIR): GateIndex {
   const widths = header.map((h, i) => Math.max(h.length, ...rows.map((r) => r[i].length)));
   const line = (cells: string[]) =>
     cells.map((c, i) => c.padEnd(widths[i])).join("  ").trimEnd();
-  console.log(line(header));
-  console.log(widths.map((w) => "-".repeat(w)).join("  "));
-  for (const r of rows) console.log(line(r));
+  say(line(header));
+  say(widths.map((w) => "-".repeat(w)).join("  "));
+  for (const r of rows) say(line(r));
 
   const total = countries.reduce((n, c) => n + c.count, 0);
   const totalBytes = countries.reduce((n, c) => n + c.bytes, 0);
   const indexBytes = fs.statSync(path.join(outDir, "index.json")).size;
-  console.log(
+  say(
     `\n${countries.length} countries, ${total.toLocaleString()} gates, ` +
       `${(totalBytes / 1024).toFixed(0)} KB in public/gates/, ` +
       `index.json ${(indexBytes / 1024).toFixed(1)} KB`
@@ -208,6 +284,6 @@ export function publish(inDir = IN_DIR, outDir = OUT_DIR): GateIndex {
 }
 
 // `tsx scripts/publish-gates.ts` runs it; `import` from a test does not.
-if (process.argv[1] && path.resolve(process.argv[1]).includes("publish-gates")) {
-  publish();
+if (require.main === module) {
+  publish(IN_DIR, OUT_DIR, { force: process.argv.includes("--force") });
 }
