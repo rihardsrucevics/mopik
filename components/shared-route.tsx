@@ -41,7 +41,7 @@ const variantLabel = (m: ReturnType<typeof messages>, variant: string): string =
  * off the column edge. aria-hidden: the label says it in words. The explicit
  * font-size keeps a colour emoji inside the 12 px row.
  */
-function Row({ label, value, icon }: { label: string; value: string; icon?: string }) {
+function Row({ label, value, icon }: { label: string; value: string; icon?: React.ReactNode }) {
   return <div className="flex justify-between gap-3 py-0.5 text-xs"><span className="flex min-w-0 items-center gap-1 text-stone-500">{label}{icon && <span aria-hidden="true" className="shrink-0 text-[12px] leading-none">{icon}</span>}</span><span className="tabular-nums text-stone-900">{value}</span></div>;
 }
 

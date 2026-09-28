@@ -24,7 +24,7 @@ import { neighboursAlong } from "@/lib/map/point-selection";
 import type { ProposalView } from "@/lib/map/edit-proposal";
 import { useProposalLayer } from "@/components/map/proposal-layer";
 import { gatesAlong, gateHighlightLine, type GateOnRide } from "@/lib/map/gates-along";
-import { gateAtLabel, gateCardHtml } from "@/components/gate-card";
+import { gateAtLabel, gateCardHtml, gateGlyphFor, gateIconSvg, type GateGlyph } from "@/components/gate-card";
 // ── P1-D: imports ──
 import { LoaderCircle } from "lucide-react";
 import { useProposalRefused } from "@/components/map/proposal-layer";
@@ -769,18 +769,17 @@ const BADGE_KINDS: WarningKind[] = ["unverified", "trail"];
 const SHOW_GATE_MARKERS = true;
 
 /**
- * 🚪, and why it is a door rather than 🚧 or ⛩️.
+ * The gate glyph's size inside its 20 px pill.
  *
- * 🚧 is the roadworks barrier: it says "closed, works ahead", which is the one
- * thing a Latvian forest gate usually is not — it stands open more often than
- * not, and that is exactly why item 12 reports gates instead of avoiding them.
- * ⛩️ is a Shinto torii; it reads as a gateway but means a shrine, and its
- * crossbeams turn to mush at this size. 🚪 is a rectangle with a handle: almost
- * no internal detail, so it survives being drawn at 13 px in a 20 px pill, and
- * it means the thing the card says — something across your way that you can
- * open. Same glyph in the RISKI row (`GATE_ICON` in `result-panel.tsx`).
+ * Not an emoji any more: the rider replaced the 🚪 with two small drawings of
+ * our own, picked by `barrier=*` — a boom barrier (šlagbaums) for `lift_gate`
+ * and `chain`, a field gate for everything else (`gateIconSvg` in
+ * `components/gate-card.tsx` has both and why). 🚪 said "gate" but not which
+ * kind, and the kind is what the gate card is about. The same drawing heads
+ * the card and marks the gate in the segment card and in RISKI. The warning
+ * badges stay ⚠️ and 🔥 — only the gate changed.
  */
-const GATE_EMOJI = "🚪";
+const GATE_GLYPH_PX = 14;
 
 /**
  * Most gate markers one route may carry.
@@ -815,12 +814,12 @@ const PHONE_QUERY = "(max-width: 767px)";
  *
  * The pill is 20 px and stays so; a phone tap on it missed as often as not.
  * The button is this big and transparent, with the pill drawn in its middle,
- * so a tap anywhere near the 🚪 is the gate's — and, being a marker, never
+ * so a tap anywhere near the gate glyph is the gate's — and, being a marker, never
  * reaches the line underneath (`onMarker` keeps a drag from grabbing it too).
  */
 const GATE_HIT_PX = 44;
 
-function gateElement(title: string): HTMLElement {
+function gateElement(title: string, glyph: GateGlyph): HTMLElement {
   const el = document.createElement("button");
   el.type = "button";
   el.title = title;
@@ -837,9 +836,7 @@ function gateElement(title: string): HTMLElement {
     `<span aria-hidden="true" style="display:flex;align-items:center;justify-content:center;` +
     `width:20px;height:20px;border-radius:10px;` +
     `background:rgba(255,255,255,0.92);box-shadow:0 1px 2px rgba(0,0,0,0.2);opacity:0.9">` +
-    `<span style="display:inline-flex;align-items:center;` +
-    `justify-content:center;width:14px;height:14px;font-size:13px;line-height:1">` +
-    `${GATE_EMOJI}</span></span>`;
+    `${gateIconSvg(glyph, GATE_GLYPH_PX)}</span>`;
   return el;
 }
 
@@ -1502,15 +1499,14 @@ function segmentInfoHtml(
   // rather than "this stretch has N gates". The count is the fallback for a
   // caller that could not place them.
   const gateCount = props.gates ?? 0;
-  const gateRows = gates.length
-    ? gates.map((g) => gateAtLabel(m, locale, g))
-    : gateCount > 0 ? [fi(m.segGates, { n: gateCount })] : [];
-  for (const row of gateRows) {
+  const gateRows: [string, GateGlyph][] = gates.length
+    ? gates.map((g) => [gateAtLabel(m, locale, g), gateGlyphFor(g.info?.barrier)])
+    : gateCount > 0 ? [[fi(m.segGates, { n: gateCount }), "field"]] : [];
+  for (const [row, glyph] of gateRows) {
     flags.push(
-      `<div style="display:flex;align-items:flex-start;gap:6px">` +
+      `<div style="display:flex;align-items:center;gap:6px">` +
       `<span aria-hidden="true" style="display:inline-flex;align-items:center;` +
-      `justify-content:center;width:${WARNING_ICON_PX}px;flex:none;` +
-      `font-size:${WARNING_EMOJI_FONT_PX}px;line-height:1">${GATE_EMOJI}</span>` +
+      `justify-content:center;width:${WARNING_ICON_PX}px;flex:none">${gateIconSvg(glyph, GATE_GLYPH_PX)}</span>` +
       `<span>${esc(row)}</span></div>`
     );
   }
@@ -2804,7 +2800,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
       gateMarkersRef.current =
         enriched && SHOW_GATE_MARKERS
           ? gateMarksFor(enriched).map((g) => {
-              const el = gateElement(gateAtLabel(m, locale, g));
+              const el = gateElement(gateAtLabel(m, locale, g), gateGlyphFor(g.info?.barrier));
               el.addEventListener("click", (event) => {
                 // Same reason the badges stop it: otherwise the click also
                 // reaches the map and opens a second card underneath this one.

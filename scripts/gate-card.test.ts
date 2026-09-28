@@ -20,7 +20,7 @@ import { BARRIER_KINDS, GATE_HIGHWAYS, bboxOf, gateLookup, resetGateCache } from
 import { classifyRoute } from "@/lib/routing/classify";
 import { segmentsBetween } from "@/lib/routing/reroute-leg";
 import { gatesAlong, gateHighlightLine, osmNodeUrl, type GateOnRide } from "@/lib/map/gates-along";
-import { gateAccessLabel, gateAtLabel, gateCardHtml, gateKindLabel, gateKm } from "@/components/gate-card";
+import { gateAccessLabel, gateAtLabel, gateCardHtml, gateGlyphFor, gateIconSvg, gateKindLabel, gateKm } from "@/components/gate-card";
 import { messages } from "@/lib/i18n/messages";
 import { UI_LOCALES } from "@/lib/i18n/locale";
 import { haversineMeters } from "@/lib/geo/geometry";
@@ -278,4 +278,24 @@ test("enrichment adds an id only for exactly one node of the same kind at the sp
   assert.equal(out.file.accessKinds![0], "private");
   assert.equal(out.file.gates![1].length, 4);
   assert.equal(out.file.gates![2].length, 4);
+});
+
+// --- the glyphs ---------------------------------------------------------------
+
+test("a boom barrier for lift_gate and chain, a field gate for the rest and for unknown", () => {
+  assert.equal(gateGlyphFor("lift_gate"), "boom");
+  assert.equal(gateGlyphFor("chain"), "boom");
+  for (const b of ["gate", "swing_gate", "bollard", "cattle_grid", "something_new", undefined]) {
+    assert.equal(gateGlyphFor(b), "field", String(b));
+  }
+  // Inline SVG, no emoji and no external asset, and the card heads with it.
+  for (const g of ["boom", "field"] as const) {
+    const svg = gateIconSvg(g, 14);
+    assert.match(svg, /^<svg [^>]*viewBox="0 0 14 14" width="14" height="14"/);
+    assert.ok(!/href|url\(|🚪/.test(svg));
+  }
+  assert.notEqual(gateIconSvg("boom"), gateIconSvg("field"));
+  assert.ok(gateCardHtml(lv, "lv", gate({ barrier: "chain" })).includes(gateIconSvg("boom", 16)));
+  assert.ok(gateCardHtml(lv, "lv", gate({ barrier: "gate" })).includes(gateIconSvg("field", 16)));
+  assert.ok(!gateCardHtml(lv, "lv", gate({ barrier: "gate" })).includes("🚪"));
 });
