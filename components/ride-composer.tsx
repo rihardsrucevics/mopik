@@ -6,7 +6,7 @@ import type { MapChoiceGroup, MapControls, MapPendingMark } from "@/components/r
 import type { MapPointSheetRow } from "@/components/map-point-sheet";
 import { RidePlan } from "@/lib/chat/ride-plan";
 import { composeRidePlan, placesFromPlan } from "@/lib/chat/compose-plan";
-import { planLine } from "@/lib/map/plan-line";
+import { pendingChains, planLine } from "@/lib/map/plan-line";
 import { emptyUndo, popRedo, popUndo, pushUndo, type UndoStack } from "@/lib/map/undo-stack";
 import { RoutePlaces, addStop, addedStopIndex, defaultActiveRow, followRow, rowAfterConfirm, rowLabel, maxRows } from "@/components/route-places";
 import { useLocale } from "@/lib/i18n/use-locale";
@@ -32,7 +32,7 @@ import { stepBatch } from "@/lib/map/batch-commit";
 import { mapFieldMode } from "@/lib/map/map-field";
 import { openMapFullscreen } from "@/lib/map/fullscreen";
 import { MAX_SHAPE_POINTS, MAX_STOPS } from "@/lib/chat/ride-limits";
-import { demoteInPlan, livePlanDots, neighboursAlong, planDotsFromPlan, planShapePoints, pointActions, promoteInPlan, selectionLive, type PlanDot, type PointSelection } from "@/lib/map/point-selection";
+import { demoteInPlan, livePlanDots, planDotsFromPlan, planShapePoints, pointActions, promoteInPlan, selectionLive, type PlanDot, type PointSelection } from "@/lib/map/point-selection";
 import {
   PROFILE_PRESETS,
   normalizeProfile,
@@ -2486,17 +2486,35 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   const viaWaiting = lineSel?.phase === "via" && grab !== null && !grab.to;
   const lineKey = !lineSel ? "" : [lineSel.phase, lineSel.spot.lat, lineSel.spot.lon, lineSel.km, lineSel.heading, viaWaiting ? 1 : 0].join("|");
   // ── /line-sheet ──
-  const movePreview = !edit || batch.length ? null
+  // Release B: one mechanism for every pending mark — chains prev → new →
+  // next per affected leg (`pendingChains`), gone once the proposal has
+  // landed (its line says it then) and with the pending state on ✓ / ✕.
+  const proposalLanded = edit?.proposal?.phase === "proposed";
+  const chainRow = (i: number) => (picked[i] ? { lat: picked[i]!.lat, lon: picked[i]!.lon } : null);
+  const movePreview = !edit || proposalLanded ? null
+    : batch.length ? {
+        chains: pendingChains({
+          rows: places.map((_, i) => { const b = batch.find((x) => x.row === i); return b ? { lat: b.lat, lon: b.lon, id: b.id } : chainRow(i); }),
+          pending: places.map((_, i) => batch.some((x) => x.row === i)),
+          roundTrip: tripType === "round_trip",
+        }),
+        candidate: null,
+      }
     : shapePending?.kind === "add" ? { origin: shapePending.at, candidate: shapePending.to, ...(viaWaiting ? { follow: true } : {}) }
     : shapePending?.kind === "move" ? { origin: edit.shapePoints[shapePending.index] ?? null, candidate: shapePending.to }
     : pointSel?.kind === "shape" && pointSel.phase === "move" ? { origin: edit.shapePoints[pointSel.index] ?? null, candidate: null }
-    : activeRow !== null && (preview || pointSel?.phase === "move" || rowIsNew) ? {
-        neighbours: neighboursAlong(
-          places.map((_, i) => (i !== activeRow && picked[i] ? { point: { lat: picked[i]!.lat, lon: picked[i]!.lon }, along: i } : null)).filter((a): a is { point: { lat: number; lon: number }; along: number } => a !== null),
-          activeRow, tripType === "round_trip"),
-        // The mark itself while its name is still being looked up.
-        candidate: preview ? { lat: preview.lat, lon: preview.lon } : pickPoint && pickPoint.token !== 0 && namedToken !== pickPoint.token ? { lat: pickPoint.lat, lon: pickPoint.lon } : null,
-      }
+    : activeRow !== null && (preview || pointSel?.phase === "move" || rowIsNew) ? (() => {
+        // The mark itself — while its name is still being looked up, its spot.
+        const candidate = preview ? { lat: preview.lat, lon: preview.lon } : pickPoint && pickPoint.token !== 0 && namedToken !== pickPoint.token ? { lat: pickPoint.lat, lon: pickPoint.lon } : null;
+        return {
+          chains: !candidate ? [] : pendingChains({
+            rows: places.map((_, i) => (i === activeRow ? { ...candidate, id: -1 } : chainRow(i))),
+            pending: places.map((_, i) => i === activeRow),
+            roundTrip: tripType === "round_trip",
+          }),
+          candidate,
+        };
+      })()
     : null;
   const movePreviewKey = movePreview ? JSON.stringify(movePreview) : "";
   const stopCount = places.slice(1, tripType === "one_way" ? -1 : undefined).filter((p) => p.trim()).length;
