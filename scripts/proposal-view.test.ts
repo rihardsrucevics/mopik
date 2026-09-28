@@ -218,3 +218,22 @@ test("the span's ends are named by the kept places it runs between", async () =>
   const open = spanEnds({ line, cum, before: { ...places, finish: null }, span: { fromMeters: cum[200], toMeters: cum[300] } });
   assert.equal(open.to, null, "the line's own end is no place");
 });
+
+test("a bend that brings the line no nearer to where it was dropped is not a bend (the measured worst re-routes)", async () => {
+  const { bendMissed } = await import("../lib/map/proposal-view");
+  // Antiņciems 21 %: dropped 416 m off, the re-routed line 416 m off — 12.4 km re-routed for nothing.
+  assert.equal(bendMissed(416, 416), true);
+  // Mālpils 21 %: 453 → 453; Antiņciems 45 %: 469 → 461 (8 m nearer is not a bend).
+  assert.equal(bendMissed(453, 453), true);
+  assert.equal(bendMissed(469, 461), true);
+  // Real bends: Kaņieris 63 % 284 → 8 m; Antiņciems 60 % 340 → 195 m; Sigulda 60 % 222 → 118 m.
+  assert.equal(bendMissed(284, 8), false);
+  assert.equal(bendMissed(340, 195), false);
+  assert.equal(bendMissed(222, 118), false);
+  // At least 50 m nearer however close it was dropped, a quarter of the way when far.
+  assert.equal(bendMissed(150, 101), true);
+  assert.equal(bendMissed(150, 100), false);
+  assert.equal(bendMissed(800, 650), true);
+  // A point put on the line (or all but) is the composer's to answer, never refused here.
+  assert.equal(bendMissed(55, 55), false);
+});

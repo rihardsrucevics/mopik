@@ -83,7 +83,7 @@ export type AnalyticsEvent =
   | "route_edit_proposed"     // a pending edit routed and shown as a preview; props: how, ms (mark → preview), km_delta, repeated_before, repeated_after — is the preview fast enough to be the default?
   | "route_edit_confirmed"    // ✓ on a preview, committed to the ride and the undo (`route_edited` still fires for the commit); props: how, while_routing (✓ pressed before it landed)
   | "route_edit_discarded"    // ✕ on a preview, or the pending mark went away; props: how, phase (routing|proposed|refused) — how often does the preview change the rider's mind?
-  | "route_edit_refused"      // a preview could not be routed; props: how, reason (status|network|degenerate|broken-line|too-far|no-place)
+  | "route_edit_refused"      // a preview could not be routed; props: how, reason (status|network|degenerate|broken-line|too-far|no-place|bend-missed)
   | "point_kind_switched"     // „Padarīt par pieturu” / „Padarīt caurbraucamu”, committed at once; props: to (stop|pass), mode (plan|edit) — is the one-kind-of-point model used both ways?
   // Phase 1 addition (2026-09-28): where a new point goes, its kind while pending, a pass-through point moved onto the line.
   | "new_point_placed"        // a new point went into its nearest leg; props: unsure (null|far|close|beyond-finish), mode (plan|edit) — how often is Mopik not sure?

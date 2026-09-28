@@ -85,7 +85,7 @@ import {
   type ProposalView,
   type Segments,
 } from "@/lib/map/edit-proposal";
-import { changeKey, changedAlong, isKindSwitch, NOTE_JOINER, proposalView, proposeDelay, staleWhileRouting, newStretches, wideNeedsAsking } from "@/lib/map/proposal-view";
+import { bendMissed, changeKey, changedAlong, isKindSwitch, NOTE_JOINER, proposalView, proposeDelay, staleWhileRouting, newStretches, wideNeedsAsking } from "@/lib/map/proposal-view";
 import type { Point } from "@/lib/geo/geometry";
 import type { PlaceRoles } from "@/lib/map/place-roles";
 import type { RideEdit } from "@/components/ride-composer";
@@ -1425,6 +1425,14 @@ export function HomePage() {
         : planned.places;
       const snapped = snapToLine({ line: spliced.coordinates, before, after: withJoins, maxMoveMeters: MOVE_OFFER_MAX_M });
       if ("error" in snapped) return refuse(fi(ui.pickOffRoadTitle, { m: snapped.meters }), "too-far");
+      // A bend the router could not take nearer to where it was dropped is
+      // not proposed: what it re-routed on the way is noise (`bendMissed`).
+      if (p.change.kind === "shape" && (p.change.op.kind === "add" || p.change.op.kind === "move")) {
+        const drop: Point = [p.change.op.lon, p.change.op.lat];
+        const offBefore = nearestAlong(drop, line, cumulative(line)).meters;
+        const offAfter = nearestAlong(drop, spliced.coordinates, cumulative(spliced.coordinates)).meters;
+        if (bendMissed(offBefore, offAfter)) return refuse(fi(ui.pickOffRoadTitle, { m: Math.round(offAfter) }), "bend-missed");
+      }
       // Where a grabbed line point was taken only mattered to this edit's
       // plan; the shaping point it became is an ordinary one from here on.
       const settled = { ...snapped.places, vias: snapped.places.vias.map((v) => { const { grabbedAt: _g, ...rest } = v; void _g; return rest; }) };
