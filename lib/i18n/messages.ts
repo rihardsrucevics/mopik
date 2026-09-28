@@ -675,7 +675,34 @@ export type MessageKey =
   /** The gate row inside the map's segment card. `{n}` is the count on that
    *  stretch — what it means for the riding, which the panel's number cannot
    *  say: the gate may have to be opened, or it may turn the ride back. */
-  | "segGates";
+  | "segGates"
+  /** The gate card (tap a gate on the map) and the gate rows in the segment
+   *  card and RISKI. Kinds name OSM's `barrier=*`; access lines put the node's
+   *  own `access=*` in plain words, `gateAccessRaw` shows any other value
+   *  verbatim. `gateAtKm` is „Vārti 37,2 km”. Only explicit OSM facts. */
+  | "gateKindGate"
+  | "gateKindLiftGate"
+  | "gateKindSwingGate"
+  | "gateKindChain"
+  | "gateKindBollard"
+  | "gateKindCattleGrid"
+  | "gateAccessPrivate"
+  | "gateAccessNo"
+  | "gateAccessPermissive"
+  | "gateAccessDestination"
+  | "gateAccessCustomers"
+  | "gateAccessPermit"
+  | "gateAccessYes"
+  | "gateAccessForestry"
+  | "gateAccessAgricultural"
+  | "gateAccessMilitary"
+  | "gateAccessDelivery"
+  | "gateAccessResidents"
+  | "gateAccessRaw"
+  | "gateFromStart"
+  | "gateAtKm"
+  | "gateOsmLink"
+  | "gateListMore";
 
 type Messages = Record<MessageKey, string>;
 
@@ -1203,6 +1230,29 @@ const lv: Messages = {
   segOnTet: "Pa TET",
   segRough: "Grūts meža ceļš",
   segGates: "{n} vārti šajā posmā — var būt jāatver vai jāgriežas.",
+  gateKindGate: "Vārti",
+  gateKindLiftGate: "Barjera ar pacēlāju",
+  gateKindSwingGate: "Pagriežama barjera",
+  gateKindChain: "Ķēde",
+  gateKindBollard: "Stabiņš",
+  gateKindCattleGrid: "Lopu režģis",
+  gateAccessPrivate: "Privāts — tikai ar īpašnieka atļauju",
+  gateAccessNo: "Iebraukt aizliegts",
+  gateAccessPermissive: "Īpašnieks atļauj braukt",
+  gateAccessDestination: "Tikai piebraukšanai",
+  gateAccessCustomers: "Tikai klientiem",
+  gateAccessPermit: "Vajadzīga atļauja",
+  gateAccessYes: "Braukt atļauts",
+  gateAccessForestry: "Tikai meža darbiem",
+  gateAccessAgricultural: "Tikai lauksaimniecībai",
+  gateAccessMilitary: "Militāra teritorija",
+  gateAccessDelivery: "Tikai piegādēm",
+  gateAccessResidents: "Tikai iedzīvotājiem",
+  gateAccessRaw: "OSM piekļuve: {value}",
+  gateFromStart: "{km} km no starta",
+  gateAtKm: "{name} {km} km",
+  gateOsmLink: "Skatīt OSM",
+  gateListMore: "vēl {n}",
 };
 
 const lt: Messages = {
@@ -1699,6 +1749,29 @@ const lt: Messages = {
   segOnTet: "TET keliu",
   segRough: "Sunkus miško kelias",
   segGates: "{n} vartai šioje atkarpoje — gali tekti atidaryti arba suktis atgal.",
+  gateKindGate: "Vartai",
+  gateKindLiftGate: "Pakeliamas užtvaras",
+  gateKindSwingGate: "Pasukamas užtvaras",
+  gateKindChain: "Grandinė",
+  gateKindBollard: "Stulpelis",
+  gateKindCattleGrid: "Gyvulių grotelės",
+  gateAccessPrivate: "Privatu — tik su savininko leidimu",
+  gateAccessNo: "Įvažiuoti draudžiama",
+  gateAccessPermissive: "Savininkas leidžia važiuoti",
+  gateAccessDestination: "Tik privažiavimui",
+  gateAccessCustomers: "Tik klientams",
+  gateAccessPermit: "Reikia leidimo",
+  gateAccessYes: "Važiuoti leidžiama",
+  gateAccessForestry: "Tik miško darbams",
+  gateAccessAgricultural: "Tik žemės ūkiui",
+  gateAccessMilitary: "Karinė teritorija",
+  gateAccessDelivery: "Tik pristatymui",
+  gateAccessResidents: "Tik gyventojams",
+  gateAccessRaw: "OSM prieiga: {value}",
+  gateFromStart: "{km} km nuo starto",
+  gateAtKm: "{name} {km} km",
+  gateOsmLink: "Žiūrėti OSM",
+  gateListMore: "dar {n}",
 };
 
 const et: Messages = {
@@ -2191,6 +2264,29 @@ const et: Messages = {
   segOnTet: "TET-i mööda",
   segRough: "Raske metsatee",
   segGates: "{n} väravat sellel lõigul — võib olla vaja avada või tagasi pöörata.",
+  gateKindGate: "Värav",
+  gateKindLiftGate: "Tõkkepuu",
+  gateKindSwingGate: "Pööratav tõkkepuu",
+  gateKindChain: "Kett",
+  gateKindBollard: "Tõkkepost",
+  gateKindCattleGrid: "Karjarest",
+  gateAccessPrivate: "Eravaldus — ainult omaniku loal",
+  gateAccessNo: "Sissesõit keelatud",
+  gateAccessPermissive: "Omanik lubab läbi sõita",
+  gateAccessDestination: "Ainult sihtkohta",
+  gateAccessCustomers: "Ainult klientidele",
+  gateAccessPermit: "Vaja on luba",
+  gateAccessYes: "Sõitmine lubatud",
+  gateAccessForestry: "Ainult metsatöödeks",
+  gateAccessAgricultural: "Ainult põllumajanduseks",
+  gateAccessMilitary: "Sõjaväe ala",
+  gateAccessDelivery: "Ainult kättetoimetamiseks",
+  gateAccessResidents: "Ainult elanikele",
+  gateAccessRaw: "OSM-i ligipääs: {value}",
+  gateFromStart: "{km} km stardist",
+  gateAtKm: "{name} {km} km",
+  gateOsmLink: "Vaata OSM-is",
+  gateListMore: "veel {n}",
 };
 
 const en: Messages = {
@@ -2681,6 +2777,29 @@ const en: Messages = {
   segOnTet: "On the TET",
   segRough: "Rough forest track",
   segGates: "{n} gates on this stretch — you may have to open one or turn back.",
+  gateKindGate: "Gate",
+  gateKindLiftGate: "Boom barrier",
+  gateKindSwingGate: "Swing gate",
+  gateKindChain: "Chain",
+  gateKindBollard: "Bollard",
+  gateKindCattleGrid: "Cattle grid",
+  gateAccessPrivate: "Private — only with the owner's permission",
+  gateAccessNo: "No entry",
+  gateAccessPermissive: "The owner allows passage",
+  gateAccessDestination: "Access to destination only",
+  gateAccessCustomers: "Customers only",
+  gateAccessPermit: "Permit required",
+  gateAccessYes: "Access allowed",
+  gateAccessForestry: "Forestry only",
+  gateAccessAgricultural: "Agricultural only",
+  gateAccessMilitary: "Military area",
+  gateAccessDelivery: "Deliveries only",
+  gateAccessResidents: "Residents only",
+  gateAccessRaw: "OSM access: {value}",
+  gateFromStart: "{km} km from the start",
+  gateAtKm: "{name} {km} km",
+  gateOsmLink: "View on OSM",
+  gateListMore: "{n} more",
 };
 
 const MESSAGES: Record<UiLocale, Messages> = { lv, lt, et, en };

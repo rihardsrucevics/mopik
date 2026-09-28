@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useLocale } from "@/lib/i18n/use-locale";
+import { GateRiskList } from "@/components/gate-card";
+import { gatesAlong } from "@/lib/map/gates-along";
 import { t, messages } from "@/lib/i18n/messages";
 import { fi } from "@/lib/i18n/format";
 import { ArrowLeft, ArrowUp, Download, LoaderCircle, RefreshCw } from "lucide-react";
@@ -876,6 +878,12 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
                     gates", which is the `sparsePlaceData` rule again. */}
                 {(q.gateCount ?? 0) > 0 && (
                   <Row label={m.resGatesRow} value={`${q.gateCount}`} icon={GATE_ICON} />
+                )}
+                {/* …and each of them by kind and kilometre, „Vārti 37,2 km”,
+                    counted along the line the map is drawing so the list and
+                    a tapped gate's card name the same number. */}
+                {(q.gateCount ?? 0) > 0 && (
+                  <GateRiskList gates={gatesAlong((spliced?.segments ?? route.segments).features)} m={m} locale={locale} />
                 )}
               </div>
             )}

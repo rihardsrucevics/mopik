@@ -874,14 +874,18 @@ export function segmentsBetween(features: Features, fromMeters: number, toMeters
     const cum = cumulative(coords);
     const piece = sliceBetween(coords, cum, Math.max(0, fromMeters - start), Math.min(own, toMeters - start));
     if (piece.length < 2) continue;
-    const { gates, gatePoints, ...props } = feature.properties;
-    const kept = (gatePoints ?? []).filter((g) => piece.some((c) => haversineMeters(c, g) < 2));
+    const { gates, gatePoints, gateInfo, ...props } = feature.properties;
+    const keptAt = (gatePoints ?? []).flatMap((g, i) => (piece.some((c) => haversineMeters(c, g) < 2) ? [i] : []));
+    const kept = keptAt.map((i) => gatePoints![i]);
+    const keptInfo = gateInfo ? keptAt.flatMap((i) => (gateInfo[i] ? [gateInfo[i]] : [])) : undefined;
     out.push({
       ...feature,
       geometry: { type: "LineString", coordinates: piece },
       properties: {
         ...props,
-        ...(gates && kept.length ? { gates: kept.length, gatePoints: kept } : {}),
+        ...(gates && kept.length
+          ? { gates: kept.length, gatePoints: kept, ...(keptInfo?.length === kept.length ? { gateInfo: keptInfo } : {}) }
+          : {}),
         distanceMeters: Math.round(lineMeters(piece)),
       },
     });

@@ -5,6 +5,7 @@ import { bboxOf, gateLookup, hasGateData, type GateLookup } from "@/lib/geo/gate
 import { seaLookup, hasSeaData, type SeaLookup } from "@/lib/geo/sea";
 import { riddenStepFlags, riddenMetersFrom } from "./ridden";
 import {
+  GateInfo,
   OverlapStats,
   RoadClass,
   RouteEdge,
@@ -203,9 +204,11 @@ type GateMeasurement = {
   perPair: number[] | null;
   /** every gate's position, in the order they are met — what the map marks */
   points: [number, number][];
+  /** each point's OSM facts, index for index with `points` */
+  info: GateInfo[];
 };
 
-const EMPTY_GATES: GateMeasurement = { count: undefined, perPair: null, points: [] };
+const EMPTY_GATES: GateMeasurement = { count: undefined, perPair: null, points: [], info: [] };
 
 function measureGates(path: RoutePath, lookup: GateLookup | null): GateMeasurement {
   const coords = path.coordinates;
@@ -229,6 +232,7 @@ function measureGates(path: RoutePath, lookup: GateLookup | null): GateMeasureme
 
   const perPair = new Array<number>(coords.length - 1).fill(0);
   const points: [number, number][] = [];
+  const info: GateInfo[] = [];
   // One gate is one gate: a route that rides the same track twice passes the
   // same node twice, and the rider asked how many gates are on the road, not
   // how many times the line meets one.
@@ -246,13 +250,18 @@ function measureGates(path: RoutePath, lookup: GateLookup | null): GateMeasureme
     if (seen.has(key)) continue;
     seen.add(key);
     points.push([gate.lon, gate.lat]);
+    info.push({
+      barrier: gate.barrier,
+      ...(gate.id ? { id: gate.id } : {}),
+      ...(gate.access ? { access: gate.access } : {}),
+    });
     // Attribute it to the pair starting here, or — at the very last vertex,
     // which starts no pair — to the one ending there, so the gate lands on a
     // real segment and the map can mark it.
     perPair[Math.min(i, perPair.length - 1)] += 1;
   }
 
-  return { count: seen.size, perPair, points };
+  return { count: seen.size, perPair, points, info };
 }
 
 /**
@@ -686,6 +695,7 @@ export function classifyRoute(path: RoutePath): ClassifiedRoute {
    * a spliced ride keeps exactly the gates of the stretches it kept.
    */
   let currentGatePoints: [number, number][] = [];
+  let currentGateInfo: GateInfo[] = [];
 
   const flush = (endIndex: number) => {
     if (!current || endIndex <= segStart) return;
@@ -702,7 +712,7 @@ export function classifyRoute(path: RoutePath): ClassifiedRoute {
       properties: {
         ...current,
         ...(currentGates > 0
-          ? { gates: currentGates, gatePoints: currentGatePoints }
+          ? { gates: currentGates, gatePoints: currentGatePoints, gateInfo: currentGateInfo }
           : {}),
         distanceMeters: Math.round(meters),
       },
@@ -737,6 +747,7 @@ export function classifyRoute(path: RoutePath): ClassifiedRoute {
       segStart = i;
       currentGates = 0;
       currentGatePoints = [];
+      currentGateInfo = [];
       current = { roadClass, surface, ...(trackGrade ? { trackGrade } : {}), ...(unverified ? { unverified: true } : {}) };
     }
     // Counted into whichever run is open, including the one just started.
@@ -746,6 +757,7 @@ export function classifyRoute(path: RoutePath): ClassifiedRoute {
       // `perPair` counts and `points` lists, both in coordinate-pair order, so
       // the next `here` positions are this pair's.
       currentGatePoints.push(...gates.points.slice(gatesTaken, gatesTaken + here));
+      currentGateInfo.push(...gates.info.slice(gatesTaken, gatesTaken + here));
       gatesTaken += here;
     }
   }
