@@ -90,7 +90,8 @@ test("„Tomēr braukt” arms the shown warned proposal only, then confirms lik
 
 test("a bend no nearer after its spur was cut is asked again with the spur kept, before the next rung", () => {
   assert.match(page, /if \(bendMissed\(reachM, offAfter\) && !p\.keepSpurs && !p\.fallback\) return routeProposal\(\{ \.\.\.p, keepSpurs: true \}\);/);
-  assert.match(page, /\.\.\.\(p\.keepSpurs \? \{ keepSpurs: true \} : \{\}\)/);
+  assert.match(page, /const request = async \(runs: typeof planned\.runs, keepSpurs = p\.keepSpurs\)/);
+  assert.match(page, /\.\.\.\(keepSpurs \? \{ keepSpurs: true \} : \{\}\)/);
 });
 
 test("a stop at a real dead end is a plain proposal: said in its note, ✓ takes it (rider, 2026-09-28)", () => {
@@ -98,7 +99,8 @@ test("a stop at a real dead end is a plain proposal: said in its note, ✓ takes
   assert.doesNotMatch(src, /accept: accept \?\? "deadEnd", notes/, "no „Tomēr braukt” for a stop's dead end");
   assert.doesNotMatch(src, /ui\.editDeadEndAsk/);
   // A pass-through point left on a spur still waits for it.
-  assert.match(src, /accept: accept \?\? \("deadEnd" as const\), notes: notes\.map\(\(n\) => \(n === deadEndNote \? fi\(ui\.editDeadEndShapeAsk/);
+  // …and is called a dead end only when the router proved it (`deadEndNoteKey`, Lauriņi → Ērgļi).
+  assert.match(src, /accept: accept \?\? \("deadEnd" as const\), notes: notes\.map\(\(n\) => \(n === deadEndNote && deadEndRun \? fi\(ui\[deadEndNoteKey\(deadEndRun, true\)\]/);
   assert.equal(messages("lv").editDeadEnd.replace("{km}", "0,2"), "Pietura ir strupceļā – atpakaļ pa to pašu ceļu 0,2 km.");
-  for (const l of ["lv", "lt", "et", "en"] as const) for (const k of ["editDeadEnd", "editSameWayBack", "editDeadEndShape", "editSameWayBackShape"] as const) assert.doesNotMatch(messages(l)[k], /—/, `${l}.${k}`);
+  for (const l of ["lv", "lt", "et", "en"] as const) for (const k of ["editDeadEnd", "editSameWayBack", "editDeadEndShape", "editSameWayBackShape", "editNoWayThrough", "editNoWayThroughShape"] as const) assert.doesNotMatch(messages(l)[k], /—/, `${l}.${k}`);
 });

@@ -64,6 +64,12 @@ import {
   throughBlockedPlaces,
   summariseSegments,
   undoEdit,
+  widenRun,
+  anchorsAlong,
+  LOOP_EXTRA_FLOOR_M,
+  WIDEN_MIN_SPUR_M,
+  WIDEN_STEPS_M,
+  type EditRun,
   type EditHistory,
   type EditKind,
   type EditPlan,
@@ -86,7 +92,7 @@ import {
   type ProposalView,
   type Segments,
 } from "@/lib/map/edit-proposal";
-import { markOutsideProfile, farthestFrom, detourRisk, reachOf } from "@/lib/map/edit-reach";
+import { markOutsideProfile, farthestFrom, detourRisk, reachOf, deadEndNoteKey } from "@/lib/map/edit-reach";
 import { drawnIntervals, straightRun } from "@/lib/map/straight";
 import { drawnMeters } from "@/lib/routing/drawn";
 import { profileAt, type RelaxDrop } from "@/lib/routing/relax";
@@ -105,6 +111,8 @@ import { joinGuide, proposalGuide } from "@/lib/map/edit-guidance";
 
 /** A proposal ready to land, with what `live.landed` records for its commit. */
 type Landing = { proposal: EditProposal; addedAt: number; runs: number };
+/** What `/api/reroute-leg` answers per run. */
+type RoutedRuns = { runs: (RoutedRun & { deadEndMeters?: number; deadEndUnchecked?: boolean; deadEndAtShape?: boolean; deadEndProved?: boolean })[] };
 
 /** The words for what a relaxed profile rung drops (`relaxedProfiles`), in the warning's list. */
 const RELAX_WORDS: Record<RelaxDrop, "relaxMainRoads" | "relaxMotorways" | "relaxSand" | "relaxTowns" | "relaxRough" | "relaxAccess" | "relaxCar"> = {
@@ -1327,7 +1335,7 @@ export function HomePage() {
   }
 
   /** The request itself, and the proposal its answer becomes. Stale answers (an older token) are dropped. */
-  async function routeProposal(p: { token: number; before: RidePlaces; planned: EditPlan; baseSegments: Segments; line: Point[]; shape: boolean; change: ProposedChange; wide: boolean; relax?: number; bestOff?: number; fallback?: Landing; keepSpurs?: boolean; straight?: boolean }): Promise<void> {
+  async function routeProposal(p: { token: number; before: RidePlaces; planned: EditPlan; baseSegments: Segments; line: Point[]; shape: boolean; change: ProposedChange; wide: boolean; relax?: number; bestOff?: number; fallback?: Landing; keepSpurs?: boolean; straight?: boolean; widened?: boolean; prefetched?: RoutedRuns }): Promise<void> {
     if (!plan || !route) return;
     const { token, before, planned, baseSegments, line } = p;
     // The profile rung this attempt routes on: 0 is the rider's own; past
@@ -1392,13 +1400,13 @@ export function HomePage() {
       }
     };
     try {
-      type Routed = { runs: (RoutedRun & { deadEndMeters?: number; deadEndUnchecked?: boolean; deadEndAtShape?: boolean })[] };
+      type Routed = RoutedRuns;
       // Every place in every stretch is ridden through, not out to and back
       // (rider, 2026-09-25): the server routes a stretch leg by leg and looks
       // for a way through each place whose way in and way out share road
       // (`routeThroughPlaces`) — a lone stop, a batch, the whole-span
       // fallback alike. Shaping points are flagged: a spur to one is cut.
-      const request = async (runs: typeof planned.runs): Promise<Routed | { status: number }> => {
+      const request = async (runs: typeof planned.runs, keepSpurs = p.keepSpurs): Promise<Routed | { status: number }> => {
         const response = await fetch("/api/reroute-leg", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1409,7 +1417,7 @@ export function HomePage() {
             loops: runs.map((run) => run.points.length >= 3),
             shapes: runs.map((run) => shapeFlags(run, planned.places)),
             ...(level ? { relax: level } : {}),
-            ...(p.keepSpurs ? { keepSpurs: true } : {}),
+            ...(keepSpurs ? { keepSpurs: true } : {}),
           }),
         });
         if (!response.ok) return { status: response.status };
@@ -1448,7 +1456,7 @@ export function HomePage() {
         // A straight point taken out: its stretch simply goes, nothing routed.
         data = { runs: runs.map(() => ({ segments: { type: "FeatureCollection" as const, features: [] }, distanceMeters: 0, durationSeconds: 0 })) };
       } else {
-        data = await request(runs);
+        data = p.prefetched ?? await request(runs);
       }
       if (!current()) return;
       // 422: the router reached no road through the point on this profile.
@@ -1583,9 +1591,8 @@ export function HomePage() {
       const deadEndRun = data.runs.reduce<(typeof data.runs)[number] | null>((worst, r) => ((r.deadEndMeters ?? 0) > (worst?.deadEndMeters ?? 0) ? r : worst), null);
       const deadEnd = deadEndRun?.deadEndMeters ?? 0;
       const deadEndKm = new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(deadEnd / 1000);
-      const deadEndNote = deadEnd > 0 ? fi(deadEndRun?.deadEndUnchecked
-        ? (deadEndRun?.deadEndAtShape ? ui.editSameWayBackShape : ui.editSameWayBack)
-        : (deadEndRun?.deadEndAtShape ? ui.editDeadEndShape : ui.editDeadEnd), { km: deadEndKm }) : "";
+      // A dead end only when the router proved it (`deadEndNoteKey`).
+      const deadEndNote = deadEnd > 0 && deadEndRun ? fi(ui[deadEndNoteKey(deadEndRun)], { km: deadEndKm }) : "";
       const notes = [
         snapped.movedMeters > 0 ? fi(ui.resEditMoved, { m: snapped.movedMeters }) : "",
         // Named by whose spur it is (the server says), not by the kind of
@@ -1634,12 +1641,43 @@ export function HomePage() {
         ...(accept ? { accept } : {}),
         ...(level ? { relax: level } : {}),
       };
+      // A place still ridden out to and back, when the router did not prove
+      // the road a dead end: the stretch may only have been cut too tight for
+      // any way on but the way in (rider, 2026-09-28, Lauriņi → Ērgļi: a
+      // junction on a through road, ±3 km cut on the far bank, 9.8 km twice).
+      // Wider stretches are tried; one that rides through the place, joins
+      // soundly and is no longer than the out-and-back is proposed instead.
+      if (deadEnd >= WIDEN_MIN_SPUR_M && !deadEndRun?.deadEndProved && !p.widened && !straight && !p.wide && runs.length === 1) {
+        const lc = cumulative(line);
+        const keptAlong = anchorsAlong(anchorsOf(before, line[line.length - 1]), line, lc);
+        const fixed = drawnIntervals(baseSegments);
+        const options = WIDEN_STEPS_M.map((by) => widenRun({ run: runs[0], line, cum: lc, keptAlong, fixed, by }))
+          .filter((r, i, all): r is EditRun => r !== null && all.findIndex((q) => q && q.fromMeters === r.fromMeters && q.toMeters === r.toMeters) === i);
+        const answers = await Promise.all(options.map((r) => request([r], false).catch((): { status: number } => ({ status: 0 }))));
+        if (!current()) return;
+        const drop: Point | null = p.change.kind === "shape" && (p.change.op.kind === "add" || p.change.op.kind === "move") ? [p.change.op.lon, p.change.op.lat] : null;
+        let best: { runs: EditRun[]; data: Routed; meters: number } | null = null;
+        options.forEach((r, i) => {
+          const a = answers[i];
+          if ("status" in a || a.runs.some((x) => (x.deadEndMeters ?? 0) > 0)) return;
+          const s = splice([r], a);
+          if (!sound(s).ok) return;
+          if (drop && bendMissed(reachM, nearestAlong(drop, s.coordinates, cumulative(s.coordinates)).meters)) return;
+          if (s.distanceMeters > spliced.distanceMeters + LOOP_EXTRA_FLOOR_M) return;
+          if (!best || s.distanceMeters < best.meters) best = { runs: [r], data: a, meters: s.distanceMeters };
+        });
+        const through = best as { runs: EditRun[]; data: Routed; meters: number } | null;
+        if (through) {
+          track("route_edit_widened", { spur_m: Math.round(deadEnd), km_delta: Math.round((through.meters - spliced.distanceMeters) / 100) / 10 });
+          return routeProposal({ ...p, planned: { ...planned, runs: through.runs }, widened: true, keepSpurs: false, prefetched: through.data });
+        }
+      }
       // A pass-through point left at the tip of a spur is no solution while
       // another rung may ride through it (rule 5); kept as the fallback,
       // with the dead end said and „Tomēr braukt”, if none does.
       // The first such (the least relaxed rung) is the one kept.
       if (deadEnd > 0 && deadEndRun?.deadEndAtShape) {
-        const asked = { ...proposal, accept: accept ?? ("deadEnd" as const), notes: notes.map((n) => (n === deadEndNote ? fi(ui.editDeadEndShapeAsk, { km: deadEndKm }) : n)) };
+        const asked = { ...proposal, accept: accept ?? ("deadEnd" as const), notes: notes.map((n) => (n === deadEndNote && deadEndRun ? fi(ui[deadEndNoteKey(deadEndRun, true)], { km: deadEndKm }) : n)) };
         const fallback: Landing = { proposal: asked, addedAt, runs: runs.length };
         if (profileAt(ownProfile, level + 1)) return routeProposal({ ...p, relax: level + 1, bestOff: Math.min(p.bestOff ?? Infinity, reachM), fallback: p.fallback ?? fallback, keepSpurs: false });
         return land(p.fallback ?? fallback);

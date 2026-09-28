@@ -91,3 +91,21 @@ export function reachOf(points: Point[], line: Point[]): number {
   const cum = cumulative(line);
   return Math.max(...points.map((p) => nearestAlong(p, line, cum).meters));
 }
+
+/**
+ * What a stretch that still rides out to a place and back says about it
+ * (rider, 2026-09-28, Lauriņi → Ērgļi: „kāpēc raksta, ka te ved tikai
+ * strupceļš? Tā nav taisnība.”). A dead end is named only when the router
+ * proved it — with the spur fenced off, no way on was found at all
+ * (`deadEndProved`). A way round that was only too long, or never asked,
+ * is said as „Cauri šim punktam neizdevās atrast citu ceļu”; one the search
+ * ran out of time for, as the way back being the way in.
+ * `ask`: the note of a proposal that waits for „Tomēr braukt”.
+ */
+export function deadEndNoteKey(run: { deadEndUnchecked?: boolean; deadEndAtShape?: boolean; deadEndProved?: boolean }, ask = false):
+  "editSameWayBack" | "editSameWayBackShape" | "editDeadEnd" | "editDeadEndShape" | "editDeadEndShapeAsk" | "editNoWayThrough" | "editNoWayThroughShape" {
+  const shape = run.deadEndAtShape === true;
+  if (run.deadEndUnchecked) return shape ? "editSameWayBackShape" : "editSameWayBack";
+  if (run.deadEndProved) return shape ? (ask ? "editDeadEndShapeAsk" : "editDeadEndShape") : "editDeadEnd";
+  return shape ? "editNoWayThroughShape" : "editNoWayThrough";
+}

@@ -170,7 +170,7 @@ test("a join where the new stretch simply rides on is left exactly where it was"
 const THROUGH: Point[] = [...T.slice(I.corner - 2, I.junction + 1), ...T.slice(I.backAtJunction + 1, I.puķes + 1)];
 const SIDE: Point[] = [...T.slice(I.junction, I.tip + 1), ...FX.north.slice(1)];
 
-function graph() {
+function graph(ways: Point[][] = [THROUGH, SIDE]) {
   const nodes: Point[] = [];
   const key = (p: Point) => `${p[0].toFixed(6)},${p[1].toFixed(6)}`;
   const at = new Map<string, number>();
@@ -180,7 +180,7 @@ function graph() {
     if (!at.has(k)) { at.set(k, nodes.length); nodes.push(p); adj.push([]); }
     return at.get(k)!;
   };
-  for (const way of [THROUGH, SIDE]) {
+  for (const way of ways) {
     for (let i = 1; i < way.length; i++) {
       const a = id(way[i - 1]), b = id(way[i]);
       if (a === b) continue;
@@ -189,7 +189,7 @@ function graph() {
   }
   return { nodes, adj };
 }
-const G = graph();
+let G = graph();
 const nearestNode = (p: Point, skip: Set<number>) => {
   let best = -1, d = Infinity;
   G.nodes.forEach((n, i) => { if (skip.has(i)) return; const m = haversineMeters(n, p); if (m < d) { d = m; best = i; } });
@@ -304,4 +304,32 @@ test("when the only road to the bend is that dead end, it can be kept — and it
     assert.ok(r.deadEndMeters > 1_000, `the dead end is reported, got ${r.deadEndMeters}`);
     assert.equal(r.deadEndAtShape, true, "as the pass-through point's");
   } finally { stub.restore(); }
+});
+
+
+// ── A dead end is proved, or it is not called one (rider, 2026-09-28, Lauriņi → Ērgļi) ──
+
+test("a stop up a real dead end: the fenced ways on are refused, and that is proof", async () => {
+  const stub = stubBrouter(() => null);
+  try {
+    const r = await routeThroughPlaces({ points: [CUT_A, TIP, CUT_B], shapes: [false, false, false], profileOptions: OPTIONS, deadlineAt: Date.now() + 4_500 });
+    assert.ok(r.deadEndMeters > 1_000, `the dead end is reported, got ${r.deadEndMeters}`);
+    assert.equal(r.deadEndProved, true, "the router refused every way on with the spur fenced");
+  } finally { stub.restore(); }
+});
+
+test("a way round that is only too long for the loop bound is NOT proof of a dead end", async () => {
+  // The side track's far end joined back to the through track by a long
+  // way round, far to the east: a way on exists, much longer than the spur.
+  const north = SIDE[SIDE.length - 1];
+  const end = THROUGH[THROUGH.length - 1];
+  const around: Point[] = [north, [north[0] + 0.15, north[1] + 0.05], [end[0] + 0.15, end[1] - 0.05], end];
+  const saved = G;
+  G = graph([THROUGH, SIDE, around]);
+  const stub = stubBrouter(() => null);
+  try {
+    const r = await routeThroughPlaces({ points: [CUT_A, TIP, CUT_B], shapes: [false, false, false], profileOptions: OPTIONS, deadlineAt: Date.now() + 4_500 });
+    assert.ok(r.deadEndMeters > 1_000, `still ridden out and back (the way round is too long), got ${r.deadEndMeters}`);
+    assert.notEqual(r.deadEndProved, true, "but it is not called a dead end");
+  } finally { stub.restore(); G = saved; }
 });

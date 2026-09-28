@@ -92,6 +92,16 @@ export type ThroughResult = {
   deadEndUnchecked?: boolean;
   /** Whose spur `deadEndMeters` is: a shaping point's, or a stop's (absent: a stop's). */
   deadEndAtShape?: boolean;
+  /**
+   * …and the router itself said there is no other way: with the spur fenced
+   * off, every way on from the place (both mirrors) was refused. Only then
+   * may the page call it a dead end (rider, 2026-09-28, Lauriņi → Ērgļi: „ved
+   * tikai strupceļš” was said of a junction on a through road, because a way
+   * round that was merely too long for the loop bound read as none). Absent:
+   * a way round was found and was too long, or nothing was asked, or it ran
+   * out of time — the page says what the line does, not why.
+   */
+  deadEndProved?: boolean;
 };
 
 export async function routeThroughPlaces(params: {
@@ -220,6 +230,7 @@ export async function routeThroughPlaces(params: {
   // goes through the spur's base, where the way in and the way out part.
   let deadEnd = 0;
   let unchecked = false;
+  let proved = false;
   const cuts: number[] = [];
   for (let j = 1; j < n - 1; j++) {
     const left = spurOf(j);
@@ -229,6 +240,8 @@ export async function routeThroughPlaces(params: {
     if (left.meters > deadEnd) {
       deadEnd = left.meters;
       unchecked = asked.some((a, k) => a.via === j && "unanswered" in answers[k]);
+      const mine = asked.map((a, k) => ({ a, answer: answers[k] })).filter((x) => x.a.via === j);
+      proved = mine.length > 0 && mine.every((x) => "refused" in x.answer);
     }
   }
   if (cuts.length) {
@@ -254,7 +267,12 @@ export async function routeThroughPlaces(params: {
   let path = legs[0];
   for (let i = 1; i < legs.length; i++) if (legs[i].coordinates.length > 1) path = joinPaths(path, legs[i]);
   const deadEndMeters = deadEnd > THROUGH_SHARED_MIN_M ? Math.round(deadEnd) : 0;
-  return offSpurs({ path, deadEndMeters, ...(deadEndMeters && unchecked ? { deadEndUnchecked: true } : {}) }, points, shapes, profileOptions);
+  return offSpurs({
+    path,
+    deadEndMeters,
+    ...(deadEndMeters && unchecked ? { deadEndUnchecked: true } : {}),
+    ...(deadEndMeters && proved && !unchecked ? { deadEndProved: true } : {}),
+  }, points, shapes, profileOptions);
 }
 
 /**
@@ -285,7 +303,9 @@ async function offSpurs(result: ThroughResult, points: Point[], shapes: boolean[
   if (!found.length) {
     const stopSpur = worst(tips.filter((o) => o.atPlace));
     // Not searched for a way round here, so said as what the line does.
-    return stopSpur > result.deadEndMeters ? { ...result, deadEndMeters: stopSpur, deadEndUnchecked: true } : result;
+    if (stopSpur <= result.deadEndMeters) return result;
+    const { deadEndProved: _p, ...rest } = result; void _p;
+    return { ...rest, deadEndMeters: stopSpur, deadEndUnchecked: true };
   }
   // At most twice: a point moved to a spur's base can land on the base of a
   // shorter one (measured: 327 m, then 54 m, then none).
@@ -309,8 +329,10 @@ async function offSpurs(result: ThroughResult, points: Point[], shapes: boolean[
   }
   const atShape = worst(left.filter((o) => o.onShape));
   const deadEndMeters = Math.max(result.deadEndMeters, atShape, worst(left.filter((o) => o.atPlace && !o.onShape)));
+  // A spur found here was never fenced: whatever was proved was about another one.
+  const { deadEndProved: _p, ...kept } = result; void _p;
   return {
-    ...result,
+    ...(deadEndMeters > result.deadEndMeters ? kept : result),
     path,
     deadEndMeters,
     ...(deadEndMeters > result.deadEndMeters ? { deadEndUnchecked: true } : {}),

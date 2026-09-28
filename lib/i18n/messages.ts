@@ -853,6 +853,8 @@ export type MessageKey =
   // out or failed) — said as that, not as "nothing found".
   | "placeSearchSlow"
   // ── /place-search ──
+  | "editNoWayThrough"
+  | "editNoWayThroughShape"
   ;
 
 type Messages = Record<MessageKey, string>;
@@ -1498,6 +1500,10 @@ const lv: Messages = {
   // ── place-search ──
   placeSearchSlow: "Vietu meklēšana šobrīd atbild lēni – mēģini vēlreiz",
   // ── /place-search ──
+  // ── release-b ──
+  editNoWayThrough: "Cauri šai pieturai neizdevās atrast citu ceļu – atpakaļ pa to pašu ceļu {km} km.",
+  editNoWayThroughShape: "Cauri šim punktam neizdevās atrast citu ceļu – atpakaļ pa to pašu ceļu {km} km.",
+  // ── /release-b ──
 };
 
 const lt: Messages = {
@@ -2111,6 +2117,10 @@ const lt: Messages = {
   // ── place-search ──
   placeSearchSlow: "Vietų paieška šiuo metu atsako lėtai – bandykite dar kartą",
   // ── /place-search ──
+  // ── release-b ──
+  editNoWayThrough: "Pro šį sustojimą kito kelio rasti nepavyko – atgal tuo pačiu keliu {km} km.",
+  editNoWayThroughShape: "Pro šį tašką kito kelio rasti nepavyko – atgal tuo pačiu keliu {km} km.",
+  // ── /release-b ──
 };
 
 const et: Messages = {
@@ -2720,6 +2730,10 @@ const et: Messages = {
   // ── place-search ──
   placeSearchSlow: "Kohaotsing vastab praegu aeglaselt – proovi uuesti",
   // ── /place-search ──
+  // ── release-b ──
+  editNoWayThrough: "Selle peatuse kaudu teist teed leida ei õnnestunud – tagasi sama teed {km} km.",
+  editNoWayThroughShape: "Selle punkti kaudu teist teed leida ei õnnestunud – tagasi sama teed {km} km.",
+  // ── /release-b ──
 };
 
 const en: Messages = {
@@ -3327,6 +3341,10 @@ const en: Messages = {
   // ── place-search ──
   placeSearchSlow: "Place search is slow to answer right now – try again",
   // ── /place-search ──
+  // ── release-b ──
+  editNoWayThrough: "No other way through this stop was found – back the same way for {km} km.",
+  editNoWayThroughShape: "No other way through this point was found – back the same way for {km} km.",
+  // ── /release-b ──
 };
 
 const MESSAGES: Record<UiLocale, Messages> = { lv, lt, et, en };
