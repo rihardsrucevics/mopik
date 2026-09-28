@@ -11,7 +11,8 @@ import { GeneratedRoute, GenerateRouteResponse } from "@/lib/types";
 import { RidePlan, planSummary } from "@/lib/chat/ride-plan";
 import { BeerPopup } from "@/components/beer-popup";
 import { track } from "@/lib/analytics";
-import { encodeRouteShare, shareStartLabel, shareUrl } from "@/lib/share/route-code";
+import { encodeRouteShare, shareStartLabel } from "@/lib/share/route-code";
+import { shortShareUrl } from "@/lib/share/short-link";
 import type { ResolvedPlace } from "@/lib/chat/places";
 import { isSaved, saveRide, unsaveRide } from "@/lib/share/saved-rides";
 import { gpxFilename } from "@/lib/gpx/filename";
@@ -283,6 +284,8 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
 
   const [beer, setBeer] = useState(false);
   const [shared, setShared] = useState<"idle" | "copied">("idle");
+  /** The last share had to use the long link (the store did not answer): said, never silent. */
+  const [longLink, setLongLink] = useState(false);
   // Which ride is currently saved, by its code: derived during render rather
   // than mirrored into state, so switching versions needs no effect.
   const [savedTick, setSavedTick] = useState(0);
@@ -490,20 +493,18 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
     // recipient sees is written in the language the sender was using. Only
     // here: the saved-ride encoders must not write it (see `l` on ShareMeta).
     const code = encodeRouteShare(route, shareStartLabel(plan, resolvedPlaces), plan, resolvedPlaces, locale);
-    // Short id from the store when it answers quickly; the long self-contained
-    // link otherwise. Both open the same page.
-    let url = shareUrl(code, window.location.origin);
-    try {
-      const res = await fetch("/api/share", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code }), signal: AbortSignal.timeout(4000) });
-      if (res.ok) { const { id } = await res.json(); if (typeof id === "string") url = shareUrl(id, window.location.origin); }
-    } catch { /* long link it is */ }
+    // The short id from the store (two tries, 8 s each); the long link only
+    // when the store really fails, and then the panel says so.
+    const link = await shortShareUrl(code);
+    const url = link.url;
+    setLongLink(link.long);
     const title = `${route.name} · ${Math.round(route.distanceMeters / 1000)} km`;
     const phone = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.matchMedia("(pointer: coarse)").matches;
     if (phone && typeof navigator.share === "function") {
-      try { await navigator.share({ title, url }); track("route_shared", { method: "share", km: Math.round(route.distanceMeters / 1000), variant: route.variant }); return; }
+      try { await navigator.share({ title, url }); track("route_shared", { method: "share", km: Math.round(route.distanceMeters / 1000), variant: route.variant, long: link.long }); return; }
       catch { /* dismissed: fall through to copy */ }
     }
-    try { await navigator.clipboard.writeText(url); setShared("copied"); setTimeout(() => setShared("idle"), 3500); track("route_shared", { method: "copy", km: Math.round(route.distanceMeters / 1000), variant: route.variant }); }
+    try { await navigator.clipboard.writeText(url); setShared("copied"); setTimeout(() => setShared("idle"), 3500); track("route_shared", { method: "copy", km: Math.round(route.distanceMeters / 1000), variant: route.variant, long: link.long }); }
     catch { window.prompt(m.resCopyLink, url); }
   };
 
@@ -812,6 +813,7 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
           {shared === "copied" && (
             <p role="status" className="mopik-fade-in mt-2 rounded-lg bg-stone-900 px-3 py-2 text-xs text-white">{m.resLinkCopied}</p>
           )}
+          {longLink && <p role="status" className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">{m.resLongLinkNote}</p>}
           {remoteLoop && (
             <p className="mt-2 text-[11px] leading-relaxed text-stone-500">
               {fi(m.resTransitOut, { km: remoteLoop.transitOutKm, time: duration(remoteLoop.transitOutMinutes * 60) })} → <span className="font-semibold text-stone-700">{fi(m.resFocusLoop, { place: remoteLoop.focus.label.split(",")[0], km: remoteLoop.loops[selected]?.km ?? "–", time: duration((remoteLoop.loops[selected]?.minutes ?? 0) * 60) })}</span> → {fi(m.resTransitBack, { km: remoteLoop.transitBackKm, time: duration(remoteLoop.transitBackMinutes * 60) })}

@@ -440,7 +440,3 @@ export function decodePlanShare(code: string): RidePlan | null {
     return null;
   }
 }
-
-export function shareUrl(code: string, origin = "https://www.mopik.eu"): string {
-  return `${origin}/r/${code}`;
-}

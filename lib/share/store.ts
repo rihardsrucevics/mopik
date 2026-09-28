@@ -1,5 +1,8 @@
 import { createHash } from "node:crypto";
 import { head, put } from "@vercel/blob";
+import { isShareId } from "@/lib/share/short-link";
+
+export { isShareId };
 
 /**
  * Short share links: `/r/<8 chars>` instead of a 4 KB code. The full code is
@@ -13,10 +16,6 @@ const cache = new Map<string, string>();
 
 export function shareId(code: string): string {
   return createHash("sha256").update(code).digest("base64url").slice(0, 8);
-}
-
-export function isShareId(value: string): boolean {
-  return /^[A-Za-z0-9_-]{8}$/.test(value);
 }
 
 export async function saveShare(code: string): Promise<string | null> {

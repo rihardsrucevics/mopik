@@ -1,6 +1,7 @@
 "use client";
 
 import { encodeRouteShare, decodeRouteShare, legacyShareStartLabel, type SharedRoute } from "@/lib/share/route-code";
+import { isShareId } from "@/lib/share/short-link";
 import type { ResolvedPlace } from "@/lib/chat/places";
 import type { GeneratedRoute } from "@/lib/types";
 import type { RidePlan } from "@/lib/chat/ride-plan";
@@ -51,6 +52,13 @@ export type SavedRide = {
   alternatives?: { code: string; name: string; km: number; minutes: number; unpavedPercent: number; variant: string }[];
   /** What was asked for, so the list reads like a history of requests. */
   prompt?: string;
+  /**
+   * The store's short id for `code`, once one is known (`/r/<id>`). The list
+   * opens the ride by it, so the page's address — and whatever the rider
+   * passes on from it — is the short link. Rides without one still open by
+   * their full code.
+   */
+  shortId?: string;
 };
 
 function read(): SavedRide[] {
@@ -112,7 +120,7 @@ export function listSaved(): SavedRide[] {
  * `/r/<code>`. Same store, same list, same id rule as a ride of one's own;
  * `from` marks where it came from so the list can say so.
  */
-export function saveSharedRide(code: string, share: { name: string; km: number; minutes: number; unpavedPercent: number; variant: string }): SavedRide {
+export function saveSharedRide(code: string, share: { name: string; km: number; minutes: number; unpavedPercent: number; variant: string }, shortId?: string | null): SavedRide {
   const entry: SavedRide = {
     id: rideId(code),
     code,
@@ -123,9 +131,28 @@ export function saveSharedRide(code: string, share: { name: string; km: number; 
     variant: share.variant,
     savedAt: Date.now(),
     from: "shared",
+    ...(shortId && isShareId(shortId) ? { shortId } : {}),
   };
   write([entry, ...read().filter((r) => r.id !== entry.id)]);
   return entry;
+}
+
+/** Remember the short id of a saved ride's code. Nothing happens when the code is not saved. */
+export function rememberShortId(code: string, shortId: string): void {
+  if (!isShareId(shortId)) return;
+  const list = read();
+  let changed = false;
+  const next = list.map((r) => {
+    if (r.code !== code || r.shortId === shortId) return r;
+    changed = true;
+    return { ...r, shortId };
+  });
+  if (changed) write(next);
+}
+
+/** The address a saved ride opens at: its short id when known, its full code otherwise. */
+export function savedRideHref(ride: Pick<SavedRide, "code" | "shortId">): string {
+  return ride.shortId && isShareId(ride.shortId) ? `/r/${ride.shortId}` : `/r/${ride.code}`;
 }
 
 export function isCodeSaved(code: string): boolean {
