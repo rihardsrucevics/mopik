@@ -1098,6 +1098,9 @@ const BADGE_MIN_SPACING_SHARE = 0.12;
  */
 const SEGMENT_ID = "segmentId";
 
+/** The ink of drawn geometry (`drawn`): stone, with a white dashed centre. */
+const DRAWN_INK = "#78716c";
+
 /**
  * Set on the features whose geometry runs along the TET — see `tetOverlap`.
  * Read by the TET casing layer's filter.
@@ -1124,6 +1127,9 @@ function warningsFor(
   props: SegmentProps
 ): Warning[] {
   const out: Warning[] = [];
+  // Drawn straight: no road, so nothing a road badge says applies (the panel
+  // says what it is: „Zīmēti posmi …”).
+  if (props.drawn) return out;
   // Ridden outside the profile on the rider's say-so: the same ⚠️ (map
   // badges are ⚠️ and 🔥 only), its own words on the card.
   // Both on one stretch: one ⚠️ saying both, never two identical icons.
@@ -2549,6 +2555,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
         id: "route-glow",
         type: "line",
         source: "route",
+        filter: ["!=", ["get", "drawn"], true],
         layout: { "line-cap": "round", "line-join": "round" },
         paint: {
           "line-color": SURFACE_COLOR_EXPR,
@@ -2595,6 +2602,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
         id: "route-casing",
         type: "line",
         source: "route",
+        filter: ["!=", ["get", "drawn"], true],
         layout: { "line-cap": "round", "line-join": "round" },
         paint: {
           "line-color": "#ffffff",
@@ -2607,7 +2615,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
         id: "route-road",
         type: "line",
         source: "route",
-        filter: ["==", ["get", "roadClass"], "road"],
+        filter: ["all", ["==", ["get", "roadClass"], "road"], ["!=", ["get", "drawn"], true]],
         layout: { "line-cap": "round", "line-join": "round" },
         // Opacity is declared so the reveal has something to animate from;
         // without it the first frame jumps from 1 to 0 and reads as a flicker.
@@ -2617,7 +2625,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
         id: "route-track",
         type: "line",
         source: "route",
-        filter: ["==", ["get", "roadClass"], "track"],
+        filter: ["all", ["==", ["get", "roadClass"], "track"], ["!=", ["get", "drawn"], true]],
         // Butt caps: a dash with round caps grows by half its width at each
         // end, which closes the gaps and turns the dashes back into a solid
         // line at low zoom.
@@ -2636,7 +2644,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
         id: "route-trail",
         type: "line",
         source: "route",
-        filter: ["==", ["get", "roadClass"], "trail"],
+        filter: ["all", ["==", ["get", "roadClass"], "trail"], ["!=", ["get", "drawn"], true]],
         // Round caps with a zero-length dash give real round dots. A butt cap
         // here would draw little rectangles, which is what "dotted" looked
         // like before.
@@ -2650,6 +2658,26 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
           "line-dasharray": TRAIL_DASH,
           "line-opacity": 1,
         },
+      });
+
+      // Drawn straight, no road („Vest pa taisno”, `drawn`): a thin stone line
+      // with a white dashed centre — no casing, no glow, no surface colour —
+      // so it never reads as a road, nor as the proposal's halo.
+      map.addLayer({
+        id: "route-drawn",
+        type: "line",
+        source: "route",
+        filter: ["==", ["get", "drawn"], true],
+        layout: { "line-cap": "butt", "line-join": "round" },
+        paint: { "line-color": DRAWN_INK, "line-width": 3, "line-opacity": 1 },
+      });
+      map.addLayer({
+        id: "route-drawn-dash",
+        type: "line",
+        source: "route",
+        filter: ["==", ["get", "drawn"], true],
+        layout: { "line-cap": "butt", "line-join": "round" },
+        paint: { "line-color": "#ffffff", "line-width": 1, "line-dasharray": [3, 3], "line-opacity": 1 },
       });
 
       loadedRef.current = true;
@@ -4534,6 +4562,10 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
                 }}
               />
               {m.legendTrail}
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block h-[3px] w-5" style={{ background: `repeating-linear-gradient(90deg, #ffffff 0 3px, transparent 3px 6px) center / 100% 1px no-repeat, ${DRAWN_INK}` }} />
+              {m.legendDrawn}
             </span>
             {/* The TET sample is the casing, not the overlay line: a purple
                 halo around the route's own colour, which is what the rider

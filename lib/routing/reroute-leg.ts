@@ -116,6 +116,14 @@ export type RidePlace = ResolvedPlace & {
    * share code's places and the GPX all read the stops only (`stopsOf`).
    */
   shape?: true;
+  /**
+   * Reached straight, off any road („Vest pa taisno”, design C `reach:
+   * "straight"`): the ride goes as far as a road goes and then straight to
+   * it and back (`lib/map/straight.ts`). Its `joins` are where the straight
+   * stretch leaves the ride; taking the point out takes the whole stretch
+   * out, nothing re-routed.
+   */
+  reach?: "straight";
 };
 
 /** Whether a via is a shaping point rather than a stop. */
@@ -250,7 +258,11 @@ export type EditKind = "move-start" | "move-stop" | "move-finish" | "add-stop" |
  * splice has no gap — and are the rider's own place where the stretch reaches
  * a moved end.
  */
-export type EditRun = { fromMeters: number; toMeters: number; points: Point[] };
+export type EditRun = {
+  fromMeters: number; toMeters: number; points: Point[];
+  /** Nothing to route: the stretch is simply taken out (a straight point removed). */
+  drop?: true;
+};
 
 export type EditPlan = {
   kind: EditKind;
@@ -380,8 +392,14 @@ export function planEdit(params: {
    * re-slotted wherever the whole line passes nearest.
    */
   keepOrder?: boolean;
+  /**
+   * Metre intervals of the line that are drawn straight (`drawnIntervals`):
+   * fixed — a window stops at them and never re-routes them (design C).
+   */
+  fixed?: [number, number][];
 }): EditPlan | { error: "degenerate" } | null {
   const { line, cum, before } = params;
+  const fixed = params.fixed ?? [];
   const keep = params.keepOrder === true;
   let after = params.after;
   const total = cum[cum.length - 1];
@@ -444,7 +462,9 @@ export function planEdit(params: {
     type Piece = { from: number; to: number; points: { along: number; p: Point }[] };
     const pieceAround = (centre: number, w: number, lo: number, hi: number, p: Point): Piece => {
       const out: Piece = { from: Math.max(along[lo], centre - w), to: Math.min(along[hi], centre + w), points: [{ along: centre, p }] };
-      const isVia = (k: number) => k > 0 && k < oldA.length - 1;
+      // A neighbour reached straight is not a spur to ride through: its
+      // out-and-back is the one the rider drew (design C: fixed).
+      const isVia = (k: number) => k > 0 && k < oldA.length - 1 && before.vias[k - 1]?.reach !== "straight";
       if (out.from <= along[lo] + 1 && isVia(lo)) {
         const spur = spurLength(line, cum, along[lo], SPUR_TIP_STEP_M);
         if (spur >= THROUGH_SHARED_MIN_M) {
@@ -458,6 +478,11 @@ export function planEdit(params: {
           out.points.push({ along: along[hi], p: oldA[hi] });
           out.to = Math.min(along[hi + 1], along[hi] + spur + EDIT_WINDOW_M);
         }
+      }
+      // A drawn straight stretch is fixed: the window stops at its edge.
+      for (const [a, b] of fixed) {
+        if (b <= centre && b > out.from) out.from = b;
+        if (a >= centre && a < out.to) out.to = a;
       }
       return out;
     };
@@ -553,6 +578,16 @@ export function planEdit(params: {
       const rest = bv.filter((_, i) => i !== gone);
       if (gone >= 0 && rest.every((v, i) => same(v, av[i]))) {
         const k = gone + 1;
+        // Reached straight: its whole stretch — road out, straight there and
+        // back, road back — comes out, and the ride joins where it left it.
+        const straight = bv[gone].reach === "straight" ? bv[gone].joins : undefined;
+        if (straight) {
+          const f = nearestWithin(straight[0], line, cum, along[k - 1], along[k]);
+          const t = nearestWithin(straight[1], line, cum, along[k], along[k + 1]);
+          if (f.meters <= 30 && t.meters <= 30) {
+            return plan("remove-stop", [{ fromMeters: f.alongMeters, toMeters: t.alongMeters, points: [at(f.alongMeters), at(t.alongMeters)], drop: true }]);
+          }
+        }
         // The stretch the edit that added it re-routed, when the joins are
         // still on the line; otherwise the spur to the stop, if it was
         // visited by riding in and back out, and a window beyond it. Never
@@ -1178,6 +1213,8 @@ export function meetRuns(
     const coords = coordinatesOf(routed[run.i]?.segments ?? { type: "FeatureCollection", features: [] });
     const ceiling = order[k + 1]?.fromMeters ?? total;
     let from = run.fromMeters, to = run.toMeters;
+    // A stretch spliced in at one spot (`straightRun`) starts and ends there.
+    if (from === to) { out[run.i] = { fromMeters: from, toMeters: to }; floor = to; return; }
     if (coords.length >= 2 && from > 0) {
       const m = nearestWithin(coords[0], line, cum, Math.max(floor, from - MEET_SHIFT_MAX_M), Math.min(to - 1, from + MEET_SHIFT_MAX_M));
       if (m.meters <= MEETS_LINE_M) from = m.alongMeters;
@@ -1443,12 +1480,16 @@ export function summariseSegments(segments: Segments, gatesMeasured: boolean): {
   surfaces: SurfaceMix;
   unverifiedPathKm: number;
   gateCount: number | undefined;
+  /** Drawn straight, no road (`drawn`): not in the road mix, said on its own. */
+  drawnKm: number;
 } {
   const by = { road: 0, track: 0, trail: 0 };
   let unverified = 0;
   let gates = 0;
+  let drawn = 0;
   for (const f of segments.features) {
     const m = f.properties.distanceMeters;
+    if (f.properties.drawn) { drawn += m; continue; }
     by[f.properties.roadClass] += m;
     if (f.properties.unverified) unverified += m;
     gates += f.properties.gates ?? 0;
@@ -1464,6 +1505,7 @@ export function summariseSegments(segments: Segments, gatesMeasured: boolean): {
     surfaces: splicedSurfaces(segments),
     unverifiedPathKm: km(unverified),
     gateCount: gatesMeasured ? gates : undefined,
+    drawnKm: km(drawn),
   };
 }
 

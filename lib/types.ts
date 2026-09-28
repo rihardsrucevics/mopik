@@ -147,6 +147,14 @@ export type RouteSegmentProperties = {
    */
   outsideProfile?: boolean;
   /**
+   * A straight line the rider asked for where no road goes („Vest pa
+   * taisno”, `lib/routing/drawn.ts`): ridden exactly as drawn, timed at
+   * `DRAWN_KMH`, never re-routed by an edit, never checked. Carried with
+   * `roadClass: "trail"`, `surface: "unknown"`; every consumer that knows it
+   * checks it first.
+   */
+  drawn?: true;
+  /**
    * How many gates stand on this stretch — `barrier=gate|lift_gate|swing_gate|
    * chain|bollard|cattle_grid` nodes that are members of the way's own node
    * list, matched as **vertices of the route geometry**, never by proximity: a

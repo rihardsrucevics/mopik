@@ -396,6 +396,7 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
           <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#bd4b00]">{m.shSharedRoute} · {variantLabel(m, share.variant)}</div>
           <h2 className="mt-1 text-xl font-semibold tracking-tight">{share.name}</h2>
           {share.startLabel && <p className="mt-0.5 text-xs text-stone-500">{fi(m.shStartLabel, { place: share.startLabel })}</p>}
+          {share.drawnKm > 0 && <p data-drawn-line className="mt-1 text-[11px] leading-snug text-stone-600">{fi(m.panelDrawn, { km: new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(share.drawnKm) })}</p>}
           <div className="mt-4 grid grid-cols-3 gap-2">
             <div><div className="text-[10px] uppercase tracking-wider text-stone-400">{m.resDistance}</div><div className="text-lg font-semibold tabular-nums">{spliced ? m.resApprox : ""}{shownKm} km</div></div>
             <div><div className="text-[10px] uppercase tracking-wider text-stone-400">{m.resTime}</div><div className="text-lg font-semibold tabular-nums">{spliced ? m.resApprox : ""}{duration(shownMinutes)}</div></div>

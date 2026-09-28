@@ -749,6 +749,14 @@ export type MessageKey =
   | "relaxCar"
   | "badgeOutsideProfile"
   | "badgeOutsideProfileDetail"
+  /** „Vest pa taisno” (2026-09-28, `lib/routing/drawn.ts`): {m} metres to the nearest road, {name} the point, {km} the drawn km. */
+  | "editNoRoadStraight"
+  | "editStraightAccept"
+  | "editStraightLabel"
+  | "editStraightNote"
+  | "editStraightRisk"
+  | "legendDrawn"
+  | "panelDrawn"
   // ── /spur-0928 ──
   /** The gate card (tap a gate on the map) and the gate rows in the segment
    *  card and RISKI. Kinds name OSM's `barrier=*`; access lines put the node's
@@ -1344,6 +1352,13 @@ const lv: Messages = {
   relaxCar: "ceļi, pa kuriem brauktu auto",
   badgeOutsideProfile: "Ārpus tava profila",
   badgeOutsideProfileDetail: "Šo posmu tavs profils neizmantotu – tu to izvēlējies ar „Tomēr braukt”.",
+  editNoRoadStraight: "Šeit nevar izbraukt pa ceļu – tuvākais ceļš ir ~{m} m nostāk. „Vest pa taisno” vai atmet ar ✕.",
+  editStraightAccept: "Vest pa taisno",
+  editStraightLabel: "Kā tikt līdz šai vietai",
+  editStraightNote: "Pēdējie {m} m līdz „{name}” – taisni, bez ceļa, un atpakaļ pa to pašu līniju.",
+  editStraightRisk: "{km} km taisni pāri mežam vai ūdenim",
+  legendDrawn: "Zīmēts taisni",
+  panelDrawn: "Zīmēti posmi: {km} km · laiks rēķināts ar 15 km/h · Mopik nav pārbaudījis, vai tur var izbraukt un vai tas ir atļauts.",
   // ── /spur-0928 ──
   gateKindGate: "Vārti",
   gateKindLiftGate: "Barjera ar pacēlāju",
@@ -1904,6 +1919,13 @@ const lt: Messages = {
   relaxCar: "keliai, kuriais važiuotų automobilis",
   badgeOutsideProfile: "Už jūsų profilio ribų",
   badgeOutsideProfileDetail: "Šios atkarpos jūsų profilis nenaudotų – pasirinkote ją „Vis tiek važiuoti“.",
+  editNoRoadStraight: "Čia keliu nuvažiuoti negalima – artimiausias kelias yra už ~{m} m. „Vesti tiesiai“ arba atmeskite ✕.",
+  editStraightAccept: "Vesti tiesiai",
+  editStraightLabel: "Kaip pasiekti šią vietą",
+  editStraightNote: "Paskutiniai {m} m iki „{name}“ – tiesiai, be kelio, ir atgal ta pačia linija.",
+  editStraightRisk: "{km} km tiesiai per mišką ar vandenį",
+  legendDrawn: "Nubrėžta tiesiai",
+  panelDrawn: "Nubrėžtos atkarpos: {km} km · laikas skaičiuotas 15 km/h · Mopik nepatikrino, ar ten galima pravažiuoti ir ar tai leidžiama.",
   // ── /spur-0928 ──
   gateKindGate: "Vartai",
   gateKindLiftGate: "Pakeliamas užtvaras",
@@ -2460,6 +2482,13 @@ const et: Messages = {
   relaxCar: "teed, mida sõidaks auto",
   badgeOutsideProfile: "Väljaspool sinu profiili",
   badgeOutsideProfileDetail: "Seda lõiku sinu profiil ei kasutaks – valisid selle „Sõida ikkagi“-ga.",
+  editNoRoadStraight: "Siia ei saa teed mööda sõita – lähim tee on ~{m} m eemal. „Vii otse“ või loobu ✕-ga.",
+  editStraightAccept: "Vii otse",
+  editStraightLabel: "Kuidas selle kohani jõuda",
+  editStraightNote: "Viimased {m} m kohani „{name}“ – otse, teeta, ja tagasi sama joont mööda.",
+  editStraightRisk: "{km} km otse üle metsa või vee",
+  legendDrawn: "Joonistatud otse",
+  panelDrawn: "Joonistatud lõigud: {km} km · aeg arvestatud 15 km/h · Mopik pole kontrollinud, kas seal saab sõita ja kas see on lubatud.",
   // ── /spur-0928 ──
   gateKindGate: "Värav",
   gateKindLiftGate: "Tõkkepuu",
@@ -3014,6 +3043,13 @@ const en: Messages = {
   relaxCar: "roads a car would take",
   badgeOutsideProfile: "Outside your profile",
   badgeOutsideProfileDetail: "Your profile would not use this stretch – you chose it with “Ride it anyway”.",
+  editNoRoadStraight: "You can’t reach this by road – the nearest road is ~{m} m away. “Go straight” or discard with ✕.",
+  editStraightAccept: "Go straight",
+  editStraightLabel: "How to reach this spot",
+  editStraightNote: "The last {m} m to “{name}” – straight, no road, and back along the same line.",
+  editStraightRisk: "{km} km straight across forest or water",
+  legendDrawn: "Drawn straight",
+  panelDrawn: "Drawn stretches: {km} km · time at 15 km/h · Mopik has not checked whether you can ride there or whether it is allowed.",
   // ── /spur-0928 ──
   gateKindGate: "Gate",
   gateKindLiftGate: "Boom barrier",

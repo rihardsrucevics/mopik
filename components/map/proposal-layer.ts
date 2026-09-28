@@ -44,9 +44,11 @@ const CLONES: [string, string, string][] = [
   ["proposal-road", "route-road", SOURCE],
   ["proposal-track", "route-track", SOURCE],
   ["proposal-trail", "route-trail", SOURCE],
+  ["proposal-drawn", "route-drawn", SOURCE],
+  ["proposal-drawn-dash", "route-drawn-dash", SOURCE],
 ];
 /** The ride's layers the proposal dims. */
-const RIDE_LAYERS = ["route-glow", "route-highlight", "route-tet", "route-casing", "route-road", "route-track", "route-trail"] as const;
+const RIDE_LAYERS = ["route-glow", "route-highlight", "route-tet", "route-casing", "route-road", "route-track", "route-trail", "route-drawn", "route-drawn-dash"] as const;
 /** What the ride is dimmed to, as a share of each layer's own opacity. */
 export const RIDE_DIM = 0.3;
 /**

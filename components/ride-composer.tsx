@@ -219,6 +219,8 @@ export type RideEdit = {
    * commits a warned proposal.
    */
   onOverride?: (commitNow: boolean) => void;
+  /** „Vest pa taisno”: no road reaches the point — as far as a road goes, then straight (a proposal). Absent unless on offer. */
+  onStraight?: () => void;
 };
 
 export function RideComposer({ initialPlan, initialPlaces, profile, onProfileChange, busy: busyProp, onGenerate, onUseChat, onPlacesChange, map, mapShown: mapOnPage = false, onPickModeChange, pickPoint, onMapControlsChange, edit }: {
@@ -2141,7 +2143,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
    * stay put). What each does is named here (`act`) and wired to the
    * handlers in the controls effect below, as every other control is.
    */
-  type ChoiceAct = { kind: "stop" | "pass" } | { leg: string } | { remove: boolean } | { wide: true } | { override: true };
+  type ChoiceAct = { kind: "stop" | "pass" } | { leg: string } | { remove: boolean } | { wide: true } | { override: true } | { straight: true };
   type ChoiceSpec = Omit<MapChoiceGroup, "options"> & { options: (Omit<MapChoiceGroup["options"][number], "onSelect"> & { act: ChoiceAct })[] };
   const choices: ChoiceSpec[] = [];
   if (canSwitchKind && newPoint) choices.push({
@@ -2168,6 +2170,10 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   if (edit?.onWide) choices.push({
     key: "wide", label: t(locale, "editWideAccept"), action: true,
     options: [{ key: "wide", label: t(locale, "editWideAccept"), selected: false, act: { wide: true } }],
+  });
+  if (edit?.onStraight) choices.push({
+    key: "straight", label: t(locale, "editStraightLabel"), action: true,
+    options: [{ key: "straight", label: t(locale, "editStraightAccept"), selected: false, act: { straight: true } }],
   });
   // „Tomēr braukt”: a proposal outside the profile or with a big detour
   // (`EditProposal.accept`) is taken only by this chip — what ✓ would do,
@@ -2513,6 +2519,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
             if ("kind" in act) h?.switchKind(act.kind);
             else if ("leg" in act) h?.chooseLeg(act.leg);
             else if ("wide" in act) h?.wide();
+            else if ("straight" in act) edit?.onStraight?.();
             // With the mark still pending, confirmed as ✓ would (the composer
             // lets the mark go); once ✓ already let it go (pressed while it
             // routed), the page commits the armed proposal itself.
