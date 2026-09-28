@@ -809,6 +809,10 @@ export type MessageKey =
   | "lineSheetTitleKind"
   | "lineObjectName"
   // ── /edit-guidance ──
+  // ── place-search ── The form's place search got no answer (Photon timed
+  // out or failed) — said as that, not as "nothing found".
+  | "placeSearchSlow"
+  // ── /place-search ──
   ;
 
 type Messages = Record<MessageKey, string>;
@@ -1421,6 +1425,9 @@ const lv: Messages = {
   lineSheetTitleKind: "Ceļa posms · {km} km {kind}",
   lineObjectName: "Ceļa posms",
   // ── /edit-guidance ──
+  // ── place-search ──
+  placeSearchSlow: "Vietu meklēšana šobrīd atbild lēni – mēģini vēlreiz",
+  // ── /place-search ──
 };
 
 const lt: Messages = {
@@ -2001,6 +2008,9 @@ const lt: Messages = {
   lineSheetTitleKind: "Kelio atkarpa · {km} km {kind}",
   lineObjectName: "Kelio atkarpa",
   // ── /edit-guidance ──
+  // ── place-search ──
+  placeSearchSlow: "Vietų paieška šiuo metu atsako lėtai – bandykite dar kartą",
+  // ── /place-search ──
 };
 
 const et: Messages = {
@@ -2577,6 +2587,9 @@ const et: Messages = {
   lineSheetTitleKind: "Teelõik · {km} km {kind}",
   lineObjectName: "Teelõik",
   // ── /edit-guidance ──
+  // ── place-search ──
+  placeSearchSlow: "Kohaotsing vastab praegu aeglaselt – proovi uuesti",
+  // ── /place-search ──
 };
 
 const en: Messages = {
@@ -3151,6 +3164,9 @@ const en: Messages = {
   lineSheetTitleKind: "Road stretch · {km} km {kind}",
   lineObjectName: "Road stretch",
   // ── /edit-guidance ──
+  // ── place-search ──
+  placeSearchSlow: "Place search is slow to answer right now – try again",
+  // ── /place-search ──
 };
 
 const MESSAGES: Record<UiLocale, Messages> = { lv, lt, et, en };

@@ -156,3 +156,11 @@ test("a tap on the line next to a pin or a gate is that marker's, never the line
   for (const ref of ["pinTargetsRef", "shapeMarkersRef", "gateMarkersRef"]) assert.match(markers, new RegExp(ref));
   assert.match(routeMap, /if \(action === "marker" && near\) \{[^]*?near\.dispatchEvent\(new MouseEvent\("click"/);
 });
+
+test("no hover label follows a finger: only a real pointer gets one", () => {
+  // Rider's phone, 2026-09-28: „Nepārbaudīta piekļuve” popped up beside a tap
+  // (the browser's made-up mousemove) and stayed under the sheet.
+  const move = routeMap.slice(routeMap.indexOf("const onMouseMove = (e: maplibregl.MapMouseEvent)"), routeMap.indexOf("hover.style.display = \"grid\";"));
+  assert.match(move, /const pointer = performance\.now\(\) - lastTouchEndAt > 800 && window\.matchMedia\("\(hover: hover\)"\)\.matches;/);
+  assert.match(move, /if \(!pointer \|\| \(!warnings\.length && !tip\) \|\| !hover\) \{ if \(hover\) hover\.style\.display = "none"; return; \}/);
+});

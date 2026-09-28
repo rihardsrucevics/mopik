@@ -4004,7 +4004,10 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
       // the pill under the cursor never disagree.
       const warnings = badgeWarnings(warningsFor(m, props));
       map.getCanvas().style.cursor = tip ? "grab" : "pointer";
-      if ((!warnings.length && !tip) || !hover) { if (hover) hover.style.display = "none"; return; }
+      // No label follows a finger either (rider's phone, 2026-09-28: „Nepārbaudīta
+      // piekļuve” popped up beside a tap and stayed under the sheet). The
+      // badge and the segment card say the same on touch.
+      if (!pointer || (!warnings.length && !tip) || !hover) { if (hover) hover.style.display = "none"; return; }
 
       const label = [...(tip ? [tip] : []), ...warnings.map((w) => w.title)].join(" · ");
       // Direct DOM, no re-render: see the note on this effect. The icons are
