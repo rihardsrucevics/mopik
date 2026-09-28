@@ -19,7 +19,8 @@ import { track } from "@/lib/analytics";
 import { MAX_STOPS } from "@/lib/chat/ride-limits";
 import { planForFullSearch } from "@/lib/chat/compose-plan";
 import { decodePlanPlaces, encodePlanShare, sharedRouteSegments, type SharedRoute } from "@/lib/share/route-code";
-import { isCodeSaved, removeRide, rideId, saveSharedRide } from "@/lib/share/saved-rides";
+import { isCodeSaved, rememberShortId, removeRide, rideId, saveSharedRide } from "@/lib/share/saved-rides";
+import { isShareId, shareLinkForPage, type ShareLink } from "@/lib/share/short-link";
 import { gpxFilename } from "@/lib/gpx/filename";
 import { sharedRideGpx } from "@/lib/gpx/share-gpx";
 import { DESKTOP_QUERY } from "@/lib/use-media-query";
@@ -137,6 +138,8 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
     });
   };
   const [copied, setCopied] = useState(false);
+  /** The last share had to use the long link: said beside the confirmation, never silently. */
+  const [longLink, setLongLink] = useState(false);
   // The correction box below the card, exactly as the result panel has it.
   const [text, setText] = useState("");
   // Someone else's ride can be kept too: same store as one's own. localStorage
@@ -223,26 +226,50 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
   const start = { lat: share.points[0][1], lon: share.points[0][0] };
   useEffect(() => { track("shared_route_viewed", { km: share.km, variant: share.variant }); }, [share.km, share.variant]);
 
-  const toggleSave = () => {
-    if (saved) { removeRide(rideId(code)); track("shared_ride_unsaved"); }
-    else { saveSharedRide(code, share); track("shared_ride_saved", { km: share.km }); }
+  /**
+   * The link this page passes on — the short one whenever the store gives it
+   * (`lib/share/short-link.ts`), never the page's address as it stands.
+   *
+   * Arrived on /r/<id>, the address is the link. Arrived on the full code — a
+   * saved ride, an old link — sharing asks for the short id, then puts it in
+   * the address bar and on the saved ride, so the list opens by it from then
+   * on. Only on share: opening a ride uploads nothing, as saving never did.
+   * A failed attempt is not kept, so the next share asks again.
+   */
+  const linkRef = useRef<Promise<ShareLink> | null>(null);
+  const pageLink = () => {
+    linkRef.current ??= shareLinkForPage(window.location.pathname, code).then((link) => {
+      if (link.long) { linkRef.current = null; return link; }
+      if (link.id && !isShareId(window.location.pathname.split("/").pop() ?? "")) {
+        rememberShortId(code, link.id);
+        window.history.replaceState(null, "", `/r/${link.id}${window.location.search}${window.location.hash}`);
+      }
+      return link;
+    });
+    return linkRef.current;
   };
 
-  /**
-   * This page's own address, not a freshly encoded one: the rider may have
-   * arrived on a short /r/<id> link, and that is the link worth passing on.
-   * Phone gets the system sheet, desktop the clipboard with a confirmation —
-   * the same rule the result panel follows.
-   */
+  const toggleSave = () => {
+    if (saved) { removeRide(rideId(code)); track("shared_ride_unsaved"); }
+    else {
+      const seg = window.location.pathname.split("/").pop() ?? "";
+      saveSharedRide(code, share, isShareId(seg) ? seg : null);
+      track("shared_ride_saved", { km: share.km });
+    }
+  };
+
+  /** Phone gets the system sheet, desktop the clipboard with a confirmation — the same rule the result panel follows. */
   const shareRoute = async () => {
-    const url = window.location.href;
+    const link = await pageLink();
+    const url = link.url;
+    setLongLink(link.long);
     const title = `${share.name} · ${share.km} km`;
     const phone = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.matchMedia("(pointer: coarse)").matches;
     if (phone && typeof navigator.share === "function") {
-      try { await navigator.share({ title, url }); track("route_shared", { method: "share", km: share.km, variant: share.variant }); return; }
+      try { await navigator.share({ title, url }); track("route_shared", { method: "share", km: share.km, variant: share.variant, long: link.long }); return; }
       catch { /* dismissed: fall through to copy */ }
     }
-    try { await navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 3500); track("route_shared", { method: "copy", km: share.km, variant: share.variant }); }
+    try { await navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 3500); track("route_shared", { method: "copy", km: share.km, variant: share.variant, long: link.long }); }
     catch { window.prompt(m.resCopyLink, url); }
   };
 
@@ -420,6 +447,7 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
           {copied && (
             <p role="status" className="mopik-fade-in mt-2 rounded-lg bg-stone-900 px-3 py-2 text-xs text-white">{m.resLinkCopied}</p>
           )}
+          {longLink && <p role="status" className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">{m.resLongLinkNote}</p>}
           {/* "Detaļas" as a collapsible row under the actions, shaped like
               "Apskates vietas" below it — the planner's order. Only where the
               code carries the breakdown, so the row never opens onto nothing. */}

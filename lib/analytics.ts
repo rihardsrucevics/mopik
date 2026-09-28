@@ -38,7 +38,7 @@ export type AnalyticsEvent =
   | "beer_click"             // the Revolut link tapped
   | "instagram_opened"        // "Raksti mums" tapped; props: from (header|beer)
   | "map_fullscreen"         // phone map expanded
-  | "route_shared"           // share button; props: method (share|copy), km, variant
+  | "route_shared"           // share button; props: method (share|copy), km, variant, long (true: the store failed, the long link went out)
   | "shared_route_viewed"    // /r/<code> opened
   | "shared_gpx_downloaded"  // GPX from a shared page
   | "install_prompt_shown"   // Android: add-to-home-screen offered

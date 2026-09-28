@@ -121,6 +121,7 @@ export type MessageKey =
   | "resCopyLink"
   | "resCopied"
   | "resLinkCopied"
+  | "resLongLinkNote"
   | "resWhatToChange"
   | "resSendCorrection"
   | "resChangePlaceholder"
@@ -857,6 +858,7 @@ const lv: Messages = {
   resCopyLink: "Kopē saiti:",
   resCopied: "Nokopēts",
   resLinkCopied: "Saite nokopēta. Ielīmē WhatsApp, Telegram vai e-pastā — saņēmējs redzēs karti un skaitļus.",
+  resLongLinkNote: "Īsā saite šobrīd nav pieejama – saite ir gara, un priekšskatījums var nerādīties.",
   resWhatToChange: "Ko mainīt?",
   resSendCorrection: "Nosūtīt korekciju",
   resChangePlaceholder: "Piemēram: īsāku, vairāk pa mežu, caur Limbažiem…",
@@ -1429,6 +1431,7 @@ const lt: Messages = {
   resCopyLink: "Kopijuok nuorodą:",
   resCopied: "Nukopijuota",
   resLinkCopied: "Nuoroda nukopijuota. Įklijuok į WhatsApp, Telegram ar el. paštą — gavėjas matys žemėlapį ir skaičius.",
+  resLongLinkNote: "Trumpoji nuoroda šiuo metu nepasiekiama – nuoroda ilga, todėl peržiūra gali nesirodyti.",
   resWhatToChange: "Ką pakeisti?",
   resSendCorrection: "Siųsti pataisymą",
   resChangePlaceholder: "Pavyzdžiui: trumpiau, daugiau per mišką, per Kėdainius…",
@@ -1971,6 +1974,7 @@ const et: Messages = {
   resCopyLink: "Kopeeri link:",
   resCopied: "Kopeeritud",
   resLinkCopied: "Link kopeeritud. Kleebi WhatsAppi, Telegrami või e-kirja — saaja näeb kaarti ja numbreid.",
+  resLongLinkNote: "Lühilink pole praegu saadaval – link on pikk ja eelvaade ei pruugi ilmuda.",
   resWhatToChange: "Mida muuta?",
   resSendCorrection: "Saada parandus",
   resChangePlaceholder: "Näiteks: lühemalt, rohkem läbi metsa, läbi Elva…",
@@ -2509,6 +2513,7 @@ const en: Messages = {
   resCopyLink: "Copy the link:",
   resCopied: "Copied",
   resLinkCopied: "Link copied. Paste it into WhatsApp, Telegram or email — the recipient sees the map and the numbers.",
+  resLongLinkNote: "The short link isn't available right now – this link is long, and the preview may not show.",
   resWhatToChange: "Change anything?",
   resSendCorrection: "Send",
   resChangePlaceholder: "For example: shorter, more forest, via Limbaži…",

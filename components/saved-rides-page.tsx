@@ -9,7 +9,7 @@ import Link from "next/link";
 import { Download, Map, Plus, Search, SlidersHorizontal, Trash2 } from "lucide-react";
 import { SiteHeader } from "@/components/site-header";
 import { track } from "@/lib/analytics";
-import { listSaved, markSavedSeen, removeRide, decodeSaved, type SavedRide } from "@/lib/share/saved-rides";
+import { listSaved, markSavedSeen, removeRide, decodeSaved, savedRideHref, type SavedRide } from "@/lib/share/saved-rides";
 import { decodePlanShare, planPart } from "@/lib/share/route-code";
 import { planSummary } from "@/lib/chat/ride-plan";
 import { gpxFilename } from "@/lib/gpx/filename";
@@ -281,13 +281,16 @@ export function SavedRidesPage() {
                       A saved ride stores only its share code
                       (lib/share/saved-rides.ts), and /r/<code> is already the
                       result view — map, name, numbers, other versions, GPX —
-                      so "view" is that link, not a rebuilt panel. */}
+                      so "view" is that link, not a rebuilt panel. By its short
+                      id once one is known (`savedRideHref` — kept when the ride
+                      is shared or arrived by a short link), so the address is
+                      short too; nothing is uploaded just for opening a ride. */}
                   {/* Two columns when this ride carries no plan part and so has
                       no "Rediģēt" — older saves and some received links — so
                       the two remaining pills fill the row instead of leaving a
                       third of it empty. */}
                   <div className={`mt-3 grid gap-1.5 sm:gap-2 ${planPart(r.code) ? "grid-cols-3" : "grid-cols-2"}`}>
-                    <Link href={`/r/${r.code}`} onClick={() => track("saved_ride_opened", { km: r.km })}
+                    <Link href={savedRideHref(r)} onClick={() => track("saved_ride_opened", { km: r.km })}
                       aria-label={`${m.savView}: ${r.name}`}
                       className="flex h-10 min-w-0 items-center justify-center gap-0.5 rounded-full border border-stone-200 px-0.5 text-[13px] font-medium text-stone-700 transition hover:bg-stone-50 sm:gap-1.5 sm:px-3">
                       <Map className="size-3.5 shrink-0" /><span className="truncate">{m.savView}</span>
