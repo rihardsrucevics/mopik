@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Check, ChevronDown, ChevronUp, Map as MapIcon, Sparkles } from "lucide-react";
-import type { MapControls } from "@/components/route-map";
+import type { MapControls, MapPendingMark } from "@/components/route-map";
+import type { MapPointSheetRow } from "@/components/map-point-sheet";
 import { RidePlan } from "@/lib/chat/ride-plan";
-import { carryShapePoints, composeRidePlan, placesFromPlan } from "@/lib/chat/compose-plan";
+import { composeRidePlan, placesFromPlan } from "@/lib/chat/compose-plan";
 import { planLine } from "@/lib/map/plan-line";
 import { emptyUndo, popRedo, popUndo, pushUndo, type UndoStack } from "@/lib/map/undo-stack";
 import { RoutePlaces, addStop, addedStopIndex, defaultActiveRow, followRow, rowAfterConfirm, rowLabel, maxRows } from "@/components/route-places";
@@ -25,7 +26,7 @@ import { stepBatch } from "@/lib/map/batch-commit";
 import { mapFieldMode } from "@/lib/map/map-field";
 import { openMapFullscreen } from "@/lib/map/fullscreen";
 import { MAX_SHAPE_POINTS, MAX_STOPS } from "@/lib/chat/ride-limits";
-import { neighboursAlong, pointActions, selectionLive, type PointSelection } from "@/lib/map/point-selection";
+import { demoteInPlan, livePlanDots, neighboursAlong, planDotsFromPlan, planShapePoints, pointActions, promoteInPlan, selectionLive, type PlanDot, type PointSelection } from "@/lib/map/point-selection";
 import {
   PROFILE_PRESETS,
   normalizeProfile,
@@ -426,17 +427,44 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   const shapeAddRef = useRef(false);
   useEffect(() => { shapeAddRef.current = grab !== null; }, [grab]);
   /**
-   * Leave a shaping point's edit state completely (`stepShape`, rider
-   * 2026-09-25): nothing pending, and — unless a row has the map — the map
-   * stops taking marks, so the pending marker, its connector and the grab's
-   * dot go with it. Every way out goes through here.
+   * ✓ was pressed on the proposed change: the pending mark goes, but the page
+   * is committing it — so the `onPropose(null)` its going would send is not
+   * a discard, and is not sent (see the proposal effect).
    */
-  const leaveShape = (opts: { keepPick?: boolean } = {}) => {
+  const committedRef = useRef(false);
+  /**
+   * The one exit from every transient state on the map (docs/DESIGN-route-
+   * editing.md B: generalised from `leaveShape` and `closePointSel`). Every
+   * ✓, ✕, sheet close, Escape and row focus goes through here, so none of
+   * them can leave a ring, a sheet, a pending point or a proposal behind:
+   *
+   * - the shaping point's pending state goes (`stepShape`, rider 2026-09-25)
+   *   and so does the tapped point's selection — ring, sheet, move, removal;
+   * - `commit`: this is a ✓ (or a kind switch) and the page is committing
+   *   what was proposed; otherwise the proposal is dropped (`onPropose(null)`,
+   *   sent by the effect once the pending mark is gone);
+   * - `dropMark`: a row's pending mark goes too (`cancelPicking`) — ✕ and
+   *   Escape. A pin being moved always drops its mark on a non-✓ exit, and
+   *   no row stays active after it;
+   * - `keepPick`: the caller is handing the map to something else (a row, a
+   *   pin, a grab) and opens the pick flow itself; otherwise, with no row
+   *   left active, the map stops taking marks, so the pending marker, its
+   *   connector and the grab's dot go with it.
+   */
+  const leaveTransient = (opts: { commit?: boolean; keepPick?: boolean; dropMark?: boolean } = {}) => {
+    const sel = pointSel;
     const hadGrab = shapeAddRef.current;
+    const hadShape = shapePending !== null || (sel?.kind === "shape" && sel.phase === "move");
+    if (opts.commit) committedRef.current = true;
     setShapePending(null);
     shapeAddRef.current = false;
     setPointSel(null);
-    if (hadGrab && !opts.keepPick && activeRowRef.current === null) onPickModeChange?.(false);
+    const pinMove = sel?.kind === "pin" && sel.phase === "move";
+    if (!opts.keepPick && !opts.commit && (opts.dropMark || pinMove)) {
+      cancelPicking();
+      if (pinMove) setChosenRow(null);
+    }
+    if ((hadGrab || hadShape) && !opts.keepPick && activeRowRef.current === null) onPickModeChange?.(false);
   };
   /**
    * The point tapped on the map — a ride pin or a shaping point — with its
@@ -445,7 +473,19 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
    * ends it; `shapeSelRef` lets the map's next mark find a selected dot.
    */
   const [pointSelSet, setPointSel] = useState<PointSelection | null>(null);
-  const pointSel = selectionLive(pointSelSet, { activeRow, shapeCount: edit?.shapePoints.length ?? 0 });
+  /**
+   * Planning's pass-through points (B1): a stop made „caurbraucams” leaves
+   * the form and stays on the map as a white dot; the plan carries them as
+   * `shapePoints`. Seeded from the plan the form was opened with, so a ride
+   * reopened here shows the dots it was bent through — they are in the plan,
+   * so they are on the map. Each follows a place by name
+   * (lib/map/point-selection.ts); a dot whose place has left the rows is not
+   * drawn and not planned.
+   */
+  const [planDots, setPlanDots] = useState<PlanDot[]>(() => (edit ? [] : planDotsFromPlan(placesFromPlan(initialPlan), initialPlan?.shapePoints, initialPlan?.returnToStart !== true)));
+  /** The dots that are part of the plan now, in riding order — what the planning map draws. */
+  const liveDots = edit ? [] : livePlanDots(places, planDots, tripType === "one_way");
+  const pointSel = selectionLive(pointSelSet, { activeRow, shapeCount: edit ? edit.shapePoints.length : liveDots.length });
   const shapeSelRef = useRef<number | null>(null);
   useEffect(() => { shapeSelRef.current = pointSel?.kind === "shape" && pointSel.phase === "move" ? pointSel.index : null; });
   /**
@@ -479,7 +519,8 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   const effectiveProfile = profileOverride ?? (initialPlan ? profileFromPlan(initialPlan) : profile);
 
   /** Planning's undo stack (edit mode's is the page's ride history). */
-  type Snapshot = { names: string[]; picked: Record<number, ResolvedPlace | null> };
+  /** `dots`: planning's pass-through points, which a kind switch moves in and out of the rows. */
+  type Snapshot = { names: string[]; picked: Record<number, ResolvedPlace | null>; dots?: PlanDot[] };
   const [undo, setUndo] = useState<UndoStack<Snapshot>>(emptyUndo);
   /** Asks the map to show every pin once, after a batch is confirmed. */
   const [fitAsk, setFitAsk] = useState(0);
@@ -579,11 +620,12 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
    * them — a Confirm, a batch, a field's pick, a row removed or moved. Edit
    * mode keeps its own history on the page, with the line.
    */
-  const remember = (before: Snapshot = { names: places, picked }) => { if (!edit) setUndo((u) => pushUndo(u, before)); };
+  const remember = (before: Snapshot = { names: places, picked, dots: planDots }) => { if (!edit) setUndo((u) => pushUndo(u, { dots: planDots, ...before })); };
   /** Put a snapshot back: the rows, their places, and nothing pending. */
   const restore = (snap: Snapshot) => {
     setPlaces(snap.names);
     setPicked(snap.picked);
+    if (snap.dots) setPlanDots(snap.dots);
     setPreview(null);
     setOffRoad(null);
     setMapQuery(null);
@@ -596,7 +638,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   /** The map header's ↶ outside a batch, and Ctrl/Cmd+Z. */
   const undoStep = () => {
     if (edit) { if (edit.canUndo && !edit.rerouting) { track("route_edit_undone", { how: "header" }); edit.onUndo(); } return; }
-    const back = popUndo(undo, { names: places, picked });
+    const back = popUndo(undo, { names: places, picked, dots: planDots });
     if (!back) return;
     track("plan_undone", {});
     setUndo(back.stack);
@@ -605,7 +647,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   /** Shift+Ctrl/Cmd+Z, planning only: edit mode's history is one-way. */
   const redoStep = () => {
     if (edit) return;
-    const forward = popRedo(undo, { names: places, picked });
+    const forward = popRedo(undo, { names: places, picked, dots: planDots });
     if (!forward) return;
     setUndo(forward.stack);
     restore(forward.value);
@@ -658,6 +700,11 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
    */
   const placesRef = useRef(places);
   useEffect(() => { placesRef.current = places; }, [places]);
+  // The same for a promoted dot's rows, applied once its name has come back.
+  const pickedRef = useRef(picked);
+  useEffect(() => { pickedRef.current = picked; }, [picked]);
+  const planDotsRef = useRef(planDots);
+  useEffect(() => { planDotsRef.current = planDots; }, [planDots]);
   const activeRowRef = useRef(activeRow);
   useEffect(() => { activeRowRef.current = activeRow; }, [activeRow]);
 
@@ -869,7 +916,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     // Only the row's own place moves the map (rider, 2026-09-25: activating a
     // filled row shows where it is; an empty row leaves the map alone).
     const at = own;
-    leaveShape({ keepPick: true });
+    leaveTransient({ keepPick: true });
     const target = leaveGhost(index);
     // Only the row's own place seeds a marker. Another row's place, or the
     // rider's own position, says where to *look* — putting a draggable pin on
@@ -896,7 +943,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     if (!mapLive || index === activeRow) return;
     // A grab of the line left waiting is let go: the map now answers this
     // row, and a waiting grab would take its next mark as a shaping point.
-    leaveShape({ keepPick: true });
+    leaveTransient({ keepPick: true });
     let target: number | null = index;
     if (edit && (preview || offRoad)) {
       // Editing, Cancel puts the rows back to the ride's — a "+" row above
@@ -961,7 +1008,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     // which silently emptied the stop the rider had just confirmed. The
     // handler is rebuilt every render, so `places` here is always current.
     const current = places;
-    leaveShape({ keepPick: true });
+    leaveTransient({ keepPick: true });
     // An unused new stop row is already waiting (a Confirm opened it, or "+"
     // was pressed twice): that row is the answer, not a second blank one.
     if (ghostRow !== null) {
@@ -1042,8 +1089,8 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     const filled = places.map((p, i) => (i === row ? place.name : p));
     const nextPicked = { ...picked, [row]: place };
     const after = rowAfterConfirm(filled, row, tripType === "one_way");
-    setShapePending(null);
-    setPointSel(null);
+    // ✓: the one exit, committing — the row flow below keeps the map.
+    leaveTransient({ commit: true, keepPick: true });
     remember();
     setPlaces(after.rows);
     setPicked(nextPicked);
@@ -1212,7 +1259,8 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     setMapQuery(null);
     setRowIsNew(false);
     setChosenRow(null);
-    setPointSel(null);
+    // A line drag takes the map elsewhere: whatever was transient goes first.
+    leaveTransient({ keepPick: true });
     setShapePending(stepShape(shapePending, { type: "grab", at: { lat, lon } }).pending);
     shapeAddRef.current = true;
     openPick({ at: null, marker: null });
@@ -1231,61 +1279,131 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     setMapQuery(null);
     setRowIsNew(false);
     setChosenRow(null);
-    setPointSel(null);
+    leaveTransient({ keepPick: true });
     setShapePending({ kind: "move", index, to });
   };
   /**
-   * Confirm on a pending shaping point: the edit goes to the page, and the
-   * point's edit state is left completely (`leaveShape`) — the rider carries
-   * on with something else, and the dot is a plain dot until he taps it.
+   * Confirm on a pending shaping point: the edit goes to the page (planning:
+   * the dot moves in the plan), and the point's edit state is left
+   * completely (`leaveTransient`) — the rider carries on with something
+   * else, and the dot is a plain dot until he taps it.
    */
   const confirmShape = () => {
-    if (!edit || !shapePending || edit.rerouting) return;
+    if (!shapePending || edit?.rerouting) return;
     const step = stepShape(shapePending, { type: "confirm" });
     if (!step.commit) return;
-    leaveShape();
+    if (!edit) {
+      const op = step.commit;
+      const target = op.kind === "move" ? liveDots[op.index]?.index : undefined;
+      leaveTransient({ commit: true });
+      if (op.kind !== "move" || target === undefined) return;
+      remember();
+      setPlanDots((dots) => dots.map((d, i) => (i === target ? { ...d, lat: op.lat, lon: op.lon } : d)));
+      return;
+    }
+    leaveTransient({ commit: true });
     edit.onShape(step.commit);
   };
   /** Cancel on a pending shaping point: the dot goes back, nothing changes. */
   const cancelShape = () => {
-    leaveShape();
-    onPickModeChange?.(false);
+    leaveTransient();
   };
-  /** „Izņemt” on a selected dot: the line goes back without it. */
+  /**
+   * „Izņemt” on a selected dot. Editing with preview (`onPropose`), it is a
+   * pending change like any other: the ride without the dot is routed and
+   * shown, the dot stays ringed, and ✓ or ✕ decides (phase `remove`).
+   * Without preview, and in planning, it goes at once.
+   */
   const removeShape = (index: number) => {
-    if (!edit || busy || edit.rerouting) return;
-    leaveShape();
+    if (busy || edit?.rerouting) return;
+    if (!edit) {
+      const target = liveDots[index]?.index;
+      leaveTransient({ commit: true });
+      if (target === undefined) return;
+      remember();
+      setPlanDots((dots) => dots.filter((_, i) => i !== target));
+      return;
+    }
+    if (edit.onPropose) { setPointSel({ kind: "shape", index, phase: "remove" }); return; }
+    leaveTransient({ commit: true });
     edit.onShape({ kind: "remove", index });
   };
   /**
    * „Padarīt par pieturu”: the dot becomes a numbered stop with a row, named
    * like any spot marked on the map — the reverse lookup, made
-   * distinguishable from the ride's other places.
+   * distinguishable from the ride's other places. A kind switch changes no
+   * line, so it commits at once (B3): editing, one `onShape`; planning, the
+   * row comes back where the dot was (`promoteInPlan`).
    */
   const promoteShape = (index: number) => {
-    if (!edit || busy || edit.rerouting) return;
-    const point = edit.shapePoints[index];
+    if (busy || edit?.rerouting) return;
+    const point = edit ? edit.shapePoints[index] : liveDots[index];
     if (!point) return;
-    leaveShape();
+    leaveTransient({ commit: true });
+    track("point_kind_switched", { to: "stop", mode: edit ? "edit" : "plan" });
     void (async () => {
       const found = await nameForPoint(point.lat, point.lon);
       const place = pickedPlace(found, point.lat, point.lon, placesRef.current, t(locale, "pickedOnMap"));
       rememberPlace(place);
-      edit.onShape({ kind: "promote", index, place });
+      if (edit) { edit.onShape({ kind: "promote", index, place }); return; }
+      const target = liveDots[index]?.index;
+      if (target === undefined) return;
+      // Applied to the rows as they are when the name has come back.
+      const back = promoteInPlan({ rows: placesRef.current, picked: pickedRef.current, dots: planDotsRef.current, oneWay: tripType === "one_way", index: target, place });
+      if (!back) return;
+      remember({ names: placesRef.current, picked: pickedRef.current, dots: planDotsRef.current });
+      setPlaces(back.rows);
+      setPicked(back.picked);
+      setPlanDots(back.dots);
+      setChosenRow(null);
     })();
+  };
+  /**
+   * „Padarīt caurbraucamu” on a stop's sheet (B1/B3): the stop becomes a
+   * pass-through point at its own spot. Editing, one `onShape({kind:
+   * "demote"})`, committed at once with no preview — the line does not
+   * change; `stopIndex` counts the ride's stops in riding order from 0.
+   * Planning, the row leaves the form and a white dot stays on the map
+   * (`demoteInPlan`); the plan then carries it as a `shapePoints` entry.
+   */
+  const demoteStop = (row: number) => {
+    if (busy || edit?.rerouting || !isStopRow(row)) return;
+    if (edit) {
+      const stopIndex = Array.from({ length: Math.max(row - 1, 0) }, (_, j) => j + 1).filter((i) => edit.seed.picked[i]).length;
+      if (!edit.seed.picked[row]) return;
+      leaveTransient({ commit: true });
+      track("point_kind_switched", { to: "pass", mode: "edit" });
+      edit.onShape({ kind: "demote", stopIndex });
+      return;
+    }
+    const next = demoteInPlan({ rows: places, picked, dots: planDots, oneWay: tripType === "one_way", row });
+    if (!next) return;
+    leaveTransient({ commit: true });
+    track("point_kind_switched", { to: "pass", mode: "plan" });
+    remember();
+    setPlaces(next.rows);
+    setPicked(next.picked);
+    setPlanDots(next.dots);
+    setPreview(null);
+    setRowIsNew(false);
+    setChosenRow(null);
   };
   /**
    * A shaping point's dot pressed: it is selected — ring, sheet („Pārvietot”,
    * „Padarīt par pieturu”, „Izņemt”). Whatever was pending on the rows or on
    * another dot is let go; no row stays active, so the map takes no mark
-   * until „Pārvietot”.
+   * until „Pārvietot”. Planning's dots are pressed the same way.
    */
   const pressShape = (index: number) => {
-    if (!edit || busy || edit.rerouting) return;
+    if (busy || edit?.rerouting) return;
     track("shape_point_pressed", {});
-    leaveShape({ keepPick: true });
-    setPlaces(edit.seed.names);
-    setPicked({ ...edit.seed.picked });
+    leaveTransient({ keepPick: true });
+    if (edit) {
+      setPlaces(edit.seed.names);
+      setPicked({ ...edit.seed.picked });
+    } else {
+      leaveGhost(null);
+    }
     setPreview(null);
     setOffRoad(null);
     setMapQuery(null);
@@ -1293,18 +1411,25 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     setChosenRow(null);
     setPointSel({ kind: "shape", index, phase: "menu" });
   };
+  /** A stop's rows as they are without `row` — what „Izņemt” commits. */
+  const rowsWithout = (row: number) => {
+    const baseNames = edit ? edit.seed.names : places;
+    const basePicked = edit ? { ...edit.seed.picked } : picked;
+    const names = baseNames.filter((_, i) => i !== row);
+    return { names, picked: rekeyPicked(baseNames, basePicked, names) };
+  };
   /**
    * „Izņemt” on a selected stop's sheet: the row goes, exactly as its ✕ in
    * the list takes it (and, editing, the ride is re-routed without it). A
    * mark pending on it goes too. The selection ends and no row stays active.
+   * Editing with preview, the sheet's „Izņemt” first shows the ride without
+   * the stop (`askRemove`); this is its ✓.
    */
   const removeStopRow = (row: number) => {
     if (busy || edit?.rerouting || !isStopRow(row)) return;
-    const baseNames = edit ? edit.seed.names : places;
-    const basePicked = edit ? { ...edit.seed.picked } : picked;
-    const next = baseNames.filter((_, i) => i !== row);
-    const nextPicked = rekeyPicked(baseNames, basePicked, next);
+    const { names: next, picked: nextPicked } = rowsWithout(row);
     track("map_stop_removed", {});
+    leaveTransient({ commit: true, keepPick: true });
     remember();
     setPlaces(next);
     setPicked(nextPicked);
@@ -1312,22 +1437,32 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     setOffRoad(null);
     setMapQuery(null);
     setRowIsNew(false);
-    setPointSel(null);
     setChosenRow(null);
     if (edit) commitRows(next, nextPicked);
   };
   /**
-   * The sheet's ✕ or Cancel, the move line's ✕, a tap on the map under an open
-   * sheet: the selection ends and the point is plain again — a mark pending
-   * on it is dropped, and no row stays active.
+   * The sheet's „Izņemt”: at once in planning (and without preview);
+   * editing with preview, the removal is proposed and waits for ✓ / ✕ with
+   * the point still ringed.
    */
-  const closePointSel = () => {
+  const askRemove = () => {
     const sel = pointSel;
-    setPointSel(null);
-    if (!sel || sel.phase === "menu") return;
-    if (sel.kind === "shape") { cancelShape(); return; }
-    cancelPicking();
-    setChosenRow(null);
+    if (!sel || sel.phase !== "menu") return;
+    if (sel.kind === "shape") { removeShape(sel.index); return; }
+    if (edit?.onPropose) {
+      if (busy || edit.rerouting || !isStopRow(sel.row)) return;
+      setPointSel({ ...sel, phase: "remove" });
+      return;
+    }
+    removeStopRow(sel.row);
+  };
+  /** ✓ on a proposed removal: the change the page has been showing. */
+  const confirmRemove = () => {
+    const sel = pointSel;
+    if (!edit || !sel || sel.phase !== "remove" || edit.rerouting) return;
+    if (sel.kind === "pin") { removeStopRow(sel.row); return; }
+    leaveTransient({ commit: true });
+    edit.onShape({ kind: "remove", index: sel.index });
   };
   /** Whether a row is a stop — neither the start nor a one-way ride's finish. */
   const isStopRow = (i: number) => i > 0 && !(tripType === "one_way" && i === places.length - 1);
@@ -1456,7 +1591,9 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     batchRef.current = [];
     setBatch([]);
     setBatchSel(null);
-    if (edit) { cancelPicking(); return; }
+    // ✕: the one exit. Editing, the rows go back to the ride's with it.
+    if (edit) { leaveTransient({ dropMark: true }); return; }
+    leaveTransient({ keepPick: true });
     const kept = places.filter((_, i) => !rows.includes(i) || i === first).map((p, i) => (i === first ? "" : p));
     let nextPicked = picked;
     for (const r of [...rows].reverse()) if (r !== first) nextPicked = shiftPicked(nextPicked, r, -1);
@@ -1488,12 +1625,16 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
       const start = stepBatch({ committing: batchCommitting }, { type: "confirm", busy: edit.rerouting });
       if (!start.send) return;
       track("batch_confirmed", { n: batch.length });
+      // ✓: the one exit, committing. The batch itself stays pending until
+      // its line lands (below), so the map keeps its marks meanwhile.
+      leaveTransient({ commit: true, keepPick: true });
       setBatchCommitting(true);
       setBatchSel(null);
       void edit.onCommit({ names, picked: nextPicked }, { keepOnFailure: true }).then((ok) => {
         const done = stepBatch(start.state, { type: ok ? "landed" : "refused" });
         setBatchCommitting(done.state.committing);
-        if (!done.clearBatch) return;
+        // Refused: the batch is still pending, and its ✕ is a real discard.
+        if (!done.clearBatch) { committedRef.current = false; return; }
         for (const b of batch) rememberPlace(b.place!);
         batchRef.current = [];
         setBatch([]);
@@ -1512,6 +1653,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
       names: places.filter((_, i) => !rowsOf.includes(i) || i === rowsOf[0]).map((p, i) => (i === rowsOf[0] ? "" : p)),
       picked: beforePicked,
     });
+    leaveTransient({ commit: true, keepPick: true });
     setPlaces(names);
     setPicked(nextPicked);
     for (const b of batch) rememberPlace(b.place!);
@@ -1552,7 +1694,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     const row = rowOfPin(role, index);
     if (row < 0) return;
     track("map_pin_pressed", { role });
-    leaveShape({ keepPick: true });
+    leaveTransient({ keepPick: true });
     let target: number | null = row;
     if (edit && (preview || offRoad)) {
       cancelPicking();
@@ -1590,7 +1732,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     const row = rowOfPin(role, index);
     if (row < 0) return;
     track("route_edit_pin_dragged", { role });
-    leaveShape({ keepPick: true });
+    leaveTransient({ keepPick: true });
     const target = leaveGhost(row);
     setPreview(null);
     setMapQuery(null);
@@ -1709,14 +1851,31 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   /** The active row's own confirmed place — its pin is the one the map raises. */
   const activeOwn = activeRow === null ? null : picked[activeRow] ?? null;
   /**
+   * The dots the map draws: the ride's shaping points (planning: its
+   * pass-through dots), the one being moved where it was let go. None while
+   * a batch is open in edit mode (its marks are stops).
+   */
+  const shapeDots = (edit ? edit.shapePoints : liveDots.map((d) => ({ lat: d.lat, lon: d.lon })))
+    .map((p, i) => (shapePending?.kind === "move" && shapePending.index === i ? shapePending.to : p));
+  const shapeKey = shapeDots.map((p) => `${p.lat},${p.lon}`).join("|");
+  /**
    * The dashed line joining the pins in riding order, planning only — a
    * generated ride draws the real line, and edit mode has it (`planLine`).
    */
   const planRows = places.map((_, i) => (picked[i] ? [picked[i]!.lon, picked[i]!.lat] as [number, number] : null));
+  // The pass-through dots ride in the dashed line too, each after the row it
+  // follows — the plan goes through them.
+  const lineRows: ([number, number] | null)[] = [];
+  const lineRowOf: number[] = [];
+  places.forEach((_, i) => {
+    lineRowOf[i] = lineRows.length;
+    lineRows.push(planRows[i]);
+    liveDots.forEach((d, k) => { if (d.afterRow === i) { const at = shapeDots[k] ?? d; lineRows.push([at.lon, at.lat]); } });
+  });
   const basePath = edit ? null : planLine({
-    rows: planRows,
+    rows: lineRows,
     roundTrip: tripType === "round_trip",
-    pending: activeRow !== null && preview && !batch.length ? { row: activeRow, point: [preview.lon, preview.lat] } : null,
+    pending: activeRow !== null && preview && !batch.length ? { row: lineRowOf[activeRow], point: [preview.lon, preview.lat] } : null,
   });
   // A batch's pending stops slot in as one lighter chain: from the place
   // before the first to the place after the last, through each in turn.
@@ -1752,7 +1911,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     shapeDrag: (index: number, at: { lat: number; lon: number }) => void;
     confirmShape: () => void; cancelShape: () => void;
     shapeRemove: (index: number) => void; shapePromote: (index: number) => void;
-    shapePress: (index: number) => void; pointRemove: () => void; pointPromote: () => void; pointClose: () => void; pointMove: () => void;
+    shapePress: (index: number) => void; pointRemove: () => void; confirmRemove: () => void; pointPromote: () => void; pointDemote: () => void; pointClose: () => void; pointMove: () => void;
     confirmBatch: () => void; discardBatch: () => void; undoBatch: () => void;
     selectBatch: (id: number) => void; moveBatch: (id: number, at: { lat: number; lon: number }) => void; dropBatch: (id: number) => void;
     moveSelectedToRoad: () => void; dropSelected: () => void;
@@ -1795,13 +1954,6 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     : activeRow === null || !(preview || offRoad || naming)
     ? ""
     : [preview?.lat, preview?.lon, checking, naming, offRoad?.distanceM ?? "", offRoad?.snappedTo ? 1 : 0, edit?.rerouting ? 1 : 0].join("|");
-  /**
-   * The dots the map draws: the ride's shaping points, the one being dragged
-   * where it was let go. None outside edit mode, and none while a batch is
-   * open (its marks are stops).
-   */
-  const shapeDots = !edit ? [] : edit.shapePoints.map((p, i) => (shapePending?.kind === "move" && shapePending.index === i ? shapePending.to : p));
-  const shapeKey = shapeDots.map((p) => `${p.lat},${p.lon}`).join("|");
   /** Where the tapped point is drawn: a pin at its row's place, a dot where it is (or is being moved to). */
   const selectedAt = !pointSel ? null : pointSel.kind === "shape" ? shapeDots[pointSel.index] ?? null : picked[pointSel.row] ? { lat: picked[pointSel.row]!.lat, lon: picked[pointSel.row]!.lon } : null;
   const pointKey = !pointSel ? "" : [pointSel.kind, pointSel.phase, pointSel.kind === "shape" ? pointSel.index : pointSel.row, selectedAt?.lat ?? "", selectedAt?.lon ?? ""].join("|");
@@ -1826,12 +1978,82 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     : null;
   const movePreviewKey = movePreview ? JSON.stringify(movePreview) : "";
   const stopCount = places.slice(1, tripType === "one_way" ? -1 : undefined).filter((p) => p.trim()).length;
+  /**
+   * Preview before commit (B4): the change the pending mark would make,
+   * exactly what its ✓ hands to `onCommit` / `onShape` — a pin moved or a
+   * new stop (its row with the mark), a batch once every stop in it is named,
+   * a shaping point moved or placed, a removal waiting for ✓. Null when
+   * nothing routable is pending (a mark still being named, a grab with no
+   * place yet, a mark that would change nothing). Editing with `onPropose`
+   * only.
+   */
+  const proposedChange: ProposedChange | null = !edit?.onPropose ? null
+    : batch.length ? (batch.some((b) => !b.place || b.check !== "ok") ? null : (() => {
+        const names = places.map((p, i) => batch.find((b) => b.row === i)?.place?.name ?? p);
+        const nextPicked = { ...picked };
+        for (const b of batch) nextPicked[b.row] = b.place;
+        return { kind: "rows" as const, rows: { names, picked: nextPicked } };
+      })())
+    : shapePending ? (() => { const op = stepShape(shapePending, { type: "confirm" }).commit; return op ? { kind: "shape" as const, op } : null; })()
+    : pointSel?.phase === "remove" ? (pointSel.kind === "shape"
+        ? { kind: "shape" as const, op: { kind: "remove" as const, index: pointSel.index } }
+        : { kind: "rows" as const, rows: rowsWithout(pointSel.row) })
+    : activeRow !== null && preview && !(picked[activeRow] && picked[activeRow]!.lat === preview.lat && picked[activeRow]!.lon === preview.lon && places[activeRow] === preview.name)
+      ? { kind: "rows" as const, rows: { names: places.map((p, i) => (i === activeRow ? preview.name : p)), picked: { ...picked, [activeRow]: preview } } }
+    : null;
+  const proposeKey = proposedChange ? JSON.stringify(proposedChange) : "";
+  /**
+   * Hand every pending change to the page as it appears or changes, and
+   * `null` when it goes — unless it went because ✓ committed it
+   * (`committedRef`, set by `leaveTransient({ commit })`): the page is then
+   * committing the landed proposal, and a null would discard it.
+   */
+  const proposeRef = useRef(edit?.onPropose);
+  useEffect(() => { proposeRef.current = edit?.onPropose; });
+  const proposedRef = useRef("");
+  const proposedChangeRef = useRef(proposedChange);
+  useEffect(() => { proposedChangeRef.current = proposedChange; });
+  useEffect(() => {
+    const propose = proposeRef.current;
+    if (!propose || proposeKey === proposedRef.current) return;
+    const had = proposedRef.current !== "";
+    proposedRef.current = proposeKey;
+    if (proposeKey) { committedRef.current = false; propose(proposedChangeRef.current); return; }
+    if (committedRef.current) { committedRef.current = false; return; }
+    if (had) propose(null);
+  }, [proposeKey]);
+  /**
+   * The page's answer for the pending change: ✓ spins while it routes
+   * (`confirmBusy`) and stays pressable — a press then confirms it when it
+   * lands. The map does the rest from the page's `ProposalView`: it relabels
+   * a pressed ✓ („Apstiprināšu, tiklīdz būs pārrēķināts”), switches ✓ off on
+   * a refusal and says the reason, and its chip is the notice while a
+   * proposal is shown — so the composer puts nothing of its own there.
+   */
+  const proposal = edit?.onPropose && proposedChange ? edit.proposal : undefined;
+  const proposalRouting = proposal?.phase === "routing";
+  const proposalKey = !proposal ? "" : proposal.phase;
+  /** ✓ and ✕ for a previewed change: their words and the spinner. */
+  const previewBar = (bar: MapPendingMark): MapPendingMark => (!edit?.onPropose ? bar : {
+    ...bar,
+    confirmLabel: bar.onConfirm ? t(locale, "previewConfirm") : bar.confirmLabel,
+    confirmBusy: proposalRouting,
+    cancelLabel: t(locale, "previewCancel"),
+  });
+  /** The tapped point's name on its sheet — also the field's words while its removal waits. */
+  const pointTitle = !pointSel ? "" : pointSel.kind === "shape" ? t(locale, "shapePointName")
+    : pointSel.role === "start" ? t(locale, "mapStart")
+    : pointSel.role === "finish" ? t(locale, "mapFinish")
+    : fi(t(locale, "pointStopTitle"), { n: places.slice(1, pointSel.row + 1).filter((_, j) => picked[j + 1] && !picked[j + 1]?.kind).length });
+  const removeHint = pointSel?.phase === "remove" ? `${t(locale, "shapeRemove")}: ${pointTitle}` : null;
+  /** How many pass-through points the ride has: „Padarīt caurbraucamu” stops at the cap, saying so. */
+  const passCount = edit ? edit.shapePoints.length : liveDots.length;
   useEffect(() => {
     if (!mapLive) { onMapControlsChange?.(null); return; }
     // The batch's own pending state: Confirm all, ↶ the last, ✕ all — and,
     // for a selected pending stop the probe found off the road, the verdict.
     const stopsBefore = batchActive ? places.slice(1, batch[0].row).filter((_, j) => picked[j + 1] && !picked[j + 1]?.kind).length : 0;
-    const batchPending = !batchActive ? null : {
+    const batchPending = !batchActive ? null : previewBar({
       confirmLabel: batchCommitting || edit?.rerouting ? t(locale, "resEditRouting") : t(locale, "batchConfirmAll"),
       onConfirm: batch.some((b) => !b.place || b.check !== "ok") || edit?.rerouting || batchCommitting ? null : () => pendingHandlers.current?.confirmBatch(),
       cancelLabel: t(locale, "batchDiscard"),
@@ -1845,18 +2067,27 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
         dismissLabel: t(locale, "batchDropOne"),
         onDismiss: () => pendingHandlers.current?.dropSelected(),
       } : null,
-    };
+    });
     const batchCount = batch.length === 1 ? t(locale, "batchCountOne") : fi(t(locale, "batchCountMany"), { n: batch.length });
     // A shaping point waiting: Confirm once it has somewhere to go, Cancel
     // at once (a grab with no mark yet is still something to take back).
-    const shapeBar = !shapePending ? null : {
+    const shapeBar = !shapePending ? null : previewBar({
       confirmLabel: t(locale, "pickOnMapConfirm"),
       onConfirm: edit?.rerouting || (shapePending.kind === "add" && !shapePending.to) ? null : () => pendingHandlers.current?.confirmShape(),
       cancelLabel: t(locale, "pickOnMapCancel"),
       onCancel: () => pendingHandlers.current?.cancelShape(),
       offRoad: null,
-    };
-    const pending = batchPending ?? shapeBar ?? (!pendingKey ? null : {
+    });
+    // A removal waiting for ✓ (editing with preview): the ride without the
+    // point is what the map shows; ✓ takes it out, ✕ keeps it.
+    const removeBar = pointSel?.phase !== "remove" ? null : previewBar({
+      confirmLabel: t(locale, "previewConfirm"),
+      onConfirm: edit?.rerouting ? null : () => pendingHandlers.current?.confirmRemove(),
+      cancelLabel: t(locale, "previewCancel"),
+      onCancel: () => pendingHandlers.current?.pointClose(),
+      offRoad: null,
+    });
+    const single: MapPendingMark | null = !pendingKey ? null : {
       confirmLabel: checking ? t(locale, "pickOnMapChecking") : t(locale, "pickOnMapConfirm"),
       // Null while the probe is in flight: the button is then disabled and
       // says so, because a press that takes a second and shows nothing reads
@@ -1876,7 +2107,9 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
         dismissLabel: t(locale, "pickOffRoadCancel"),
         onDismiss: () => pendingHandlers.current?.dismiss(),
       },
-    });
+    };
+    // Editing, a pin's mark is previewed like the rest once it is named.
+    const pending = batchPending ?? shapeBar ?? removeBar ?? (single && edit && preview ? previewBar(single) : single);
     // Null at the cap rather than a handler that returns: the button is then
     // disabled and says why, and a control that does nothing is never shipped.
     // Through the ref like the other handlers: whether a blank new row is
@@ -1891,11 +2124,11 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     // state: a batch, a move or a grab has the field say something else.
     // When „+” cannot act (the cap, an edit being routed) the field is off
     // and its words say why.
-    const fieldMode = mapFieldMode({ activeRow, batchActive, mapBusy: pointSel?.phase === "move" || shapePending?.kind === "move" || Boolean(grab), canAddStop: Boolean(onAddStop) });
+    const fieldMode = mapFieldMode({ activeRow, batchActive, mapBusy: pointSel?.phase === "move" || pointSel?.phase === "remove" || shapePending?.kind === "move" || Boolean(grab), canAddStop: Boolean(onAddStop) });
     const noRowWords = fieldMode === "new-stop" ? t(locale, "mapNoActiveRow") : atCap ? fi(t(locale, "mapStopCapShort"), { n: MAX_STOPS }) : t(locale, "mapFieldRerouting");
     onMapControlsChange?.({
       pending,
-      hint: batchActive ? batchCount : pointSel?.phase === "move" ? t(locale, "pointMoveHint") : shapePending?.kind === "move" ? t(locale, "shapeMoveHint") : grab ? t(locale, "mapGrabHint") : activeRow === null ? noRowWords : fi(t(locale, "mapActiveRowHint"), { label: activeLabel }),
+      hint: batchActive ? batchCount : removeHint ? removeHint : pointSel?.phase === "move" ? t(locale, "pointMoveHint") : shapePending?.kind === "move" ? t(locale, "shapeMoveHint") : grab ? t(locale, "mapGrabHint") : activeRow === null ? noRowWords : fi(t(locale, "mapActiveRowHint"), { label: activeLabel }),
       rowLabel: activeRow === null || batchActive ? undefined : activeLabel,
       // The pin the active row's mark will become, and a stop's number: one
       // more than the filled, numbered stops above it — the order the map
@@ -1908,6 +2141,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
       onAddStop,
       // At the cap, why „+” is greyed out and the next mark adds nothing —
       // short, on a line of its own; the sentence is its tooltip.
+      // While a proposal is shown the map's chip takes this slot (P1-D).
       notice: atCap ? { text: fi(t(locale, "mapStopCapShort"), { n: MAX_STOPS }), title: capSentence } : null,
       addStopLabel: t(locale, "mapAddStop"),
       addStopFullLabel: capSentence,
@@ -1927,7 +2161,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
         // A batch has no field to type into — its count is the field's words
         // (and the cap, once it is reached).
         // The cap is said on its own line (`notice`); the field keeps the count.
-        placeholder: batchActive ? batchCount : pointSel?.phase === "move" ? t(locale, "pointMoveHint") : shapePending?.kind === "move" ? t(locale, "shapeMoveHint") : grab ? t(locale, "mapGrabHint") : activeRow === null ? noRowWords : t(locale, "mapSearchHint"),
+        placeholder: batchActive ? batchCount : removeHint ? removeHint : pointSel?.phase === "move" ? t(locale, "pointMoveHint") : shapePending?.kind === "move" ? t(locale, "shapeMoveHint") : grab ? t(locale, "mapGrabHint") : activeRow === null ? noRowWords : t(locale, "mapSearchHint"),
         disabled: fieldMode === "off",
         onFocus: fieldMode === "new-stop" ? onAddStop : null,
       },
@@ -1939,30 +2173,34 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
       activePlace: activeOwn ? { lat: activeOwn.lat, lon: activeOwn.lon } : null,
       // The tapped point: its ring, and its sheet of what can be done to it.
       selectedPoint: selectedAt,
-      pointSheet: !pointSel ? null : pointSel.phase === "move" ? {
+      // A removal waiting for ✓ has no sheet: its ✓ / ✕ are the bottom bar's.
+      pointSheet: !pointSel || pointSel.phase === "remove" ? null : pointSel.phase === "move" ? {
         mode: "move" as const,
         hint: t(locale, "pointMoveHint"),
         closeLabel: t(locale, "pickOnMapCancel"),
         onClose: () => pendingHandlers.current?.pointClose(),
       } : {
         mode: "menu" as const,
-        title: pointSel.kind === "shape" ? t(locale, "shapePointName")
-          : pointSel.role === "start" ? t(locale, "mapStart")
-          : pointSel.role === "finish" ? t(locale, "mapFinish")
-          : fi(t(locale, "pointStopTitle"), { n: places.slice(1, pointSel.row + 1).filter((_, j) => picked[j + 1] && !picked[j + 1]?.kind).length }),
+        title: pointTitle,
         name: pointSel.kind === "pin" ? places[pointSel.row] : undefined,
-        // Groups, so later rows (segment actions, stop ↔ pass-through) slot in.
-        groups: [
-          { key: "move", rows: [{ key: "move", icon: "move" as const, label: t(locale, "pointMove"), onPress: () => pendingHandlers.current?.pointMove() }] },
-          ...(pointActions(pointSel).includes("promote") ? [{ key: "kind", rows: [{
+        // Groups: move; the kind switch (stop ↔ pass-through, B3); „Izņemt”
+        // last and red — never on the start or the finish, which only move.
+        groups: pointActions(pointSel, edit ? "edit" : "plan").flatMap((action): { key: string; rows: MapPointSheetRow[] }[] => {
+          if (action === "move") return [{ key: "move", rows: [{ key: "move", icon: "move" as const, label: t(locale, "pointMove"), onPress: () => pendingHandlers.current?.pointMove() }] }];
+          if (action === "demote") return [{ key: "kind", rows: [{
+            key: "demote", icon: "pass" as const, label: t(locale, "pointDemote"),
+            // Off at the pass-through cap, and saying why.
+            onPress: passCount >= MAX_SHAPE_POINTS ? null : () => pendingHandlers.current?.pointDemote(),
+            title: passCount >= MAX_SHAPE_POINTS ? fi(t(locale, "shapeCapNote"), { n: MAX_SHAPE_POINTS }) : undefined,
+          }] }];
+          if (action === "promote") return [{ key: "kind", rows: [{
             key: "promote", icon: "stop" as const, label: t(locale, "shapePromote"),
-            // Disabled at the stop cap, and saying why.
-            onPress: stopCount >= MAX_STOPS ? null : () => pendingHandlers.current?.pointPromote(),
-            title: stopCount >= MAX_STOPS ? capSentence : undefined,
-          }] }] : []),
-          // Last and red; never on the start or the finish, which can only move.
-          ...(pointActions(pointSel).includes("remove") ? [{ key: "remove", rows: [{ key: "remove", icon: "remove" as const, tone: "danger" as const, label: t(locale, "shapeRemove"), onPress: () => pendingHandlers.current?.pointRemove() }] }] : []),
-        ],
+            // Off at the stop cap, and saying why.
+            onPress: stopCount >= MAX_STOPS || atCap ? null : () => pendingHandlers.current?.pointPromote(),
+            title: stopCount >= MAX_STOPS || atCap ? capSentence : undefined,
+          }] }];
+          return [{ key: "remove", rows: [{ key: "remove", icon: "remove" as const, tone: "danger" as const, label: t(locale, "shapeRemove"), onPress: () => pendingHandlers.current?.pointRemove() }] }];
+        }),
         closeLabel: t(locale, "pointSheetClose"),
         cancelLabel: t(locale, "pickOnMapCancel"),
         onClose: () => pendingHandlers.current?.pointClose(),
@@ -1992,12 +2230,18 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
         onShapeDrag: (index: number, at: { lat: number; lon: number }) => pendingHandlers.current?.shapeDrag(index, at),
         onShapePress: (index: number) => pendingHandlers.current?.shapePress(index),
         shapeLabel: t(locale, "shapePointLabel"),
-      } : {}),
+      } : {
+        // Planning: the pass-through dots (B1). Pressed, they open the same
+        // sheet; they do not drag, and there is no line to grab yet.
+        shapePoints: shapeDots,
+        onShapePress: (index: number) => pendingHandlers.current?.shapePress(index),
+        shapeLabel: t(locale, "shapePointLabel"),
+      }),
     });
     // The parent's callback is an inline arrow and is rebuilt every render;
     // listing it would re-report the same controls on every keystroke.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapLive, activeRow, activeLabel, atCap, activeValue, activeConfirmed, anchor, locale, tripType, rowsKey, pendingKey, mapQuery, activeOwn?.lat, activeOwn?.lon, planKey, grab?.at.lat, grab?.at.lon, batchKey, fitAsk, undo.past.length, edit?.canUndo, edit?.rerouting, batchCommitting, shapeKey, stopCount, pointKey, movePreviewKey]);
+  }, [mapLive, activeRow, activeLabel, atCap, activeValue, activeConfirmed, anchor, locale, tripType, rowsKey, pendingKey, mapQuery, activeOwn?.lat, activeOwn?.lon, planKey, grab?.at.lat, grab?.at.lon, batchKey, fitAsk, undo.past.length, edit?.canUndo, edit?.rerouting, batchCommitting, shapeKey, stopCount, pointKey, movePreviewKey, proposalKey, proposeKey, passCount, pointTitle]);
   // Nothing is offered once the form is gone. Without this the page would keep
   // drawing a map header for a form the rider has left.
   useEffect(() => () => onMapControlsChange?.(null),
@@ -2041,11 +2285,11 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
       return;
     }
     if (e.key !== "Escape") return;
-    if (shapePending) { cancelShape(); return; }
-    if (pointSel) { closePointSel(); return; }
+    // Escape is ✕: the one exit, whatever is open.
+    if (shapePending || pointSel) { leaveTransient(); return; }
     if (batchSel !== null) { setBatchSel(null); return; }
     if (batch.length) { discardBatch(); return; }
-    if (activeRow !== null) cancelPicking();
+    if (activeRow !== null) leaveTransient({ dropMark: true });
   };
   useEffect(() => { keyRef.current = onKeyDown; });
   useEffect(() => {
@@ -2090,11 +2334,12 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   // `pendingHandlers`). After `effectiveProfile`, which `confirmPick` reads.
   useEffect(() => {
     pendingHandlers.current = {
-      confirm: confirmPick, cancel: () => { const pin = pointSel?.kind === "pin" && pointSel.phase === "move"; cancelPicking(); if (pin) setChosenRow(null); }, move: acceptOffRoadMove, dismiss: () => setOffRoad(null), pinDrag: dragPin, addStop: addStopFromMap, pinPress: pressPin, lineGrab: grabLine,
+      confirm: confirmPick, cancel: () => leaveTransient({ dropMark: true }), move: acceptOffRoadMove, dismiss: () => setOffRoad(null), pinDrag: dragPin, addStop: addStopFromMap, pinPress: pressPin, lineGrab: grabLine,
       shapeDrag: dragShape, confirmShape, cancelShape, shapeRemove: removeShape, shapePromote: promoteShape,
-      shapePress: pressShape, pointClose: closePointSel, pointMove: movePoint,
-      pointRemove: () => { if (pointSel?.kind === "shape") removeShape(pointSel.index); else if (pointSel?.kind === "pin") removeStopRow(pointSel.row); },
+      shapePress: pressShape, pointClose: () => leaveTransient(), pointMove: movePoint,
+      pointRemove: askRemove, confirmRemove,
       pointPromote: () => { if (pointSel?.kind === "shape") promoteShape(pointSel.index); },
+      pointDemote: () => { if (pointSel?.kind === "pin") demoteStop(pointSel.row); },
       confirmBatch, discardBatch,
       undoBatch: () => { const last = batch[batch.length - 1]; if (last) dropBatchItem(last.id); },
       selectBatch: (id: number) => setBatchSel((sel) => (sel === id ? null : id)),
@@ -2133,9 +2378,15 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     if (tripType === "one_way" && filled.length < 2) { setError(t(locale, "errNoDestination")); return; }
     const value = hours.trim() ? Number(hours.replace(",", ".")) : preset ?? NaN;
     if (durationMode === "hours" && (!Number.isFinite(value) || value < 0.5 || value > 16)) { setError(t(locale, "errHours")); return; }
-    // The shaping points of a ride reopened here ride along while its places
-    // are the same ones (`carryShapePoints`): the form has no rows for them.
-    const plan = carryShapePoints(composeRidePlan({ places: rows, tripType, durationMode, hours: value, profile: effectiveProfile }), initialPlan);
+    // The pass-through points ride along (B1): the dots on the planning map —
+    // stops made „caurbraucami” here, and those of a ride reopened here —
+    // each after the place it follows, the way the generator reads them
+    // (`interleaveShapes`). A dot whose place has left the rows is not on the
+    // map and is not planned. Absent when there are none, so a plan without
+    // them encodes exactly as before.
+    const base = composeRidePlan({ places: rows, tripType, durationMode, hours: value, profile: effectiveProfile });
+    const shapes = planShapePoints(rows, planDots, tripType === "one_way", MAX_SHAPE_POINTS);
+    const plan: RidePlan = shapes.length ? { ...base, shapePoints: shapes } : base;
     setError(null);
     if (rows !== places) leaveGhost(null);
     onGenerate(plan, Object.values(picked).filter((p): p is ResolvedPlace => p !== null));
