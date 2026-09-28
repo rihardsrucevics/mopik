@@ -103,6 +103,10 @@ export type Gate = {
   /** the class of way it sits on */
   highway: GateHighway;
   country: string;
+  /** the OSM node id — absent in a file built before ids were kept */
+  id?: number;
+  /** the node's own `access=*` value, verbatim; absent when OSM has none or the file predates it */
+  access?: string;
 };
 
 /** [minLon, minLat, maxLon, maxLat] */
@@ -201,17 +205,23 @@ function loadIndex(): GateCountry[] {
 /**
  * The published file's shape — packed arrays, not GeoJSON features.
  *
- * `[lon, lat, barrierIndex, highwayIndex]`. The per-feature
- * `type`/`geometry`/`properties` scaffolding of GeoJSON is several times the
- * payload, and this is parsed on a cold serverless invocation, so the
- * scaffolding is the whole cost. Ids are dropped with it: the runtime asks "is
- * there a gate here", never "which one".
+ * `[lon, lat, barrierIndex, highwayIndex, nodeId?, accessIndex?]`. The
+ * per-feature `type`/`geometry`/`properties` scaffolding of GeoJSON is several
+ * times the payload, and this is parsed on a cold serverless invocation, so the
+ * scaffolding is the whole cost.
+ *
+ * The last two are optional and were added for the gate card (the rider taps a
+ * gate and sees which one it is): the node id for the "Skatīt OSM" link, and
+ * the node's own `access=*` as an index into `accessKinds`, `-1` for "OSM says
+ * nothing". A four-element row is a file built before they were kept — its
+ * gates still count and still show, with no link and no access line.
  */
 type GateFile = {
   country?: string;
   barrierKinds?: string[];
   highwayKinds?: string[];
-  gates?: [number, number, number, number][];
+  accessKinds?: string[];
+  gates?: [number, number, number, number, number?, number?][];
 };
 
 function loadCountry(cc: string): CountryData {
@@ -234,14 +244,19 @@ function loadCountry(cc: string): CountryData {
   const barrierNames = raw.barrierKinds ?? BARRIER_KINDS;
   const highwayNames = raw.highwayKinds ?? GATE_HIGHWAYS;
 
+  const accessNames = raw.accessKinds ?? [];
+
   const gates: Gate[] = [];
-  for (const [lon, lat, b, h] of raw.gates ?? []) {
+  for (const [lon, lat, b, h, id, a] of raw.gates ?? []) {
+    const access = typeof a === "number" && a >= 0 ? accessNames[a] : undefined;
     gates.push({
       lon,
       lat,
       barrier: (barrierNames[b] ?? "gate") as BarrierKind,
       highway: (highwayNames[h] ?? "track") as GateHighway,
       country: cc,
+      ...(typeof id === "number" && id > 0 ? { id } : {}),
+      ...(access ? { access } : {}),
     });
   }
 

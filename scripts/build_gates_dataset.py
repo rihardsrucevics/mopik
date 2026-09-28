@@ -130,8 +130,11 @@ GEOFABRIK = {
 def collect(path, code):
     """Every barrier node that is a member of a track/service/unclassified way.
 
-    Returns `(gates, stats)`; `gates` is a list of `[lon, lat, barrier, highway]`
-    with the last two as indices into BARRIER_KINDS / GATE_HIGHWAYS.
+    Returns `(gates, access_kinds, stats)`; `gates` is a list of
+    `[lon, lat, barrier, highway, node_id, access]` with barrier and highway as
+    indices into BARRIER_KINDS / GATE_HIGHWAYS and access as an index into
+    `access_kinds` (the node's own `access=*` values, in order first seen), or
+    -1 where the node has none. The id and access are what the gate card shows.
 
     One pass. The `.pbf` ordering (nodes, then ways) is what makes that possible:
     every barrier node's location is known by the time a way can reference it.
@@ -142,6 +145,7 @@ def collect(path, code):
     import osmium
 
     barriers = {}
+    access_kinds = []
     stats = {"barrier_nodes": 0, "ways": 0}
 
     fp = osmium.FileProcessor(path).with_filter(osmium.filter.EmptyTagFilter())
@@ -151,10 +155,14 @@ def collect(path, code):
             if kind not in BARRIER_INDEX:
                 continue
             stats["barrier_nodes"] += 1
+            access = obj.tags.get("access")
+            if access and access not in access_kinds:
+                access_kinds.append(access)
             barriers[obj.id] = (
                 round(obj.location.lon, 5),
                 round(obj.location.lat, 5),
                 BARRIER_INDEX[kind],
+                access_kinds.index(access) if access else -1,
             )
             continue
 
@@ -173,15 +181,15 @@ def collect(path, code):
             # node). The first way to claim it wins: the class is context, not a
             # verdict, and the order GATE_HIGHWAYS lists is the order that
             # matters least to most.
-            if len(hit) == 4:
+            if len(hit) == 5:
                 continue
-            barriers[node.ref] = (hit[0], hit[1], hit[2], hw_index)
+            barriers[node.ref] = (hit[0], hit[1], hit[2], hw_index, hit[3])
 
     gates = sorted(
-        (list(v) for v in barriers.values() if len(v) == 4),
+        ([v[0], v[1], v[2], v[3], ref, v[4]] for ref, v in barriers.items() if len(v) == 5),
         key=lambda g: (g[1], g[0]),
     )
-    return gates, stats
+    return gates, access_kinds, stats
 
 
 def build(pbf, code, out_path):
@@ -191,11 +199,11 @@ def build(pbf, code, out_path):
     size_mb = os.path.getsize(pbf) / 1024 / 1024
     print(f"[{code}] {os.path.basename(pbf)} ({size_mb:.0f} MB)")
 
-    gates, stats = collect(pbf, code)
+    gates, access_kinds, stats = collect(pbf, code)
 
     by_barrier = {}
     by_highway = {}
-    for _, _, b, h in gates:
+    for _, _, b, h, _, _ in gates:
         by_barrier[BARRIER_KINDS[b]] = by_barrier.get(BARRIER_KINDS[b], 0) + 1
         by_highway[GATE_HIGHWAYS[h]] = by_highway.get(GATE_HIGHWAYS[h], 0) + 1
 
@@ -206,7 +214,8 @@ def build(pbf, code, out_path):
         "builtAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "barrierKinds": list(BARRIER_KINDS),
         "highwayKinds": list(GATE_HIGHWAYS),
-        # [lon, lat, barrierIndex, highwayIndex]
+        "accessKinds": access_kinds,
+        # [lon, lat, barrierIndex, highwayIndex, nodeId, accessIndex (-1: none)]
         "gates": gates,
     }
     with open(out_path, "w", encoding="utf-8") as fh:
