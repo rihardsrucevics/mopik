@@ -1,9 +1,11 @@
 "use client";
 
+import Link from "next/link";
 import { InstagramLink } from "@/components/instagram-link";
 import { BRAND_NAME, BrandLogo } from "@/components/brand-logo";
 import { useLocale } from "@/lib/i18n/use-locale";
 import { t } from "@/lib/i18n/messages";
+import { productPath } from "@/lib/product/routes";
 
 /**
  * The footer.
@@ -35,6 +37,12 @@ export function SiteFooter() {
             asks the rider which one to trust. Feedback is a DM, not a form —
             see `instagram-link.tsx`. */}
         <nav className="flex flex-wrap items-center gap-x-5 gap-y-2" aria-label={t(locale, "footerNav")}>
+          {/* The product page, in the footer's own language: its four paths
+              are four languages (`lib/product/routes.ts`), so the link is the
+              one search engines and riders both follow into the right one. */}
+          <Link href={productPath(locale)} hrefLang={locale} className="hover:text-stone-800">
+            {t(locale, "footerProduct")}
+          </Link>
           <InstagramLink from="footer" label={t(locale, "contact")} />
         </nav>
       </div>

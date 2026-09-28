@@ -375,6 +375,7 @@ export type MessageKey =
   | "footerOsm"
   | "footerOsmTail"
   | "footerNav"
+  | "footerProduct"
   | "composerEyebrow"
   | "composerTitle"
   | "composerHint"
@@ -1123,6 +1124,7 @@ const lv: Messages = {
   footerOsm: "Maršruti balstīti",
   footerOsmTail: " datos.",
   footerNav: "Kājene",
+  footerProduct: "Ko Mopik prot",
   composerEyebrow: "Tavs nākamais brauciens",
   composerTitle: "Kur un cik ilgi brauksim?",
   composerHint: "Pārējo nosaka tavs profils. Maršrutu varēsi precizēt pēc ģenerēšanas.",
@@ -1660,6 +1662,7 @@ const lt: Messages = {
   footerOsm: "Maršrutai remiasi",
   footerOsmTail: " duomenimis.",
   footerNav: "Poraštė",
+  footerProduct: "Ką moka Mopik",
   composerEyebrow: "Tavo kitas maršrutas",
   composerTitle: "Kur ir kiek laiko važiuosim?",
   composerHint: "Kita nustato tavo profilis. Maršrutą galėsi patikslinti sugeneravęs.",
@@ -2201,6 +2204,7 @@ const et: Messages = {
   footerOsm: "Marsruudid põhinevad",
   footerOsmTail: " andmetel.",
   footerNav: "Jalus",
+  footerProduct: "Mida Mopik oskab",
   composerEyebrow: "Sinu järgmine sõit",
   composerTitle: "Kuhu ja kui kauaks sõidame?",
   composerHint: "Ülejäänu määrab sinu profiil. Marsruuti saad täpsustada pärast koostamist.",
@@ -2736,6 +2740,7 @@ const en: Messages = {
   footerOsm: "Routes are based on",
   footerOsmTail: " data.",
   footerNav: "Footer",
+  footerProduct: "What Mopik does",
   composerEyebrow: "Your next ride",
   composerTitle: "Where and how long?",
   composerHint: "Your profile decides the rest. You can adjust the route afterwards.",
