@@ -24,7 +24,8 @@ import { PRODUCT_PATHS, PRODUCT_SLUGS, productPath, productUrl } from "@/lib/pro
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { pickerTarget } from "@/components/language-picker";
-import { ProductPage } from "@/components/product/product-page";
+import { ProductPage, featureShots } from "@/components/product/product-page";
+import { LOCALE_SHOT_SIZES, SHARED_SHOTS } from "@/lib/product/shots";
 import sitemap from "@/app/sitemap";
 
 const ROOT = path.resolve(__dirname, "..");
@@ -99,6 +100,52 @@ for (const locale of UI_LOCALES) {
     assert.equal((html.match(/<h1[\s>]/g) ?? []).length, 1, "one <h1>: the hero, not the wordmark");
   });
 }
+
+/** Every picture a rendered page asks for, as public paths (next/image wraps them in /_next/image?url=). */
+function imagePaths(html: string): string[] {
+  const out = new Set<string>();
+  for (const m of html.matchAll(/(?:src|srcSet)="([^"]+)"/g)) {
+    for (const part of m[1].split(",")) {
+      const u = part.trim().split(" ")[0].replace(/&amp;/g, "&");
+      if (u.startsWith("/_next/image")) out.add(decodeURIComponent(new URL(u, "http://x").searchParams.get("url") ?? ""));
+      else if (u.startsWith("/product/")) out.add(u);
+    }
+  }
+  return [...out];
+}
+
+for (const locale of UI_LOCALES) {
+  test(`the ${locale} page shows its own screenshots, and every file exists`, () => {
+    seedCountryLocale(locale);
+    const paths = imagePaths(renderToStaticMarkup(createElement(ProductPage, { locale })));
+    const localeShots = Object.keys(LOCALE_SHOT_SIZES);
+    assert.ok(paths.length >= localeShots.length + Object.keys(SHARED_SHOTS).length, `found ${paths.length} images`);
+    for (const p of paths) {
+      assert.ok(fs.existsSync(path.join(ROOT, "public", p)), `${p} exists`);
+      const m = p.match(/\/product\/([a-z-]+)\.([a-z]{2})\.webp$/);
+      if (m) assert.equal(m[2], locale, `${p} is the ${locale} capture`);
+      else assert.ok(Object.keys(SHARED_SHOTS).some((n) => p === `/product/${n}.webp`), `${p} is one of the wordless shared pictures`);
+    }
+    // Every per-locale capture is on the page, none silently missing.
+    for (const name of localeShots) assert.ok(paths.includes(`/product/${name}.${locale}.webp`), `${name}.${locale} is used`);
+  });
+}
+
+test("the manifest's sizes are the files' own", () => {
+  // webp: 'RIFF' .... 'WEBP' 'VP8 ' / 'VP8L' / 'VP8X' — read the canvas size.
+  const size = (file: string): [number, number] => {
+    const b = fs.readFileSync(file);
+    const kind = b.toString("ascii", 12, 16);
+    if (kind === "VP8 ") return [b.readUInt16LE(26) & 0x3fff, b.readUInt16LE(28) & 0x3fff];
+    if (kind === "VP8L") { const v = b.readUInt32LE(21); return [(v & 0x3fff) + 1, ((v >> 14) & 0x3fff) + 1]; }
+    return [(b.readUIntLE(24, 3)) + 1, (b.readUIntLE(27, 3)) + 1];
+  };
+  for (const [name, per] of Object.entries(LOCALE_SHOT_SIZES))
+    for (const [locale, wh] of Object.entries(per))
+      assert.deepEqual(size(path.join(ROOT, "public/product", `${name}.${locale}.webp`)), [...wh], `${name}.${locale}`);
+  for (const [name, wh] of Object.entries(SHARED_SHOTS)) assert.deepEqual(size(path.join(ROOT, "public/product", `${name}.webp`)), [...wh], name);
+  assert.equal(featureShots("edit", "et")[0].src, "/product/edit-sheet.et.webp");
+});
 
 test("elsewhere the site header keeps the wordmark as its <h1>", () => {
   const html = renderToStaticMarkup(createElement(SiteHeader));

@@ -6,6 +6,14 @@ import type { UiLocale } from "@/lib/i18n/locale";
 import { FEATURE_ORDER, PRODUCT_COPY, type Feature, type FeatureId, type ProductCopy } from "@/lib/product/copy";
 import { jsonLdString, productJsonLd } from "@/lib/product/metadata";
 import { PRODUCT_PATHS } from "@/lib/product/routes";
+import {
+  LOCALE_SHOT_SIZES,
+  SHARED_SHOTS,
+  localeShotSrc,
+  sharedShotSrc,
+  type LocaleShotName,
+  type SharedShotName,
+} from "@/lib/product/shots";
 
 /**
  * The product page: what Mopik does, in words and pictures, for a rider who
@@ -21,8 +29,9 @@ import { PRODUCT_PATHS } from "@/lib/product/routes";
  * #FAF9F6, ink #242426 and orange #F56300 as the only three backgrounds, a
  * mono kicker in capitals above every heading, headings that end in an orange
  * full stop like the „mopik.” wordmark, and figures set in mono. The pictures
- * are real: crops of the Instagram frames, production screenshots from that
- * set, and edit-p1 screenshots for the editing and gate cards. Illustrations
+ * are real: every one with interface text is an app capture in the page's own
+ * language (`lib/product/shots.ts`); only the two wordless map pictures come
+ * from the Instagram frames and are shared. Illustrations
  * are only used where a screenshot cannot say it (repetition, GPX structure,
  * coverage), and they carry no invented place names or numbers.
  */
@@ -76,27 +85,43 @@ const THEME_CLASS: Record<Theme, { section: string; kicker: string; dot: string;
 /** One picture: a file in `public/product/` with its intrinsic size. */
 type Shot = { src: string; w: number; h: number; frame: "phone" | "panel" | "map" };
 
-const SHOTS: Partial<Record<FeatureId, Shot[]>> = {
-  idea: [{ src: "/product/chat.webp", w: 640, h: 606, frame: "panel" }],
-  profile: [{ src: "/product/profile.webp", w: 640, h: 982, frame: "panel" }],
-  trip: [{ src: "/product/trip-type.webp", w: 640, h: 527, frame: "panel" }],
-  time: [{ src: "/product/duration.webp", w: 640, h: 340, frame: "panel" }],
+type FrameKind = Shot["frame"];
+type ShotRef = { local: LocaleShotName; frame: FrameKind } | { shared: SharedShotName; frame: FrameKind };
+
+/** Which pictures each feature shows, in order; the files are resolved per language. */
+const FEATURE_SHOTS: Partial<Record<FeatureId, ShotRef[]>> = {
+  idea: [{ local: "chat", frame: "panel" }],
+  profile: [{ local: "profile", frame: "panel" }],
+  trip: [{ local: "trip-type", frame: "panel" }],
+  time: [{ local: "duration", frame: "panel" }],
   forest: [
-    { src: "/product/surface-map.webp", w: 640, h: 655, frame: "map" },
-    { src: "/product/tet-card.webp", w: 600, h: 821, frame: "phone" },
+    { shared: "surface-map", frame: "map" },
+    { local: "tet-card", frame: "phone" },
   ],
-  sights: [{ src: "/product/sights.webp", w: 640, h: 920, frame: "panel" }],
-  gates: [{ src: "/product/gate-card.webp", w: 600, h: 600, frame: "map" }],
+  sights: [{ local: "sights", frame: "panel" }],
+  gates: [{ local: "gate-card", frame: "map" }],
   edit: [
-    { src: "/product/edit-sheet.webp", w: 600, h: 712, frame: "phone" },
-    { src: "/product/edit-preview.webp", w: 600, h: 944, frame: "phone" },
+    { local: "edit-sheet", frame: "phone" },
+    { local: "edit-preview", frame: "phone" },
   ],
   share: [
-    { src: "/product/share-card.webp", w: 800, h: 420, frame: "panel" },
-    { src: "/product/share-page.webp", w: 600, h: 690, frame: "phone" },
+    { local: "share-card", frame: "panel" },
+    { local: "share-page", frame: "phone" },
   ],
-  languages: [{ src: "/product/languages.webp", w: 497, h: 565, frame: "panel" }],
+  languages: [{ local: "languages", frame: "panel" }],
 };
+
+/** The feature's pictures in this language — every file the page references. */
+export function featureShots(id: FeatureId, locale: UiLocale): Shot[] {
+  return (FEATURE_SHOTS[id] ?? []).map((ref) => {
+    if ("local" in ref) {
+      const [w, h] = LOCALE_SHOT_SIZES[ref.local][locale];
+      return { src: localeShotSrc(ref.local, locale), w, h, frame: ref.frame };
+    }
+    const [w, h] = SHARED_SHOTS[ref.shared];
+    return { src: sharedShotSrc(ref.shared), w, h, frame: ref.frame };
+  });
+}
 
 const ORANGE = "#F56300";
 const INK = "#242426";
@@ -267,11 +292,11 @@ function EuropeIllustration({ copy }: { copy: ProductCopy }) {
   );
 }
 
-function Visual({ id, feature, copy, theme }: { id: FeatureId; feature: Feature; copy: ProductCopy; theme: Theme }) {
+function Visual({ id, feature, copy, theme, locale }: { id: FeatureId; feature: Feature; copy: ProductCopy; theme: Theme; locale: UiLocale }) {
   if (id === "repeat") return <RepeatIllustration copy={copy} theme={theme} />;
   if (id === "gpx") return <GpxIllustration copy={copy} />;
   if (id === "europe") return <EuropeIllustration copy={copy} />;
-  const shots = SHOTS[id] ?? [];
+  const shots = featureShots(id, locale);
   if (shots.length === 1) {
     const shot = shots[0];
     const narrow = shot.frame === "phone" || shot.h > shot.w * 1.2 || shot.w < 500;
@@ -302,7 +327,7 @@ function Visual({ id, feature, copy, theme }: { id: FeatureId; feature: Feature;
   );
 }
 
-function FeatureSection({ id, index, copy }: { id: FeatureId; index: number; copy: ProductCopy }) {
+function FeatureSection({ id, index, copy, locale }: { id: FeatureId; index: number; copy: ProductCopy; locale: UiLocale }) {
   const feature = copy.features[id];
   const theme = THEMES[id];
   const tc = THEME_CLASS[theme];
@@ -316,7 +341,7 @@ function FeatureSection({ id, index, copy }: { id: FeatureId; index: number; cop
       <div className="mx-auto grid max-w-6xl items-center gap-10 px-4 py-16 md:grid-cols-2 md:gap-16 md:px-8 md:py-24">
         <div className={`flex flex-col gap-5 ${visualFirst ? "md:order-2" : ""}`}>
           <Kicker text={kicker} className={tc.kicker} />
-          <h2 id={headingId} className="text-[34px] leading-[1.02] tracking-[-0.02em] sm:text-[44px] md:text-[52px]">
+          <h2 id={headingId} className="hyphens-auto break-words text-[34px] leading-[1.02] tracking-[-0.02em] sm:text-[44px] md:text-[52px]">
             {feature.title}
             <Dot className={tc.dot} />
           </h2>
@@ -340,7 +365,7 @@ function FeatureSection({ id, index, copy }: { id: FeatureId; index: number; cop
           )}
         </div>
         <div className={visualFirst ? "md:order-1" : ""}>
-          <Visual id={id} feature={feature} copy={copy} theme={theme} />
+          <Visual id={id} feature={feature} copy={copy} theme={theme} locale={locale} />
         </div>
       </div>
     </section>
@@ -369,7 +394,7 @@ export function ProductPage({ locale }: { locale: UiLocale }) {
       <section aria-labelledby="hero-title" className="bg-[#FAF9F6]">
         <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 pb-10 pt-8 md:px-8 md:pb-14 md:pt-16">
           <Kicker text={copy.hero.eyebrow} className="text-[#F56300]" />
-          <h1 id="hero-title" className="max-w-4xl text-[40px] leading-[0.98] tracking-[-0.025em] sm:text-[56px] md:text-[76px]">
+          <h1 id="hero-title" className="hyphens-auto break-words max-w-4xl text-[40px] leading-[0.98] tracking-[-0.025em] sm:text-[56px] md:text-[76px]">
             {copy.hero.title}
             <Dot className="text-[#F56300]" />
           </h1>
@@ -387,10 +412,10 @@ export function ProductPage({ locale }: { locale: UiLocale }) {
         <figure className="mx-auto max-w-[1600px] md:px-8">
           <div className="overflow-hidden md:rounded-[28px]">
             <Image
-              src="/product/hero-ride.webp"
+              src={sharedShotSrc("hero-ride")}
               alt={copy.hero.alt}
-              width={1600}
-              height={336}
+              width={SHARED_SHOTS["hero-ride"][0]}
+              height={SHARED_SHOTS["hero-ride"][1]}
               sizes="(min-width: 1600px) 1536px, 100vw"
               preload
               className="block h-[200px] w-full object-cover object-[18%_50%] sm:h-auto"
@@ -418,14 +443,14 @@ export function ProductPage({ locale }: { locale: UiLocale }) {
       </section>
 
       {FEATURE_ORDER.map((id, i) => (
-        <FeatureSection key={id} id={id} index={i} copy={copy} />
+        <FeatureSection key={id} id={id} index={i} copy={copy} locale={locale} />
       ))}
 
       {/* What Mopik does not check */}
       <section aria-labelledby="honesty-title" className="bg-[#F1EFEA]">
         <div className="mx-auto max-w-6xl px-4 py-16 md:px-8 md:py-24">
           <Kicker text={copy.honesty.eyebrow} className="text-[#F56300]" />
-          <h2 id="honesty-title" className="mt-5 text-[34px] leading-[1.02] tracking-[-0.02em] sm:text-[44px] md:text-[52px]">
+          <h2 id="honesty-title" className="hyphens-auto break-words mt-5 text-[34px] leading-[1.02] tracking-[-0.02em] sm:text-[44px] md:text-[52px]">
             {copy.honesty.title}
             <Dot className="text-[#F56300]" />
           </h2>
@@ -445,7 +470,7 @@ export function ProductPage({ locale }: { locale: UiLocale }) {
       <section aria-labelledby="faq-title" className="bg-[#FAF9F6]">
         <div className="mx-auto max-w-3xl px-4 py-16 md:px-8 md:py-24">
           <Kicker text={copy.faq.eyebrow} className="text-[#F56300]" />
-          <h2 id="faq-title" className="mt-5 text-[34px] leading-[1.02] tracking-[-0.02em] sm:text-[44px]">
+          <h2 id="faq-title" className="hyphens-auto break-words mt-5 text-[34px] leading-[1.02] tracking-[-0.02em] sm:text-[44px]">
             {copy.faq.title}
             <Dot className="text-[#F56300]" />
           </h2>
@@ -470,7 +495,7 @@ export function ProductPage({ locale }: { locale: UiLocale }) {
         <div className="mx-auto flex max-w-6xl flex-col items-start gap-6 px-4 py-16 md:px-8 md:py-24">
           {/* On orange the wordmark's orange dot would vanish: paper, as in the Instagram set. */}
           <BrandLogo variant="wordmark" className="h-8 w-auto text-[#242426] [&_path:last-child]:fill-[#FAF9F6]" />
-          <h2 id="cta-title" className="max-w-3xl text-[40px] leading-[0.98] tracking-[-0.025em] sm:text-[56px] md:text-[76px]">
+          <h2 id="cta-title" className="hyphens-auto break-words max-w-3xl text-[40px] leading-[0.98] tracking-[-0.025em] sm:text-[56px] md:text-[76px]">
             {copy.cta.title}
             <Dot className="text-[#FAF9F6]" />
           </h2>

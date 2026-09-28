@@ -147,7 +147,7 @@ const lv: ProductCopy = {
         "Ja prasīji 2 stundas un labs brauciens tajās neietilpst, Mopik to pasaka skaitļos – „Prasīts ~2 h, šī versija ir 2 h 47 min.” – un piedāvā tuvāko variantu. Nekas netiek klusi aizstāts.",
       ],
       note: "Laiks ir braukšanas laiks: pauzes, degvielas uzpilde un laikapstākļi tajā nav iekļauti.",
-      alt: ["Mopik brauciena kartīte: 100 km, 2 h 49 min, 91 % grants, 0 % atkārtoti ceļi, laiks pēc seguma."],
+      alt: ["Mopik brauciena kartīte: 55 km, 1 h 40 min, 64 % grants, 0 % atkārtoti ceļi, laiks pēc seguma."],
     },
     forest: {
       eyebrow: "Meži un TET",
@@ -159,7 +159,7 @@ const lv: ProductCopy = {
       note: "Pludmales un kāpu takas un ceļus, kas OSM skaidri aizliegti, Mopik neizmanto.",
       alt: [
         "Maršruts kartē, iekrāsots pēc seguma: oranžs grants, tumši oranžs zeme, zils asfalts, pelēks nezināms; raustīti meža ceļi.",
-        "Mopik karte ar posma kartīti „Grants meža ceļš · 5,8 km – Pa TET” un leģendu.",
+        "Mopik karte ar posma kartīti „Grants · 3,8 km – Pa TET” un leģendu.",
       ],
     },
     repeat: {
@@ -189,7 +189,7 @@ const lv: ProductCopy = {
         "Pieskaries, un kartīte pasaka, kas tas ir („Vārti”, „Barjera ar pacēlāju”, „Ķēde”…), kāda piekļuve atzīmēta OSM – ja atzīmēta –, cik kilometru no starta tas ir, un dod saiti uz pašu punktu OpenStreetMap.",
       ],
       note: "Mēs neminam: skaitām tikai vārtus uz paša ceļa, nevis „kaut kur tuvumā”, un maršrutu to dēļ nemainām. Vai vārti ir atvērti un vai ceļš ir privāts, Mopik nepārbauda.",
-      alt: ["Mopik karte ar vārtu kartīti „Barjera ar pacēlāju · 43,0 km no starta · Skatīt OSM” uz maršruta līnijas."],
+      alt: ["Mopik karte ar vārtu kartīti „Barjera ar pacēlāju · 43,9 km no starta · Skatīt OSM” uz maršruta līnijas."],
     },
     edit: {
       eyebrow: "Labošana",
@@ -199,12 +199,12 @@ const lv: ProductCopy = {
       ],
       points: [
         "Pietura vai caurbraucams punkts. Pietura ir numurēta, ar savu rindu sarakstā un punktu GPX. Caurbraucams punkts tikai norāda, pa kurieni braukt. „Padarīt caurbraucamu” un „Padarīt par pieturu” pārslēdz abos virzienos.",
-        "Priekšskatījums pirms apstiprināšanas: jaunais posms parādās kartē, un rinda „54,9 → 56,7 km · +4 min · atkārtoti 0 → 1 %” pasaka, ko izmaiņa maksā. ✓ apstiprina, ✕ atmet.",
+        "Priekšskatījums pirms apstiprināšanas: jaunais posms parādās kartē, un rinda „54,9 → 54,0 km · −1 min · atkārtoti 0 → 0 %” pasaka, ko izmaiņa maksā. ✓ apstiprina, ✕ atmet.",
         "Pārzīmējas tikai posms ap izmaiņu. Nepatīk – „Atsaukt”.",
       ],
       alt: [
         "Mopik punkta izvēlne „Pietura 1 · Līgatne” ar rindām Pārvietot, Padarīt caurbraucamu un Izņemt.",
-        "Mopik izmaiņas priekšskatījums: jaunais posms kartē izcelts dzeltenā krāsā, rinda „54,9 → 56,7 km · +4 min · atkārtoti 0 → 1 %” un pogas apstiprināt un atsaukt.",
+        "Mopik izmaiņas priekšskatījums: jaunais posms kartē izcelts dzeltenā krāsā, rinda „54,9 → 54,0 km · −1 min · atkārtoti 0 → 0 %” un pogas apstiprināt un atsaukt.",
       ],
     },
     share: {
@@ -215,7 +215,7 @@ const lv: ProductCopy = {
         "Bez konta. Saglabātie braucieni paliek šajā ierīcē.",
       ],
       alt: [
-        "Dalīšanās kartīte, ko redz WhatsApp vai Telegram: maršruta līnija, nosaukums „Ķekava adventure loks”, 100 km, 2 h 49 min, 91 % grants.",
+        "Dalīšanās kartīte, ko redz WhatsApp vai Telegram: maršruta līnija, nosaukums „Sigulda → Cēsis via TET”, 55 km, 1 h 40 min, 64 % grants.",
         "Dalītā brauciena lapa telefonā: karte ar maršrutu, skaitļi un poga Lejupielādēt GPX.",
       ],
     },
@@ -338,7 +338,7 @@ const lt: ProductCopy = {
         "Dvi versijos su pavadinimais: „Greitesnis“ ir „Sudėtingesnis“, kiekviena su savo alternatyvomis.",
         "Po rezultato pokalbyje gali pasakyti, ką pakeisti.",
       ],
-      alt: ["Mopik pokalbis su pavyzdiniu sakiniu apie maršrutą iš Kekavos per Baldonę (sąsaja latviškai)."],
+      alt: ["Mopik pokalbis su pavyzdiniu sakiniu apie maršrutą iš Kekavos per Baldonę."],
     },
     profile: {
       eyebrow: "Profilis",
@@ -351,7 +351,7 @@ const lt: ProductCopy = {
         "„Miškai“ teikia pirmenybę miško keliams ir takams ir laikosi atokiau nuo didelių kelių.",
         "Automagistralėmis Mopik niekada neveda.",
       ],
-      alt: ["Mopik profilio skydelis: paruošti profiliai, stilius, danga ir sunkumas (sąsaja latviškai)."],
+      alt: ["Mopik profilio skydelis: paruošti profiliai, stilius, danga ir sunkumas."],
     },
     trip: {
       eyebrow: "Maršruto tipas",
@@ -360,7 +360,7 @@ const lt: ProductCopy = {
         "„Į vieną pusę“ veda iš A į B su sustojimais pakeliui. „Pirmyn ir atgal“ grįžta į pradžią – kitais keliais, kiek leidžia vietovė.",
         "Finišas neprivalomas: „Neprivaloma – man vis tiek“, ir Mopik sugalvos pats. Trukmė gali būti laisva arba ribota.",
       ],
-      alt: ["Mopik forma su pasirinkimu „į vieną pusę“ arba „pirmyn ir atgal“ ir laukais Iš ir Į (sąsaja latviškai)."],
+      alt: ["Mopik forma su pasirinkimu „į vieną pusę“ arba „pirmyn ir atgal“ ir laukais Iš ir Į."],
     },
     time: {
       eyebrow: "Laikas",
@@ -370,7 +370,7 @@ const lt: ProductCopy = {
         "Jei prašei 2 valandų, o geras maršrutas į jas netelpa, Mopik pasako tai skaičiais – „Prašyta ~2 h, ši versija yra 2 h 47 min.“ – ir pasiūlo artimiausią variantą. Niekas nepakeičiama tyliai.",
       ],
       note: "Tai važiavimo laikas: pertraukos, degalų pylimas ir oras į jį neįskaičiuoti.",
-      alt: ["Mopik maršruto kortelė: 100 km, 2 h 49 min, 91 % žvyro, 0 % pasikartojančių kelių."],
+      alt: ["Mopik maršruto kortelė: 55 km, 1 h 40 min, 64 % žvyro, 0 % pasikartojančių kelių."],
     },
     forest: {
       eyebrow: "Miškai ir TET",
@@ -382,7 +382,7 @@ const lt: ProductCopy = {
       note: "Paplūdimių ir kopų takais bei OSM aiškiai uždraustais keliais Mopik neveda.",
       alt: [
         "Maršrutas žemėlapyje, nuspalvintas pagal dangą: oranžinė žvyras, tamsiai oranžinė žemė, mėlyna asfaltas, pilka nežinoma; brūkšniuoti miško keliai.",
-        "Mopik žemėlapis su ruožo kortele „žvyro miško kelias · 5,8 km – TET“ ir legenda.",
+        "Mopik žemėlapis su ruožo kortele „Žvyras · 3,8 km – TET keliu“ ir legenda.",
       ],
     },
     repeat: {
@@ -402,7 +402,7 @@ const lt: ProductCopy = {
         "Prie kiekvienos matai, kiek ji kainuoja – „+km · +min“, pirmyn ir atgal arba ratu. Pažymėk, ir užsukimas iš karto yra maršrute, be naujos paieškos.",
       ],
       note: "Vietų duomenys kol kas yra Latvijoje, Lietuvoje, Estijoje, Lenkijoje, Austrijoje, Šveicarijoje, Slovėnijoje ir Italijoje.",
-      alt: ["Mopik lankytinų vietų sąrašas su papildomais kilometrais ir minutėmis prie kiekvienos vietos (sąsaja latviškai)."],
+      alt: ["Mopik lankytinų vietų sąrašas su papildomais kilometrais ir minutėmis prie kiekvienos vietos."],
     },
     gates: {
       eyebrow: "Vartai",
@@ -412,7 +412,7 @@ const lt: ProductCopy = {
         "Paliesk, ir kortelė pasako, kas tai („Vartai“, „Pakeliamas užtvaras“, „Grandinė“…), koks privažiavimas pažymėtas OSM – jei pažymėtas, – kiek kilometrų nuo starto, ir duoda nuorodą į patį tašką OpenStreetMap.",
       ],
       note: "Mes nespėliojame: skaičiuojame tik vartus ant paties kelio, ne „kažkur netoliese“, ir dėl jų maršruto nekeičiame. Ar vartai atviri ir ar kelias privatus, Mopik netikrina.",
-      alt: ["Mopik žemėlapis su vartų kortele: pakeliamas užtvaras, 43,0 km nuo starto, nuoroda į OSM (sąsaja latviškai)."],
+      alt: ["Mopik žemėlapis su vartų kortele: „Pakeliamas užtvaras · 43,9 km nuo starto · Žiūrėti OSM“."],
     },
     edit: {
       eyebrow: "Taisymas",
@@ -422,12 +422,12 @@ const lt: ProductCopy = {
       ],
       points: [
         "Sustojimas arba pravažiavimo taškas. Sustojimas sunumeruotas, turi savo eilutę sąraše ir tašką GPX. Pravažiavimo taškas tik nurodo, kur važiuoti. „Paversti pravažiavimo tašku“ ir „Paversti sustojimu“ perjungia abiem kryptimis.",
-        "Peržiūra prieš patvirtinant: naujas ruožas atsiranda žemėlapyje, o eilutė „54,9 → 56,7 km · +4 min · kartojasi 0 → 1 %“ pasako, ką pakeitimas kainuoja. ✓ patvirtina, ✕ atmeta.",
+        "Peržiūra prieš patvirtinant: naujas ruožas atsiranda žemėlapyje, o eilutė „54,9 → 54,0 km · −1 min · kartojasi 0 → 0 %“ pasako, ką pakeitimas kainuoja. ✓ patvirtina, ✕ atmeta.",
         "Perbraižomas tik ruožas aplink pakeitimą. Nepatinka – „Atšaukti“.",
       ],
       alt: [
-        "Mopik taško meniu su eilutėmis Perkelti, Paversti pravažiavimo tašku ir Pašalinti (sąsaja latviškai).",
-        "Mopik pakeitimo peržiūra: naujas ruožas paryškintas geltonai, eilutė „54,9 → 56,7 km · +4 min“ ir mygtukai patvirtinti bei atšaukti.",
+        "Mopik taško meniu su eilutėmis Perkelti, Paversti pravažiavimo tašku ir Pašalinti.",
+        "Mopik pakeitimo peržiūra: naujas ruožas paryškintas geltonai, eilutė „54,9 → 54,0 km · −1 min“ ir mygtukai patvirtinti bei atšaukti.",
       ],
     },
     share: {
@@ -438,7 +438,7 @@ const lt: ProductCopy = {
         "Be paskyros. Išsaugoti maršrutai lieka šiame įrenginyje.",
       ],
       alt: [
-        "Dalinimosi kortelė WhatsApp ar Telegram: maršruto linija, pavadinimas, 100 km, 2 h 49 min, 91 % žvyro.",
+        "Dalinimosi kortelė WhatsApp ar Telegram: maršruto linija, pavadinimas, 55 km, 1 h 40 min, 64 % žvyro.",
         "Bendrinamo maršruto puslapis telefone: žemėlapis, skaičiai ir GPX mygtukas.",
       ],
     },
@@ -561,7 +561,7 @@ const et: ProductCopy = {
         "Kaks nimega versiooni: „Kiirem“ ja „Keerulisem“, kummalgi oma alternatiivid.",
         "Pärast tulemust saad vestluses öelda, mida muuta.",
       ],
-      alt: ["Mopiku vestlus näitelausega sõidust Ķekavast läbi Baldone (liides läti keeles)."],
+      alt: ["Mopiku vestlus näitelausega sõidust Ķekavast läbi Baldone."],
     },
     profile: {
       eyebrow: "Profiil",
@@ -574,7 +574,7 @@ const et: ProductCopy = {
         "„Metsad“ eelistab metsateid ja radu ning hoiab suurtest teedest eemale.",
         "Kiirteid Mopik ei kasuta kunagi.",
       ],
-      alt: ["Mopiku profiilipaneel: valmisprofiilid, stiil, kate ja raskus (liides läti keeles)."],
+      alt: ["Mopiku profiilipaneel: valmisprofiilid, stiil, kate ja raskus."],
     },
     trip: {
       eyebrow: "Marsruudi tüüp",
@@ -583,7 +583,7 @@ const et: ProductCopy = {
         "„Ühes suunas“ viib A-st B-sse koos peatustega teel. „Edasi-tagasi“ naaseb algusesse – teisi teid pidi, niipalju kui piirkond lubab.",
         "Lõpp pole kohustuslik: „Pole kohustuslik – ükskõik“, ja Mopik mõtleb ise välja. Kestus võib olla vaba või piiratud.",
       ],
-      alt: ["Mopiku vorm valikuga „ühes suunas“ või „edasi-tagasi“ ning väljadega Kust ja Kuhu (liides läti keeles)."],
+      alt: ["Mopiku vorm valikuga „ühes suunas“ või „edasi-tagasi“ ning väljadega Kust ja Kuhu."],
     },
     time: {
       eyebrow: "Aeg",
@@ -593,7 +593,7 @@ const et: ProductCopy = {
         "Kui soovisid 2 tundi ja hea sõit sinna ei mahu, ütleb Mopik seda numbritega – „Soovisid ~2 h, see versioon on 2 h 47 min.“ – ja pakub lähima variandi. Midagi ei asendata vaikselt.",
       ],
       note: "See on sõiduaeg: pausid, tankimine ja ilm ei ole sellesse arvestatud.",
-      alt: ["Mopiku sõidukaart: 100 km, 2 h 49 min, 91 % kruusa, 0 % korduvaid teid."],
+      alt: ["Mopiku sõidukaart: 55 km, 1 h 40 min, 64 % kruusa, 0 % korduvaid teid."],
     },
     forest: {
       eyebrow: "Metsad ja TET",
@@ -605,7 +605,7 @@ const et: ProductCopy = {
       note: "Ranna- ja luiteradu ning OSM-is selgelt keelatud teid Mopik ei kasuta.",
       alt: [
         "Marsruut kaardil, värvitud katte järgi: oranž kruus, tumeoranž pinnas, sinine asfalt, hall teadmata; katkendjoonega metsateed.",
-        "Mopiku kaart lõigukaardiga „kruusa metsatee · 5,8 km – TET“ ja legendiga.",
+        "Mopiku kaart lõigukaardiga „Kruus · 3,8 km – TET-i mööda“ ja legendiga.",
       ],
     },
     repeat: {
@@ -625,7 +625,7 @@ const et: ProductCopy = {
         "Iga juures näed, mis see maksab – „+km · +min“, edasi-tagasi või ringiga. Märgi ära ja põige on kohe marsruudis, ilma uue otsinguta.",
       ],
       note: "Kohaandmed on praegu olemas Lätis, Leedus, Eestis, Poolas, Austrias, Šveitsis, Sloveenias ja Itaalias.",
-      alt: ["Mopiku vaatamisväärsuste nimekiri, iga koha juures lisakilomeetrid ja -minutid (liides läti keeles)."],
+      alt: ["Mopiku vaatamisväärsuste nimekiri, iga koha juures lisakilomeetrid ja -minutid."],
     },
     gates: {
       eyebrow: "Väravad",
@@ -635,7 +635,7 @@ const et: ProductCopy = {
         "Puuduta ja kaart ütleb, mis see on („Värav“, „Tõkkepuu“, „Kett“…), milline juurdepääs on OSM-is märgitud – kui on –, mitu kilomeetrit see on stardist, ning annab lingi punktile OpenStreetMapis.",
       ],
       note: "Me ei arva: loeme ainult väravaid teel endal, mitte „kuskil lähedal“, ja nende pärast marsruuti ei muuda. Kas värav on lahti ja kas tee on eratee, Mopik ei kontrolli.",
-      alt: ["Mopiku kaart väravakaardiga: tõkkepuu, 43,0 km stardist, link OSM-i (liides läti keeles)."],
+      alt: ["Mopiku kaart väravakaardiga: „Tõkkepuu · 43,9 km stardist · Vaata OSM-is“."],
     },
     edit: {
       eyebrow: "Muutmine",
@@ -645,12 +645,12 @@ const et: ProductCopy = {
       ],
       points: [
         "Peatus või läbisõidupunkt. Peatus on nummerdatud, sel on oma rida nimekirjas ja punkt GPX-is. Läbisõidupunkt näitab ainult, kust läbi sõita. „Muuda läbisõidupunktiks“ ja „Tee peatuseks“ vahetavad mõlemas suunas.",
-        "Eelvaade enne kinnitamist: uus lõik ilmub kaardile ja rida „54,9 → 56,7 km · +4 min · korduv 0 → 1 %“ ütleb, mis muudatus maksab. ✓ kinnitab, ✕ loobub.",
+        "Eelvaade enne kinnitamist: uus lõik ilmub kaardile ja rida „54,9 → 54,0 km · −1 min · korduv 0 → 0 %“ ütleb, mis muudatus maksab. ✓ kinnitab, ✕ loobub.",
         "Ümber joonistatakse ainult lõik muudatuse ümber. Ei meeldi – „Võta tagasi“.",
       ],
       alt: [
-        "Mopiku punkti menüü ridadega Liiguta, Muuda läbisõidupunktiks ja Eemalda (liides läti keeles).",
-        "Mopiku muudatuse eelvaade: uus lõik kollasega esile tõstetud, rida „54,9 → 56,7 km · +4 min“ ning kinnitamise ja tagasivõtmise nupud.",
+        "Mopiku punkti menüü ridadega Liiguta, Muuda läbisõidupunktiks ja Eemalda.",
+        "Mopiku muudatuse eelvaade: uus lõik kollasega esile tõstetud, rida „54,9 → 54,0 km · −1 min“ ning kinnitamise ja tagasivõtmise nupud.",
       ],
     },
     share: {
@@ -661,7 +661,7 @@ const et: ProductCopy = {
         "Ilma kontota. Salvestatud sõidud jäävad sellesse seadmesse.",
       ],
       alt: [
-        "Jagamiskaart WhatsAppis või Telegramis: marsruudi joon, nimi, 100 km, 2 h 49 min, 91 % kruusa.",
+        "Jagamiskaart WhatsAppis või Telegramis: marsruudi joon, nimi, 55 km, 1 h 40 min, 64 % kruusa.",
         "Jagatud sõidu leht telefonis: kaart, numbrid ja GPX-i nupp.",
       ],
     },
@@ -784,7 +784,7 @@ const en: ProductCopy = {
         "Two named versions: “Faster” and “More complex”, each with alternatives of its own.",
         "After the result, tell the chat what to change.",
       ],
-      alt: ["The Mopik chat with an example sentence about a ride from Ķekava via Baldone (interface in Latvian)."],
+      alt: ["The Mopik chat with an example sentence about a ride from Ķekava via Baldone."],
     },
     profile: {
       eyebrow: "Profile",
@@ -797,7 +797,7 @@ const en: ProductCopy = {
         "“Forest” prefers forest tracks and trails and keeps away from big roads.",
         "Mopik never uses motorways.",
       ],
-      alt: ["The Mopik profile panel: ready profiles, style, surface and difficulty (interface in Latvian)."],
+      alt: ["The Mopik profile panel: ready profiles, style, surface and difficulty."],
     },
     trip: {
       eyebrow: "Trip type",
@@ -806,7 +806,7 @@ const en: ProductCopy = {
         "“One way” takes you from A to B with stops along the way. “Round trip” comes back to the start – by other roads, as far as the area allows.",
         "The finish is optional: “Optional – anywhere”, and Mopik picks one. The time can be flexible or limited.",
       ],
-      alt: ["The Mopik form with the choice of one way or round trip and the From and To fields (interface in Latvian)."],
+      alt: ["The Mopik form with the choice of one way or round trip and the From and To fields."],
     },
     time: {
       eyebrow: "Time",
@@ -816,7 +816,7 @@ const en: ProductCopy = {
         "If you asked for 2 hours and a good ride does not fit, Mopik says so in numbers – “You asked for ~2 h, this version is 2 h 47 min.” – and offers the nearest option. Nothing is swapped quietly.",
       ],
       note: "It is riding time: breaks, fuel stops and weather are not included.",
-      alt: ["A Mopik ride card: 100 km, 2 h 49 min, 91 % gravel, 0 % retraced road."],
+      alt: ["A Mopik ride card: 55 km, 1 h 40 min, 64 % gravel, 0 % retraced road."],
     },
     forest: {
       eyebrow: "Forest and TET",
@@ -828,7 +828,7 @@ const en: ProductCopy = {
       note: "Mopik never uses beach and dune paths, or roads OSM clearly forbids.",
       alt: [
         "A route on the map coloured by surface: orange gravel, dark orange dirt, blue asphalt, grey unknown; dashed forest tracks.",
-        "The Mopik map with a stretch card “gravel forest track · 5.8 km – on TET” and the legend.",
+        "The Mopik map with a stretch card “Gravel · 3.8 km – On the TET” and the legend.",
       ],
     },
     repeat: {
@@ -848,7 +848,7 @@ const en: ProductCopy = {
         "Each shows what it costs – “+km · +min”, out and back or as a loop. Tick it and the detour is in the ride at once, with no new search.",
       ],
       note: "Place data is available for Latvia, Lithuania, Estonia, Poland, Austria, Switzerland, Slovenia and Italy so far.",
-      alt: ["The Mopik sights list, with extra kilometres and minutes next to each place (interface in Latvian)."],
+      alt: ["The Mopik sights list, with extra kilometres and minutes next to each place."],
     },
     gates: {
       eyebrow: "Gates",
@@ -858,7 +858,7 @@ const en: ProductCopy = {
         "Tap it and the card says what it is (“Gate”, “Boom barrier”, “Chain”…), what access OSM tags – if any –, how many kilometres from the start it stands, and links to the node on OpenStreetMap.",
       ],
       note: "No guessing: we count only gates on the road itself, never “somewhere nearby”, and the route is not changed because of them. Whether a gate is open or a road is private, Mopik does not check.",
-      alt: ["The Mopik map with a gate card: boom barrier, 43.0 km from the start, a link to OSM (interface in Latvian)."],
+      alt: ["The Mopik map with a gate card: “Boom barrier · 43.9 km from the start · View on OSM”."],
     },
     edit: {
       eyebrow: "Editing",
@@ -868,12 +868,12 @@ const en: ProductCopy = {
       ],
       points: [
         "Stop or pass-through point. A stop is numbered, has its own row in the list and a point in the GPX. A pass-through point only says which way to go. “Make pass-through” and “Make it a stop” switch both ways.",
-        "A preview before you confirm: the new stretch appears on the map, and a line such as “54.9 → 56.7 km · +4 min · retraced 0 → 1 %” says what the change costs. ✓ confirms, ✕ discards.",
+        "A preview before you confirm: the new stretch appears on the map, and a line such as “54.9 → 54.0 km · −1 min · retraced 0 → 0 %” says what the change costs. ✓ confirms, ✕ discards.",
         "Only the stretch around the change is re-routed. Don't like it – “Undo”.",
       ],
       alt: [
-        "The Mopik point menu with Move, Make pass-through and Remove (interface in Latvian).",
-        "A Mopik change preview: the new stretch highlighted in yellow, the line “54.9 → 56.7 km · +4 min” and the confirm and undo buttons.",
+        "The Mopik point menu with Move, Make pass-through and Remove.",
+        "A Mopik change preview: the new stretch highlighted in yellow, the line “54.9 → 54.0 km · −1 min” and the confirm and undo buttons.",
       ],
     },
     share: {
@@ -884,7 +884,7 @@ const en: ProductCopy = {
         "No account. Saved rides stay on this device.",
       ],
       alt: [
-        "The share card seen in WhatsApp or Telegram: the route line, its name, 100 km, 2 h 49 min, 91 % gravel.",
+        "The share card seen in WhatsApp or Telegram: the route line, its name, 55 km, 1 h 40 min, 64 % gravel.",
         "A shared ride page on a phone: the map, the numbers and the GPX button.",
       ],
     },
