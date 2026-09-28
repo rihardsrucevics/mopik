@@ -1097,7 +1097,7 @@ const lv: Messages = {
   backToHome: "Mopik — uz sākumu",
   language: "Valoda",
   footerDisclaimer:
-    "Ceļa stāvokli un piekļuves ierobežojumus pārbaudi uz vietas — dati ne vienmēr ir pilnīgi.",
+    "Ceļa stāvokli un piekļuves ierobežojumus pārbaudi uz vietas – dati ne vienmēr ir pilnīgi.",
   profileTitle: "Tavs profils",
   presetAsphalt: "Asfalta tūrists",
   presetGravel: "Grants tūrists",
@@ -1635,7 +1635,7 @@ const lt: Messages = {
   backToHome: "Mopik — į pradžią",
   language: "Kalba",
   footerDisclaimer:
-    "Kelio būklę ir privažiavimo apribojimus pasitikrink vietoje — duomenys ne visada pilni.",
+    "Kelio būklę ir privažiavimo apribojimus pasitikrink vietoje – duomenys ne visada pilni.",
   profileTitle: "Tavo profilis",
   presetAsphalt: "Asfalto turistas",
   presetGravel: "Žvyro turistas",
@@ -2177,7 +2177,7 @@ const et: Messages = {
   backToHome: "Mopik — avalehele",
   language: "Keel",
   footerDisclaimer:
-    "Tee seisukorda ja juurdepääsupiiranguid kontrolli kohapeal — andmed ei ole alati täielikud.",
+    "Tee seisukorda ja juurdepääsupiiranguid kontrolli kohapeal – andmed ei ole alati täielikud.",
   profileTitle: "Sinu profiil",
   presetAsphalt: "Asfaldi turist",
   presetGravel: "Kruusa turist",
@@ -2713,7 +2713,7 @@ const en: Messages = {
   backToHome: "Mopik — home",
   language: "Language",
   footerDisclaimer:
-    "Check road conditions and access restrictions on the ground — the data is not always complete.",
+    "Check road conditions and access restrictions on the ground – the data is not always complete.",
   profileTitle: "Your profile",
   presetAsphalt: "Asphalt tourer",
   presetGravel: "Gravel tourer",
