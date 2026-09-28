@@ -930,16 +930,18 @@ export function applyRuns(params: {
   durationSeconds: number;
   runs: { fromMeters: number; toMeters: number }[];
   routed: RoutedRun[];
-}): { coordinates: Point[]; segments: Segments; distanceMeters: number; durationSeconds: number } {
+}): { coordinates: Point[]; segments: Segments; distanceMeters: number; durationSeconds: number; runs: { fromMeters: number; toMeters: number }[] } {
   const features = params.segments.features as Features;
   const line = coordinatesOf(params.segments);
+  // Cut where each routed stretch really meets the kept ride (`meetRuns`).
+  const runs = meetRuns(line, cumulative(line), params.runs, params.routed);
   const drawn = lineMeters(line) || 1;
   const perMeter = params.distanceMeters / drawn;
   // Seconds per unit of "riding weight": metres over each segment's speed.
   const weightOf = (fs: Features) => fs.reduce((sum, f) => sum + lineMeters(f.geometry.coordinates as Point[]) / segmentSpeedKmh(f.properties), 0);
   const totalWeight = weightOf(features) || 1;
   const secondsPerWeight = params.durationSeconds / totalWeight;
-  const order = params.runs.map((r, i) => ({ ...r, i })).sort((a, b) => a.fromMeters - b.fromMeters);
+  const order = runs.map((r, i) => ({ ...r, i })).sort((a, b) => a.fromMeters - b.fromMeters);
 
   const out: Features = [];
   let cursor = 0;
@@ -967,7 +969,82 @@ export function applyRuns(params: {
     segments,
     distanceMeters: Math.round(meters),
     durationSeconds: Math.round(seconds),
+    runs,
   };
+}
+
+/**
+ * How far off the kept line a routed stretch's end may lie and still count
+ * as on it: the router's own nodes on the road the kept ride rides, to
+ * rounding. A parallel road is further off than this.
+ */
+export const MEETS_LINE_M = 10;
+
+/** How far along the kept line a cut may move to where its stretch really begins or ends. */
+export const MEET_SHIFT_MAX_M = 1_000;
+
+/** The nearest point of `line` to `target` between `from` and `to` metres along it. */
+function nearestWithin(target: Point, line: Point[], cum: number[], from: number, to: number): { meters: number; alongMeters: number } {
+  let best = { meters: Infinity, alongMeters: from };
+  const cosLat = Math.cos((target[1] * Math.PI) / 180) || 1;
+  const M = 111_320;
+  for (let i = 0; i < line.length - 1; i++) {
+    const span = cum[i + 1] - cum[i];
+    if (cum[i + 1] < from || cum[i] > to || span <= 0) continue;
+    const [a, b] = [line[i], line[i + 1]];
+    const ax = a[0] * cosLat * M, ay = a[1] * M, dx = (b[0] - a[0]) * cosLat * M, dy = (b[1] - a[1]) * M;
+    const px = target[0] * cosLat * M, py = target[1] * M;
+    let t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)));
+    t = Math.max((from - cum[i]) / span, Math.min((to - cum[i]) / span, t));
+    const meters = Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+    if (meters < best.meters) best = { meters, alongMeters: cum[i] + t * span };
+  }
+  return best;
+}
+
+/**
+ * Where each routed stretch really meets the kept ride, as the stretch of the
+ * old line it replaces.
+ *
+ * BRouter begins a route at a node of the road, not at the point it was
+ * asked to start from. A cut in the middle of a long straight edge — 325 m
+ * between nodes, measured on Mālpils → Mūrnieki → Allaži (2026-09-28) — came
+ * back starting at the next node, 82 m further along the very road the kept
+ * ride rides; spliced at the cut, that drew an 82 m hole and the edit was
+ * refused as a line that could not be joined. The stretch did meet the kept
+ * ride, only not at the cut. So each cut moves along the old line to where
+ * its stretch's end lies ON it (within `MEETS_LINE_M`): no further than
+ * `MEET_SHIFT_MAX_M`, never past a neighbouring stretch or its own other end.
+ * An end that is off the line keeps its cut, and its gap stays a gap for
+ * `spliceIsSound` to refuse. The ride's own ends (0 and the full length) never
+ * move: a stretch there reaches a moved start or finish, not the kept ride.
+ */
+export function meetRuns(
+  line: Point[],
+  cum: number[],
+  runs: { fromMeters: number; toMeters: number }[],
+  routed: RoutedRun[],
+): { fromMeters: number; toMeters: number }[] {
+  const total = cum[cum.length - 1] ?? 0;
+  const order = runs.map((r, i) => ({ ...r, i })).sort((a, b) => a.fromMeters - b.fromMeters);
+  const out = runs.map((r) => ({ fromMeters: r.fromMeters, toMeters: r.toMeters }));
+  let floor = 0;
+  order.forEach((run, k) => {
+    const coords = coordinatesOf(routed[run.i]?.segments ?? { type: "FeatureCollection", features: [] });
+    const ceiling = order[k + 1]?.fromMeters ?? total;
+    let from = run.fromMeters, to = run.toMeters;
+    if (coords.length >= 2 && from > 0) {
+      const m = nearestWithin(coords[0], line, cum, Math.max(floor, from - MEET_SHIFT_MAX_M), Math.min(to - 1, from + MEET_SHIFT_MAX_M));
+      if (m.meters <= MEETS_LINE_M) from = m.alongMeters;
+    }
+    if (coords.length >= 2 && to < total) {
+      const m = nearestWithin(coords[coords.length - 1], line, cum, Math.max(from + 1, to - MEET_SHIFT_MAX_M), Math.min(ceiling, to + MEET_SHIFT_MAX_M));
+      if (m.meters <= MEETS_LINE_M) to = m.alongMeters;
+    }
+    out[run.i] = { fromMeters: from, toMeters: to };
+    floor = to;
+  });
+  return out;
 }
 
 /**
@@ -1016,18 +1093,43 @@ export function lineBreaks(segments: Segments, original?: Segments): { index: nu
  * Places means stops: a shaping point is not visited, it is ridden past
  * wherever the router reached, and `snapToLine` puts it there — so it is
  * held to the continuous line and to nothing else.
+ *
+ * With `before`, a refusal says whether it was only the edit's own places
+ * that the line did not reach (`offRoadMeters`: the line is one piece and
+ * passes every kept place, and a place the edit added or moved is that far
+ * from it). That is not a line that could not be joined: it is a pin in a
+ * field, or a sight on a lake shore, further from any road this profile
+ * rides than the edit may move it — and the rider must hear that, with the
+ * distance, so he moves the pin rather than trying again (measured
+ * 2026-09-28: a stop tapped 1 km off Kaņieris → Ragaciems was refused as
+ * „neizdevās savienot … vienā līnijā”).
  */
 export function spliceIsSound(params: {
   segments: Segments;
   original: Segments;
   places: RidePlaces;
   toleranceMeters: number;
-}): { ok: true } | { ok: false; breaks: { index: number; meters: number }[]; missesPlaces: boolean } {
+  before?: RidePlaces;
+}): { ok: true } | { ok: false; breaks: { index: number; meters: number }[]; missesPlaces: boolean; offRoadMeters?: number } {
   const breaks = lineBreaks(params.segments, params.original);
   const line = coordinatesOf(params.segments);
-  const places = anchorsOf({ ...params.places, vias: stopsOf(params.places) }, line[line.length - 1] ?? [0, 0]);
+  const end = line[line.length - 1] ?? [0, 0];
+  const places = anchorsOf({ ...params.places, vias: stopsOf(params.places) }, end);
   const missesPlaces = line.length < 2 || !visitsRequiredStops(line, places, params.toleranceMeters);
-  return breaks.length || missesPlaces ? { ok: false, breaks, missesPlaces } : { ok: true };
+  if (!breaks.length && !missesPlaces) return { ok: true };
+  const { before } = params;
+  if (breaks.length || line.length < 2 || !before) return { ok: false, breaks, missesPlaces };
+  // Which places the edit kept, and whether the line still rides through them all, in order.
+  const known = [before.start, ...before.vias, ...(before.finish ? [before.finish] : [])];
+  const kept = (p: RidePlace) => known.some((b) => same(b, p));
+  const { start, finish, roundTrip } = params.places;
+  const ends = [start, ...stopsOf(params.places), ...(roundTrip ? [start] : finish ? [finish] : [])];
+  const keptOnly = anchorsOf({ ...params.places, vias: stopsOf(params.places).filter(kept) }, end)
+    .filter((_, k, all) => k === 0 ? kept(start) : k === all.length - 1 ? (roundTrip ? kept(start) : finish ? kept(finish) : true) : true);
+  if (!visitsRequiredStops(line, keptOnly, params.toleranceMeters)) return { ok: false, breaks, missesPlaces };
+  const cum = cumulative(line);
+  const far = Math.max(0, ...ends.filter((p) => !kept(p)).map((p) => nearestAlong(toPoint(p), line, cum).meters));
+  return far > params.toleranceMeters ? { ok: false, breaks, missesPlaces, offRoadMeters: Math.round(far) } : { ok: false, breaks, missesPlaces };
 }
 
 /**

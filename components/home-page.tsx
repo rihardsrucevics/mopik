@@ -1338,10 +1338,10 @@ export function HomePage() {
       // shown: the whole span between the nearest unchanged places is routed
       // again as one stretch, and if that breaks too the edit is refused and
       // the ride keeps the line it had.
-      const sound = (candidate: typeof spliced) => spliceIsSound({ segments: candidate.segments, original: baseSegments, places: planned.places, toleranceMeters: MOVE_OFFER_MAX_M });
+      const sound = (candidate: typeof spliced) => spliceIsSound({ segments: candidate.segments, original: baseSegments, places: planned.places, before, toleranceMeters: MOVE_OFFER_MAX_M });
       let verdict = sound(spliced);
       if (!verdict.ok) {
-        console.warn("mopik: edited line broke", { kind: planned.kind, breaks: verdict.breaks, missesPlaces: verdict.missesPlaces, runs: runs.map((r, i) => ({ i, from: Math.round(r.fromMeters), to: Math.round(r.toMeters) })) });
+        console.warn("mopik: edited line broke", { kind: planned.kind, breaks: verdict.breaks, missesPlaces: verdict.missesPlaces, offRoadMeters: verdict.offRoadMeters, runs: runs.map((r, i) => ({ i, from: Math.round(r.fromMeters), to: Math.round(r.toMeters) })) });
         track("route_edit_failed", { reason: "broken-line" });
         const span = spanRun({ line, cum: cumulative(line), before, after: planned.places, runs });
         const again = await request([span]);
@@ -1350,9 +1350,16 @@ export function HomePage() {
           const whole = splice([span], again);
           const second = sound(whole);
           if (second.ok) { runs = [span]; data = again; spliced = whole; verdict = second; }
-          else console.warn("mopik: edited line broke again on the whole span", { breaks: second.breaks, missesPlaces: second.missesPlaces });
+          else {
+            console.warn("mopik: edited line broke again on the whole span", { breaks: second.breaks, missesPlaces: second.missesPlaces, offRoadMeters: second.offRoadMeters });
+            // Whole on the second try but for the edit's own place: that is the reason.
+            if (second.offRoadMeters) verdict = { ...verdict, offRoadMeters: Math.min(verdict.offRoadMeters ?? Infinity, second.offRoadMeters) };
+          }
         }
       }
+      // The line is whole and rides every kept place; only the place the
+      // edit added or moved is out of reach — said as that, with how far.
+      if (!verdict.ok && verdict.offRoadMeters) return refuse(fi(ui.pickOffRoadTitle, { m: verdict.offRoadMeters }), "too-far");
       if (!verdict.ok) return refuse(ui.editBrokenLine, "broken-line");
       // Where the line actually reaches each changed place. A point in a
       // field is answered by the router with a line that turns back at the
@@ -1422,7 +1429,7 @@ export function HomePage() {
         how: planned.kind,
         before,
         ride,
-        changed: changedAlong(runs, data.runs.map((r) => lineMeters(coordinatesOf(r.segments)))),
+        changed: changedAlong(spliced.runs, data.runs.map((r) => lineMeters(coordinatesOf(r.segments)))),
         delta: editDelta(beforeRide, ride),
         notes,
       };

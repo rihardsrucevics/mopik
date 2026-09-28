@@ -618,14 +618,71 @@ test("a stretch that came back empty leaves a hole the check refuses", () => {
 });
 
 test("a loop variant whose halves miss the stop's neighbours does not pass", () => {
-  // Routed through the stop, but ending 200 m short of the far cut.
+  // Routed through the stop, but ending 200 m short of the far cut and on
+  // another road 150 m north of the kept ride: a real gap.
   const stop = at(12, 300, "Laukā");
   const p = plan(ONE_WAY, { ...ONE_WAY, vias: [...ONE_WAY.vias, stop] });
   const [from, via, to] = p.runs[0].points;
-  const short: Point = [to[0] - 200 / M_PER_DEG_LON, to[1]];
+  const short: Point = [to[0] - 200 / M_PER_DEG_LON, to[1] + 150 / M_PER_DEG_LAT];
   const routed = routedAlong([from, via, short]);
   const out = applyRuns({ segments: SEGMENTS, distanceMeters: 20_000, durationSeconds: 3_600, runs: p.runs, routed: [routed] });
-  assert.equal(spliceIsSound({ segments: out.segments, original: SEGMENTS, places: p.places, toleranceMeters: 500 }).ok, false);
+  const verdict = spliceIsSound({ segments: out.segments, original: SEGMENTS, places: p.places, before: ONE_WAY, toleranceMeters: 500 });
+  assert.equal(verdict.ok, false);
+  assert.ok(!verdict.ok && verdict.breaks.length === 1 && verdict.breaks[0].meters > JOIN_GAP_M, "still a gap, still refused as one");
+  assert.ok(!verdict.ok && verdict.offRoadMeters === undefined, "a gap is never reported as an off-road place");
+});
+
+/**
+ * Measured 2026-09-28 on Mālpils → Mūrnieki → Allaži: BRouter begins a route
+ * at a node of the road, not at the point asked for, and a cut in the middle
+ * of a 325 m straight edge came back starting at the next node, 82 m on along
+ * the same road. Spliced at the cut, that was an 82 m hole and the edit was
+ * refused as „neizdevās savienot … vienā līnijā”; the whole-span retry that
+ * followed re-routed up to 36 km of the rider's ride to get round it.
+ */
+test("a stretch that starts or ends on the kept road away from the cut is joined where it meets it", () => {
+  const stop = at(12, 300, "Laukā");
+  const p = plan(ONE_WAY, { ...ONE_WAY, vias: [...ONE_WAY.vias, stop] });
+  const [from, via, to] = p.runs[0].points;
+  // Starts 82 m further on along the kept line, ends 150 m before the far cut, both ON it.
+  const later: Point = [from[0] + 82 / M_PER_DEG_LON, from[1]];
+  const earlier: Point = [to[0] - 150 / M_PER_DEG_LON, to[1]];
+  const routed = routedAlong([later, via, earlier]);
+  const base = { segments: SEGMENTS, distanceMeters: 20_000, durationSeconds: 3_600 };
+  const out = applyRuns({ ...base, runs: p.runs, routed: [routed] });
+  assert.deepEqual(lineBreaks(out.segments, SEGMENTS), [], "no hole at either end");
+  assert.equal(spliceIsSound({ segments: out.segments, original: SEGMENTS, places: p.places, before: ONE_WAY, toleranceMeters: 500 }).ok, true);
+  closeTo(out.runs[0].fromMeters, p.runs[0].fromMeters + 82, 2, "the kept ride runs on to where the stretch begins");
+  closeTo(out.runs[0].toMeters, p.runs[0].toMeters - 150, 2, "and resumes where it ends");
+  // Kept ride + stretch: nothing ridden twice at the joins — the line only ever runs east.
+  assert.ok(out.coordinates.every((c, i) => i === 0 || c[0] >= out.coordinates[i - 1][0] - 1e-9 || Math.abs(c[1] - LAT) > 1e-6), "no back-track at the joins");
+  // The same stretch starting 82 m on but 60 m off the road is not on the kept ride: a gap, refused.
+  const off = routedAlong([[later[0], later[1] + 60 / M_PER_DEG_LAT], via, to]);
+  const broken = applyRuns({ ...base, runs: p.runs, routed: [off] });
+  assert.equal(spliceIsSound({ segments: broken.segments, original: SEGMENTS, places: p.places, toleranceMeters: 500 }).ok, false);
+  // A moved start is the ride's own end, never re-cut: the stretch reaches the new start.
+  const moved = { ...ONE_WAY, start: at(0, 400, "Jauns starts") };
+  const pm = plan(ONE_WAY, moved);
+  const head = applyRuns({ ...base, runs: pm.runs, routed: pm.runs.map((r) => routedAlong(r.points)) });
+  assert.equal(head.runs[0].fromMeters, 0);
+});
+
+test("a place the edit added that no road reaches is refused as off-road, not as a broken line", () => {
+  // The rider's stop 900 m off the ride; the router turned back 700 m from it, at the nearest track.
+  const stop = at(12, 900, "Ezera krasts");
+  const p = plan(ONE_WAY, { ...ONE_WAY, vias: [...ONE_WAY.vias, stop] });
+  const [from, , to] = p.runs[0].points;
+  const reached: Point = [stop.lon, stop.lat - 700 / M_PER_DEG_LAT];
+  const out = applyRuns({ segments: SEGMENTS, distanceMeters: 20_000, durationSeconds: 3_600, runs: p.runs, routed: [routedAlong([from, reached, to])] });
+  const verdict = spliceIsSound({ segments: out.segments, original: SEGMENTS, places: p.places, before: ONE_WAY, toleranceMeters: 500 });
+  assert.equal(verdict.ok, false, "the place is still held to 500 m");
+  assert.ok(!verdict.ok && verdict.breaks.length === 0);
+  assert.ok(!verdict.ok && verdict.offRoadMeters !== undefined && Math.abs(verdict.offRoadMeters - 700) <= 10, `said with the distance: ${!verdict.ok && verdict.offRoadMeters}`);
+  // A KEPT stop the line does not reach is a broken ride, whatever else: no off-road excuse.
+  const ghost = at(15, 2_000, "Nesasniegta");
+  const withGhost = { ...ONE_WAY, vias: [...ONE_WAY.vias, ghost] };
+  const v2 = spliceIsSound({ segments: out.segments, original: SEGMENTS, places: { ...p.places, vias: [...p.places.vias, ghost] }, before: withGhost, toleranceMeters: 500 });
+  assert.ok(!v2.ok && v2.offRoadMeters === undefined, "a missed kept stop is never an off-road place");
 });
 
 test("a gap the original ride already had is not the edit's", () => {
