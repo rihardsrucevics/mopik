@@ -83,3 +83,65 @@ test("every new string exists in lv, lt, et and en", () => {
   }
   assert.equal(t("lv", "mapLegend"), "Leģenda");
 });
+
+// ── P1-D: preview before commit (docs/DESIGN-route-editing.md B4) ──
+
+const confirmSlot = routeMap.slice(routeMap.indexOf("function ConfirmSlot"), routeMap.indexOf("// ── /P1-D: imports ──"));
+/** Class strings in a slice of JSX, so `aria-hidden` never counts as `hidden`. */
+const classNames = (jsx: string): string => [...jsx.matchAll(/className=\{?[`"]([^`"]*)[`"]/g)].map((x) => x[1]).join(" ");
+
+test("a busy ✓ keeps slot 3: a spinner in the same button, still pressable, never `hidden`", () => {
+  assert.ok(confirmSlot.length > 0, "ConfirmSlot exists");
+  const bar = routeMap.slice(routeMap.indexOf("function DesktopBar"), routeMap.indexOf("function PhoneColumn"));
+  const col = routeMap.slice(routeMap.indexOf("function PhoneColumn"), routeMap.indexOf("export function RouteMap("));
+  // Both bars draw the one ✓ in slot 3, whatever its state — not only when
+  // Confirm can act, and not swapped for another element while busy.
+  assert.match(bar, /\{pending && !pending\.offRoad && <ConfirmSlot pending=\{pending\} round=\{round\} data-slot="3" \/>\}/);
+  assert.match(col, /\{pending && !pending\.offRoad && <ConfirmSlot pending=\{pending\} round=\{round\} phone data-slot="3" \/>\}/);
+  // One <button>, one data-slot, the icon swapped inside it.
+  assert.equal(confirmSlot.match(/<button /g)?.length, 1);
+  assert.match(confirmSlot, /<button [^>]*data-slot=\{slot\}/);
+  assert.match(confirmSlot, /busy\s*\? <LoaderCircle [^>]*animate-spin/);
+  // Busy is still pressable: only a missing onConfirm or a refusal disables.
+  assert.match(confirmSlot, /const onConfirm = refused \? null : pending\.onConfirm;/);
+  assert.match(confirmSlot, /disabled=\{!onConfirm\}/);
+  assert.match(confirmSlot, /busy \? m\.previewConfirmQueued/);
+  assert.match(confirmSlot, /refused \? m\.previewConfirmRefused/);
+  // Never hidden; `invisible` only on the phone, the column's own rule.
+  // (The desktop row's own `max-md:hidden` is the row itself, not a slot.)
+  const fences = [bar, col].map((x) => x.slice(x.indexOf("── P1-D:"), x.indexOf("── /P1-D:"))).join("\n");
+  for (const jsx of [confirmSlot, fences]) assert.doesNotMatch(classNames(jsx) + " " + jsx.replace(/aria-hidden/g, ""), /(^|[\s:"`])hidden(\s|$|["`])/);
+  assert.match(confirmSlot, /\$\{phone && idle \? "invisible" : ""\}/);
+});
+
+test("the proposal chip renders in the notice slot, above the bar and clear of the right column", () => {
+  const open = routeMap.indexOf("{/* ── P1-D: notice ── */}"), close = routeMap.indexOf("{/* ── /P1-D: notice ── */}");
+  const slot = routeMap.slice(open, close);
+  // Inside the bottom chrome (the reversed column over the bar), after the bar.
+  const chrome = routeMap.indexOf("ref={headerRef} data-map-chrome");
+  assert.ok(chrome > 0 && routeMap.indexOf("<PhoneColumn controls={controls} />") < open && chrome < open);
+  // The chip takes the notice's place rather than stacking beside it.
+  assert.match(slot, /\{controls && proposal \? \(\s*<div role="status" data-proposal-chip=/);
+  assert.match(slot, /\) : controls\?\.notice && \(/);
+  assert.match(slot, /title=\{proposal\.title\} aria-label=\{proposal\.title\}/);
+  assert.match(slot, /\{proposal\.text\}/);
+  assert.match(slot, /self-start/);
+  assert.match(slot, /max-md:mr-16/);
+  // Routing: a quiet spinner. Refused: the warning's amber, not a badge.
+  assert.match(slot, /proposal\.tone === "routing" && <LoaderCircle/);
+  assert.match(slot, /proposal\.tone === "refused" \? "border-amber-300 bg-amber-50\/95 text-amber-900"/);
+});
+
+test("the proposal's yellow halo covers exactly the changed metres", async () => {
+  const { haloLines } = await import("../components/map/proposal-layer");
+  const { cumulative } = await import("../lib/routing/detour");
+  // Two features along a meridian, ~1.11 km per 0.01°.
+  const seg = (coords: number[][]) => ({ type: "Feature" as const, properties: {} as never, geometry: { type: "LineString" as const, coordinates: coords } });
+  const line = { type: "FeatureCollection" as const, features: [seg([[24, 56], [24, 56.01], [24, 56.02]]), seg([[24, 56.02], [24, 56.03]])] };
+  const halo = haloLines(line, [[500, 2500], [9e9, 1e10], [100, 100]]);
+  // Past the end clamps to the end and is then empty; zero length is dropped.
+  assert.equal(halo.features.length, 1);
+  const got = cumulative(halo.features[0].geometry.coordinates as [number, number][]);
+  assert.ok(Math.abs(got[got.length - 1] - 2000) < 1, `2000 m, got ${got[got.length - 1]}`);
+  assert.equal(halo.features[0].geometry.coordinates.length, 4, "from, two vertices inside, to");
+});
