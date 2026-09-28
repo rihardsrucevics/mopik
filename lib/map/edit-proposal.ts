@@ -13,7 +13,7 @@ import type { RouteSegmentProperties } from "@/lib/types";
  * numbers its chip shows.
  *
  * CONTRACT C1: the types below are the contract the Phase 1 packages build
- * on. The functions are stubs — owned and implemented by P1-A.
+ * on. The functions are owned and implemented by P1-A.
  */
 
 /** The ride's line, as the map and `applyRuns` carry it. */
@@ -101,28 +101,85 @@ export type ProposalView = {
   changed: [number, number][];
 };
 
-/** STUB (P1-A): returns the state unchanged. */
+/**
+ * The preview's state machine.
+ *
+ * - `route` always starts over: a newer pending mark supersedes whatever was
+ *   routing, proposed or refused, and a ✓ pressed for the old one does not
+ *   carry over to the new one (the rider confirmed a line he has not seen).
+ * - `landed` / `refused` count only for the token that is routing; an older
+ *   answer, or one arriving after ✕, is dropped (the same state comes back,
+ *   so a React reducer does not re-render).
+ * - `confirm` while routing is remembered (`confirmWhenReady`) and carried
+ *   into the proposal as `confirmNow`; on a landed proposal it sets
+ *   `confirmNow`; idle or refused, it does nothing — ✓ is disabled there.
+ * - `discard` and `committed` return to idle from anywhere.
+ */
 export function proposalReducer(state: ProposalState, action: ProposalAction): ProposalState {
-  void action;
-  return state;
+  switch (action.type) {
+    case "route":
+      return { phase: "routing", token: action.token, how: action.how, confirmWhenReady: false };
+    case "landed":
+      if (state.phase !== "routing" || action.proposal.token !== state.token) return state;
+      return { phase: "proposed", proposal: action.proposal, confirmNow: state.confirmWhenReady };
+    case "refused":
+      if (state.phase !== "routing" || action.token !== state.token) return state;
+      return { phase: "refused", token: state.token, how: state.how, reason: action.reason };
+    case "confirm":
+      if (state.phase === "routing") return state.confirmWhenReady ? state : { ...state, confirmWhenReady: true };
+      if (state.phase === "proposed") return state.confirmNow ? state : { ...state, confirmNow: true };
+      return state;
+    case "discard":
+    case "committed":
+      return state.phase === "idle" ? state : IDLE_PROPOSAL;
+    default:
+      return state;
+  }
 }
 
-/** STUB (P1-A): the chip's numbers from the ride before and the proposed one. */
-export function editDelta(
-  before: Pick<EditedRide, "distanceMeters" | "durationSeconds" | "overlap">,
-  after: Pick<EditedRide, "distanceMeters" | "durationSeconds" | "overlap">,
-): EditDelta {
-  void before; void after;
-  throw new Error("editDelta: not implemented (P1-A)");
+type DeltaSource = Pick<EditedRide, "distanceMeters" | "durationSeconds" | "overlap">;
+
+/** The chip's numbers from the ride before and the proposed one. Unrounded; `formatEditDelta` rounds. */
+export function editDelta(before: DeltaSource, after: DeltaSource): EditDelta {
+  return {
+    kmBefore: before.distanceMeters / 1000,
+    kmAfter: after.distanceMeters / 1000,
+    secondsDelta: after.durationSeconds - before.durationSeconds,
+    repeatedBefore: before.overlap.repeatedPercent,
+    repeatedAfter: after.overlap.repeatedPercent,
+  };
+}
+
+/** U+2212, the typographic minus — „−2 min”, not a hyphen. */
+const MINUS = "−";
+
+/**
+ * A signed duration in whole minutes: „+6 min”, „−1 h 5 min”, „±0 min”.
+ * „h” and „min” read the same in all four languages (as elsewhere in Mopik).
+ */
+export function formatSignedMinutes(seconds: number): string {
+  const minutes = Math.round(seconds / 60);
+  if (minutes === 0) return "±0 min";
+  const sign = minutes > 0 ? "+" : MINUS;
+  const m = Math.abs(minutes);
+  const body = m >= 60 ? `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ""}` : `${m} min`;
+  return `${sign}${body}`;
 }
 
 /**
- * STUB (P1-A): fill `template` (the `previewDelta` or `previewDeltaTitle`
- * message) from `delta` — {a} {b} km with one decimal in `locale`, {t} the
- * signed time („+6 min”, „−1 h 5 min”, „±0 min”), {r1} {r2} whole percent.
- * Returns the template unfilled until implemented.
+ * Fill `template` (the `previewDelta` or `previewDeltaTitle` message) from
+ * `delta`: {a} {b} km with one decimal in `locale` (comma in lv/lt/et), {t}
+ * the signed time, {r1} {r2} whole percent.
  */
 export function formatEditDelta(template: string, delta: EditDelta, locale: UiLocale): string {
-  void delta; void locale;
-  return template;
+  const km = new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  const pct = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 });
+  const values: Record<string, string> = {
+    a: km.format(delta.kmBefore),
+    b: km.format(delta.kmAfter),
+    t: formatSignedMinutes(delta.secondsDelta),
+    r1: pct.format(Math.round(delta.repeatedBefore)),
+    r2: pct.format(Math.round(delta.repeatedAfter)),
+  };
+  return template.replace(/\{(a|b|t|r1|r2)\}/g, (_, k: string) => values[k]);
 }

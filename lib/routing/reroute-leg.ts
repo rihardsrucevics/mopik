@@ -1439,8 +1439,18 @@ export function applyShapeEdit(places: RidePlaces, op: ShapeEdit): RidePlaces | 
     return { ...places, vias: [...places.vias, { ...shapeVia(op), grabbedAt: op.grabbedAt }] };
   }
   // ── P1-A: demote ──
-  // CONTRACT C1 stub: a no-op until P1-A implements it.
-  if (op.kind === "demote") return places;
+  // The stop becomes a pass-through point at its own spot: same coordinates,
+  // same place among the vias, so the line does not change; its `joins` stay
+  // so removing it later re-routes the stretch it came with. Its name, POI
+  // and grab point go — a pass-through point is not a place.
+  if (op.kind === "demote") {
+    const at = stopViaIndex(places, op.stopIndex);
+    if (at < 0) return { error: "no-such-point" };
+    if (shapesOf(places).length >= MAX_SHAPE_POINTS) return { error: "shape-cap" };
+    const { lat, lon, joins } = places.vias[at];
+    const pass: RidePlace = { ...shapeVia({ lat, lon }), ...(joins ? { joins } : {}) };
+    return { ...places, vias: places.vias.map((v, i) => (i === at ? pass : v)) };
+  }
   // ── /P1-A: demote ──
   const at = shapeIndex(op.index);
   if (at < 0) return { error: "no-such-point" };
@@ -1452,4 +1462,11 @@ export function applyShapeEdit(places: RidePlaces, op: ShapeEdit): RidePlaces | 
   const { lat, lon, joins } = places.vias[at];
   const stop: RidePlace = { ...op.place, lat, lon, ...(joins ? { joins } : {}) };
   return { ...places, vias: places.vias.map((v, i) => (i === at ? stop : v)) };
+}
+
+/** Where the `stopIndex`-th stop (riding order, from 0) sits among `vias`, or −1. */
+function stopViaIndex(places: RidePlaces, stopIndex: number): number {
+  if (!Number.isInteger(stopIndex) || stopIndex < 0) return -1;
+  let seen = -1;
+  return places.vias.findIndex((v) => !isShape(v) && ++seen === stopIndex);
 }
