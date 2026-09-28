@@ -131,3 +131,18 @@ test("the car-fast rung routes on BRouter's built-in profile: nothing is uploade
     assert.equal(calls, 0);
   } finally { globalThis.fetch = original; }
 });
+
+test("rider's Ogre case (2026-09-28): a point far off the ride is never the generic „neizdevās izbraukt”", () => {
+  // Production (pre-spur) answered ANY non-200 from /api/reroute-leg with
+  // resEditFailed — a pass-through point in Ogre centre, ~15–20 km off a
+  // Rīga → Ērgļi ride, was refused that way. Now a 422 (no road through the
+  // point on this profile, or the router's deadline) goes into the reach
+  // ladder, and a far point that the line does reach is a proposal (warned
+  // for the detour), not a bend that „missed”.
+  const page = readFileSync(new URL("../components/home-page.tsx", import.meta.url), "utf8");
+  assert.match(page, /if \("status" in data\) return data\.status === 422 \? unreached\(reachM\) : refuse\(ui\.resEditFailed, String\(data\.status\)\);/);
+  // Dropped 18 km off, the line now through it: a bend, proposed.
+  assert.equal(bendMissed(18_000, 30), false);
+  // …and the same drop the router could only bring 17.9 km nearer by 100 m: missed, the ladder goes on.
+  assert.equal(bendMissed(18_000, 17_900), true);
+});
