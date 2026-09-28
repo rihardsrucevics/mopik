@@ -1146,10 +1146,11 @@ export type EditedRide = {
    */
   kind: "commit" | "edit";
   /**
-   * Which edit made it, for the undo's analytics: an `EditKind`, "sights", or
-   * "promote" — a shaping point made a stop, which changes no line.
+   * Which edit made it, for the undo's analytics: an `EditKind`, "sights",
+   * "promote" — a shaping point made a stop — or "demote" — a stop made a
+   * pass-through point; neither of the last two changes the line.
    */
-  how: EditKind | "sights" | "promote";
+  how: EditKind | "sights" | "promote" | "demote";
 };
 
 /**

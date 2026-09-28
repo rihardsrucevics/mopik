@@ -12,6 +12,7 @@ import {
   type ProposalState,
 } from "../lib/map/edit-proposal";
 import {
+  applyRuns,
   applyShapeEdit,
   placesFromRide,
   planWithPlaces,
@@ -23,6 +24,9 @@ import {
 } from "../lib/routing/reroute-leg";
 import { RidePlanSchema, type RidePlan } from "../lib/chat/ride-plan";
 import { MAX_SHAPE_POINTS } from "../lib/chat/ride-limits";
+import { lineMeters } from "../lib/routing/detour";
+import type { Point } from "../lib/geo/geometry";
+import type { RouteSegmentProperties } from "../lib/types";
 import { messages } from "../lib/i18n/messages";
 const MESSAGES = { lv: messages("lv"), lt: messages("lt"), et: messages("et"), en: messages("en") };
 
@@ -142,6 +146,57 @@ test("time is signed, with a real minus, whole minutes, hours past 60", () => {
   assert.equal(formatSignedMinutes(20), "±0 min", "under half a minute is no change");
   assert.equal(formatSignedMinutes(0), "±0 min");
   assert.equal(formatEditDelta("{a} km", { ...D, kmBefore: 0 }, "lv"), "0,0 km", "one decimal always");
+});
+
+// ── the chip's time is honest: every stretch's seconds counted once ──
+
+const M_PER_DEG_LON = 111_320 * Math.cos((57 * Math.PI) / 180);
+/** `km` of line east from `fromKm`, one feature per km, of one kind. */
+function stretch(fromKm: number, km: number, props: Pick<RouteSegmentProperties, "roadClass" | "surface">) {
+  const pt = (k: number): Point => [24 + (k * 1000) / M_PER_DEG_LON, 57];
+  const features = Array.from({ length: km }, (_, i) => {
+    const coordinates = [pt(fromKm + i), pt(fromKm + i + 0.5), pt(fromKm + i + 1)];
+    return { type: "Feature" as const, geometry: { type: "LineString" as const, coordinates }, properties: { ...props, distanceMeters: Math.round(lineMeters(coordinates)) } };
+  });
+  return { type: "FeatureCollection" as const, features };
+}
+const ASPHALT = { roadClass: "road", surface: "asphalt" } as const;
+const TRAIL = { roadClass: "trail", surface: "ground" } as const;
+const secs = (km: number, kmh: number) => (km / kmh) * 3600;
+
+test("applyRuns: two runs, given out of order, each bring their time exactly once; kept time is the ride's own", () => {
+  // 30 km: asphalt 0–10, trail 10–20, asphalt 20–30, timed at the table's speeds.
+  const ride = { type: "FeatureCollection" as const, features: [...stretch(0, 10, ASPHALT).features, ...stretch(10, 10, TRAIL).features, ...stretch(20, 10, ASPHALT).features] };
+  const drawn = lineMeters(ride.features.flatMap((f, i) => (i ? f.geometry.coordinates.slice(1) : f.geometry.coordinates)) as Point[]);
+  const T = secs(20, 58) + secs(10, 15);
+  const out = applyRuns({
+    segments: ride, distanceMeters: Math.round(drawn), durationSeconds: T,
+    // replace 2–4 km (asphalt) and 12–18 km (trail); listed back to front
+    runs: [{ fromMeters: drawn * 12 / 30, toMeters: drawn * 18 / 30 }, { fromMeters: drawn * 2 / 30, toMeters: drawn * 4 / 30 }],
+    routed: [
+      { segments: stretch(12, 6, TRAIL), distanceMeters: 9_000, durationSeconds: 1_111 },
+      { segments: stretch(2, 2, ASPHALT), distanceMeters: 2_000, durationSeconds: 222 },
+    ],
+  });
+  const kept = T - secs(2, 58) - secs(6, 15);
+  assert.ok(Math.abs(out.durationSeconds - (kept + 1_111 + 222)) <= 2, `got ${out.durationSeconds}, expected ${Math.round(kept + 1_333)}`);
+  assert.ok(Math.abs(out.distanceMeters - (drawn - drawn * 8 / 30 + 11_000)) <= 2);
+});
+
+test("a longer re-route can honestly be quicker: 6 km of trail swapped for 9 km of asphalt", () => {
+  const ride = { type: "FeatureCollection" as const, features: [...stretch(0, 10, ASPHALT).features, ...stretch(10, 6, TRAIL).features, ...stretch(16, 10, ASPHALT).features] };
+  const T = secs(20, 58) + secs(6, 15);
+  const drawn = lineMeters(ride.features.flatMap((f, i) => (i ? f.geometry.coordinates.slice(1) : f.geometry.coordinates)) as Point[]);
+  const out = applyRuns({
+    segments: ride, distanceMeters: Math.round(drawn), durationSeconds: T,
+    runs: [{ fromMeters: drawn * 10 / 26, toMeters: drawn * 16 / 26 }],
+    routed: [{ segments: stretch(10, 6, ASPHALT), distanceMeters: 9_000, durationSeconds: secs(9, 58) }],
+  });
+  const overlap = { repeatedKm: 0, distinctKm: 0, repeatedPercent: 0 };
+  const d = editDelta({ distanceMeters: drawn, durationSeconds: T, overlap }, { ...out, overlap });
+  assert.ok(d.kmAfter > d.kmBefore + 2.9, "3 km longer");
+  // trail 6 km at 15 km/h = 24 min out, asphalt 9 km at 58 km/h ≈ 9.3 min in
+  assert.equal(formatSignedMinutes(d.secondsDelta), "\u221215 min");
 });
 
 // ── „Padarīt caurbraucamu” ──
