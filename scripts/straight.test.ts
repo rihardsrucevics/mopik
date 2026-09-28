@@ -163,3 +163,17 @@ test("the copy: four languages, en dashes, the rider's words", () => {
     }
   }
 });
+
+test("design F2: „Meklēt labāku apli” is off on a ride with drawn stretches, with the reason", () => {
+  const read = (f: string) => readFileSync(new URL(`../${f}`, import.meta.url), "utf8");
+  const panel = read("components/result-panel.tsx");
+  const card = read("components/suggestions-card.tsx");
+  assert.match(panel, /const searchBlocked = drawnMeters\(route\.segments\.features\) > 0 \? m\.searchDrawnBlocked : undefined;/);
+  assert.match(panel, /onClick=\{onSearchBetterLoop\} disabled=\{busy \|\| rerouting \|\| Boolean\(searchBlocked\)\}/);
+  assert.match(panel, /searchBlocked=\{searchBlocked\}/);
+  assert.match(card, /disabled=\{busy \|\| overCap \|\| Boolean\(searchBlocked\)\}/);
+  assert.match(read("components/shared-route.tsx"), /searchBlocked=\{share\.drawnKm > 0 \? m\.searchDrawnBlocked : undefined\}/);
+  assert.match(read("components/home-page.tsx"), /if \(drawnMeters\(\(edited\?\.segments \?\? route\?\.segments\)\?\.features \?\? \[\]\) > 0\) return;/);
+  assert.equal(messages("lv").searchDrawnBlocked, "Braucienā ir zīmēti posmi – pilnā meklēšana tos izmestu. Labo uz kartes.");
+  for (const locale of ["lv", "lt", "et", "en"] as const) assert.ok(messages(locale).searchDrawnBlocked.includes(" – "), locale);
+});

@@ -521,6 +521,7 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
               // button that looked instant and was not would be the very wait
               // the planner's new path removes.
               onSearchBetter={planCode && share.plan ? regenerateWithSelection : undefined}
+              searchBlocked={share.drawnKm > 0 ? m.searchDrawnBlocked : undefined}
               viaCount={share.plan?.viaPlaces.length ?? 0}
               includedNames={share.plan?.viaPlaces ?? []}
               detours={detours}

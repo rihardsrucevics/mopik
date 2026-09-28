@@ -88,6 +88,7 @@ import {
 } from "@/lib/map/edit-proposal";
 import { markOutsideProfile, farthestFrom, detourRisk, reachOf } from "@/lib/map/edit-reach";
 import { drawnIntervals, straightRun } from "@/lib/map/straight";
+import { drawnMeters } from "@/lib/routing/drawn";
 import { profileAt, type RelaxDrop } from "@/lib/routing/relax";
 import { buildMotoProfileOptions } from "@/lib/routing/moto-profile";
 import { bendMissed, changeKey, changedAlong, isKindSwitch, NOTE_JOINER, proposalView, proposeDelay, staleWhileRouting, newStretches, wideNeedsAsking, renamePlaces, renamesBetween, sameGeometry, type Renames } from "@/lib/map/proposal-view";
@@ -2050,6 +2051,9 @@ export function HomePage() {
    */
   function searchBetterLoop() {
     if (busyRef.current || !plan) return;
+    // Design F2: never on a ride with drawn stretches — the search would drop
+    // them (the panel's button is off and says so; this is the belt).
+    if (drawnMeters((edited?.segments ?? route?.segments)?.features ?? []) > 0) return;
     // Already-present names are dropped rather than duplicated: the rider may
     // have ticked something a previous pass put in the ride.
     const fresh = selectedPois.filter((p) => !plan.viaPlaces.includes(p.name));

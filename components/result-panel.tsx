@@ -383,6 +383,9 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
   const q = route.quality;
   // Drawn straight, no road („Vest pa taisno”): said in so many words.
   const drawnKm = Math.round(drawnMeters(route.segments.features) / 100) / 10;
+  // Design F2: the full search keeps stops and drops everything else, drawn
+  // stretches included — so on a ride with any, it is off and says why.
+  const searchBlocked = drawnMeters(route.segments.features) > 0 ? m.searchDrawnBlocked : undefined;
   // The RISKS share, on the same denominator the ROADS rows use: road + track
   // + trail is the whole ride, so the two blocks' percentages are comparable
   // even though they measure different things. `|| 1` guards a zero-length
@@ -746,12 +749,17 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
                     </span>
                   )}
                   {onSearchBetterLoop && (
-                    <button type="button" onClick={onSearchBetterLoop} disabled={busy || rerouting} title={shapesDropped ? `${m.resSearchBetterHint} ${m.resSearchDropsShapes}` : m.resSearchBetterHint}
-                      className="text-[11px] font-semibold text-[#bd4b00] hover:underline disabled:opacity-40">
+                    <button type="button" onClick={onSearchBetterLoop} disabled={busy || rerouting || Boolean(searchBlocked)} data-search-better={searchBlocked ? "blocked" : "open"}
+                      title={searchBlocked ?? (shapesDropped ? `${m.resSearchBetterHint} ${m.resSearchDropsShapes}` : m.resSearchBetterHint)}
+                      className="text-[11px] font-semibold text-[#bd4b00] hover:underline disabled:opacity-40 disabled:hover:no-underline">
                       {m.resSearchBetterLink}
                     </button>
                   )}
-                  {onSearchBetterLoop && shapesDropped && (
+                  {/* Design F2: drawn stretches would be thrown away by the full search — off, with the reason. */}
+                  {onSearchBetterLoop && searchBlocked && (
+                    <span data-search-blocked className="w-full text-[10px] leading-snug text-stone-500">{searchBlocked}</span>
+                  )}
+                  {onSearchBetterLoop && shapesDropped && !searchBlocked && (
                     <span className="w-full text-[10px] leading-snug text-stone-500">{m.resSearchDropsShapes}</span>
                   )}
                 </div>
@@ -925,6 +933,7 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
           onClearSelection={onClearSelectedPois}
           onCommit={onCommitSelection}
           onSearchBetter={onSearchBetterLoop}
+          searchBlocked={searchBlocked}
           shapesDropped={shapesDropped}
           committable={Boolean(spliced && spliced.applied.length > 0)}
           viaCount={plan?.viaPlaces.length ?? 0}
