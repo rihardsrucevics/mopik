@@ -1580,3 +1580,16 @@ stays useful in the list, the map card's wording must say what it does
 („Atzīmēt” vs „Pievienot braucienam”), and a ticked-but-not-added state must
 be visible on the map and in the bar („2 atzīmētas · Pievienot”), never only
 in the side panel.
+
+## 47. BUG: from „Saglabātie”, edit opens the form but the map shows no ride
+
+**Rider, 2026-09-28, iPhone, production (c40401b).** In „Saglabātie” he
+pressed edit on a saved ride (a round trip: Kuģu iela 26A → „Antiņciems” →
+„Ragaciems” → back to Kuģu iela 26A). He landed on the planning form with
+the rows filled correctly, but the preview map below shows **no ride and no
+pins** — just the base map with TET lines. Expected: the saved ride's line
+and its numbered pins (and, once backlog 44 is done, straight into edit
+mode). Screenshot kept at the session scratchpad as `bug-saved-edit.webp`.
+Check which path the saved-ride edit takes (form prefill vs `placesFromRide`
+vs the result's „Labot”), whether the ride's geometry is passed at all, and
+whether the preview map frames the places.
