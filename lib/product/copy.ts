@@ -88,13 +88,13 @@ export type ProductCopy = {
 
 const lv: ProductCopy = {
   meta: {
-    title: "Par Mopik – adventure moto maršruti pa grants un meža ceļiem",
+    title: "Par Mopiku – adventure moto maršruti pa grants un meža ceļiem",
     description:
       "Mopik uzzīmē adventure un enduro braucienu no viena teikuma: aplis vai vienā virzienā, godīgs laiks pēc seguma, meža ceļi un TET, vārti kartē, labošana kartē un GPX Garmin navigācijai. Bez maksas, bez konta.",
   },
   header: { home: "Mopik – uz sākumu", languages: "Valoda", cta: "Izveido braucienu" },
   hero: {
-    eyebrow: "Par Mopik",
+    eyebrow: "Par Mopiku",
     title: "Adventure moto maršruti pa grants un meža ceļiem",
     tagline: "Mazāk plānošanas. Vairāk braukšanas.",
     lead:

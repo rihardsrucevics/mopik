@@ -1124,7 +1124,7 @@ const lv: Messages = {
   footerOsm: "Maršruti balstīti",
   footerOsmTail: " datos.",
   footerNav: "Kājene",
-  footerProduct: "Par Mopik",
+  footerProduct: "Par Mopiku",
   composerEyebrow: "Tavs nākamais brauciens",
   composerTitle: "Kur un cik ilgi brauksim?",
   composerHint: "Pārējo nosaka tavs profils. Maršrutu varēsi precizēt pēc ģenerēšanas.",
