@@ -88,13 +88,13 @@ export type ProductCopy = {
 
 const lv: ProductCopy = {
   meta: {
-    title: "Ko Mopik prot – adventure moto maršruti pa grants un meža ceļiem",
+    title: "Par Mopiku – adventure moto maršruti pa grants un meža ceļiem",
     description:
       "Mopik uzzīmē adventure un enduro braucienu no viena teikuma: aplis vai vienā virzienā, godīgs laiks pēc seguma, meža ceļi un TET, vārti kartē, labošana kartē un GPX Garmin navigācijai. Bez maksas, bez konta.",
   },
   header: { home: "Mopik – uz sākumu", languages: "Valoda", cta: "Izveido braucienu" },
   hero: {
-    eyebrow: "Ko Mopik prot",
+    eyebrow: "Par Mopiku",
     title: "Adventure moto maršruti pa grants un meža ceļiem",
     tagline: "Mazāk plānošanas. Vairāk braukšanas.",
     lead:
@@ -311,13 +311,13 @@ const lv: ProductCopy = {
 
 const lt: ProductCopy = {
   meta: {
-    title: "Ką moka Mopik – adventure moto maršrutai žvyro ir miško keliais",
+    title: "Apie Mopik – adventure moto maršrutai žvyro ir miško keliais",
     description:
       "Mopik nubraižo adventure ir enduro maršrutą iš vieno sakinio: ratas arba į vieną pusę, sąžiningas laikas pagal dangą, miško keliai ir TET, vartai žemėlapyje, taisymas žemėlapyje ir GPX Garmin navigacijai. Nemokamai, be paskyros.",
   },
   header: { home: "Mopik – į pradžią", languages: "Kalba", cta: "Susikurk maršrutą" },
   hero: {
-    eyebrow: "Ką moka Mopik",
+    eyebrow: "Apie Mopik",
     title: "Adventure moto maršrutai žvyro ir miško keliais",
     tagline: "Mažiau planavimo. Daugiau važiavimo.",
     lead:
@@ -534,13 +534,13 @@ const lt: ProductCopy = {
 
 const et: ProductCopy = {
   meta: {
-    title: "Mida Mopik oskab – adventure-mootorrattamarsruudid kruusa- ja metsateedel",
+    title: "Mopikust – adventure-mootorrattamarsruudid kruusa- ja metsateedel",
     description:
       "Mopik joonistab adventure- ja enduromarsruudi ühest lausest: ring või ühes suunas, aus aeg katte järgi, metsateed ja TET, väravad kaardil, muutmine kaardil ja GPX Garmini navigatsioonile. Tasuta, ilma kontota.",
   },
   header: { home: "Mopik – avalehele", languages: "Keel", cta: "Loo sõit" },
   hero: {
-    eyebrow: "Mida Mopik oskab",
+    eyebrow: "Mopikust",
     title: "Adventure-mootorrattamarsruudid kruusa- ja metsateedel",
     tagline: "Vähem planeerimist. Rohkem sõitmist.",
     lead:
@@ -757,13 +757,13 @@ const et: ProductCopy = {
 
 const en: ProductCopy = {
   meta: {
-    title: "What Mopik does – adventure motorcycle routes on gravel and forest roads",
+    title: "About Mopik – adventure motorcycle routes on gravel and forest roads",
     description:
       "Mopik plans an adventure or enduro ride from one sentence: a loop or one way, honest riding time by surface, real forest tracks and TET, gates on the map, editing on the map and a GPX for Garmin. Free, no account.",
   },
   header: { home: "Mopik – home", languages: "Language", cta: "Plan a ride" },
   hero: {
-    eyebrow: "What Mopik does",
+    eyebrow: "About Mopik",
     title: "Adventure motorcycle routes on gravel and forest roads",
     tagline: "Less planning. More riding.",
     lead:
