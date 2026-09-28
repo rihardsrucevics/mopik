@@ -88,17 +88,17 @@ export type ProductCopy = {
 
 const lv: ProductCopy = {
   meta: {
-    title: "Ko Mopik prot — adventure moto maršruti pa grants un meža ceļiem",
+    title: "Ko Mopik prot – adventure moto maršruti pa grants un meža ceļiem",
     description:
       "Mopik uzzīmē adventure un enduro braucienu no viena teikuma: aplis vai vienā virzienā, godīgs laiks pēc seguma, meža ceļi un TET, vārti kartē, labošana kartē un GPX Garmin navigācijai. Bez maksas, bez konta.",
   },
-  header: { home: "Mopik — uz sākumu", languages: "Valoda", cta: "Izveido braucienu" },
+  header: { home: "Mopik – uz sākumu", languages: "Valoda", cta: "Izveido braucienu" },
   hero: {
     eyebrow: "Ko Mopik prot",
     title: "Adventure moto maršruti pa grants un meža ceļiem",
     tagline: "Mazāk plānošanas. Vairāk braukšanas.",
     lead:
-      "Pasaki, no kurienes, uz kurieni — vai „man vienalga” — un cik ilgi. Mopik uzzīmē īstu braucienu pa īstiem ceļiem, parāda, cik tajā grants, cik laika un cik ceļa atkārtojas, un iedod GPX tavai navigācijai. Visā Eiropā, bez maksas un bez konta.",
+      "Pasaki, no kurienes, uz kurieni – vai „man vienalga” – un cik ilgi. Mopik uzzīmē īstu braucienu pa īstiem ceļiem, parāda, cik tajā grants, cik laika un cik ceļa atkārtojas, un iedod GPX tavai navigācijai. Visā Eiropā, bez maksas un bez konta.",
     cta: "Izveido braucienu",
     alt: "Īsts Mopik brauciens kartē: oranža līnija no Kuldīgas uz austrumiem pa Kurzemes lauku un meža ceļiem.",
     credit: "Karte: © OpenStreetMap",
@@ -121,7 +121,7 @@ const lv: ProductCopy = {
       eyebrow: "Profils",
       title: "Grūtība, stils un segums",
       body: [
-        "Profils ir trīs jautājumi. Grūtība: Viegli — bez svīšanas, Vidēji — ar smērēšanos, Grūti — galīgi rukši. Stils: Tūrisms (iekļaut apskates vietas) vai Sports (gāzēt nonstop). Segums: Tikai asfalts, Der arī grants vai Meži.",
+        "Profils ir trīs jautājumi. Grūtība: Viegli – bez svīšanas, Vidēji – ar smērēšanos, Grūti – galīgi rukši. Stils: Tūrisms (iekļaut apskates vietas) vai Sports (gāzēt nonstop). Segums: Tikai asfalts, Der arī grants vai Meži.",
         "Vai paņem gatavu: Asfalta tūrists, Grants tūrists vai Adventure. Profils paliek atcerēts šajā ierīcē.",
       ],
       points: [
@@ -134,8 +134,8 @@ const lv: ProductCopy = {
       eyebrow: "Maršruta veids",
       title: "Aplis vai vienā virzienā",
       body: [
-        "„Vienā virzienā” ved no A uz B ar pieturām pa ceļam. „Turp un atpakaļ” atgriežas sākumā — pa citiem ceļiem, cik vien apvidus ļauj.",
-        "Finišs nav obligāts: „Nav obligāts — man vienalga”, un Mopik izdomā pats. Ilgums var būt brīvs vai limitēts.",
+        "„Vienā virzienā” ved no A uz B ar pieturām pa ceļam. „Turp un atpakaļ” atgriežas sākumā – pa citiem ceļiem, cik vien apvidus ļauj.",
+        "Finišs nav obligāts: „Nav obligāts – man vienalga”, un Mopik izdomā pats. Ilgums var būt brīvs vai limitēts.",
       ],
       alt: ["Mopik forma „Kur un cik ilgi brauksim?” ar izvēli „Vienā virzienā” vai „Turp un atpakaļ” un laukiem No un Līdz."],
     },
@@ -144,7 +144,7 @@ const lv: ProductCopy = {
       title: "Godīgs laiks, pēc seguma",
       body: [
         "60 km pa meža ceļiem nav 60 km pa asfaltu. Mopik rēķina braukšanas laiku pēc katra posma seguma un ceļa veida, nevis pēc kartes vidējā ātruma.",
-        "Ja prasīji 2 stundas un labs brauciens tajās neietilpst, Mopik to pasaka skaitļos — „Prasīts ~2 h, šī versija ir 2 h 47 min.” — un piedāvā tuvāko variantu. Nekas netiek klusi aizstāts.",
+        "Ja prasīji 2 stundas un labs brauciens tajās neietilpst, Mopik to pasaka skaitļos – „Prasīts ~2 h, šī versija ir 2 h 47 min.” – un piedāvā tuvāko variantu. Nekas netiek klusi aizstāts.",
       ],
       note: "Laiks ir braukšanas laiks: pauzes, degvielas uzpilde un laikapstākļi tajā nav iekļauti.",
       alt: ["Mopik brauciena kartīte: 100 km, 2 h 49 min, 91 % grants, 0 % atkārtoti ceļi, laiks pēc seguma."],
@@ -154,12 +154,12 @@ const lv: ProductCopy = {
       title: "Īsti meža ceļi un TET",
       body: [
         "Mopik maršrutē pa OpenStreetMap ceļiem ar savu motocikla profilu: katram ceļa veidam un segumam ir sava cena. Tāpēc „Meži” tiešām ved pa meža ceļiem un takām, nevis tikai pa grants ceļu gar mežu.",
-        "Kartē krāsa ir segums — asfalts, grants, zeme un smiltis, nezināms —, bet līnijas raksts ir ceļa veids: ceļš, meža ceļš, taciņa. Trans Euro Trail slānis aptver 33 valstis, un rezultāts parāda, cik aptuveni kilometru brauciens iet pa TET.",
+        "Kartē krāsa ir segums – asfalts, grants, zeme un smiltis, nezināms –, bet līnijas raksts ir ceļa veids: ceļš, meža ceļš, taciņa. Trans Euro Trail slānis aptver 33 valstis, un rezultāts parāda, cik aptuveni kilometru brauciens iet pa TET.",
       ],
       note: "Pludmales un kāpu takas un ceļus, kas OSM skaidri aizliegti, Mopik neizmanto.",
       alt: [
         "Maršruts kartē, iekrāsots pēc seguma: oranžs grants, tumši oranžs zeme, zils asfalts, pelēks nezināms; raustīti meža ceļi.",
-        "Mopik karte ar posma kartīti „Grants meža ceļš · 5,8 km — Pa TET” un leģendu.",
+        "Mopik karte ar posma kartīti „Grants meža ceļš · 5,8 km – Pa TET” un leģendu.",
       ],
     },
     repeat: {
@@ -167,7 +167,7 @@ const lv: ProductCopy = {
       title: "Nebraukt tos pašus ceļus",
       body: [
         "Laba apļa mērs nav glīta forma, bet tas, cik ceļa tu brauktu divreiz. Mopik to mēra pēc līnijas ģeometrijas un katrā rezultātā parāda: „Atkārtoti: x %”.",
-        "Garums drīkst peldēt, atkārtojums — pēc iespējas ne. Ja tīru apli šajā apvidū atrast nevar, Mopik to pasaka un piedāvā variantus ar skaitļiem.",
+        "Garums drīkst peldēt, atkārtojums – pēc iespējas ne. Ja tīru apli šajā apvidū atrast nevar, Mopik to pasaka un piedāvā variantus ar skaitļiem.",
       ],
       alt: ["Shēma: pa kreisi brauciens turp un atpakaļ pa to pašu ceļu, pa labi aplis, kas atpakaļ brauc pa citiem ceļiem."],
     },
@@ -175,8 +175,8 @@ const lv: ProductCopy = {
       eyebrow: "Pa ceļam",
       title: "Apskates vieta nav pietura",
       body: [
-        "Pietura ir vieta, uz kuru brauciens jāaizved, — to ieraksti tu. Apskates vietas ir tas, ko Mopik atrod pa ceļam: pilskalni, skatu torņi, muižas, brasli.",
-        "Pie katras redzi, cik tā maksā — „+km · +min”, turp un atpakaļ vai aplis. Atzīmē, un apbrauciens ir maršrutā uzreiz, bez jaunas meklēšanas.",
+        "Pietura ir vieta, uz kuru brauciens jāaizved, – to ieraksti tu. Apskates vietas ir tas, ko Mopik atrod pa ceļam: pilskalni, skatu torņi, muižas, brasli.",
+        "Pie katras redzi, cik tā maksā – „+km · +min”, turp un atpakaļ vai aplis. Atzīmē, un apbrauciens ir maršrutā uzreiz, bez jaunas meklēšanas.",
       ],
       note: "Vietu dati pagaidām ir Latvijā, Lietuvā, Igaunijā, Polijā, Austrijā, Šveicē, Slovēnijā un Itālijā.",
       alt: ["Mopik saraksts „Apskates vietas” ar grupām Trasē un Tuvumā; pie katras vietas papildu kilometri un minūtes."],
@@ -186,7 +186,7 @@ const lv: ProductCopy = {
       title: "Vārti kartē, ar OSM faktiem",
       body: [
         "Ja uz paša braucamā ceļa OpenStreetMap datos ir vārti, barjera vai ķēde, Mopik to atzīmē kartē tieši tajā vietā.",
-        "Pieskaries, un kartīte pasaka, kas tas ir („Vārti”, „Barjera ar pacēlāju”, „Ķēde”…), kāda piekļuve atzīmēta OSM — ja atzīmēta —, cik kilometru no starta tas ir, un dod saiti uz pašu punktu OpenStreetMap.",
+        "Pieskaries, un kartīte pasaka, kas tas ir („Vārti”, „Barjera ar pacēlāju”, „Ķēde”…), kāda piekļuve atzīmēta OSM – ja atzīmēta –, cik kilometru no starta tas ir, un dod saiti uz pašu punktu OpenStreetMap.",
       ],
       note: "Mēs neminam: skaitām tikai vārtus uz paša ceļa, nevis „kaut kur tuvumā”, un maršrutu to dēļ nemainām. Vai vārti ir atvērti un vai ceļš ir privāts, Mopik nepārbauda.",
       alt: ["Mopik karte ar vārtu kartīti „Barjera ar pacēlāju · 43,0 km no starta · Skatīt OSM” uz maršruta līnijas."],
@@ -200,7 +200,7 @@ const lv: ProductCopy = {
       points: [
         "Pietura vai caurbraucams punkts. Pietura ir numurēta, ar savu rindu sarakstā un punktu GPX. Caurbraucams punkts tikai norāda, pa kurieni braukt. „Padarīt caurbraucamu” un „Padarīt par pieturu” pārslēdz abos virzienos.",
         "Priekšskatījums pirms apstiprināšanas: jaunais posms parādās kartē, un rinda „54,9 → 56,7 km · +4 min · atkārtoti 0 → 1 %” pasaka, ko izmaiņa maksā. ✓ apstiprina, ✕ atmet.",
-        "Pārzīmējas tikai posms ap izmaiņu. Nepatīk — „Atsaukt”.",
+        "Pārzīmējas tikai posms ap izmaiņu. Nepatīk – „Atsaukt”.",
       ],
       alt: [
         "Mopik punkta izvēlne „Pietura 1 · Līgatne” ar rindām Pārvietot, Padarīt caurbraucamu un Izņemt.",
@@ -224,7 +224,7 @@ const lv: ProductCopy = {
       title: "GPX Garmin un citām navigācijām",
       body: [
         "GPX failā ir visa trase tieši tā, kā to uzzīmēja Mopik, un punkti: starts, finišs, numurētas pieturas un izvēlētās apskates vietas.",
-        "Garmin ierīcēm tajā ir arī maršruts: pieturas ir via punkti, bet caurbraucamie punkti — shaping points, lai navigācija brauc tur, kur tu tos noliki. Der OsmAnd, Garmin, DMD2, Locus, Kurviger.",
+        "Garmin ierīcēm tajā ir arī maršruts: pieturas ir via punkti, bet caurbraucamie punkti – shaping points, lai navigācija brauc tur, kur tu tos noliki. Der OsmAnd, Garmin, DMD2, Locus, Kurviger.",
       ],
       note: "Noteicošā ir trase. Ja ierīce maršrutu pārrēķina pati, tā var izvēlēties citus ceļus.",
       alt: ["Shēma: GPX trase ar startu, numurētām pieturām (via punkti) un maziem baltiem caurbraucamiem punktiem (shaping points)."],
@@ -252,8 +252,8 @@ const lv: ProductCopy = {
     outBack: "Turp un atpakaļ pa to pašu ceļu",
     loop: "Aplis pa citiem ceļiem",
     track: "Trase",
-    via: "Pietura — via punkts",
-    shaping: "Caurbraucams punkts — shaping point",
+    via: "Pietura – via punkts",
+    shaping: "Caurbraucams punkts – shaping point",
     tetCountries: "valstis TET slānī",
     placeCountries: "valstis ar vietām un vārtiem",
     routing: "maršrutēšana",
@@ -301,7 +301,7 @@ const lv: ProductCopy = {
       },
       {
         q: "Cik garu braucienu var uzzīmēt?",
-        a: "Dienas braucienus droši. Ļoti gari braucieni (ap 1000 km) vēl neģenerējas — Mopik to pasaka pirms meklēšanas.",
+        a: "Dienas braucienus droši. Ļoti gari braucieni (ap 1000 km) vēl neģenerējas – Mopik to pasaka pirms meklēšanas.",
       },
     ],
   },
@@ -311,17 +311,17 @@ const lv: ProductCopy = {
 
 const lt: ProductCopy = {
   meta: {
-    title: "Ką moka Mopik — adventure moto maršrutai žvyro ir miško keliais",
+    title: "Ką moka Mopik – adventure moto maršrutai žvyro ir miško keliais",
     description:
       "Mopik nubraižo adventure ir enduro maršrutą iš vieno sakinio: ratas arba į vieną pusę, sąžiningas laikas pagal dangą, miško keliai ir TET, vartai žemėlapyje, taisymas žemėlapyje ir GPX Garmin navigacijai. Nemokamai, be paskyros.",
   },
-  header: { home: "Mopik — į pradžią", languages: "Kalba", cta: "Susikurk maršrutą" },
+  header: { home: "Mopik – į pradžią", languages: "Kalba", cta: "Susikurk maršrutą" },
   hero: {
     eyebrow: "Ką moka Mopik",
     title: "Adventure moto maršrutai žvyro ir miško keliais",
     tagline: "Mažiau planavimo. Daugiau važiavimo.",
     lead:
-      "Pasakyk, iš kur, į kur — arba „man vis tiek“ — ir kiek laiko. Mopik nubraižo tikrą maršrutą tikrais keliais, parodo, kiek jame žvyro, kiek laiko ir kiek kelio kartojasi, ir duoda GPX tavo navigacijai. Visoje Europoje, nemokamai ir be paskyros.",
+      "Pasakyk, iš kur, į kur – arba „man vis tiek“ – ir kiek laiko. Mopik nubraižo tikrą maršrutą tikrais keliais, parodo, kiek jame žvyro, kiek laiko ir kiek kelio kartojasi, ir duoda GPX tavo navigacijai. Visoje Europoje, nemokamai ir be paskyros.",
     cta: "Susikurk maršrutą",
     alt: "Tikras Mopik maršrutas žemėlapyje: oranžinė linija iš Kuldygos į rytus Kuržemės kaimo ir miško keliais.",
     credit: "Žemėlapis: © OpenStreetMap",
@@ -344,7 +344,7 @@ const lt: ProductCopy = {
       eyebrow: "Profilis",
       title: "Sunkumas, stilius ir danga",
       body: [
-        "Profilis — tai trys klausimai. Sunkumas: Lengva — be prakaito, Vidutiniškai — su purvu, Sunku — visiškai atšiauru. Stilius: Turizmas (įtraukti lankytinas vietas) arba Sportas (važiuoti be sustojimo). Danga: Tik asfaltas, Tinka ir žvyras arba Miškai.",
+        "Profilis – tai trys klausimai. Sunkumas: Lengva – be prakaito, Vidutiniškai – su purvu, Sunku – visiškai atšiauru. Stilius: Turizmas (įtraukti lankytinas vietas) arba Sportas (važiuoti be sustojimo). Danga: Tik asfaltas, Tinka ir žvyras arba Miškai.",
         "Arba rinkis paruoštą: Asfalto turistas, Žvyro turistas arba Adventure. Profilis lieka įsimintas šiame įrenginyje.",
       ],
       points: [
@@ -357,8 +357,8 @@ const lt: ProductCopy = {
       eyebrow: "Maršruto tipas",
       title: "Ratas arba į vieną pusę",
       body: [
-        "„Į vieną pusę“ veda iš A į B su sustojimais pakeliui. „Pirmyn ir atgal“ grįžta į pradžią — kitais keliais, kiek leidžia vietovė.",
-        "Finišas neprivalomas: „Neprivaloma — man vis tiek“, ir Mopik sugalvos pats. Trukmė gali būti laisva arba ribota.",
+        "„Į vieną pusę“ veda iš A į B su sustojimais pakeliui. „Pirmyn ir atgal“ grįžta į pradžią – kitais keliais, kiek leidžia vietovė.",
+        "Finišas neprivalomas: „Neprivaloma – man vis tiek“, ir Mopik sugalvos pats. Trukmė gali būti laisva arba ribota.",
       ],
       alt: ["Mopik forma su pasirinkimu „į vieną pusę“ arba „pirmyn ir atgal“ ir laukais Iš ir Į (sąsaja latviškai)."],
     },
@@ -367,7 +367,7 @@ const lt: ProductCopy = {
       title: "Sąžiningas laikas pagal dangą",
       body: [
         "60 km miško keliais nėra 60 km asfaltu. Mopik skaičiuoja važiavimo laiką pagal kiekvieno ruožo dangą ir kelio tipą, o ne pagal žemėlapio vidutinį greitį.",
-        "Jei prašei 2 valandų, o geras maršrutas į jas netelpa, Mopik pasako tai skaičiais — „Prašyta ~2 h, ši versija yra 2 h 47 min.“ — ir pasiūlo artimiausią variantą. Niekas nepakeičiama tyliai.",
+        "Jei prašei 2 valandų, o geras maršrutas į jas netelpa, Mopik pasako tai skaičiais – „Prašyta ~2 h, ši versija yra 2 h 47 min.“ – ir pasiūlo artimiausią variantą. Niekas nepakeičiama tyliai.",
       ],
       note: "Tai važiavimo laikas: pertraukos, degalų pylimas ir oras į jį neįskaičiuoti.",
       alt: ["Mopik maršruto kortelė: 100 km, 2 h 49 min, 91 % žvyro, 0 % pasikartojančių kelių."],
@@ -377,12 +377,12 @@ const lt: ProductCopy = {
       title: "Tikri miško keliai ir TET",
       body: [
         "Mopik planuoja OpenStreetMap keliais su savo motociklo profiliu: kiekvienas kelio tipas ir danga turi savo kainą. Todėl „Miškai“ iš tiesų veda miško keliais ir takais, o ne tik žvyrkeliu pro mišką.",
-        "Žemėlapyje spalva yra danga — asfaltas, žvyras, žemė ir smėlis, nežinoma, — o linijos raštas yra kelio tipas: kelias, miško kelias, takelis. Trans Euro Trail sluoksnis apima 33 šalis, o rezultatas parodo, kiek maždaug kilometrų maršrutas eina TET.",
+        "Žemėlapyje spalva yra danga – asfaltas, žvyras, žemė ir smėlis, nežinoma, – o linijos raštas yra kelio tipas: kelias, miško kelias, takelis. Trans Euro Trail sluoksnis apima 33 šalis, o rezultatas parodo, kiek maždaug kilometrų maršrutas eina TET.",
       ],
       note: "Paplūdimių ir kopų takais bei OSM aiškiai uždraustais keliais Mopik neveda.",
       alt: [
         "Maršrutas žemėlapyje, nuspalvintas pagal dangą: oranžinė žvyras, tamsiai oranžinė žemė, mėlyna asfaltas, pilka nežinoma; brūkšniuoti miško keliai.",
-        "Mopik žemėlapis su ruožo kortele „žvyro miško kelias · 5,8 km — TET“ ir legenda.",
+        "Mopik žemėlapis su ruožo kortele „žvyro miško kelias · 5,8 km – TET“ ir legenda.",
       ],
     },
     repeat: {
@@ -390,7 +390,7 @@ const lt: ProductCopy = {
       title: "Nevažiuoti tais pačiais keliais",
       body: [
         "Gero rato matas yra ne graži forma, o tai, kiek kelio važiuotum dukart. Mopik tai matuoja pagal linijos geometriją ir kiekviename rezultate parodo: „Kartojasi: x %“.",
-        "Ilgis gali svyruoti, pasikartojimas — kiek įmanoma ne. Jei švaraus rato šioje vietovėje rasti nepavyksta, Mopik tai pasako ir pasiūlo variantų su skaičiais.",
+        "Ilgis gali svyruoti, pasikartojimas – kiek įmanoma ne. Jei švaraus rato šioje vietovėje rasti nepavyksta, Mopik tai pasako ir pasiūlo variantų su skaičiais.",
       ],
       alt: ["Schema: kairėje važiavimas pirmyn ir atgal tuo pačiu keliu, dešinėje ratas, grįžtantis kitais keliais."],
     },
@@ -398,8 +398,8 @@ const lt: ProductCopy = {
       eyebrow: "Pakeliui",
       title: "Lankytina vieta nėra sustojimas",
       body: [
-        "Sustojimas yra vieta, į kurią maršrutas turi nuvesti, — ją įrašai tu. Lankytinos vietos yra tai, ką Mopik randa pakeliui: piliakalniai, apžvalgos bokštai, dvarai, brastos.",
-        "Prie kiekvienos matai, kiek ji kainuoja — „+km · +min“, pirmyn ir atgal arba ratu. Pažymėk, ir užsukimas iš karto yra maršrute, be naujos paieškos.",
+        "Sustojimas yra vieta, į kurią maršrutas turi nuvesti, – ją įrašai tu. Lankytinos vietos yra tai, ką Mopik randa pakeliui: piliakalniai, apžvalgos bokštai, dvarai, brastos.",
+        "Prie kiekvienos matai, kiek ji kainuoja – „+km · +min“, pirmyn ir atgal arba ratu. Pažymėk, ir užsukimas iš karto yra maršrute, be naujos paieškos.",
       ],
       note: "Vietų duomenys kol kas yra Latvijoje, Lietuvoje, Estijoje, Lenkijoje, Austrijoje, Šveicarijoje, Slovėnijoje ir Italijoje.",
       alt: ["Mopik lankytinų vietų sąrašas su papildomais kilometrais ir minutėmis prie kiekvienos vietos (sąsaja latviškai)."],
@@ -409,7 +409,7 @@ const lt: ProductCopy = {
       title: "Vartai žemėlapyje su OSM faktais",
       body: [
         "Jei ant paties važiuojamo kelio OpenStreetMap duomenyse yra vartai, užtvaras ar grandinė, Mopik pažymi tai žemėlapyje būtent toje vietoje.",
-        "Paliesk, ir kortelė pasako, kas tai („Vartai“, „Pakeliamas užtvaras“, „Grandinė“…), koks privažiavimas pažymėtas OSM — jei pažymėtas, — kiek kilometrų nuo starto, ir duoda nuorodą į patį tašką OpenStreetMap.",
+        "Paliesk, ir kortelė pasako, kas tai („Vartai“, „Pakeliamas užtvaras“, „Grandinė“…), koks privažiavimas pažymėtas OSM – jei pažymėtas, – kiek kilometrų nuo starto, ir duoda nuorodą į patį tašką OpenStreetMap.",
       ],
       note: "Mes nespėliojame: skaičiuojame tik vartus ant paties kelio, ne „kažkur netoliese“, ir dėl jų maršruto nekeičiame. Ar vartai atviri ir ar kelias privatus, Mopik netikrina.",
       alt: ["Mopik žemėlapis su vartų kortele: pakeliamas užtvaras, 43,0 km nuo starto, nuoroda į OSM (sąsaja latviškai)."],
@@ -423,7 +423,7 @@ const lt: ProductCopy = {
       points: [
         "Sustojimas arba pravažiavimo taškas. Sustojimas sunumeruotas, turi savo eilutę sąraše ir tašką GPX. Pravažiavimo taškas tik nurodo, kur važiuoti. „Paversti pravažiavimo tašku“ ir „Paversti sustojimu“ perjungia abiem kryptimis.",
         "Peržiūra prieš patvirtinant: naujas ruožas atsiranda žemėlapyje, o eilutė „54,9 → 56,7 km · +4 min · kartojasi 0 → 1 %“ pasako, ką pakeitimas kainuoja. ✓ patvirtina, ✕ atmeta.",
-        "Perbraižomas tik ruožas aplink pakeitimą. Nepatinka — „Atšaukti“.",
+        "Perbraižomas tik ruožas aplink pakeitimą. Nepatinka – „Atšaukti“.",
       ],
       alt: [
         "Mopik taško meniu su eilutėmis Perkelti, Paversti pravažiavimo tašku ir Pašalinti (sąsaja latviškai).",
@@ -447,7 +447,7 @@ const lt: ProductCopy = {
       title: "GPX Garmin ir kitoms navigacijoms",
       body: [
         "GPX faile yra visas trekas tiksliai toks, kokį nubraižė Mopik, ir taškai: startas, finišas, sunumeruoti sustojimai ir pasirinktos lankytinos vietos.",
-        "Garmin įrenginiams jame yra ir maršrutas: sustojimai yra via taškai, o pravažiavimo taškai — shaping points, kad navigacija važiuotų ten, kur juos padėjai. Tinka OsmAnd, Garmin, DMD2, Locus, Kurviger.",
+        "Garmin įrenginiams jame yra ir maršrutas: sustojimai yra via taškai, o pravažiavimo taškai – shaping points, kad navigacija važiuotų ten, kur juos padėjai. Tinka OsmAnd, Garmin, DMD2, Locus, Kurviger.",
       ],
       note: "Lemia trekas. Jei įrenginys maršrutą perskaičiuoja pats, jis gali pasirinkti kitus kelius.",
       alt: ["Schema: GPX trekas su startu, sunumeruotais sustojimais (via taškai) ir mažais baltais pravažiavimo taškais (shaping points)."],
@@ -475,8 +475,8 @@ const lt: ProductCopy = {
     outBack: "Pirmyn ir atgal tuo pačiu keliu",
     loop: "Ratas kitais keliais",
     track: "Trekas",
-    via: "Sustojimas — via taškas",
-    shaping: "Pravažiavimo taškas — shaping point",
+    via: "Sustojimas – via taškas",
+    shaping: "Pravažiavimo taškas – shaping point",
     tetCountries: "šalys TET sluoksnyje",
     placeCountries: "šalys su vietomis ir vartais",
     routing: "maršrutai",
@@ -516,7 +516,7 @@ const lt: ProductCopy = {
       },
       {
         q: "Ar GPX tinka Garmin?",
-        a: "Taip. GPX yra trekas, taškai ir Garmin maršrutas, kuriame sustojimai yra via taškai, o pravažiavimo taškai — shaping points. Tinka ir OsmAnd, DMD2, Locus bei Kurviger.",
+        a: "Taip. GPX yra trekas, taškai ir Garmin maršrutas, kuriame sustojimai yra via taškai, o pravažiavimo taškai – shaping points. Tinka ir OsmAnd, DMD2, Locus bei Kurviger.",
       },
       {
         q: "Ar Mopik žino, kur privatūs keliai?",
@@ -524,7 +524,7 @@ const lt: ProductCopy = {
       },
       {
         q: "Kokio ilgio maršrutą galima nubraižyti?",
-        a: "Dienos maršrutus — drąsiai. Labai ilgi maršrutai (apie 1000 km) dar negeneruojami — Mopik tai pasako prieš paiešką.",
+        a: "Dienos maršrutus – drąsiai. Labai ilgi maršrutai (apie 1000 km) dar negeneruojami – Mopik tai pasako prieš paiešką.",
       },
     ],
   },
@@ -534,17 +534,17 @@ const lt: ProductCopy = {
 
 const et: ProductCopy = {
   meta: {
-    title: "Mida Mopik oskab — adventure-mootorrattamarsruudid kruusa- ja metsateedel",
+    title: "Mida Mopik oskab – adventure-mootorrattamarsruudid kruusa- ja metsateedel",
     description:
       "Mopik joonistab adventure- ja enduromarsruudi ühest lausest: ring või ühes suunas, aus aeg katte järgi, metsateed ja TET, väravad kaardil, muutmine kaardil ja GPX Garmini navigatsioonile. Tasuta, ilma kontota.",
   },
-  header: { home: "Mopik — avalehele", languages: "Keel", cta: "Loo sõit" },
+  header: { home: "Mopik – avalehele", languages: "Keel", cta: "Loo sõit" },
   hero: {
     eyebrow: "Mida Mopik oskab",
     title: "Adventure-mootorrattamarsruudid kruusa- ja metsateedel",
     tagline: "Vähem planeerimist. Rohkem sõitmist.",
     lead:
-      "Ütle, kust, kuhu — või „ükskõik“ — ja kui kauaks. Mopik joonistab päris sõidu päris teedel, näitab, kui palju on kruusa, kui kaua see võtab ja kui palju teed kordub, ning annab GPX-i sinu navigatsioonile. Üle Euroopa, tasuta ja ilma kontota.",
+      "Ütle, kust, kuhu – või „ükskõik“ – ja kui kauaks. Mopik joonistab päris sõidu päris teedel, näitab, kui palju on kruusa, kui kaua see võtab ja kui palju teed kordub, ning annab GPX-i sinu navigatsioonile. Üle Euroopa, tasuta ja ilma kontota.",
     cta: "Loo sõit",
     alt: "Päris Mopiku sõit kaardil: oranž joon Kuldīgast itta mööda Kurzeme maa- ja metsateid.",
     credit: "Kaart: © OpenStreetMap",
@@ -567,7 +567,7 @@ const et: ProductCopy = {
       eyebrow: "Profiil",
       title: "Raskus, stiil ja kate",
       body: [
-        "Profiil on kolm küsimust. Raskus: Kerge — higistamata, Keskmine — määrdumisega, Raske — päris karm. Stiil: Turism (kaasa vaatamisväärsused) või Sport (sõita non-stop). Kate: Ainult asfalt, Sobib ka kruus või Metsad.",
+        "Profiil on kolm küsimust. Raskus: Kerge – higistamata, Keskmine – määrdumisega, Raske – päris karm. Stiil: Turism (kaasa vaatamisväärsused) või Sport (sõita non-stop). Kate: Ainult asfalt, Sobib ka kruus või Metsad.",
         "Või vali valmis profiil: Asfaldi turist, Kruusa turist või Adventure. Profiil jääb sellesse seadmesse meelde.",
       ],
       points: [
@@ -580,8 +580,8 @@ const et: ProductCopy = {
       eyebrow: "Marsruudi tüüp",
       title: "Ring või ühes suunas",
       body: [
-        "„Ühes suunas“ viib A-st B-sse koos peatustega teel. „Edasi-tagasi“ naaseb algusesse — teisi teid pidi, niipalju kui piirkond lubab.",
-        "Lõpp pole kohustuslik: „Pole kohustuslik — ükskõik“, ja Mopik mõtleb ise välja. Kestus võib olla vaba või piiratud.",
+        "„Ühes suunas“ viib A-st B-sse koos peatustega teel. „Edasi-tagasi“ naaseb algusesse – teisi teid pidi, niipalju kui piirkond lubab.",
+        "Lõpp pole kohustuslik: „Pole kohustuslik – ükskõik“, ja Mopik mõtleb ise välja. Kestus võib olla vaba või piiratud.",
       ],
       alt: ["Mopiku vorm valikuga „ühes suunas“ või „edasi-tagasi“ ning väljadega Kust ja Kuhu (liides läti keeles)."],
     },
@@ -590,7 +590,7 @@ const et: ProductCopy = {
       title: "Aus aeg katte järgi",
       body: [
         "60 km metsateedel ei ole 60 km asfaldil. Mopik arvutab sõiduaja iga lõigu katte ja teetüübi järgi, mitte kaardi keskmise kiiruse järgi.",
-        "Kui soovisid 2 tundi ja hea sõit sinna ei mahu, ütleb Mopik seda numbritega — „Soovisid ~2 h, see versioon on 2 h 47 min.“ — ja pakub lähima variandi. Midagi ei asendata vaikselt.",
+        "Kui soovisid 2 tundi ja hea sõit sinna ei mahu, ütleb Mopik seda numbritega – „Soovisid ~2 h, see versioon on 2 h 47 min.“ – ja pakub lähima variandi. Midagi ei asendata vaikselt.",
       ],
       note: "See on sõiduaeg: pausid, tankimine ja ilm ei ole sellesse arvestatud.",
       alt: ["Mopiku sõidukaart: 100 km, 2 h 49 min, 91 % kruusa, 0 % korduvaid teid."],
@@ -600,12 +600,12 @@ const et: ProductCopy = {
       title: "Päris metsateed ja TET",
       body: [
         "Mopik planeerib OpenStreetMapi teedel oma mootorrattaprofiiliga: igal teetüübil ja kattel on oma hind. Seepärast viivad „Metsad“ tõesti metsateedele ja radadele, mitte ainult kruusateele metsa kõrval.",
-        "Kaardil on värv kate — asfalt, kruus, pinnas ja liiv, teadmata —, joone muster aga teetüüp: tee, metsatee, rada. Trans Euro Traili kiht katab 33 riiki ja tulemus näitab, mitu kilomeetrit sõit umbes TET-il kulgeb.",
+        "Kaardil on värv kate – asfalt, kruus, pinnas ja liiv, teadmata –, joone muster aga teetüüp: tee, metsatee, rada. Trans Euro Traili kiht katab 33 riiki ja tulemus näitab, mitu kilomeetrit sõit umbes TET-il kulgeb.",
       ],
       note: "Ranna- ja luiteradu ning OSM-is selgelt keelatud teid Mopik ei kasuta.",
       alt: [
         "Marsruut kaardil, värvitud katte järgi: oranž kruus, tumeoranž pinnas, sinine asfalt, hall teadmata; katkendjoonega metsateed.",
-        "Mopiku kaart lõigukaardiga „kruusa metsatee · 5,8 km — TET“ ja legendiga.",
+        "Mopiku kaart lõigukaardiga „kruusa metsatee · 5,8 km – TET“ ja legendiga.",
       ],
     },
     repeat: {
@@ -613,7 +613,7 @@ const et: ProductCopy = {
       title: "Mitte sõita samu teid",
       body: [
         "Hea ringi mõõt ei ole ilus kuju, vaid see, kui palju teed sõidaksid kaks korda. Mopik mõõdab seda joone geomeetria järgi ja näitab igas tulemuses: „Korduv: x %“.",
-        "Pikkus võib kõikuda, kordumine — võimalusel mitte. Kui puhast ringi selles piirkonnas ei leidu, ütleb Mopik seda ja pakub numbritega variante.",
+        "Pikkus võib kõikuda, kordumine – võimalusel mitte. Kui puhast ringi selles piirkonnas ei leidu, ütleb Mopik seda ja pakub numbritega variante.",
       ],
       alt: ["Skeem: vasakul edasi-tagasi sama teed pidi, paremal ring, mis naaseb teisi teid pidi."],
     },
@@ -621,8 +621,8 @@ const et: ProductCopy = {
       eyebrow: "Teel",
       title: "Vaatamisväärsus ei ole peatus",
       body: [
-        "Peatus on koht, kuhu sõit peab viima, — selle kirjutad sina. Vaatamisväärsused on see, mida Mopik teel leiab: linnamäed, vaatetornid, mõisad, koolmekohad.",
-        "Iga juures näed, mis see maksab — „+km · +min“, edasi-tagasi või ringiga. Märgi ära ja põige on kohe marsruudis, ilma uue otsinguta.",
+        "Peatus on koht, kuhu sõit peab viima, – selle kirjutad sina. Vaatamisväärsused on see, mida Mopik teel leiab: linnamäed, vaatetornid, mõisad, koolmekohad.",
+        "Iga juures näed, mis see maksab – „+km · +min“, edasi-tagasi või ringiga. Märgi ära ja põige on kohe marsruudis, ilma uue otsinguta.",
       ],
       note: "Kohaandmed on praegu olemas Lätis, Leedus, Eestis, Poolas, Austrias, Šveitsis, Sloveenias ja Itaalias.",
       alt: ["Mopiku vaatamisväärsuste nimekiri, iga koha juures lisakilomeetrid ja -minutid (liides läti keeles)."],
@@ -632,7 +632,7 @@ const et: ProductCopy = {
       title: "Väravad kaardil, OSM-i faktidega",
       body: [
         "Kui sõidetaval teel endal on OpenStreetMapi andmetes värav, tõkkepuu või kett, märgib Mopik selle kaardile täpselt sinna.",
-        "Puuduta ja kaart ütleb, mis see on („Värav“, „Tõkkepuu“, „Kett“…), milline juurdepääs on OSM-is märgitud — kui on —, mitu kilomeetrit see on stardist, ning annab lingi punktile OpenStreetMapis.",
+        "Puuduta ja kaart ütleb, mis see on („Värav“, „Tõkkepuu“, „Kett“…), milline juurdepääs on OSM-is märgitud – kui on –, mitu kilomeetrit see on stardist, ning annab lingi punktile OpenStreetMapis.",
       ],
       note: "Me ei arva: loeme ainult väravaid teel endal, mitte „kuskil lähedal“, ja nende pärast marsruuti ei muuda. Kas värav on lahti ja kas tee on eratee, Mopik ei kontrolli.",
       alt: ["Mopiku kaart väravakaardiga: tõkkepuu, 43,0 km stardist, link OSM-i (liides läti keeles)."],
@@ -646,7 +646,7 @@ const et: ProductCopy = {
       points: [
         "Peatus või läbisõidupunkt. Peatus on nummerdatud, sel on oma rida nimekirjas ja punkt GPX-is. Läbisõidupunkt näitab ainult, kust läbi sõita. „Muuda läbisõidupunktiks“ ja „Tee peatuseks“ vahetavad mõlemas suunas.",
         "Eelvaade enne kinnitamist: uus lõik ilmub kaardile ja rida „54,9 → 56,7 km · +4 min · korduv 0 → 1 %“ ütleb, mis muudatus maksab. ✓ kinnitab, ✕ loobub.",
-        "Ümber joonistatakse ainult lõik muudatuse ümber. Ei meeldi — „Võta tagasi“.",
+        "Ümber joonistatakse ainult lõik muudatuse ümber. Ei meeldi – „Võta tagasi“.",
       ],
       alt: [
         "Mopiku punkti menüü ridadega Liiguta, Muuda läbisõidupunktiks ja Eemalda (liides läti keeles).",
@@ -698,8 +698,8 @@ const et: ProductCopy = {
     outBack: "Edasi-tagasi sama teed",
     loop: "Ring teisi teid pidi",
     track: "Rada",
-    via: "Peatus — via-punkt",
-    shaping: "Läbisõidupunkt — shaping point",
+    via: "Peatus – via-punkt",
+    shaping: "Läbisõidupunkt – shaping point",
     tetCountries: "riiki TET-kihis",
     placeCountries: "riiki kohtade ja väravatega",
     routing: "marsruudid",
@@ -747,7 +747,7 @@ const et: ProductCopy = {
       },
       {
         q: "Kui pika sõidu saab joonistada?",
-        a: "Päevasõidud julgelt. Väga pikki sõite (umbes 1000 km) veel ei looda — Mopik ütleb seda enne otsingut.",
+        a: "Päevasõidud julgelt. Väga pikki sõite (umbes 1000 km) veel ei looda – Mopik ütleb seda enne otsingut.",
       },
     ],
   },
@@ -757,17 +757,17 @@ const et: ProductCopy = {
 
 const en: ProductCopy = {
   meta: {
-    title: "What Mopik does — adventure motorcycle routes on gravel and forest roads",
+    title: "What Mopik does – adventure motorcycle routes on gravel and forest roads",
     description:
       "Mopik plans an adventure or enduro ride from one sentence: a loop or one way, honest riding time by surface, real forest tracks and TET, gates on the map, editing on the map and a GPX for Garmin. Free, no account.",
   },
-  header: { home: "Mopik — home", languages: "Language", cta: "Plan a ride" },
+  header: { home: "Mopik – home", languages: "Language", cta: "Plan a ride" },
   hero: {
     eyebrow: "What Mopik does",
     title: "Adventure motorcycle routes on gravel and forest roads",
     tagline: "Less planning. More riding.",
     lead:
-      "Say where from, where to — or “anywhere” — and for how long. Mopik draws a real ride on real roads, shows how much of it is gravel, how long it takes and how much road repeats, and hands you a GPX for your navigator. Across Europe, free and without an account.",
+      "Say where from, where to – or “anywhere” – and for how long. Mopik draws a real ride on real roads, shows how much of it is gravel, how long it takes and how much road repeats, and hands you a GPX for your navigator. Across Europe, free and without an account.",
     cta: "Plan a ride",
     alt: "A real Mopik ride on the map: an orange line from Kuldīga eastwards along Kurzeme's country and forest roads.",
     credit: "Map: © OpenStreetMap",
@@ -790,7 +790,7 @@ const en: ProductCopy = {
       eyebrow: "Profile",
       title: "Difficulty, style and surface",
       body: [
-        "A profile is three questions. Difficulty: Easy — no sweat, Medium — some mud, Hard — properly rough. Style: Tourism (include sights) or Sport (ride non-stop). Surface: Asphalt only, Gravel is fine or Forest.",
+        "A profile is three questions. Difficulty: Easy – no sweat, Medium – some mud, Hard – properly rough. Style: Tourism (include sights) or Sport (ride non-stop). Surface: Asphalt only, Gravel is fine or Forest.",
         "Or pick a ready one: Asphalt tourer, Gravel tourer or Adventure. The profile is remembered on this device.",
       ],
       points: [
@@ -803,8 +803,8 @@ const en: ProductCopy = {
       eyebrow: "Trip type",
       title: "A loop or one way",
       body: [
-        "“One way” takes you from A to B with stops along the way. “Round trip” comes back to the start — by other roads, as far as the area allows.",
-        "The finish is optional: “Optional — anywhere”, and Mopik picks one. The time can be flexible or limited.",
+        "“One way” takes you from A to B with stops along the way. “Round trip” comes back to the start – by other roads, as far as the area allows.",
+        "The finish is optional: “Optional – anywhere”, and Mopik picks one. The time can be flexible or limited.",
       ],
       alt: ["The Mopik form with the choice of one way or round trip and the From and To fields (interface in Latvian)."],
     },
@@ -813,7 +813,7 @@ const en: ProductCopy = {
       title: "Honest time, by surface",
       body: [
         "60 km of forest tracks is not 60 km of asphalt. Mopik works out riding time from each stretch's surface and road type, not from a map's average speed.",
-        "If you asked for 2 hours and a good ride does not fit, Mopik says so in numbers — “You asked for ~2 h, this version is 2 h 47 min.” — and offers the nearest option. Nothing is swapped quietly.",
+        "If you asked for 2 hours and a good ride does not fit, Mopik says so in numbers – “You asked for ~2 h, this version is 2 h 47 min.” – and offers the nearest option. Nothing is swapped quietly.",
       ],
       note: "It is riding time: breaks, fuel stops and weather are not included.",
       alt: ["A Mopik ride card: 100 km, 2 h 49 min, 91 % gravel, 0 % retraced road."],
@@ -823,12 +823,12 @@ const en: ProductCopy = {
       title: "Real forest tracks and TET",
       body: [
         "Mopik routes on OpenStreetMap roads with its own motorcycle profile: every road type and surface has its own cost. So “Forest” really takes forest tracks and trails, not just a gravel road past the trees.",
-        "On the map, colour is the surface — asphalt, gravel, dirt and sand, unknown — and the line pattern is the road type: road, forest track, trail. The Trans Euro Trail layer covers 33 countries, and the result shows roughly how many kilometres of the ride follow TET.",
+        "On the map, colour is the surface – asphalt, gravel, dirt and sand, unknown – and the line pattern is the road type: road, forest track, trail. The Trans Euro Trail layer covers 33 countries, and the result shows roughly how many kilometres of the ride follow TET.",
       ],
       note: "Mopik never uses beach and dune paths, or roads OSM clearly forbids.",
       alt: [
         "A route on the map coloured by surface: orange gravel, dark orange dirt, blue asphalt, grey unknown; dashed forest tracks.",
-        "The Mopik map with a stretch card “gravel forest track · 5.8 km — on TET” and the legend.",
+        "The Mopik map with a stretch card “gravel forest track · 5.8 km – on TET” and the legend.",
       ],
     },
     repeat: {
@@ -844,8 +844,8 @@ const en: ProductCopy = {
       eyebrow: "Along the way",
       title: "A sight is not a stop",
       body: [
-        "A stop is a place the ride must take you to — you type it. Sights are what Mopik finds along the way: hillforts, viewing towers, manors, fords.",
-        "Each shows what it costs — “+km · +min”, out and back or as a loop. Tick it and the detour is in the ride at once, with no new search.",
+        "A stop is a place the ride must take you to – you type it. Sights are what Mopik finds along the way: hillforts, viewing towers, manors, fords.",
+        "Each shows what it costs – “+km · +min”, out and back or as a loop. Tick it and the detour is in the ride at once, with no new search.",
       ],
       note: "Place data is available for Latvia, Lithuania, Estonia, Poland, Austria, Switzerland, Slovenia and Italy so far.",
       alt: ["The Mopik sights list, with extra kilometres and minutes next to each place (interface in Latvian)."],
@@ -855,7 +855,7 @@ const en: ProductCopy = {
       title: "Gates on the map, with their OSM facts",
       body: [
         "When OpenStreetMap has a gate, a boom barrier or a chain on the road you actually ride, Mopik marks it on the map at exactly that spot.",
-        "Tap it and the card says what it is (“Gate”, “Boom barrier”, “Chain”…), what access OSM tags — if any —, how many kilometres from the start it stands, and links to the node on OpenStreetMap.",
+        "Tap it and the card says what it is (“Gate”, “Boom barrier”, “Chain”…), what access OSM tags – if any –, how many kilometres from the start it stands, and links to the node on OpenStreetMap.",
       ],
       note: "No guessing: we count only gates on the road itself, never “somewhere nearby”, and the route is not changed because of them. Whether a gate is open or a road is private, Mopik does not check.",
       alt: ["The Mopik map with a gate card: boom barrier, 43.0 km from the start, a link to OSM (interface in Latvian)."],
@@ -869,7 +869,7 @@ const en: ProductCopy = {
       points: [
         "Stop or pass-through point. A stop is numbered, has its own row in the list and a point in the GPX. A pass-through point only says which way to go. “Make pass-through” and “Make it a stop” switch both ways.",
         "A preview before you confirm: the new stretch appears on the map, and a line such as “54.9 → 56.7 km · +4 min · retraced 0 → 1 %” says what the change costs. ✓ confirms, ✕ discards.",
-        "Only the stretch around the change is re-routed. Don't like it — “Undo”.",
+        "Only the stretch around the change is re-routed. Don't like it – “Undo”.",
       ],
       alt: [
         "The Mopik point menu with Move, Make pass-through and Remove (interface in Latvian).",
@@ -921,8 +921,8 @@ const en: ProductCopy = {
     outBack: "Out and back on the same road",
     loop: "A loop on other roads",
     track: "Track",
-    via: "Stop — via point",
-    shaping: "Pass-through point — shaping point",
+    via: "Stop – via point",
+    shaping: "Pass-through point – shaping point",
     tetCountries: "countries in the TET layer",
     placeCountries: "countries with places and gates",
     routing: "routing",
@@ -970,7 +970,7 @@ const en: ProductCopy = {
       },
       {
         q: "How long a ride can Mopik plan?",
-        a: "Day rides, comfortably. Very long rides (around 1000 km) do not generate yet — Mopik says so before the search.",
+        a: "Day rides, comfortably. Very long rides (around 1000 km) do not generate yet – Mopik says so before the search.",
       },
     ],
   },

@@ -118,6 +118,12 @@ test("the copy keeps the rider's rules", () => {
   const all = JSON.stringify(PRODUCT_COPY);
   assert.ok(!/piesit/i.test(all), "Latvian never says „piesit”");
   assert.ok(!/\b(alus|aliņ\w*|beer|cigaret\w*|tabak\w*|tobacco|alcohol|alkohol\w*)\b/i.test(all), "nothing about alcohol or tobacco");
+  // The rider's typography for this page: en dash with spaces („ – ”), never an em dash.
+  assert.ok(!all.includes("—"), "the product copy has no em dash");
+  for (const locale of UI_LOCALES) {
+    const m = productMetadata(locale);
+    assert.ok(!JSON.stringify([m.title, m.description, productJsonLd(locale)]).includes("—"), `${locale} metadata and JSON-LD have no em dash`);
+  }
   const lv = JSON.stringify(PRODUCT_COPY.lv);
   // No straight or English quotes inside the Latvian text (JSON escapes a straight one as \").
   assert.ok(!/“|\\"/.test(lv), "Latvian quotes are „ ”");
