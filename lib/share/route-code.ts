@@ -99,7 +99,13 @@ export function simplifyIndices(points: Pt[], toleranceM: number): number[] {
 
 export type ShareMeta = {
   n: string; va: string; km: number; min: number; up: number; rep: number; s: string;
-  /** class dictionary: "roadClass|surface" */
+  /**
+   * class dictionary: "roadClass|surface", or "roadClass|surface|o" for a
+   * stretch ridden outside the rider's profile on his say-so
+   * (`outsideProfile`, „Tomēr braukt”). The flag is written only where it is
+   * true, so a ride without one encodes exactly as before and every older
+   * code decodes as it always did.
+   */
   d: string[];
   /** road / track / trail km */
   rm?: [number, number, number];
@@ -160,7 +166,7 @@ export type SharedRoute = {
   startLabel: string;
   points: Pt[];
   /** class of the stretch starting at point i (length points.length - 1) */
-  classes: { roadClass: RoadClass; surface: SurfaceClass }[];
+  classes: { roadClass: RoadClass; surface: SurfaceClass; outsideProfile?: true }[];
   plan: RidePlan | null;
   /**
    * The language of the rider who made this ride, when the code carries one
@@ -192,7 +198,7 @@ function classAtOriginalIndex(route: GeneratedRoute): string[] {
   let cursor = 0;
   for (const f of route.segments.features) {
     const n = f.geometry.coordinates.length;
-    const key = `${f.properties.roadClass}|${f.properties.surface}`;
+    const key = `${f.properties.roadClass}|${f.properties.surface}${f.properties.outsideProfile ? "|o" : ""}`;
     for (let i = cursor; i < Math.min(out.length, cursor + n); i++) out[i] = key;
     cursor += Math.max(1, n - 1);
   }
@@ -296,8 +302,9 @@ export function decodeRouteShare(code: string): SharedRoute | null {
     const runs = decodeVarints(parts[3]);
     const classes: SharedRoute["classes"] = [];
     for (let i = 0; i + 1 < runs.length; i += 2) {
-      const [rc, sf] = (meta.d[runs[i]] ?? "road|unknown").split("|");
-      for (let k = 0; k < runs[i + 1]; k++) classes.push({ roadClass: rc as RoadClass, surface: sf as SurfaceClass });
+      const [rc, sf, flag] = (meta.d[runs[i]] ?? "road|unknown").split("|");
+      const cls = { roadClass: rc as RoadClass, surface: sf as SurfaceClass, ...(flag === "o" ? { outsideProfile: true as const } : {}) };
+      for (let k = 0; k < runs[i + 1]; k++) classes.push(cls);
     }
     while (classes.length < points.length - 1) classes.push({ roadClass: "road", surface: "unknown" });
     const plan = parts[4] ? decodePlanShare(parts[4]) : null;
@@ -332,7 +339,7 @@ export function sharedRouteSegments(share: SharedRoute): GeoJSON.FeatureCollecti
   while (i < share.points.length - 1) {
     const cls = share.classes[i];
     let j = i;
-    while (j < share.points.length - 1 && share.classes[j].roadClass === cls.roadClass && share.classes[j].surface === cls.surface) j++;
+    while (j < share.points.length - 1 && share.classes[j].roadClass === cls.roadClass && share.classes[j].surface === cls.surface && Boolean(share.classes[j].outsideProfile) === Boolean(cls.outsideProfile)) j++;
     const coords = share.points.slice(i, j + 1);
     let meters = 0;
     for (let k = 1; k < coords.length; k++) {
@@ -340,7 +347,7 @@ export function sharedRouteSegments(share: SharedRoute): GeoJSON.FeatureCollecti
       const dLon = (coords[k][0] - coords[k - 1][0]) * 111320 * Math.cos((coords[k][1] * Math.PI) / 180);
       meters += Math.hypot(dLat, dLon);
     }
-    features.push({ type: "Feature", geometry: { type: "LineString", coordinates: coords }, properties: { roadClass: cls.roadClass, surface: cls.surface, distanceMeters: Math.round(meters) } });
+    features.push({ type: "Feature", geometry: { type: "LineString", coordinates: coords }, properties: { roadClass: cls.roadClass, surface: cls.surface, distanceMeters: Math.round(meters), ...(cls.outsideProfile ? { outsideProfile: true } : {}) } });
     i = j;
   }
   return { type: "FeatureCollection", features };
