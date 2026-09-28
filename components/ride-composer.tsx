@@ -2013,15 +2013,20 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   const proposedRef = useRef("");
   const proposedChangeRef = useRef(proposedChange);
   useEffect(() => { proposedChangeRef.current = proposedChange; });
+  // A pin dragged again, or marked again, is named before its change exists:
+  // meanwhile nothing is said — not a null that would discard the proposal
+  // on screen only to route the next one a moment later (the page debounces
+  // a stream of drags; a discard between each would break the stream up).
+  const holdPropose = naming && activeRow !== null && !batch.length && !shapePending;
   useEffect(() => {
     const propose = proposeRef.current;
-    if (!propose || proposeKey === proposedRef.current) return;
+    if (!propose || holdPropose || proposeKey === proposedRef.current) return;
     const had = proposedRef.current !== "";
     proposedRef.current = proposeKey;
     if (proposeKey) { committedRef.current = false; propose(proposedChangeRef.current); return; }
     if (committedRef.current) { committedRef.current = false; return; }
     if (had) propose(null);
-  }, [proposeKey]);
+  }, [proposeKey, holdPropose]);
   /**
    * The page's answer for the pending change: ✓ spins while it routes
    * (`confirmBusy`) and stays pressable — a press then confirms it when it
