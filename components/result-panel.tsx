@@ -14,6 +14,7 @@ import type { ResolvedPlace } from "@/lib/chat/places";
 import { isSaved, saveRide, unsaveRide } from "@/lib/share/saved-rides";
 import { gpxFilename } from "@/lib/gpx/filename";
 import { rideWaypoints } from "@/lib/gpx/waypoints";
+import { rideRoutePoints } from "@/lib/gpx/route-points";
 import { DetailsCard, RouteActionRow } from "@/components/action-row";
 import { type RoutePoi, type RoutePois } from "@/lib/poi/kinds";
 import { SuggestionsCard, type DetourFocusNote, type SelectedPoi } from "@/components/suggestions-card";
@@ -441,7 +442,7 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
       const res = await fetch("/api/export-gpx", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: route.name, coordinates, description: gpxDescription(), places: ridePlaces(), km: shownDistanceMeters / 1000, waypoints: gpxWaypoints() }),
+        body: JSON.stringify({ name: route.name, coordinates, description: gpxDescription(), places: ridePlaces(), km: shownDistanceMeters / 1000, waypoints: gpxWaypoints(), routePoints: gpxRoutePoints(coordinates) }),
       });
       if (!res.ok) return;
       const blob = await res.blob();
@@ -543,13 +544,14 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
    * the file either, and a pin for a place the track does not visit is the
    * one thing worse than no pin.
    */
-  const gpxWaypoints = () => {
-    const places = resolvedPlaces ?? [];
+  const tickedSights = () => {
     const byId = new Map(selectedPois.map((p) => [p.id, p]));
-    const sights = (spliced?.applied ?? [])
+    return (spliced?.applied ?? [])
       .map((d) => byId.get(d.poiId))
       .filter((p): p is SelectedPoi => Boolean(p))
       .map((p) => ({ name: p.name, lat: p.lat, lon: p.lon, kind: p.category }));
+  };
+  const rideIsLoop = () => {
     // A round trip has no finish of its own, so the last resolved place is an
     // ordinary stop rather than a red flag. `plan.returnToStart` is nullable
     // and only `true` is a loop (CLAUDE.md) — an unanswered plan must not be
@@ -561,13 +563,34 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
     const last = line[line.length - 1];
     const closed = Boolean(first && last)
       && Math.hypot((last[0] - first[0]) * Math.cos((first[1] * Math.PI) / 180), last[1] - first[1]) * 111_320 < 100;
-    const loop = plan?.returnToStart === true || (plan?.returnToStart !== false && closed);
+    return plan?.returnToStart === true || (plan?.returnToStart !== false && closed);
+  };
+  const gpxWaypoints = () => {
+    const places = resolvedPlaces ?? [];
+    const sights = tickedSights();
+    const loop = rideIsLoop();
     // The sights sit between the last stop and the finish: they are places on
     // the way, not the end of the ride.
     const end = !loop && places.length >= 2 ? places.slice(-1) : [];
     const middle = end.length ? places.slice(0, -1) : places;
     return rideWaypoints({ places: [...middle, ...sights, ...end], returnToStart: loop, locale });
   };
+
+  /**
+   * The ride as a Garmin route (`<rte>`): start, stops with the pass-through
+   * points slotted in where the plan says (`plan.shapePoints`, `afterPlace`),
+   * the finish — or the start again on a round trip — and the ticked sights
+   * where the exported line visits them. The plan is the edited one when the
+   * ride was edited (`planWithPlaces`), so the shapes match `resolvedPlaces`.
+   */
+  const gpxRoutePoints = (line: readonly (readonly number[])[]) => rideRoutePoints({
+    places: resolvedPlaces ?? [],
+    shapePoints: plan?.shapePoints,
+    returnToStart: rideIsLoop(),
+    locale,
+    sights: tickedSights(),
+    line,
+  });
 
   // What the file is, in one paragraph: the request, the result, the surface.
   const gpxDescription = () => {

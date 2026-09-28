@@ -22,6 +22,7 @@ import { decodePlanPlaces, encodePlanShare, sharedRouteSegments, type SharedRout
 import { isCodeSaved, removeRide, rideId, saveSharedRide } from "@/lib/share/saved-rides";
 import { gpxFilename } from "@/lib/gpx/filename";
 import { rideWaypoints } from "@/lib/gpx/waypoints";
+import { rideRoutePoints } from "@/lib/gpx/route-points";
 import { DESKTOP_QUERY } from "@/lib/use-media-query";
 import { useDetourAnalytics, useDetourPrefetch, useSplicedRoute, describeDetourForFocus } from "@/lib/routing/use-detours";
 import { useRoutePois } from "@/lib/poi/use-route-pois";
@@ -351,12 +352,15 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
    * (`destination={null}`) and the filename repeats the start label. So no red
    * flag is written, rather than one guessed onto the last stop.
    */
-  const gpxWaypoints = () => {
+  const tickedSights = () => {
     const byId = new Map(selectedPois.map((p) => [p.id, p]));
-    const sights = (spliced?.applied ?? [])
+    return (spliced?.applied ?? [])
       .map((d) => byId.get(d.poiId))
       .filter((p): p is SelectedPoi => Boolean(p))
       .map((p) => ({ name: p.name, lat: p.lat, lon: p.lon, kind: p.category }));
+  };
+  const gpxWaypoints = () => {
+    const sights = tickedSights();
     const planPlaces = planCode ? decodePlanPlaces(planCode) : [];
     /**
      * The start's *name* comes from the plan when the code carries one, not
@@ -379,6 +383,38 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
     });
   };
 
+  /**
+   * The ride as a Garmin route (`<rte>`), from `share.plan`'s pass-through
+   * points and the code's resolved places.
+   *
+   * Unlike the pins above, the route cannot simply assume a round trip: its
+   * last point is where the device navigates to, and a one-way ride sent back
+   * to its start is a wrong ride, not a missing pin. So it reads the ride the
+   * way the planner's panel does — the plan's `returnToStart` when it says,
+   * the line's own ends (within 100 m) when it does not. Without the code's
+   * `pl` (older links) it knows no stops and no finish; then only a closed
+   * line gets a route (start → pass-through points → start), and an open one
+   * gets none rather than one that ends at the wrong place.
+   */
+  const gpxRoutePoints = (line: readonly (readonly number[])[]) => {
+    const planPlaces = planCode ? decodePlanPlaces(planCode) : [];
+    const first = share.points[0];
+    const last = share.points[share.points.length - 1];
+    const closed = Boolean(first && last)
+      && Math.hypot((last[0] - first[0]) * Math.cos((first[1] * Math.PI) / 180), last[1] - first[1]) * 111_320 < 100;
+    const loop = share.plan?.returnToStart === true || (share.plan?.returnToStart !== false && closed);
+    if (!loop && planPlaces.length < 2) return undefined;
+    const startPlace = { name: planPlaces[0]?.name ?? share.startLabel, label: planPlaces[0]?.label ?? share.startLabel, lat: start.lat, lon: start.lon };
+    return rideRoutePoints({
+      places: [startPlace, ...planPlaces.slice(1)],
+      shapePoints: share.plan?.shapePoints,
+      returnToStart: loop,
+      locale,
+      sights: tickedSights(),
+      line,
+    });
+  };
+
   const downloadGpx = async () => {
     track("shared_gpx_downloaded", { km: shownKm, variant: share.variant });
     // The spliced line when sights are ticked — a real routed track, and as
@@ -387,7 +423,7 @@ export function SharedRouteView({ share, planCode, code }: { share: SharedRoute;
     // so splicing loses nothing that was there.
     const coordinates = spliced?.coordinates ?? share.points;
     const res = await fetch("/api/export-gpx", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
-      name: share.name, coordinates, km: shownKm, places: [share.startLabel], waypoints: gpxWaypoints(),
+      name: share.name, coordinates, km: shownKm, places: [share.startLabel], waypoints: gpxWaypoints(), routePoints: gpxRoutePoints(coordinates),
       description: [`${share.name} · ${shownKm} km · ${duration(shownMinutes)} · ${shownUnpaved} % ${m.resGravelPct}`,
         spliced && spliced.applied.length > 0 ? fi(m.resWithSights, { n: spliced.applied.length }) : "",
         fi(m.shGpxRepeated, { pct: share.repeatedPercent, place: share.startLabel }),
