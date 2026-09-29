@@ -1641,3 +1641,24 @@ instead of adding one, so he cannot mark a series of dots quickly along a
 line. Same concept as the stop batch: pins appear instantly, the line and
 chip follow (debounced), the field says how many are pending, ✓ commits
 all, ↶ removes the last pending dot, ✕ discards the batch.
+
+## 54. „Vest pa taisno” for a single point should not return on the same line
+
+**Rider, 2026-09-30.** For one off-road point, „Vest pa taisno” draws a
+straight line to the point and back along the SAME line („un atpakaļ pa to
+pašu līniju”). He asks whether it ever tries a different straight line to
+lead back to the route, so the same straight stretch is not ridden twice.
+The chain through several points already rejoins the road elsewhere (the
+exit goes to the nearest road point toward the next anchor). Wanted: the
+single-point version does the same when a road start exists nearby: out on
+one straight line, back on another to the road toward the next anchor,
+making a triangle instead of an out-and-back. Say in the note when it is
+still the same line (no other road end within reach).
+
+## 55. Guidance must never promise an option that is not on screen
+
+**Found 2026-09-30** (`images/45.png`): a blocked pass-through point says
+„… – pārvieto, izņem vai „Vest pa taisno”.” but only „Izņemt” is offered.
+Rule: every option a guidance line names must be an enabled chip in that
+state; add a guard test over the guidance states (in progress in the
+2026-09-30 reach release).
