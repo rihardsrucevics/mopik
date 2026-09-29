@@ -404,6 +404,45 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
     console.log(`[${tag}]   sight from the map ${((Date.now() - t) / 1000).toFixed(1)} s`);
   }
 
+  // ── 8. Three forest points in a row: „Vest pa taisno caur visiem” (Grostonas → Ērgļi, Kangaru purvs) ──
+  t = Date.now();
+  await page.route(/\/api\/places\?(?=.*\blat=)/, reverse);
+  await L.openRide(page, "grostonas-ergli");
+  {
+    const h0 = L.hash(await L.line(page)); const u0 = await L.undoEnabled(page); const r0 = await rects();
+    const CHAIN = [[24.6930, 56.9655], [24.6975, 56.9672], [24.7010, 56.9660]];
+    await L.fit(page, CHAIN.concat([[24.66, 56.94], [24.74, 56.99]]), 40);
+    await slot(1); await page.waitForTimeout(300);
+    for (const ll of CHAIN) { await tapAt(ll); await page.waitForTimeout(700); }
+    const offered = await waitUi((s) => s.groups.includes("chain"), 90000);
+    const chip = page.locator('[data-choice-group="chain"] [data-choice="chain"]');
+    rec("chain: three off-road points in a row → one „Vest pa taisno caur visiem”", offered.groups.includes("chain") && /3 punkti bez ceļa, taisni ~\d+(,\d)? km/.test(offered.chip?.text ?? "") && ((await chip.textContent().catch(() => "")) ?? "").trim() === "Vest pa taisno caur visiem", offered);
+    rec("chain: slots did not move (offer)", JSON.stringify(await rects()) === JSON.stringify(r0));
+    if (tag === "375") await page.screenshot({ path: `${process.env.CHAIN_SHOTS || L.SHOTS}/chain-straight-offer.png` });
+    if (offered.groups.includes("chain")) {
+      await chip.click();
+      const s2 = await L.waitChip(page, ["proposed", "warn"], 60000);
+      const st = await L.state(page);
+      rec("chain: the chip → a proposal with numbers and halo", ["proposed", "warn"].includes(s2.chip?.tone) && CHIP_RE.test(s2.chip.text) && st.proposalLayers.length > 0, s2.chip);
+      const notes = [((await page.locator("[data-proposal-chip]").first().evaluate((e) => (e.closest("[data-map-notice]") ?? e.parentElement ?? e).innerText).catch(() => "")) ?? ""), JSON.stringify(st.notices ?? [])].join(" ");
+      rec("chain: its note and the honesty line", /Taisni caur 3 punktiem – \d+(,\d)? km bez ceļa/.test(notes) && /Mopik nav pārbaudījis, vai tur var izbraukt un vai tas ir atļauts/.test(notes), { notes });
+      if (tag === "375") { await L.fit(page, CHAIN, 90); await page.waitForTimeout(400); await page.screenshot({ path: `${process.env.CHAIN_SHOTS || L.SHOTS}/chain-straight-proposal.png` }); }
+      const n0 = log.reroute;
+      const ok = await L.slotBtn(page, 3);
+      if (!(await ok.isDisabled())) await ok.click(); else await page.locator("button:visible", { hasText: "Tomēr braukt" }).first().click();
+      await page.waitForTimeout(900);
+      const drawn = await page.evaluate(() => { const m = window.__map; const src = m.getSource(m.getLayer("route-road").source); const d = src._data?.geojson ?? src.serialize().data; return (d.features ?? []).filter((f) => f.properties?.drawn); });
+      const through = CHAIN.every((p) => drawn.some((f) => f.geometry.coordinates.some((q) => hv(p, q) < 40)));
+      rec("chain: ✓ keeps the drawn chain through all three, no extra routing", L.hash(await L.line(page)) !== h0 && through && log.reroute === n0, { drawnFeatures: drawn.length, through, extra: log.reroute - n0 });
+      rec("chain: slots did not move (committed)", JSON.stringify(await rects()) === JSON.stringify(r0));
+      if (tag === "375") { await L.fit(page, CHAIN, 90); await page.waitForTimeout(400); await page.screenshot({ path: `${process.env.CHAIN_SHOTS || L.SHOTS}/chain-straight-committed.png` }); }
+      await slot(2); await page.waitForTimeout(800);
+      rec("chain: ↶ takes the chain back", L.hash(await L.line(page)) === h0 && (await L.undoEnabled(page)) === u0);
+    } else { await shot("fail-chain"); await slot("x"); await page.waitForTimeout(500); }
+    console.log(`[${tag}]   straight chain ${((Date.now() - t) / 1000).toFixed(1)} s`);
+  }
+  await page.unroute(/\/api\/places\?(?=.*\blat=)/, reverse);
+
   await shot("end");
   // A 422 is how /api/reroute-leg says "no road reaches it" — the refused and
   // guard cases above ask for exactly that, and Chromium logs every non-2xx load.

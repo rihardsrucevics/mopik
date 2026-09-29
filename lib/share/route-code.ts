@@ -245,6 +245,15 @@ export function encodeRouteShare(route: GeneratedRoute, startLabel: string, plan
     keep = keep.filter((_, i) => i % step === 0 || i === keep.length - 1);
   }
   const classes = classAtOriginalIndex(route);
+  // ── straight-chain ── A drawn stretch keeps its own ends: simplifying a
+  // straight connector onto the road before it would share its metres out
+  // to the road's class (a chain reopened ~300 m short of drawn). Only rides
+  // with drawn stretches gain points, so every other code stays as it was.
+  if (classes.includes("trail|unknown|d")) {
+    const ends: number[] = [];
+    for (let i = 1; i < classes.length; i++) if (classes[i] !== classes[i - 1] && (classes[i] === "trail|unknown|d" || classes[i - 1] === "trail|unknown|d")) ends.push(i);
+    keep = [...new Set([...keep, ...ends])].sort((x, y) => x - y);
+  }
   const dict: string[] = [];
   const runs: number[] = [];
   let last = -1, count = 0;

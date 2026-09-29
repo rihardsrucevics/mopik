@@ -889,6 +889,14 @@ export type MessageKey =
   | "sightNotCloser"
   | "sightShort"
   | "sightReachAct"
+  // ── straight-chain ──
+  | "chainOffer"
+  | "chainLabel"
+  | "chainWhat"
+  | "chainRisk"
+  | "chainAct"
+  | "chainNote"
+  | "chainSameEnd"
   | "sightAdded"
   | "sightAddedAct"
   | "sightRefusedAct"
@@ -1578,6 +1586,14 @@ const lv: Messages = {
   sightNotCloser: "{name} – tuvākais ceļš ~{m} m no apskates vietas; tuvāk ar motociklu netikt",
   sightShort: "{name} – ar motociklu var piebraukt līdz ~{m} m no apskates vietas, tālāk ceļa nav",
   sightReachAct: "pietura paliek pie ceļa, tālāk kājām.",
+  // ── straight-chain ──
+  chainOffer: "Vest pa taisno caur visiem",
+  chainLabel: "Kā tikt caur šiem punktiem",
+  chainWhat: "{n} punkti bez ceļa, taisni ~{km} km",
+  chainRisk: "pāri mežam vai ūdenim",
+  chainAct: "„Vest pa taisno caur visiem” vai pārvieto katru.",
+  chainNote: "Taisni caur {n} punktiem – {km} km bez ceļa: no ceļa gala līdz „{a}”, punkts pa punktam, pēc „{b}” atpakaļ uz maršrutu.",
+  chainSameEnd: "Iebrauc un izbrauc pa to pašu ceļa galu.",
   sightAdded: "{name} pievienota braucienam, {km} km",
   sightAddedAct: "ar „Labot” to var pārvietot vai izņemt.",
   sightRefusedAct: "izvēlies citu apskates vietu.",
@@ -2235,6 +2251,14 @@ const lt: Messages = {
   sightNotCloser: "{name} – artimiausias kelias ~{m} m nuo lankytinos vietos; arčiau motociklu nepavažiuosi",
   sightShort: "{name} – motociklu galima privažiuoti iki ~{m} m nuo lankytinos vietos, toliau kelio nėra",
   sightReachAct: "sustojimas lieka prie kelio, toliau pėsčiomis.",
+  // ── straight-chain ──
+  chainOffer: "Vesti tiesiai per visus",
+  chainLabel: "Kaip pasiekti šiuos taškus",
+  chainWhat: "{n} taškai be kelio, tiesiai ~{km} km",
+  chainRisk: "per mišką ar vandenį",
+  chainAct: "„Vesti tiesiai per visus“ arba perkelkite kiekvieną.",
+  chainNote: "Tiesiai per {n} taškus – {km} km be kelio: nuo kelio galo iki „{a}“, taškas po taško, po „{b}“ atgal į maršrutą.",
+  chainSameEnd: "Įvažiuojate ir išvažiuojate tuo pačiu kelio galu.",
   sightAdded: "{name} pridėta prie kelionės, {km} km",
   sightAddedAct: "su „Taisyti“ ją galima perkelti arba pašalinti.",
   sightRefusedAct: "pasirink kitą lankytiną vietą.",
@@ -2888,6 +2912,14 @@ const et: Messages = {
   sightNotCloser: "{name} – lähim tee on vaatamisväärsusest ~{m} m kaugusel; mootorrattaga lähemale ei pääse",
   sightShort: "{name} – mootorrattaga pääseb vaatamisväärsusele ~{m} m lähedale, edasi teed pole",
   sightReachAct: "peatus jääb tee äärde, edasi jalgsi.",
+  // ── straight-chain ──
+  chainOffer: "Vii otse läbi kõigi",
+  chainLabel: "Kuidas nende punktideni jõuda",
+  chainWhat: "{n} punkti teeta, otse ~{km} km",
+  chainRisk: "üle metsa või vee",
+  chainAct: "„Vii otse läbi kõigi“ või liiguta igaüht.",
+  chainNote: "Otse läbi {n} punkti – {km} km teeta: tee otsast kohani „{a}“, punkt punkti haaval, pärast „{b}“ tagasi marsruudile.",
+  chainSameEnd: "Sisse ja välja sama tee otsa kaudu.",
   sightAdded: "{name} on sõidule lisatud, {km} km",
   sightAddedAct: "„Muuda” abil saab seda liigutada või eemaldada.",
   sightRefusedAct: "vali mõni teine vaatamisväärsus.",
@@ -3539,6 +3571,14 @@ const en: Messages = {
   sightNotCloser: "{name} – the nearest road is ~{m} m from the sight; no closer by motorcycle",
   sightShort: "{name} – by motorcycle you get to ~{m} m from the sight; no road beyond",
   sightReachAct: "the stop stays by the road, walk the rest.",
+  // ── straight-chain ──
+  chainOffer: "Go straight through all",
+  chainLabel: "How to reach these points",
+  chainWhat: "{n} points off any road, ~{km} km straight",
+  chainRisk: "across forest or water",
+  chainAct: "„Go straight through all” or move each one.",
+  chainNote: "Straight through {n} points – {km} km off road: from the road's end to „{a}”, point by point, after „{b}” back to the route.",
+  chainSameEnd: "In and out by the same road end.",
   sightAdded: "{name} added to the ride, {km} km",
   sightAddedAct: "“Edit” can move or remove it.",
   sightRefusedAct: "pick another sight.",

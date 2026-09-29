@@ -134,7 +134,7 @@ test("the flow: no road on any rung → the guidance line and „Vest pa taisno�
   assert.match(page, /onStraight: straightOffered \? acceptStraight : undefined,/);
   assert.match(composer, /else if \("straight" in act\) edit\?\.onStraight\?\.\(\);/);
   // A straight proposal is an ordinary one: no „Tomēr braukt” for leaving the profile.
-  assert.match(page, /rung && outsideM > 0 && !straight \? "profile"/);
+  assert.match(page, /rung && outsideM > 0 && !straight (&& !p\.chain )?\? "profile"/);
   // Later edits: drawn stretches are fixed.
   assert.match(page, /fixed: drawnIntervals\(baseSegments\)/);
 });
