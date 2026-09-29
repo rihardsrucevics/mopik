@@ -96,7 +96,7 @@ import { markOutsideProfile, farthestFrom, detourRisk, reachOf, deadEndNoteKey }
 import { NO_CHAIN, chainCount, chainTopOf, inheritWarning, popChain, shownProposal, stackOnto, type EditChain } from "@/lib/map/edit-chain";
 import { blockingFrom, singleCause, type Blocking, type BlockingPoint, type PointProbe } from "@/lib/map/blocking";
 import { drawnIntervals, straightRun } from "@/lib/map/straight";
-import { CHAIN_OFF_M, CHAIN_RISK_M, chainEstimate, chainJoins, chainRun, insertChain, offRoadRuns } from "@/lib/map/straight-chain";
+import { CHAIN_OFF_M, CHAIN_RISK_M, chainJoins, chainMeters, chainRun, insertChain, offRoadRuns } from "@/lib/map/straight-chain";
 import { drawnMeters } from "@/lib/routing/drawn";
 import { profileAt, type RelaxDrop } from "@/lib/routing/relax";
 import { buildMotoProfileOptions } from "@/lib/routing/moto-profile";
@@ -1482,7 +1482,8 @@ export function HomePage() {
       if (!p.chain && !p.straight && p.change.kind === "rows" && asked.length >= 2) {
         const landed = l.proposal.ride.coordinates;
         const lc = cumulative(landed);
-        offerChain(token, planned.places, asked, (q) => nearestAlong(q, landed, lc).meters >= CHAIN_OFF_M, line, level);
+        const offM = (q: Point) => nearestAlong(q, landed, lc).meters;
+        offerChain(token, planned.places, asked, (q) => offM(q) >= CHAIN_OFF_M, offM, level);
       }
       track("route_edit_proposed", {
         how: planned.kind,
@@ -1869,7 +1870,8 @@ export function HomePage() {
       // ── straight-chain ── two or more in a row with no road near: one chain for them.
       if (refused && live.current?.token === token && live.current.change.kind === "rows") {
         const far = found.filter((f) => f.cause === "far");
-        offerChain(token, ctx.planned.places, ctx.asked, (q) => far.some((f) => Math.abs(f.lon - q[0]) < 1e-9 && Math.abs(f.lat - q[1]) < 1e-9), ctx.line, 0);
+        const farAt = (q: Point) => far.find((f) => Math.abs(f.lon - q[0]) < 1e-9 && Math.abs(f.lat - q[1]) < 1e-9);
+        offerChain(token, ctx.planned.places, ctx.asked, (q) => Boolean(farAt(q)), (q) => farAt(q)?.meters ?? 0, 0);
       }
     })();
     return null;
@@ -2000,13 +2002,14 @@ export function HomePage() {
    * points in a row that are off any road (`off`), in the ride's order —
    * offered as one chip while this proposal is shown, never a snap per point.
    */
-  function offerChain(token: number, places: RidePlaces, asked: Point[], off: (q: Point) => boolean, line: Point[], level: number) {
+  function offerChain(token: number, places: RidePlaces, asked: Point[], off: (q: Point) => boolean, roadM: (q: Point) => number, level: number) {
     if (proposalSeq.current !== token) return;
     const isAsked = (v: RidePlace) => asked.some(([lon, lat]) => Math.abs(v.lon - lon) < 1e-9 && Math.abs(v.lat - lat) < 1e-9);
     const flags = places.vias.map((v) => isAsked(v) && off([v.lon, v.lat]));
     const runs = offRoadRuns(flags).map(([a, b]) => places.vias.slice(a, b + 1));
     if (!runs.length) return;
-    const meters = runs.reduce((sum, r) => sum + chainEstimate(r.map((v): Point => [v.lon, v.lat]), line), 0);
+    // The drawn length to expect: from the nearest road to the first, through all, and from the last to a road.
+    const meters = runs.reduce((sum, r) => { const q = r.map((v): Point => [v.lon, v.lat]); return sum + roadM(q[0]) + chainMeters(q) + roadM(q[q.length - 1]); }, 0);
     setChainAsk({ token, runs, meters, count: runs.reduce((n, r) => n + r.length, 0), level });
   }
 

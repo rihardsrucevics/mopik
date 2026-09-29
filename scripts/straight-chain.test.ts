@@ -166,7 +166,9 @@ test("the flow: offered for a batch's run, the chip proposes, the proposal is ho
   const composer = readFileSync(new URL("../components/ride-composer.tsx", import.meta.url), "utf8");
   assert.match(page, /onStraightChain: chainNow \? acceptChain : undefined,/);
   assert.match(composer, /else if \("chain" in act\) edit\?\.onStraightChain\?\.\(\);/);
-  assert.match(page, /offerChain\(token, planned\.places, asked, \(q\) => nearestAlong\(q, landed, lc\)\.meters >= CHAIN_OFF_M/);
+  assert.match(page, /const offM = \(q: Point\) => nearestAlong\(q, landed, lc\)\.meters;\n\s*offerChain\(token, planned\.places, asked, \(q\) => offM\(q\) >= CHAIN_OFF_M, offM, level\);/);
+  // Refused: the points the probe found too far from a road, with how far.
+  assert.match(page, /offerChain\(token, ctx\.planned\.places, ctx\.asked, \(q\) => Boolean\(farAt\(q\)\), \(q\) => farAt\(q\)\?\.meters \?\? 0, 0\);/);
   assert.match(page, /notes\.push\(fi\(ui\.panelDrawn, \{ km \}\)\);/);
   // His own drawn line: no detour warning, no re-routing of it.
   assert.match(page, /const risk = p\.chain \? null : detourRisk\(/);
