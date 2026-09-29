@@ -1,0 +1,17 @@
+{
+  "_note": "Place-search stub for /api/places?q=… — the first three lowercase letters of the query pick the place. Coordinates are what Photon answered on 2026-09-29 (or what the rider's scripts pinned). Add a place here when a fixture or script needs one.",
+  "sig": { "name": "Sigulda", "label": "Sigulda", "lat": 57.1540561, "lon": 24.8567141, "kind": "settlement" },
+  "līg": { "name": "Līgatne", "label": "Līgatne", "lat": 57.2331358, "lon": 25.0397886, "kind": "settlement" },
+  "cēs": { "name": "Cēsis", "label": "Cēsis", "lat": 57.3131712, "lon": 25.2748551, "kind": "settlement" },
+  "ant": { "name": "Antiņciems", "label": "Antiņciems, Lapmežciema pagasts", "lat": 56.976606, "lon": 23.463252 },
+  "puķ": { "name": "Puķes", "label": "Puķes, Babītes pagasts", "lat": 56.846034, "lon": 23.778456 },
+  "rīg": { "name": "Rīgas apvedceļš", "label": "Rīgas apvedceļš (Salaspils — Babīte), Mārupes pagasts", "lat": 56.91126, "lon": 23.914963 },
+  "lau": { "name": "Lauriņi", "label": "Lauriņi, Ķekavas pagasts", "lat": 56.81077, "lon": 24.286293 },
+  "ērg": { "name": "Ērgļi", "label": "Ērgļi, Ērgļu pagasts", "lat": 56.8962277, "lon": 25.6398822 },
+  "gro": { "name": "Grostonas iela 19", "label": "Grostonas iela 19, Rīga", "lat": 56.9704052, "lon": 24.1244022 },
+  "sid": { "name": "Sidgunda", "label": "Sidgunda, Mālpils pagasts", "lat": 56.9597989, "lon": 24.9171946 },
+  "māl": { "name": "Mālpils", "label": "Mālpils, Mālpils pagasts", "lat": 57.0094587, "lon": 24.941152 },
+  "van": { "name": "Vangaži", "label": "Vangaži", "lat": 57.09222, "lon": 24.5446193, "kind": "settlement" },
+  "inč": { "name": "Inčukalns", "label": "Inčukalns · Inčukalna pagasts", "lat": 57.0993895, "lon": 24.6866055, "kind": "settlement" },
+  "aug": { "name": "Augšmala", "label": "Augšmala, Mālpils pagasts", "lat": 56.999, "lon": 24.965 }
+}
