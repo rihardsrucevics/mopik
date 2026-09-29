@@ -1,1 +1,0 @@
-{"url":"/api/places?lat=56.99400000000031&lon=24.975000000001188","status":200,"contentType":"application/json","request":null,"body":"{\"places\":[{\"name\":\"Svērpu pļavas\",\"label\":\"Svērpu pļavas · Mālpils pagasts\",\"lat\":56.99400000000031,\"lon\":24.975000000001188,\"kind\":\"settlement\"}]}"}

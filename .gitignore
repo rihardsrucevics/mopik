@@ -67,3 +67,7 @@ next-env.d.ts
 
 # python bytecode from the build scripts
 __pycache__/
+
+# Verify kit: router recordings are per routing-code fingerprint and stale after any change; re-record with RECORD=1 (see scripts/verify/README.md)
+/scripts/verify/cache/
+/scripts/verify/out/

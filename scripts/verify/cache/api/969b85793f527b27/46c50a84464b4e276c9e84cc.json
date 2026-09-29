@@ -1,1 +1,0 @@
-{"url":"/api/places?lat=56.99400000000034&lon=24.975253968255345","status":200,"contentType":"application/json","request":null,"body":"{\"places\":[{\"name\":\"Kalna Spruksti\",\"label\":\"Kalna Spruksti · Mālpils pagasts\",\"lat\":56.99400000000034,\"lon\":24.975253968255345,\"kind\":\"settlement\"}]}"}

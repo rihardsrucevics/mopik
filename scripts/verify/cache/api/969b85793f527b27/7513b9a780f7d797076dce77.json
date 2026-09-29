@@ -1,1 +1,0 @@
-{"url":"/api/places?lat=57.2372842840509&lon=25.039647999998465","status":200,"contentType":"application/json","request":null,"body":"{\"places\":[{\"name\":\"Gaujas iela 6\",\"label\":\"Gaujas iela 6 · Līgatne\",\"lat\":57.2372842840509,\"lon\":25.039647999998465,\"kind\":\"settlement\"}]}"}

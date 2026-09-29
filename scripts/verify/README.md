@@ -112,3 +112,10 @@ BROUTER_BASE_URL=http://localhost:17777 npx next dev -p 3290
 - **Tiles:** `TILES=blank` (smoke default) answers `tile.openstreetmap.org` with a 1×1 grey PNG. It cannot hide a regression of ours: the base map is a third-party raster under our layers, and the edit flow does not read it. It also keeps the test runs off OSM's tile servers. `TILES=cache` (full default) stores real tiles in `cache/tiles/` (git-ignored).
 - **DPR 1** on the phone in the smoke suite: a quarter of the pixels, the same CSS layout.
 - **WebGL:** SwiftShader (`--use-angle=swiftshader`), the same on every machine. `GL=gpu` (ANGLE on Metal) was not clearly faster in noisy measurements. The swap that helped was **`next start` instead of `next dev`** (above).
+
+
+## The cache is not committed
+`scripts/verify/cache/` is git-ignored: recordings are keyed to a fingerprint
+of the server routing code and go stale after any routing change. On a fresh
+checkout the first smoke run records them against the router
+(`RECORD=1 scripts/verify/smoke.sh`, about 3 minutes cold); later runs replay.

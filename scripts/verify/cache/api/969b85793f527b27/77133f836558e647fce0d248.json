@@ -1,1 +1,0 @@
-{"url":"/api/places?lat=57.001999999999725&lon=24.955253968255448","status":200,"contentType":"application/json","request":null,"body":"{\"places\":[{\"name\":\"Ozolu iela 17\",\"label\":\"Ozolu iela 17 · Mālpils\",\"lat\":57.001999999999725,\"lon\":24.955253968255448,\"kind\":\"settlement\"}]}"}
