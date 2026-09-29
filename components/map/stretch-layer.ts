@@ -6,6 +6,7 @@ import type { Point } from "@/lib/geo/geometry";
 import { cumulative } from "@/lib/routing/detour";
 import { coordinatesOf, nearestAlong } from "@/lib/routing/reroute-leg";
 import { moveStretchEnd, stretchLine, type Stretch } from "@/lib/routing/stretch";
+import { stretchDragStep, type StretchDragEvent, type StretchDragState } from "@/lib/map/stretch-drag";
 import type { RouteSegmentProperties } from "@/lib/types";
 
 /**
@@ -14,7 +15,9 @@ import type { RouteSegmentProperties } from "@/lib/types";
  * - The selected stretch in the badge highlight's own yellow (`route-highlight`'s
  *   paint, cloned as the proposal halo is), with two end handles — DOM
  *   markers, so a press on one never grabs the line (the line drag skips
- *   `.maplibregl-marker`), and maplibre's marker drag works with a finger.
+ *   `.maplibregl-marker`). Each handle drives its own drag with Pointer
+ *   Events and pointer capture (lib/map/stretch-drag, backlog 51), never
+ *   MapLibre's marker drag, and the map never sees the handle's press.
  *   A handle follows the finger along the line, never off it; the stretch is
  *   redrawn live and the composer told on every step (`done` on release).
  * - The ride's excluded stretches in edit mode: thin dark-red dashes along
@@ -100,35 +103,83 @@ export function useStretchLayer(mapRef: RefObject<maplibregl.Map | null>, ready:
     const onStyle = () => { try { if (!map.getSource(SEL_SOURCE)) draw(); } catch { /* reloading */ } };
     map.on("styledata", onStyle);
     const at = (m: number) => { const p = stretchLine(line, cum, { fromMeters: m, toMeters: m }); return p[0]; };
+    // Each handle owns its drag (lib/map/stretch-drag: backlog 51 — MapLibre's
+    // marker drag ended only on the map's own mouseup and left the handle dead).
+    let gesture: StretchDragState | null = null;
+    const handles: maplibregl.Marker[] = [];
+    const place = () => {
+      handles[0]?.setLngLat(at(cur.fromMeters) as [number, number]);
+      handles[1]?.setLngLat(at(cur.toMeters) as [number, number]);
+    };
+    const follow = (end: "from" | "to", clientX: number, clientY: number, done: boolean) => {
+      const r = map.getCanvas().getBoundingClientRect();
+      const ll = map.unproject([clientX - r.left, clientY - r.top]);
+      const near = nearestAlong([ll.lng, ll.lat], line, cum);
+      cur = moveStretchEnd(cur, end, near.alongMeters, total);
+      place();
+      try { draw(); } catch { /* ignore */ }
+      selRef.current?.onChange(cur, done);
+    };
+    let capturedEl: HTMLElement | null = null;
+    let last: { x: number; y: number } | null = null;
+    const feed = (ev: StretchDragEvent) => {
+      const was = gesture;
+      const { state, action } = stretchDragStep(gesture, ev);
+      gesture = state;
+      dragging = Boolean(gesture);
+      if (action === "follow" && gesture && ev.type === "move") { last = { x: ev.x, y: ev.y }; follow(gesture.end, ev.x, ev.y, false); }
+      if (action === "done" && was) {
+        const el = capturedEl;
+        capturedEl = null;
+        try { if (el?.hasPointerCapture(was.pointerId)) el.releasePointerCapture(was.pointerId); } catch { /* gone */ }
+        if (el) el.style.cursor = "grab";
+        window.removeEventListener("pointerdown", onOtherDown, true);
+        if (was.moved && last) follow(was.end, last.x, last.y, true);
+        last = null;
+      }
+    };
+    // A second finger anywhere while a handle is held ends the drag: the pinch is the map's.
+    const onOtherDown = (e: PointerEvent) => { if (gesture && e.pointerId !== gesture.pointerId) feed({ type: "down", pointerId: e.pointerId, end: gesture.end, x: e.clientX, y: e.clientY, primary: e.isPrimary }); };
     const make = (end: "from" | "to") => {
-      const mk = new maplibregl.Marker({ element: handleEl(end === "from" ? labelFrom : labelTo, end), draggable: true })
-        .setLngLat(at(end === "from" ? cur.fromMeters : cur.toMeters) as [number, number]).addTo(map);
-      const step = (done: boolean) => {
-        const ll = mk.getLngLat();
-        const near = nearestAlong([ll.lng, ll.lat], line, cum);
-        cur = moveStretchEnd(cur, end, near.alongMeters, total);
-        mk.setLngLat(at(end === "from" ? cur.fromMeters : cur.toMeters) as [number, number]);
-        try { draw(); } catch { /* ignore */ }
-        selRef.current?.onChange(cur, done);
-      };
-      mk.on("dragstart", () => { dragging = true; });
-      mk.on("drag", () => step(false));
-      mk.on("dragend", () => { dragging = false; step(true); });
-      // A tap on a handle is not a tap on the map.
-      mk.getElement().addEventListener("click", (e) => e.stopPropagation());
+      const el = handleEl(end === "from" ? labelFrom : labelTo, end);
+      const mk = new maplibregl.Marker({ element: el }).setLngLat(at(end === "from" ? cur.fromMeters : cur.toMeters) as [number, number]).addTo(map);
+      // The map never sees a press on a handle: no pan, no line tap, no line drag.
+      const stop = (e: Event) => e.stopPropagation();
+      el.addEventListener("mousedown", stop);
+      for (const type of ["touchstart", "touchmove", "touchend", "touchcancel"]) el.addEventListener(type, stop, { passive: true });
+      el.addEventListener("click", stop);
+      el.addEventListener("dblclick", stop);
+      el.addEventListener("pointerdown", (e) => {
+        if (e.pointerType === "mouse" && e.button !== 0) return;
+        e.stopPropagation();
+        // No focus ring, no scroll-into-view of a button half off the map.
+        e.preventDefault();
+        feed({ type: "down", pointerId: e.pointerId, end, x: e.clientX, y: e.clientY, primary: e.isPrimary });
+        if (gesture?.pointerId !== e.pointerId) return;
+        capturedEl = el;
+        el.style.cursor = "grabbing";
+        try { el.setPointerCapture(e.pointerId); } catch { /* not capturable: the window listeners still end it */ }
+        window.addEventListener("pointerdown", onOtherDown, true);
+      });
+      el.addEventListener("pointermove", (e) => feed({ type: "move", pointerId: e.pointerId, x: e.clientX, y: e.clientY }));
+      el.addEventListener("pointerup", (e) => feed({ type: "up", pointerId: e.pointerId }));
+      el.addEventListener("pointercancel", (e) => feed({ type: "cancel", pointerId: e.pointerId }));
+      el.addEventListener("lostpointercapture", (e) => feed({ type: "cancel", pointerId: e.pointerId }));
       return mk;
     };
-    const handles = [make("from"), make("to")];
+    handles.push(make("from"), make("to"));
     syncRef.current = (next) => {
       if (dragging || (next.fromMeters === cur.fromMeters && next.toMeters === cur.toMeters)) return;
       cur = next;
-      handles[0].setLngLat(at(cur.fromMeters) as [number, number]);
-      handles[1].setLngLat(at(cur.toMeters) as [number, number]);
+      place();
       try { draw(); } catch { /* ignore */ }
     };
     return () => {
       syncRef.current = null;
       map.off("styledata", onStyle);
+      window.removeEventListener("pointerdown", onOtherDown, true);
+      // A drag under way when the selection goes (✓, ✕, Escape, a new ride): it just ends.
+      gesture = null;
       for (const h of handles) h.remove();
       try {
         if (map.getLayer(SEL_LAYER)) map.removeLayer(SEL_LAYER);

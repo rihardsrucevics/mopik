@@ -76,7 +76,7 @@ test("every slot of the bar and the column is always rendered: never conditional
 test("the bar is at the bottom at every width: field, then fixed slots (desktop row / phone column)", () => {
   assert.match(routeMap, /<DesktopBar controls=\{controls\} \/>/);
   assert.match(routeMap, /<PhoneColumn controls=\{controls\} \/>/);
-  assert.match(routeMap, /ref=\{headerRef\} data-map-chrome className=\{controls \? "absolute bottom-3 left-3 right-3 z-20 flex flex-col-reverse/);
+  assert.match(routeMap, /ref=\{headerRef\} data-map-chrome className=\{controls \? "pointer-events-none absolute bottom-3 left-3 right-3 z-20 flex flex-col-reverse/);
   assert.match(routeMap, /placement="above"/);
   const bar = routeMap.slice(routeMap.indexOf("function DesktopBar"), routeMap.indexOf("function PhoneColumn"));
   // Left to right after the field: ✓, ↶, +, ✕ — each its own button.

@@ -2776,6 +2776,11 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   // ── line-sheet ── „Virzīt caur citu vietu” waits for its tap.
   const viaWaiting = lineSel?.phase === "via" && grab !== null && !grab.to;
   const lineKey = !lineSel ? "" : [lineSel.phase, lineSel.spot.lat, lineSel.spot.lon, lineSel.km, lineSel.heading, viaWaiting ? 1 : 0].join("|");
+  // ── stretch ── What the map's stretch controls are drawn from (backlog 51):
+  // the excluded stretch tapped (`exSel` — without it in the key the tap set
+  // it and „Izslēgts posms · Atļaut atkal” never reached the map), the
+  // selection's ends and whether it is ridden twice, and the exclusions.
+  const stretchKey = [exSel ?? "", lineSel?.stretch ? `${Math.round(lineSel.stretch.fromMeters)}-${Math.round(lineSel.stretch.toMeters)}` : "", lineSel?.passes ? 1 : 0, (edit?.excluded ?? []).map((l) => l[0]?.join(",")).join(";"), batchActive ? 1 : 0].join("|");
   // ── /line-sheet ──
   // Release B: one mechanism for every pending mark — chains prev → new →
   // next per affected leg (`pendingChains`), gone once the proposal has
@@ -3295,7 +3300,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     // The parent's callback is an inline arrow and is rebuilt every render;
     // listing it would re-report the same controls on every keystroke.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapLive, activeRow, activeLabel, atCap, activeValue, activeConfirmed, anchor, locale, tripType, rowsKey, pendingKey, mapQuery, activeOwn?.lat, activeOwn?.lon, planKey, grab?.at.lat, grab?.at.lon, batchKey, fitAsk, undo.past.length, edit?.canUndo, edit?.rerouting, batchCommitting, shapeKey, stopCount, pointKey, movePreviewKey, proposalKey, proposeKey, passCount, pointTitle, choicesKey, insertWords, rowNumbers.join(","), lineKey, tipOn, blockedItems.map((b) => b.id).join(","), pendingBlocked, edit?.chain?.count ?? 0, addKey]);
+  }, [mapLive, activeRow, activeLabel, atCap, activeValue, activeConfirmed, anchor, locale, tripType, rowsKey, pendingKey, mapQuery, activeOwn?.lat, activeOwn?.lon, planKey, grab?.at.lat, grab?.at.lon, batchKey, fitAsk, undo.past.length, edit?.canUndo, edit?.rerouting, batchCommitting, shapeKey, stopCount, pointKey, movePreviewKey, proposalKey, proposeKey, passCount, pointTitle, choicesKey, insertWords, rowNumbers.join(","), lineKey, tipOn, blockedItems.map((b) => b.id).join(","), pendingBlocked, edit?.chain?.count ?? 0, addKey, stretchKey]);
   // Nothing is offered once the form is gone. Without this the page would keep
   // drawing a map header for a form the rider has left.
   useEffect(() => () => onMapControlsChange?.(null),
