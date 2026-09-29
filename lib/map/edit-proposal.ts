@@ -90,7 +90,13 @@ export type ProposalAction =
   /** ✕, or the pending mark went away: back to idle, nothing kept. */
   | { type: "discard" }
   /** The page committed the proposal into the ride and the history. */
-  | { type: "committed" };
+  | { type: "committed" }
+  /**
+   * The page chained the landed proposal (release B item 4,
+   * lib/map/edit-chain.ts): kept for the next edit to build on — not in the
+   * ride, not in the history. Back to idle, like `committed`.
+   */
+  | { type: "stacked" };
 
 /**
  * Whether a landed proposal may enter the ride now. One that waits for
@@ -138,7 +144,7 @@ export type ProposalView = {
  * - `confirm` while routing is remembered (`confirmWhenReady`) and carried
  *   into the proposal as `confirmNow`; on a landed proposal it sets
  *   `confirmNow`; idle or refused, it does nothing — ✓ is disabled there.
- * - `discard` and `committed` return to idle from anywhere.
+ * - `discard`, `committed` and `stacked` return to idle from anywhere.
  */
 export function proposalReducer(state: ProposalState, action: ProposalAction): ProposalState {
   switch (action.type) {
@@ -156,6 +162,7 @@ export function proposalReducer(state: ProposalState, action: ProposalAction): P
       return state;
     case "discard":
     case "committed":
+    case "stacked":
       return state.phase === "idle" ? state : IDLE_PROPOSAL;
     default:
       return state;

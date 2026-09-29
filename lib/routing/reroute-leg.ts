@@ -1405,6 +1405,57 @@ export function spliceIsSound(params: {
 }
 
 /**
+ * A place still reached by a spur of at least this much, when the router did
+ * not prove it a dead end, is worth a wider stretch (`widenRun`).
+ */
+export const WIDEN_MIN_SPUR_M = 1_000;
+
+/**
+ * How much further each way the stretch is tried, in parallel. Measured on
+ * the rider's Lauriņi → Ērgļi (2026-09-28): a pass-through point moved across
+ * the Ogre onto a junction of a through road. The ±3 km window around where
+ * it was cut the ride at two points on the WEST bank, so from the junction
+ * the only way to the second cut was back up the east bank — 9.8 km ridden
+ * twice and called a dead end. +5 km still turned back (7.5 km); +15 km rode
+ * through the junction and on to the ride further along, 141.5 km and no
+ * spur, against 149.5 km with the out-and-back.
+ */
+export const WIDEN_STEPS_M = [5_000, 15_000];
+
+/**
+ * The same stretch `by` metres wider each way along the line, never past a
+ * kept place (`keptAlong`: the ride's anchors along the line) or into a drawn
+ * straight stretch (`fixed`) — so the place in it can be ridden through and
+ * on, where the window was too tight for any way on but the way in. An end
+ * that is not a cut on the line (a moved start or finish) stays. Null when
+ * neither end can move.
+ */
+export function widenRun(p: { run: EditRun; line: Point[]; cum: number[]; keptAlong: number[]; fixed?: [number, number][]; by: number }): EditRun | null {
+  const { run, line, cum, by } = p;
+  const total = cum[cum.length - 1];
+  const at = (m: number): Point => pointAtDistance(line, cum, m).point;
+  const onLine = (pt: Point, m: number) => haversineMeters(pt, at(m)) <= 1;
+  let lo = 0, hi = total;
+  for (const a of p.keptAlong) {
+    if (a <= run.fromMeters + 1) lo = Math.max(lo, a);
+    if (a >= run.toMeters - 1) hi = Math.min(hi, a);
+  }
+  for (const [a, b] of p.fixed ?? []) {
+    if (b <= run.fromMeters + 1) lo = Math.max(lo, b);
+    if (a >= run.toMeters - 1) hi = Math.min(hi, a);
+  }
+  const first = run.points[0], last = run.points[run.points.length - 1];
+  const from = onLine(first, run.fromMeters) ? Math.max(lo, run.fromMeters - by) : run.fromMeters;
+  const to = onLine(last, run.toMeters) ? Math.min(hi, run.toMeters + by) : run.toMeters;
+  if (from >= run.fromMeters - 1 && to <= run.toMeters + 1) return null;
+  return {
+    fromMeters: from,
+    toMeters: to,
+    points: [from < run.fromMeters ? at(from) : first, ...run.points.slice(1, -1), to > run.toMeters ? at(to) : last],
+  };
+}
+
+/**
  * The fallback when a splice breaks: the whole stretch from the last place
  * before the first changed run to the first place after the last one, as ONE
  * run through every place the edit left between them — cut at those places'

@@ -178,6 +178,8 @@ export type MapControls = {
    * effect for how "not yet confirmed" stays readable.
    */
   pendingPin?: { role: "start" | "finish" | "via" | "shape"; number: number | null };
+  /** Release B item 1: the pending mark is the point that stops the proposal — ringed in its own colour. */
+  pendingBlocked?: boolean;
   pending: MapPendingMark | null;
   onAddStop: (() => void) | null;
   addStopLabel: string;
@@ -286,13 +288,16 @@ export type MapControls = {
   /** What can be done to the selected point, right there (`MapPointSheet`). */
   pointSheet?: MapPointSheetModel | null;
   /**
-   * Edit mode, while a point is being moved or placed: thin dashed straight
-   * lines from `candidate` to the places before and after it in riding order —
-   * `neighbours` when the caller knows them (a stop's rows), else found along
-   * the drawn line from `origin` (a shaping point: its old place, or where the
-   * line was grabbed). Follows a dragged pending marker live.
+   * Edit mode, while points are pending (release B, one mechanism for every
+   * pending mark): thin grey dashed straight lines prev → new → next, one
+   * chain per leg a pending point is in (`chains`, `pendingChains` in
+   * lib/map/plan-line.ts: a stop's rows, a batch) — or, for a shaping point,
+   * the places before and after it found along the drawn line from `origin`
+   * (its old place, or where the line was grabbed) joined through
+   * `candidate`. A chain point with an `id` follows its dragged marker live
+   * (−1 the single pending marker, else a batch stop's id).
    */
-  movePreview?: { origin?: { lat: number; lon: number } | null; neighbours?: { lat: number; lon: number }[]; candidate: { lat: number; lon: number } | null; follow?: boolean } | null;
+  movePreview?: { origin?: { lat: number; lon: number } | null; chains?: { lat: number; lon: number; id?: number }[][]; candidate: { lat: number; lon: number } | null; follow?: boolean } | null;
   /**
    * Batch adding (2026-09-25): while it is on, the single pending marker is
    * not drawn and nothing moves the camera; the batch's pending stops are
@@ -301,7 +306,9 @@ export type MapControls = {
    */
   batchMode?: boolean;
   /** `finish`: the new point rides on past the one-way finish and becomes it (Phase 1): a red pin, no number. */
-  batch?: { id: number; lat: number; lon: number; number: number; selected: boolean; failing: boolean; finish?: boolean }[];
+  batch?: { id: number; lat: number; lon: number; number: number; selected: boolean; failing: boolean; finish?: boolean;
+    /** Release B item 1: this pending stop is what stops the proposal — ringed in its own colour. */
+    blocked?: boolean }[];
   onBatchSelect?: (id: number) => void;
   onBatchMove?: (id: number, at: { lat: number; lon: number }) => void;
   onBatchDrop?: (id: number) => void;
@@ -1844,6 +1851,17 @@ function endpointLabelElement(params: { title: string; label: string }): HTMLEle
  * for that history.
  */
 const FINISH_PIN_COLOR = "#dc2626";
+/**
+ * The pending connectors' one colour (release B, images/27: a blue grab line
+ * beside a black move preview): stone-600, thin, dashed, no white edge — so
+ * never mistaken for a drawn straight stretch (3 px stone with a white dash)
+ * or the proposal's yellow halo.
+ */
+const PENDING_LINK_COLOR = "#57534e";
+/** A stop's own orange — its ring when it stops a proposal (release B item 1). */
+const STOP_RING_COLOR = "#f56300";
+/** The ring a blocking point wears: white, then its own colour. */
+const blockedRing = (color: string) => `0 0 0 3px #fff, 0 0 0 6px ${color}, 0 1px 4px rgba(0,0,0,0.35)`;
 /** The start, for the same reason and in the same place. */
 const START_PIN_COLOR = "#16a34a";
 
@@ -2453,6 +2471,14 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
   const previewFollowRef = useRef(false);
   useEffect(() => { previewFollowRef.current = Boolean(controls?.movePreview?.follow); });
   // ── /line-sheet ──
+  /**
+   * A line drag under way when the handlers' effect re-runs (its `segments`
+   * changed): kept, so the drag goes on in the new handlers. A drag that
+   * chains the proposal on screen changes the ride drawn under the finger
+   * (release B item 4) — without this the release was lost with the old
+   * handlers and the grab waited for a spot that never came.
+   */
+  const lineDragCarryRef = useRef<{ map: maplibregl.Map; drag: LineDragState; from: { point: maplibregl.Point; lngLat: maplibregl.LngLat }; last: maplibregl.LngLat | null } | null>(null);
   /** A grab is waiting for its spot: the next click is that spot, not a new grab. */
   const grabbingRef = useRef(false);
   useEffect(() => { grabbingRef.current = Boolean(controls?.grab); }, [controls?.grab]);
@@ -2462,7 +2488,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
   const pointSheetRef = useRef(controls?.pointSheet);
   useEffect(() => { pointSheetRef.current = controls?.pointSheet; });
   /** Redraws the move preview to a candidate, live while a mark is dragged (see its effect). */
-  const movePreviewRef = useRef<(to: { lat: number; lon: number } | null) => void>(() => {});
+  const movePreviewRef = useRef<(to: { lat: number; lon: number } | null, id?: number) => void>(() => {});
   const pinsDraggable = Boolean(controls?.onPinDrag);
   /**
    * Where the planning (or edit) map's places may be framed: clear of the
@@ -3230,11 +3256,22 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
       pendingPinKeyRef.current = pendingPinKey;
     }
     pickedMarkerRef.current.setLngLat([pickedPoint.lon, pickedPoint.lat]).addTo(map);
+    // Release B item 1: the point that stops the proposal wears a ring in its own colour.
+    const pel = pickedMarkerRef.current.getElement();
+    const role = pendingPin?.role ?? "via";
+    if (controls?.pendingBlocked) {
+      pel.dataset.blocked = "true";
+      pel.style.boxShadow = blockedRing(role === "start" ? START_PIN_COLOR : role === "finish" ? FINISH_PIN_COLOR : role === "shape" ? "#1c1917" : STOP_RING_COLOR);
+      pel.style.borderRadius = pel.style.borderRadius || "9999px";
+    } else if (pel.dataset.blocked) {
+      delete pel.dataset.blocked;
+      pel.style.boxShadow = "";
+    }
     // The coordinates, not the object. The parent rebuilds it on every reverse
     // lookup, and an identity dependency would re-run `setLngLat` for a point
     // that has not moved.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, pickedPoint?.lat, pickedPoint?.lon, pendingPinKey, batchMode]);
+  }, [ready, pickedPoint?.lat, pickedPoint?.lon, pendingPinKey, batchMode, controls?.pendingBlocked]);
 
   /**
    * Keep the pending marker clear of the header.
@@ -3376,36 +3413,28 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
     } else {
       if (!grabMarkerRef.current) {
         const el = document.createElement("div");
-        el.style.cssText = "width:14px;height:14px;border-radius:7px;background:#2563eb;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,0.35);pointer-events:none";
+        el.style.cssText = `width:12px;height:12px;border-radius:6px;background:${PENDING_LINK_COLOR};border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,0.35);pointer-events:none`;
         grabMarkerRef.current = new maplibregl.Marker({ element: el });
       }
       grabMarkerRef.current.setLngLat([grabAt.lon, grabAt.lat]).addTo(map);
     }
-    const draw = (to: { lat: number; lon: number } | null) => {
-      const data: GeoJSON.FeatureCollection<GeoJSON.LineString> = {
-        type: "FeatureCollection",
-        features: grabAt && to ? [{ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: [[grabAt.lon, grabAt.lat], [to.lon, to.lat]] } }] : [],
-      };
-      if (!loadedRef.current) return;
-      const source = map.getSource("grab-line") as maplibregl.GeoJSONSource | undefined;
-      if (source) { source.setData(data); return; }
-      map.addSource("grab-line", { type: "geojson", data });
-      map.addLayer({ id: "grab-line", type: "line", source: "grab-line",
-        layout: { "line-cap": "round" },
-        paint: { "line-color": "#2563eb", "line-width": 2, "line-opacity": 0.8, "line-dasharray": ["literal", [1.5, 2]] } });
-    };
+    // The connector from the grab to the spot is the pending chain now
+    // (`movePreview`, one colour): nothing of its own is drawn here.
+    const draw = (to: { lat: number; lon: number } | null) => { void to; };
     connectorRef.current = draw;
     draw(pickedPoint ?? null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, grabAt?.lat, grabAt?.lon, pickedPoint?.lat, pickedPoint?.lon]);
 
   /**
-   * The move preview (`MapControls.movePreview`): straight, thin, dark grey
-   * and finely dashed on a white edge — unlike the ridden line, the planning
-   * line (orange) and the grab's connector (blue), and unlike the straight
-   * segment a ride may one day carry (backlog 35), which will be drawn as
-   * part of the ride. The neighbours are resolved once per preview; the
-   * candidate end is redrawn live through `movePreviewRef`.
+   * The pending connectors (`MapControls.movePreview`, release B): straight,
+   * thin, grey and dashed, prev → new → next for each leg a pending point is
+   * in — one layer and one colour for a batch, a moved or new pin, a grabbed
+   * or moved shaping point (the grab's blue connector is gone). Unlike the
+   * ridden line, the planning line (orange), a drawn straight stretch (3 px
+   * stone with a white dash) and the proposal's yellow halo. A shaping
+   * point's neighbours are resolved once per preview along the line; a
+   * dragged mark's own point is redrawn live through `movePreviewRef`.
    */
   const movePreview = controls?.movePreview ?? null;
   const movePreviewKey = movePreview ? JSON.stringify(movePreview) : "";
@@ -3414,8 +3443,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
     if (!map || !ready) return;
     const mp = movePreview;
     let ends: [number, number][] = [];
-    if (mp?.neighbours) ends = mp.neighbours.map((p) => [p.lon, p.lat]);
-    else if (mp?.origin) {
+    if (mp?.origin && !mp.chains) {
       const line: Point[] = featuresRef.current.flatMap((f, i) => (f.geometry.coordinates as Point[]).slice(i === 0 ? 0 : 1));
       if (line.length >= 2) {
         const cum = cumulative(line);
@@ -3430,20 +3458,25 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
         ends = neighboursAlong(anchors, along(mp.origin), !destination);
       }
     }
-    const draw = (to: { lat: number; lon: number } | null) => {
-      const c: [number, number] | null = to ? [to.lon, to.lat] : null;
-      const features: GeoJSON.Feature<GeoJSON.LineString>[] = !c ? [] : ends.map((e) => ({ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: [e, c] } }));
+    // The chains as they stand; a dragged mark moves its own point live.
+    let chains: [number, number][][] = (mp?.chains ?? []).map((c) => c.map((p) => [p.lon, p.lat] as [number, number]));
+    const ids = (mp?.chains ?? []).map((c) => c.map((p) => p.id));
+    const draw = (to: { lat: number; lon: number } | null, id = -1) => {
+      if (mp?.chains) {
+        if (to) chains = chains.map((c, k) => c.map((p, j) => (ids[k][j] === id ? [to.lon, to.lat] as [number, number] : p)));
+      } else {
+        const c: [number, number] | null = to ? [to.lon, to.lat] : null;
+        chains = !c || !ends.length ? [] : [[...ends.slice(0, 1), c, ...ends.slice(1)]];
+      }
+      const features: GeoJSON.Feature<GeoJSON.LineString>[] = chains.filter((c) => c.length >= 2).map((coordinates) => ({ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates } }));
       const data: GeoJSON.FeatureCollection<GeoJSON.LineString> = { type: "FeatureCollection", features };
       if (!loadedRef.current) return;
       const source = map.getSource("move-preview") as maplibregl.GeoJSONSource | undefined;
       if (source) { source.setData(data); return; }
       map.addSource("move-preview", { type: "geojson", data });
-      map.addLayer({ id: "move-preview-edge", type: "line", source: "move-preview",
-        layout: { "line-cap": "round" },
-        paint: { "line-color": "#ffffff", "line-width": 4, "line-opacity": 0.7 } });
       map.addLayer({ id: "move-preview", type: "line", source: "move-preview",
-        layout: { "line-cap": "butt" },
-        paint: { "line-color": "#44403c", "line-width": 1.5, "line-opacity": 0.95, "line-dasharray": ["literal", [2, 2]] } });
+        layout: { "line-cap": "round", "line-join": "round" },
+        paint: { "line-color": PENDING_LINK_COLOR, "line-width": 1.5, "line-opacity": 0.9, "line-dasharray": ["literal", [2, 2.5]] } });
     };
     movePreviewRef.current = draw;
     draw(mp?.candidate ?? null);
@@ -3463,7 +3496,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
   const batchDropRef = useRef(controls?.onBatchDrop);
   useEffect(() => { batchSelectRef.current = controls?.onBatchSelect; batchMoveRef.current = controls?.onBatchMove; batchDropRef.current = controls?.onBatchDrop; });
   const batchPins = controls?.batch ?? [];
-  const batchPinsKey = batchPins.map((b) => `${b.id}:${b.lat},${b.lon}:${b.number}:${b.selected ? 1 : 0}:${b.failing ? 1 : 0}:${b.finish ? 1 : 0}`).join("|");
+  const batchPinsKey = batchPins.map((b) => `${b.id}:${b.lat},${b.lon}:${b.number}:${b.selected ? 1 : 0}:${b.failing ? 1 : 0}:${b.finish ? 1 : 0}:${b.blocked ? 1 : 0}`).join("|");
   useEffect(() => {
     const map = mapRef.current;
     for (const marker of batchMarkersRef.current) marker.remove();
@@ -3478,7 +3511,9 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
       el.style.zIndex = b.selected ? "4" : "3";
       el.style.cursor = "grab";
       if (b.failing) el.style.borderColor = "#f59e0b";
+      if (b.blocked) el.dataset.blocked = "true";
       if (b.selected) el.style.boxShadow = "0 0 0 4px rgba(245,99,0,0.35), 0 1px 3px rgba(0,0,0,0.32)";
+      else if (b.blocked) el.style.boxShadow = blockedRing(b.finish ? FINISH_PIN_COLOR : STOP_RING_COLOR);
       else el.animate([{ opacity: 0.55 }, { opacity: 0.95 }], { duration: 900, iterations: Infinity, direction: "alternate", easing: "ease-in-out" });
       el.addEventListener("click", (event) => {
         event.stopPropagation();
@@ -3503,6 +3538,8 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
         el.appendChild(drop);
       }
       const marker = new maplibregl.Marker({ element: el, draggable: true }).setLngLat([b.lon, b.lat]).addTo(map);
+      // Its leg's dashed connector follows it while it is dragged.
+      marker.on("drag", () => { const { lat, lng } = marker.getLngLat(); movePreviewRef.current({ lat, lon: lng }, b.id); });
       marker.on("dragend", () => {
         dragEndedAtRef.current = performance.now();
         const { lat, lng } = marker.getLngLat();
@@ -4256,6 +4293,15 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
       // `dragPan` is gone once the map itself has been removed (the cleanup).
       if (map.dragPan && !map.dragPan.isEnabled()) map.dragPan.enable();
     };
+    // A drag the last run of this effect left under way goes on here (see `lineDragCarryRef`).
+    const carried = lineDragCarryRef.current;
+    lineDragCarryRef.current = null;
+    if (carried && carried.map === map) {
+      lineDrag = carried.drag;
+      lineDragFrom = carried.from;
+      lineDragLast = carried.last;
+      map.dragPan.disable();
+    }
     const lineDragFeed = (ev: LineDragEvent, at?: maplibregl.LngLat) => {
       const was = lineDrag;
       const { state, action } = lineDragStep(lineDrag, ev);
@@ -4378,6 +4424,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
       map.off("mouseout", hideHover);
       map.off("click", onMapClick);
       if (tapTimer) clearTimeout(tapTimer);
+      lineDragCarryRef.current = lineDrag?.phase === "dragging" && lineDragFrom ? { map, drag: lineDrag, from: lineDragFrom, last: lineDragLast } : null;
       lineDragUndo();
       map.off("movestart", hideHover);
       window.removeEventListener("keydown", onKey);

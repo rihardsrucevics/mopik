@@ -86,13 +86,21 @@ export type AnalyticsEvent =
   | "route_edit_refused"      // a preview could not be routed; props: how, reason (status|network|degenerate|broken-line|too-far|no-place|no-road)
   | "point_kind_switched"     // „Padarīt par pieturu” / „Padarīt caurbraucamu”, committed at once; props: to (stop|pass), mode (plan|edit) — is the one-kind-of-point model used both ways?
   // Phase 1 addition (2026-09-28): where a new point goes, its kind while pending, a pass-through point moved onto the line.
-  | "new_point_placed"        // a new point went into its nearest leg; props: unsure (null|far|close|beyond-finish), mode (plan|edit) — how often is Mopik not sure?
+  | "new_point_placed"        // a new point went into its nearest leg; props: unsure (null|close|beyond-finish; "far" before release B), mode (plan|edit) — how often is Mopik not sure?
   | "new_point_leg_chosen"    // the rider picked the other choice chip; props: extend (a new finish) — do the chips get used, and which way?
   | "new_point_kind_toggled"  // „Pietura” ⇄ „Caurbraucams” while pending; props: to (stop|pass)
   | "moved_point_on_line"     // a pass-through point moved onto the line elsewhere; props: choice (keep|remove) — what does the rider mean by it?
   | "route_edit_wide_accepted" // „Pārrēķināt posmu” on a change only the whole-span re-route could make (it was refused with the km, `wide-ask`)
   | "route_edit_override_accepted" // „Tomēr braukt” on a proposal outside the profile or with a big detour; props: why (profile|detour|deadEnd), relax (the profile rung) — how often is the profile in the way?
   | "route_edit_straight_asked" // „Vest pa taisno” where no road reaches the point: routed as far as a road goes, then straight — how often does a rider need a point off every road?
+  | "route_edit_widened" // a place left on a spur the router did not prove a dead end, ridden through by a wider stretch — how often was the window too tight? (spur_m, km_delta)
+  | "route_edit_blocked" // a refused or warned proposal with several points, probed each on its own; props: points, blocking (how many were named), causes (far,profile,detour,failed) — which points stop a batch?
+  | "batch_rest_kept" // „Pievienot pārējās”: the points that stopped a batch dropped, the rest proposed again; props: dropped, kept
+  | "edit_chained" // the composer chained the shown proposal because another edit started (release B item 4)
+  | "route_edit_stacked" // release B item 4: another edit started while a proposal was shown — the proposal was chained, not committed; props: changes (on the chain now), how
+  | "route_edit_chain_confirmed" // ✓ on chained edits: all of them one undo step; props: changes
+  | "route_edit_chain_undone" // ↶ took the chain's last change off; props: changes (before)
+  | "route_edit_chain_discarded" // ✕ dropped every chained change; props: changes
   // ── line-sheet ── Tap the line (2026-09-28): is the line's sheet found, and which row is used?
   | "line_tapped"             // edit mode: a tap on the drawn line opened its sheet
   | "line_via_asked"          // „Virzīt caur citu vietu”: the line grabbed at the tapped spot, waiting for the tap where to ride through

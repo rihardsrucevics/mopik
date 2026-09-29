@@ -228,7 +228,7 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json({
-    runs: paths.map(({ path, deadEndMeters, deadEndUnchecked, deadEndAtShape }) => {
+    runs: paths.map(({ path, deadEndMeters, deadEndUnchecked, deadEndAtShape, deadEndProved }) => {
       // The same classifier the ride's own segments came from, so the spliced
       // stretch carries surfaces, road classes, gates and unverified-access
       // flags in exactly the shape the map already draws and the panel counts.
@@ -255,6 +255,9 @@ export async function POST(req: NextRequest) {
         // that could not be taken off its spur) or a stop — the page names
         // the right one, whatever kind of edit made it.
         ...(deadEndAtShape ? { deadEndAtShape } : {}),
+        // …and whether the router proved it — no way on with the spur fenced
+        // off. Only a proved one is called a dead end.
+        ...(deadEndProved ? { deadEndProved } : {}),
       };
     }),
     ms: Date.now() - startedAt,

@@ -1,5 +1,6 @@
 import { fi } from "@/lib/i18n/format";
 import type { MessageKey } from "@/lib/i18n/messages";
+import { fixesFor, type BlockFixes, type Blocking, type BlockingPoint } from "@/lib/map/blocking";
 
 /**
  * What the rider is looking at and what to do next, for every edit state
@@ -90,7 +91,9 @@ export type GuideState =
   // dead end, a big detour) — its notes say what, this says what to do, once.
   | { kind: "proposed"; warned?: boolean }
   // `wide`: „Pārrēķināt posmu” is on offer; `straight`: „Vest pa taisno” is.
-  | { kind: "refused"; reason: string; wide?: boolean; straight?: boolean };
+  | { kind: "refused"; reason: string; wide?: boolean; straight?: boolean }
+  // Release B item 4: `count` edits chained, waiting for one ✓.
+  | { kind: "chain"; count: number };
 
 /** Just the "what to do" part of a state — what the chip adds after its own words. */
 export function guideAction(t: T, state: GuideState): string {
@@ -101,6 +104,7 @@ export function guideAction(t: T, state: GuideState): string {
     case "routing": return t("guideRouting");
     case "proposed": return t(state.warned ? "guideWarned" : "guideProposed");
     case "refused": return t(state.straight ? "guideRefusedStraight" : state.wide ? "guideRefusedWide" : "guideRefused");
+    case "chain": return fi(t("chainGuide"), { n: state.count });
   }
 }
 
@@ -133,6 +137,7 @@ export function guidance(t: T, state: GuideState): string {
       case "routing": return t("previewRouting");
       case "proposed": return "";
       case "refused": return state.reason;
+      case "chain": return "";
     }
   })();
   return joinGuide(what, guideAction(t, state));
@@ -145,4 +150,56 @@ export function guidance(t: T, state: GuideState): string {
 export function joinGuide(what: string, action: string): string {
   const head = what.trim().replace(/[.。]+$/u, "");
   return head ? `${head}${GUIDE_DASH}${action}` : action;
+}
+
+// ── release-b: blocking ──
+// Which point stops a proposal (release B item 1, lib/map/blocking.ts): the
+// guidance line names it and says what to do, in the same two parts.
+
+/** „Pietura 4 „Rīgas iela”” — the name only when it says more than the title. */
+export function pointLabel(p: Pick<BlockingPoint, "title" | "name">): string {
+  const name = p.name.trim();
+  if (!name || name === p.title || /^-?\d+[.,]\d+,\s*-?\d+[.,]\d+$/.test(name)) return p.title;
+  return `${p.title} „${name}”`;
+}
+
+/** „tuvākais ceļš ~N m nostāk” — why this point stops it. */
+export function causeWords(t: T, p: Pick<BlockingPoint, "cause" | "meters">, format: (n: number) => string): string {
+  switch (p.cause) {
+    case "far": return fi(t("blockFar"), { m: format(p.meters ?? 0) });
+    case "profile": return t("blockProfile");
+    case "detour": return fi(t("blockDetour"), { km: format(Math.round((p.meters ?? 0) / 100) / 10) });
+    case "failed": return t("blockFailed");
+  }
+}
+
+/** „pārvieto, izņem vai „Vest pa taisno”” — what he can do, as a list. */
+export function fixWords(t: T, fixes: BlockFixes): string {
+  const parts = [t("blockActMove"), t("blockActRemove")];
+  if (fixes.straight) parts.push(t("blockActStraight"));
+  if (fixes.override) parts.push(t("blockActOverride"));
+  if (fixes.rest > 0) parts.push(t("blockActRest"));
+  const last = parts.pop()!;
+  return `${parts.join(", ")} ${t("blockOr")} ${last}.`;
+}
+
+/**
+ * The guidance line for a blocked proposal, in the two parts every state
+ * has (lib/map/edit-guidance.ts): what is happening – what to do.
+ * „Pietura 4 „Rīgas iela” – tuvākais ceļš ~120 m nostāk – pārvieto, izņem
+ * vai „Vest pa taisno”.” Never the generic „neizdevās” without a point and
+ * a fix: while probing it says it is looking, and when every point is fine
+ * alone it says so and what to do.
+ */
+export function blockedGuide(t: T, blocking: Blocking, warned: boolean, format: (n: number) => string): { what: string; action: string } {
+  if (blocking.probing) return { what: t("blockProbing"), action: t("blockProbingAct") };
+  if (!blocking.points.length) return { what: fi(t("blockTogether"), { n: format(blocking.total) }), action: t("blockTogetherAct") };
+  const what = blocking.points.map((p) => joinGuide(pointLabel(p), causeWords(t, p, format))).join("; ");
+  return { what, action: fixWords(t, fixesFor(blocking, warned)) };
+}
+
+/** The whole line, joined. */
+export function blockedLine(t: T, blocking: Blocking, warned: boolean, format: (n: number) => string): string {
+  const g = blockedGuide(t, blocking, warned, format);
+  return joinGuide(g.what, g.action);
 }

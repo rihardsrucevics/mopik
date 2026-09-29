@@ -129,7 +129,7 @@ test("the share code carries drawn stretches as trail|unknown|d with dk; a ride 
 test("the flow: no road on any rung → the guidance line and „Vest pa taisno”; the chip proposes, ✓ commits", () => {
   const page = readFileSync(new URL("../components/home-page.tsx", import.meta.url), "utf8");
   const composer = readFileSync(new URL("../components/ride-composer.tsx", import.meta.url), "utf8");
-  assert.match(page, /return askStraight\(token, planned\.kind, fi\(ui\.editNoRoadStraight, \{ m: Math\.round\(bestOff\) \}\), p\.change, level\);/);
+  assert.match(page, /return askStraight\(token, planned\.kind, fi\(ui\.editNoRoadStraight, \{ m: Math\.round\(bestOff\) \}\), p\.change, level, bestOff\);/);
   assert.match(page, /proposePlaces\(ask\.change, \{ straight: ask\.level \}\);/);
   assert.match(page, /onStraight: straightOffered \? acceptStraight : undefined,/);
   assert.match(composer, /else if \("straight" in act\) edit\?\.onStraight\?\.\(\);/);

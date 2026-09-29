@@ -13,21 +13,36 @@ import { anchorsAlong, anchorsOf, isShape, nearestWithin, type RidePlaces } from
  * ride's own line: the leg is ridden to where its line passes nearest to p,
  * out to p and back, so its detour is twice that distance.
  *
- * Mopik says it is not sure — and offers two choices, the first preselected
- * — when the point is far from the line (more than `FAR_FROM_LINE_M` from
- * every leg, editing), when the best two detours are within
- * `CLOSE_DETOURS` of each other, or when riding on past a one-way finish is
- * the smallest detour of all (the choice is then the best leg or a new
- * finish). Pure, so the rules are tested without a map
- * (scripts/insert-leg.test.ts).
+ * Mopik says it is not sure — and offers the two best places by detour,
+ * the best preselected — only when those two are close: the second's detour
+ * at most `UNSURE_RATIO` times the best's, or within `UNSURE_FLOOR_M` of it
+ * (release B, rider 2026-09-28, images/25–26: Grostonas iela 19 → Ērgļi,
+ * one way, points 2–5 km north of the line by Ropaži were all asked „Pēc
+ * „Grostonas iela 19”” / „Beigās (jauns finišs)”, because the old rule
+ * asked whenever a point was more than 2 km from the line — on a long
+ * one-way ride with one leg the answer was never in doubt: that leg's detour
+ * was 4–10 km, a new finish's 75 km). A new finish („Beigās”) is one of the
+ * candidates like any leg: offered only when it is one of the two best, and
+ * preselected only when it is the best — and then always beside the best
+ * leg, never taken alone. Pure, so the rules are tested
+ * without a map (scripts/insert-leg.test.ts).
  */
 
 export type Pt = { lat: number; lon: number };
 
-/** Farther than this from every leg of the ride's line, a new point's leg is the rider's to say. */
-export const FAR_FROM_LINE_M = 2_000;
-/** The best two detours this close (a share of the larger) are a tie. */
-export const CLOSE_DETOURS = 0.15;
+/**
+ * The second-best detour at most this many times the best: Mopik is not sure
+ * and asks. 1.25 — a quarter more. The old rule (within 15 % of the larger,
+ * i.e. 1.18) plus "far from the line" asked for points whose nearest leg was
+ * obvious; a ratio says how much the choice matters wherever the point is.
+ */
+export const UNSURE_RATIO = 1.25;
+/**
+ * …or the two within this many metres of each other: near a place both legs
+ * either side of it cost almost nothing, and the ratio of two small numbers
+ * says little — which side of „A” is still the rider's to say.
+ */
+export const UNSURE_FLOOR_M = 200;
 /** A moved pass-through point this close to the line elsewhere may mean "the line already goes here" (§3). */
 export const ON_LINE_M = 20;
 
@@ -58,7 +73,8 @@ export type Placement = {
   chosen: InsertOption;
   /** Two choices, the first the preselected one — or null when Mopik is sure. */
   options: InsertOption[] | null;
-  unsure: null | "far" | "close" | "beyond-finish";
+  /** "close": the best two are legs; "beyond-finish": one of them is a new finish. */
+  unsure: null | "close" | "beyond-finish";
 };
 
 const pt = (p: Pt): Point => [p.lon, p.lat];
@@ -161,23 +177,22 @@ export function placeNewPoint(p: {
     candidates.push({ key: "extend", before: last, after: null, extend: true, detour: d, distance: d, index: rows.length, onLine: null });
   }
 
-  const legs = candidates.filter((c) => !c.extend);
   const ranked = [...candidates].sort((x, y) => x.detour - y.detour);
-  const bestLeg = [...legs].sort((x, y) => x.detour - y.detour)[0];
   let unsure: Placement["unsure"] = null;
   let options: InsertOption[] | null = null;
-  if (ranked[0].extend && bestLeg) {
-    unsure = "beyond-finish";
-    options = [bestLeg, ranked[0]];
-  } else if (line && Math.min(...legs.map((c) => c.distance)) > FAR_FROM_LINE_M && ranked.length > 1) {
-    unsure = "far";
+  // A new finish as the best is never taken without the other choice beside
+  // it: the ride's finish is the one place the rider named for its end.
+  if (ranked.length > 1 && (isClose(ranked[0].detour, ranked[1].detour) || ranked[0].extend)) {
     options = [ranked[0], ranked[1]];
-  } else if (ranked.length > 1 && ranked[1].detour - ranked[0].detour <= CLOSE_DETOURS * ranked[1].detour) {
-    unsure = "close";
-    options = [ranked[0], ranked[1]];
+    unsure = options.some((o) => o.extend) ? "beyond-finish" : "close";
   }
-  const chosen = (p.choose ? candidates.find((c) => c.key === p.choose) : undefined) ?? options?.[0] ?? ranked[0];
+  const chosen = (p.choose ? candidates.find((c) => c.key === p.choose) : undefined) ?? ranked[0];
   return { chosen, options, unsure };
+}
+
+/** Two detours close enough that the choice is the rider's (`UNSURE_RATIO`, `UNSURE_FLOOR_M`). */
+export function isClose(best: number, second: number): boolean {
+  return second - best <= UNSURE_FLOOR_M || second <= UNSURE_RATIO * best;
 }
 
 /**
