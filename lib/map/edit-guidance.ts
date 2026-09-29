@@ -91,7 +91,9 @@ export type GuideState =
   // dead end, a big detour) — its notes say what, this says what to do, once.
   | { kind: "proposed"; warned?: boolean }
   // `wide`: „Pārrēķināt posmu” is on offer; `straight`: „Vest pa taisno” is.
-  | { kind: "refused"; reason: string; wide?: boolean; straight?: boolean };
+  | { kind: "refused"; reason: string; wide?: boolean; straight?: boolean }
+  // Release B item 4: `count` edits chained, waiting for one ✓.
+  | { kind: "chain"; count: number };
 
 /** Just the "what to do" part of a state — what the chip adds after its own words. */
 export function guideAction(t: T, state: GuideState): string {
@@ -102,6 +104,7 @@ export function guideAction(t: T, state: GuideState): string {
     case "routing": return t("guideRouting");
     case "proposed": return t(state.warned ? "guideWarned" : "guideProposed");
     case "refused": return t(state.straight ? "guideRefusedStraight" : state.wide ? "guideRefusedWide" : "guideRefused");
+    case "chain": return fi(t("chainGuide"), { n: state.count });
   }
 }
 
@@ -134,6 +137,7 @@ export function guidance(t: T, state: GuideState): string {
       case "routing": return t("previewRouting");
       case "proposed": return "";
       case "refused": return state.reason;
+      case "chain": return "";
     }
   })();
   return joinGuide(what, guideAction(t, state));

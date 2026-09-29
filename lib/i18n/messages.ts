@@ -874,6 +874,10 @@ export type MessageKey =
   | "blockChipRemove"
   | "blockChipRest"
   | "blockMoveHint"
+  | "chainGuide"
+  | "chainConfirmAll"
+  | "chainUndoLast"
+  | "chainDiscardAll"
   ;
 
 type Messages = Record<MessageKey, string>;
@@ -1541,6 +1545,10 @@ const lv: Messages = {
   blockChipRemove: "Izņemt",
   blockChipRest: "Pievienot pārējās",
   blockMoveHint: "Pārvieto {name} – pieskaries jaunajai vietai kartē.",
+  chainGuide: "{n} izmaiņas – ✓ apstiprina visas, ↶ atsauc pēdējo, ✕ atmet visas.",
+  chainConfirmAll: "Apstiprināt visas izmaiņas",
+  chainUndoLast: "Atsaukt pēdējo izmaiņu",
+  chainDiscardAll: "Atmest visas izmaiņas",
   // ── /release-b ──
 };
 
@@ -2177,6 +2185,10 @@ const lt: Messages = {
   blockChipRemove: "Pašalinti",
   blockChipRest: "Pridėti likusius",
   blockMoveHint: "Perkelkite {name} – palieskite naują vietą žemėlapyje.",
+  chainGuide: "Pakeitimų: {n} – ✓ patvirtina visus, ↶ atšaukia paskutinį, ✕ atmeta visus.",
+  chainConfirmAll: "Patvirtinti visus pakeitimus",
+  chainUndoLast: "Atšaukti paskutinį pakeitimą",
+  chainDiscardAll: "Atmesti visus pakeitimus",
   // ── /release-b ──
 };
 
@@ -2809,6 +2821,10 @@ const et: Messages = {
   blockChipRemove: "Eemalda",
   blockChipRest: "Lisa ülejäänud",
   blockMoveHint: "Liiguta {name} – puuduta kaardil uut kohta.",
+  chainGuide: "{n} muudatust – ✓ kinnitab kõik, ↶ võtab viimase tagasi, ✕ loobub kõigist.",
+  chainConfirmAll: "Kinnita kõik muudatused",
+  chainUndoLast: "Võta viimane muudatus tagasi",
+  chainDiscardAll: "Loobu kõigist muudatustest",
   // ── /release-b ──
 };
 
@@ -3439,6 +3455,10 @@ const en: Messages = {
   blockChipRemove: "Remove",
   blockChipRest: "Add the rest",
   blockMoveHint: "Move {name} – tap its new place on the map.",
+  chainGuide: "{n} changes – ✓ confirms them all, ↶ undoes the last, ✕ discards them all.",
+  chainConfirmAll: "Confirm all changes",
+  chainUndoLast: "Undo the last change",
+  chainDiscardAll: "Discard all changes",
   // ── /release-b ──
 };
 
