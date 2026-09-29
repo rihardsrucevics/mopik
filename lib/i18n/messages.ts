@@ -925,6 +925,23 @@ export type MessageKey =
   | "sightFinishFirst"
   | "sightNoteClose"
   // ── /sights-add ──
+  // ── add-kind ── „+” asks what to add; the point sheet's kind switch.
+  | "addChooseWhat"
+  | "addChooseAct"
+  | "addStopLabel"
+  | "addStopDetail"
+  | "addPassLabel"
+  | "addPassDetail"
+  | "addArmedStopWhat"
+  | "addArmedStopAct"
+  | "addArmedPassWhat"
+  | "addArmedPassAct"
+  | "addClose"
+  | "batchPassCountOne"
+  | "batchPassCountMany"
+  | "kindSwitchLabel"
+  | "kindSwitchEnds"
+  // ── /add-kind ──
   ;
 
 type Messages = Record<MessageKey, string>;
@@ -1636,6 +1653,23 @@ const lv: Messages = {
   sightFinishFirst: "Vispirms apstiprini vai atmet pašreizējo izmaiņu – tad pievieno apskates vietu.",
   sightNoteClose: "Aizvērt",
   // ── /sights-add ──
+  // ── add-kind ──
+  addChooseWhat: "Ko pievienot?",
+  addChooseAct: "izvēlies veidu, tad pieskaries kartei.",
+  addStopLabel: "Pietura",
+  addStopDetail: "Mopik atradīs ceļu līdz tai",
+  addPassLabel: "Caurbraucams punkts",
+  addPassDetail: "Tikai virza līniju, bez numura",
+  addArmedStopWhat: "Pievieno pieturu",
+  addArmedStopAct: "pieskaries kartei vai meklē vietu.",
+  addArmedPassWhat: "Pievieno caurbraucamu punktu",
+  addArmedPassAct: "pieskaries kartei vietā, caur kuru braukt.",
+  addClose: "Aizvērt",
+  batchPassCountOne: "1 jauns caurbraucams punkts",
+  batchPassCountMany: "{n} jauni caurbraucami punkti",
+  kindSwitchLabel: "Veids",
+  kindSwitchEnds: "Startu un finišu nevar padarīt caurbraucamu – tie paliek pieturas.",
+  // ── /add-kind ──
 };
 
 const lt: Messages = {
@@ -2315,6 +2349,23 @@ const lt: Messages = {
   sightFinishFirst: "Pirmiausia patvirtink arba atmesk dabartinį pakeitimą – tada pridėk lankytiną vietą.",
   sightNoteClose: "Uždaryti",
   // ── /sights-add ──
+  // ── add-kind ──
+  addChooseWhat: "Ką pridėti?",
+  addChooseAct: "pasirink tipą, tada paliesk žemėlapį.",
+  addStopLabel: "Sustojimas",
+  addStopDetail: "Mopik suras kelią iki jo",
+  addPassLabel: "Pravažiavimo taškas",
+  addPassDetail: "Tik nukreipia liniją, be numerio",
+  addArmedStopWhat: "Pridedi sustojimą",
+  addArmedStopAct: "paliesk žemėlapį arba ieškok vietos.",
+  addArmedPassWhat: "Pridedi pravažiavimo tašką",
+  addArmedPassAct: "paliesk žemėlapį ten, per kur važiuoti.",
+  addClose: "Uždaryti",
+  batchPassCountOne: "1 naujas pravažiavimo taškas",
+  batchPassCountMany: "{n} nauji pravažiavimo taškai",
+  kindSwitchLabel: "Tipas",
+  kindSwitchEnds: "Starto ir finišo negalima paversti pravažiavimo tašku – jie lieka sustojimai.",
+  // ── /add-kind ──
 };
 
 const et: Messages = {
@@ -2990,6 +3041,23 @@ const et: Messages = {
   sightFinishFirst: "Kinnita või loobu kõigepealt praegusest muudatusest – siis lisa vaatamisväärsus.",
   sightNoteClose: "Sulge",
   // ── /sights-add ──
+  // ── add-kind ──
+  addChooseWhat: "Mida lisada?",
+  addChooseAct: "vali tüüp, siis puuduta kaarti.",
+  addStopLabel: "Peatus",
+  addStopDetail: "Mopik leiab tee selleni",
+  addPassLabel: "Läbisõidupunkt",
+  addPassDetail: "Ainult suunab joont, numbrita",
+  addArmedStopWhat: "Lisad peatust",
+  addArmedStopAct: "puuduta kaarti või otsi kohta.",
+  addArmedPassWhat: "Lisad läbisõidupunkti",
+  addArmedPassAct: "puuduta kaarti seal, kust läbi sõita.",
+  addClose: "Sulge",
+  batchPassCountOne: "1 uus läbisõidupunkt",
+  batchPassCountMany: "{n} uut läbisõidupunkti",
+  kindSwitchLabel: "Tüüp",
+  kindSwitchEnds: "Algust ja lõppu ei saa läbisõidupunktiks teha – need jäävad peatusteks.",
+  // ── /add-kind ──
 };
 
 const en: Messages = {
@@ -3663,6 +3731,23 @@ const en: Messages = {
   sightFinishFirst: "Confirm or discard the current change first – then add the sight.",
   sightNoteClose: "Close",
   // ── /sights-add ──
+  // ── add-kind ──
+  addChooseWhat: "What to add?",
+  addChooseAct: "pick a kind, then tap the map.",
+  addStopLabel: "Stop",
+  addStopDetail: "Mopik finds the road to it",
+  addPassLabel: "Pass-through point",
+  addPassDetail: "Only steers the line, no number",
+  addArmedStopWhat: "Adding a stop",
+  addArmedStopAct: "tap the map or search for a place.",
+  addArmedPassWhat: "Adding a pass-through point",
+  addArmedPassAct: "tap the map where to ride through.",
+  addClose: "Close",
+  batchPassCountOne: "1 new pass-through point",
+  batchPassCountMany: "{n} new pass-through points",
+  kindSwitchLabel: "Kind",
+  kindSwitchEnds: "The start and the finish cannot be pass-through points – they stay stops.",
+  // ── /add-kind ──
 };
 
 const MESSAGES: Record<UiLocale, Messages> = { lv, lt, et, en };
