@@ -551,6 +551,8 @@ export type MessageKey =
   /** An edit whose new line would not join the ride; refused, the ride kept. */
   | "editBrokenLine"
   | "editTimeout"
+  | "editStraightNoteFinish"
+  | "editStraightNoteStart"
   | "guideRefusedRetry"
   | "chainOfferAll"
   | "editRemoveNoJoin"
@@ -884,6 +886,7 @@ export type MessageKey =
   | "blockProbing"
   | "blockProbingAct"
   | "blockActMove"
+  | "blockActStraightAll"
   | "blockActTap"
   | "blockActRemove"
   | "blockActStraight"
@@ -1555,6 +1558,8 @@ const lv: Messages = {
   editNoRoadStraight: "Pa ceļu šeit nevar izbraukt, tuvākais ceļš ir ~{m} m nostāk.",
   editStraightAccept: "Vest pa taisno",
   editStraightLabel: "Kā tikt līdz šai vietai",
+  editStraightNoteFinish: "Pēdējie {m} m līdz „{name}” – taisni, bez ceļa.",
+  editStraightNoteStart: "Pirmie {m} m no „{name}” – taisni, bez ceļa.",
   editStraightNote: "Pēdējie {m} m līdz „{name}” – taisni, bez ceļa, un atpakaļ pa to pašu līniju.",
   editStraightRisk: "{km} km taisni pāri mežam vai ūdenim",
   legendDrawn: "Zīmēts taisni",
@@ -1641,6 +1646,7 @@ const lv: Messages = {
   blockProbing: "Meklēju, kurš punkts traucē",
   blockProbingAct: "pagaidi mirkli.",
   blockActTap: "pieskaries citur kartē",
+  blockActStraightAll: "„Vest pa taisno visiem”",
   blockActMove: "pārvieto",
   blockActRemove: "izņem",
   blockActStraight: "„Vest pa taisno”",
@@ -2282,6 +2288,8 @@ const lt: Messages = {
   editNoRoadStraight: "Keliu čia nuvažiuoti negalima, artimiausias kelias yra už ~{m} m.",
   editStraightAccept: "Vesti tiesiai",
   editStraightLabel: "Kaip pasiekti šią vietą",
+  editStraightNoteFinish: "Paskutiniai {m} m iki „{name}“ – tiesiai, be kelio.",
+  editStraightNoteStart: "Pirmieji {m} m nuo „{name}“ – tiesiai, be kelio.",
   editStraightNote: "Paskutiniai {m} m iki „{name}“ – tiesiai, be kelio, ir atgal ta pačia linija.",
   editStraightRisk: "{km} km tiesiai per mišką ar vandenį",
   legendDrawn: "Nubrėžta tiesiai",
@@ -2368,6 +2376,7 @@ const lt: Messages = {
   blockProbing: "Ieškau, kuris taškas trukdo",
   blockProbingAct: "palaukite akimirką.",
   blockActTap: "bakstelėkite kitur žemėlapyje",
+  blockActStraightAll: "„Vesti tiesiai visus“",
   blockActMove: "perkelkite",
   blockActRemove: "pašalinkite",
   blockActStraight: "„Vesti tiesiai“",
@@ -3005,6 +3014,8 @@ const et: Messages = {
   editNoRoadStraight: "Teed mööda siia sõita ei saa, lähim tee on ~{m} m eemal.",
   editStraightAccept: "Vii otse",
   editStraightLabel: "Kuidas selle kohani jõuda",
+  editStraightNoteFinish: "Viimased {m} m kohani „{name}“ – otse, teeta.",
+  editStraightNoteStart: "Esimesed {m} m kohast „{name}“ – otse, teeta.",
   editStraightNote: "Viimased {m} m kohani „{name}“ – otse, teeta, ja tagasi sama joont mööda.",
   editStraightRisk: "{km} km otse üle metsa või vee",
   legendDrawn: "Joonistatud otse",
@@ -3091,6 +3102,7 @@ const et: Messages = {
   blockProbing: "Otsin, milline punkt segab",
   blockProbingAct: "oota hetk.",
   blockActTap: "puuduta kaardil mujal",
+  blockActStraightAll: "„Vii kõik otse“",
   blockActMove: "liiguta",
   blockActRemove: "eemalda",
   blockActStraight: "„Vii otse“",
@@ -3726,6 +3738,8 @@ const en: Messages = {
   editNoRoadStraight: "You can’t reach this by road, the nearest road is ~{m} m away.",
   editStraightAccept: "Go straight",
   editStraightLabel: "How to reach this spot",
+  editStraightNoteFinish: "The last {m} m to “{name}” – straight, no road.",
+  editStraightNoteStart: "The first {m} m from “{name}” – straight, no road.",
   editStraightNote: "The last {m} m to “{name}” – straight, no road, and back along the same line.",
   editStraightRisk: "{km} km straight across forest or water",
   legendDrawn: "Drawn straight",
@@ -3812,6 +3826,7 @@ const en: Messages = {
   blockProbing: "Finding which point is in the way",
   blockProbingAct: "one moment.",
   blockActTap: "tap elsewhere on the map",
+  blockActStraightAll: "“Go straight for all”",
   blockActMove: "move it",
   blockActRemove: "remove it",
   blockActStraight: "“Go straight”",

@@ -1618,7 +1618,8 @@ export function HomePage() {
     const baseMeters = p.baseRide?.distanceMeters ?? edited?.distanceMeters ?? route.distanceMeters;
     const baseSeconds = p.baseRide?.durationSeconds ?? edited?.durationSeconds ?? route.durationSeconds;
     // What the probes need if this is refused or warned: the first attempt's view (release B item 1).
-    if (blockCtx.current?.token !== token && !p.then && !p.thenChain) blockCtx.current = { token, before, planned, line, baseSegments, nextPlan, asked, baseMeters };
+    // The rest of a batch under „Vest pa taisno visiem” too: if it is refused, its own blocker is named (never the generic line).
+    if (blockCtx.current?.token !== token && !p.then) blockCtx.current = { token, before, planned, line, baseSegments, nextPlan, asked, baseMeters };
     /** The detour this proposal adds, when it is one worth his say-so (the warned landing names it). */
     let riskPlus: number | null = null;
     /**
@@ -1957,7 +1958,10 @@ export function HomePage() {
       if (straight) {
         const name = [...planned.places.vias, planned.places.start, ...(planned.places.finish ? [planned.places.finish] : [])].find((v) => v.lon === asked[0][0] && v.lat === asked[0][1]);
         const m = Math.round(straight.meters);
-        notes.push(fi(ui.editStraightNote, { m: new Intl.NumberFormat(locale).format(m), name: name?.name || ui.shapePointName }));
+        const end = planned.kind === "move-finish" ? "finish" : planned.kind === "move-start" ? "start" : null;
+        const said = (name ? placeWords(renamed(name.name)) : "") || (end === "finish" ? ui.mapFinish : end === "start" ? ui.mapStart : ui.shapePointName);
+        // A finish or start is reached one way: no „un atpakaļ”.
+        notes.push(fi(ui[end === "finish" ? "editStraightNoteFinish" : end === "start" ? "editStraightNoteStart" : "editStraightNote"], { m: new Intl.NumberFormat(locale).format(m), name: said }));
         if (m > 1000) notes.push(fi(ui.editStraightRisk, { km: kmFormat.format(m / 1000) }));
       }
       // ── chain-polish ── what and how much in the chip's first line, the way in one short line under it (never cut mid-sentence on a phone).
@@ -2433,7 +2437,13 @@ export function HomePage() {
     const ask = straightAsk;
     if (!ask || proposalRef.current.phase !== "refused") return;
     track("route_edit_straight_asked", {});
-    proposePlaces(ask.change, { straight: ask.level });
+    // The pin named since it was refused (its reverse lookup): the change as
+    // it is now, so ✓ recognises it — else ✓ routed it again, without the
+    // straight line (found on a new finish in a forest, 2026-09-30).
+    const mine = live.current;
+    const now = mine && mine.token === ask.token ? { change: mine.change, renames: mine.renames } : { change: ask.change, renames: {} };
+    proposePlaces(now.change, { straight: ask.level });
+    if (live.current && live.current !== mine) live.current.renames = now.renames;
   }
 
   function askWide(token: number, how: EditKind, note: string, change: ProposedChange) {
@@ -3439,7 +3449,7 @@ export function HomePage() {
       wide: wideNow,
       straight: straightNow,
     }, locale);
-    if (view && chainNow && view.tone !== "routing") {
+    if (view && chainNow && !chainNow.all && view.tone !== "routing") {
       // „3 punkti bez ceļa, taisni ~1,4 km – „Vest pa taisno caur visiem” vai pārvieto katru.”
       const fmt = (n: number) => new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(n);
       const g = chainGuide((k) => ui[k], chainNow.count, chainNow.meters, fmt, CHAIN_RISK_M);
@@ -3447,13 +3457,15 @@ export function HomePage() {
       return { ...view, guide: joinGuide(g.what, g.action) };
     }
     if (!view || !blockNow) return chained(view);
+    // Several off the road, not in a row: the per-point line, with „Vest pa taisno visiem” among its fixes (the chain chip).
+    const said: Blocking = chainNow?.all ? { ...blockNow, straightAll: true } : blockNow;
     // Which point, and what to do with it — in the guidance line itself.
     const fmt = (n: number) => new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(n);
     const warned = proposal.phase === "proposed";
-    const g = blockedGuide((k) => ui[k], blockNow, warned, fmt);
-    if (view.tone === "refused") return { ...view, text: g.what, guide: g.action, title: blockedLine((k) => ui[k], blockNow, false, fmt) };
+    const g = blockedGuide((k) => ui[k], said, warned, fmt);
+    if (view.tone === "refused") return { ...view, text: g.what, guide: g.action, title: blockedLine((k) => ui[k], said, false, fmt) };
     // Warned: „Tomēr braukt” already works; the point is named once it is found.
-    if (warned && !blockNow.probing) return { ...view, guide: blockedLine((k) => ui[k], blockNow, true, fmt) };
+    if (warned && !said.probing) return { ...view, guide: blockedLine((k) => ui[k], said, true, fmt) };
     return chained(view);
   }, [wiring.editing, proposal, shown, pendingChanges, ui, wideNow, straightNow, locale, blockNow, chainNow]);
   // The last proposal that landed stays on the map while the next change

@@ -202,7 +202,7 @@ export function causeWords(t: T, p: Pick<BlockingPoint, "cause" | "meters">, for
 
 /** „pārvieto, izņem vai „Vest pa taisno”” — what he can do, as a list. */
 export function fixWords(t: T, fixes: BlockFixes): string {
-  const words: Record<BlockOption, MessageKey> = { move: "blockActMove", tap: "blockActTap", remove: "blockActRemove", straight: "blockActStraight", override: "blockActOverride", rest: "blockActRest" };
+  const words: Record<BlockOption, MessageKey> = { move: "blockActMove", tap: "blockActTap", remove: "blockActRemove", straight: "blockActStraight", straightAll: "blockActStraightAll", override: "blockActOverride", rest: "blockActRest" };
   const parts = blockOptions(fixes).map((o) => t(words[o]));
   const last = parts.pop()!;
   return `${parts.join(", ")} ${t("blockOr")} ${last}.`;

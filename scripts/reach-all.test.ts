@@ -163,7 +163,7 @@ test("guard: every option the words name has its chip, in every blocked state (r
   const { blockOptions } = await import("@/lib/map/blocking");
   const { fixWords } = await import("@/lib/map/edit-guidance");
   const composer = readFileSync(new URL("../components/ride-composer.tsx", import.meta.url), "utf8");
-  const word: Record<string, MessageKey> = { move: "blockActMove", tap: "blockActTap", remove: "blockActRemove", straight: "blockActStraight", override: "blockActOverride", rest: "blockActRest" };
+  const word: Record<string, MessageKey> = { move: "blockActMove", tap: "blockActTap", remove: "blockActRemove", straight: "blockActStraight", straightAll: "blockActStraightAll", override: "blockActOverride", rest: "blockActRest" };
   const causes = ["far", "profile", "detour", "failed"] as const;
   for (const total of [1, 2, 4]) for (const cause of causes) for (const warned of [false, true]) for (const straight of [false, true]) {
     const b: Blocking = { token: 1, probing: false, refused: !warned, total, ...(straight ? { straight } : {}), points: [{ lat: 1, lon: 1, title: "Pietura 1", name: "", cause }] };

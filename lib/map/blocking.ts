@@ -55,6 +55,8 @@ export type Blocking = {
   straight?: boolean;
   /** Points of a batch the rider already chose „Vest pa taisno” for, waiting for the others (backlog 52). */
   picked?: { lat: number; lon: number }[];
+  /** „Vest pa taisno visiem” is on offer (the chain chip): several points off the road, not all in a row. */
+  straightAll?: boolean;
 };
 
 /** One point's probe, as the page measured it. */
@@ -104,10 +106,10 @@ export function singleCause(reason: string, meters: number | null, accept?: "pro
 }
 
 /** What the fixes are, in the order the chips offer them. `single`: one pending point, not a batch — a tap elsewhere moves it (no „Pārvietot” chip). */
-export type BlockFixes = { straight: boolean; override: boolean; rest: number; single?: boolean };
+export type BlockFixes = { straight: boolean; override: boolean; rest: number; single?: boolean; straightAll?: boolean };
 
 /** One fix, as the words name it and a chip offers it. „tap” is the gesture of a single pending point: said, no chip. */
-export type BlockOption = "move" | "tap" | "remove" | "straight" | "override" | "rest";
+export type BlockOption = "move" | "tap" | "remove" | "straight" | "straightAll" | "override" | "rest";
 
 /**
  * The fixes a blocked state offers, in order — the ONE list both the
@@ -120,6 +122,7 @@ export function blockOptions(fixes: BlockFixes): BlockOption[] {
     fixes.single ? "tap" as const : "move" as const,
     "remove" as const,
     ...(fixes.straight ? ["straight" as const] : []),
+    ...(fixes.straightAll ? ["straightAll" as const] : []),
     ...(fixes.override ? ["override" as const] : []),
     ...(fixes.rest > 0 ? ["rest" as const] : []),
   ];
@@ -130,7 +133,7 @@ export function pointFixes(p: Pick<BlockingPoint, "cause">, blocking: Pick<Block
   return { straight: p.cause === "far" || Boolean(blocking.straight) };
 }
 
-export function fixesFor(blocking: Pick<Blocking, "points" | "total" | "straight">, warned: boolean): BlockFixes {
+export function fixesFor(blocking: Pick<Blocking, "points" | "total" | "straight" | "straightAll">, warned: boolean): BlockFixes {
   const causes = new Set(blocking.points.map((p) => p.cause));
   return {
     // Every point off the road gets it, one or several (backlog 52).
@@ -138,6 +141,7 @@ export function fixesFor(blocking: Pick<Blocking, "points" | "total" | "straight
     override: warned && (causes.has("profile") || causes.has("detour")),
     rest: Math.max(0, blocking.total - blocking.points.length),
     ...(blocking.total === 1 ? { single: true } : {}),
+    ...(blocking.straightAll ? { straightAll: true } : {}),
   };
 }
 
