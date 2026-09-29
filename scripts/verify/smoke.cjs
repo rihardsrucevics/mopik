@@ -480,6 +480,58 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
   }
   await page.unroute(/\/api\/places\?(?=.*\blat=)/, reverse);
 
+  // ── 9. The connection drops while a ride is generated (2026-09-29, the rider's iPhone: „TypeError: Load failed") ──
+  t = Date.now();
+  {
+    const f = L.fixture("sigulda-cesis");
+    const GENFAIL = process.env.GENFAIL_SHOTS || L.SHOTS;
+    const e0 = log.errors.length;
+    const bubble = () => page.getByText("Savienojums pārtrūka, kamēr meklēju maršrutu – mēģini vēlreiz.");
+    const loaderUp = () => page.locator('section:has([role="log"])').getByRole("button", { name: "Atcelt", exact: true }).first().isVisible().catch(() => false);
+    const goRide = () => page.goto(`${L.BASE}/?lang=lv&p=${encodeURIComponent(f.planCode)}&go=1`);
+    const failing = (n) => { let calls = 0; const h = (route) => (++calls <= n ? route.abort("failed") : route.fulfill({ status: 200, contentType: "application/json", body: f.response })); h.calls = () => calls; return h; };
+
+    // a. One drop: the quiet retry brings the ride, the rider never sees an error.
+    let h = failing(1);
+    await page.route("**/api/generate-route", h);
+    await goRide();
+    await page.getByRole("button", { name: "Labot maršrutu kartē" }).waitFor({ timeout: 30000 });
+    rec("genfail: one drop → one quiet retry → the ride, no error shown", h.calls() === 2 && !(await bubble().isVisible().catch(() => false)) && !(await page.getByText(/TypeError|Load failed|Failed to fetch/).count()), { calls: h.calls() });
+    await page.unroute("**/api/generate-route", h);
+
+    // b. Two drops: the plain sentence, no raw error, no loader, and the button.
+    h = failing(2);
+    await page.route("**/api/generate-route", h);
+    await goRide();
+    await bubble().waitFor({ timeout: 30000 }).catch(async () => { await shot("fail-genfail"); console.log(`[${tag}]   genfail log: ${JSON.stringify(await page.locator('[role="log"]').allInnerTexts())} calls ${h.calls()} url ${page.url()}`); });
+    const retryBtn = page.getByRole("button", { name: "Mēģināt vēlreiz" });
+    rec("genfail: two drops → the friendly message, no raw error, no loader, a retry button", h.calls() === 2 && !(await page.getByText(/TypeError|Load failed|Failed to fetch|Neizdevās ģenerēt/).count()) && !(await loaderUp()) && (await retryBtn.isVisible()), { calls: h.calls(), loader: await loaderUp() });
+    if (tag === "375") await page.screenshot({ path: `${GENFAIL}/genfail-message.png` });
+    await retryBtn.click();
+    await page.waitForTimeout(150);
+    const bubbleGoneWhileLoading = !(await bubble().isVisible().catch(() => false));
+    await page.getByRole("button", { name: "Labot maršrutu kartē" }).waitFor({ timeout: 30000 });
+    rec("genfail: „Mēģināt vēlreiz” drops the error bubble and brings the ride", bubbleGoneWhileLoading && h.calls() === 3 && !(await bubble().isVisible().catch(() => false)), { calls: h.calls(), bubbleGoneWhileLoading });
+    if (tag === "375") await page.screenshot({ path: `${GENFAIL}/genfail-retry-ok.png` });
+    await page.unroute("**/api/generate-route", h);
+
+    // c. Atcelt during the quiet retry's wait: back to the form, nothing sent again.
+    h = failing(99);
+    await page.route("**/api/generate-route", h);
+    await goRide();
+    for (let k = 0; k < 100 && h.calls() < 1; k++) await page.waitForTimeout(50);
+    await page.locator('section:has([role="log"])').getByRole("button", { name: "Atcelt", exact: true }).first().click();
+    await page.waitForTimeout(2500);
+    rec("genfail: Atcelt during the wait → the form, no retry, no error", h.calls() === 1 && !(await loaderUp()) && !(await bubble().isVisible().catch(() => false)) && (await page.getByRole("button", { name: "Izveidot maršrutu" }).first().isVisible().catch(() => false)), { calls: h.calls() });
+    if (tag === "375") await page.screenshot({ path: `${GENFAIL}/genfail-cancelled.png` });
+    await page.unroute("**/api/generate-route", h);
+
+    // The aborted loads are what Chromium logs for route.abort — asked for above.
+    const added = log.errors.splice(e0);
+    log.errors.push(...added.filter((e) => !/net::ERR_FAILED|net::ERR_NETWORK_IO_SUSPENDED/.test(e)));
+    console.log(`[${tag}]   generation connection drop ${((Date.now() - t) / 1000).toFixed(1)} s`);
+  }
+
   await shot("end");
   // A 422 is how /api/reroute-leg says "no road reaches it" — the refused and
   // guard cases above ask for exactly that, and Chromium logs every non-2xx load.
