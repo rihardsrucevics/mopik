@@ -246,3 +246,22 @@ export function sightRefusedLine(t: T, name: string, reason: string): string {
   return joinGuide(joinGuide(name, reason.replace(/^\s*[A-ZĀ-Ž]/u, (c) => c.toLowerCase())), t("sightRefusedAct"));
 }
 // ── /sights-add ──
+
+// ── straight-chain ──
+// Several points in a row off any road (rider, 2026-09-29): one offer for
+// all of them, in the same two parts — „3 punkti bez ceļa, taisni ~1,4 km
+// pāri mežam vai ūdenim – „Vest pa taisno caur visiem” vai pārvieto katru.”
+
+/** What is happening and what to do, for a run of `n` points off any road, `meters` straight in all. */
+export function chainGuide(t: T, n: number, meters: number, format: (n: number) => string, riskM = 1_000): { what: string; action: string } {
+  const km = format(Math.round(meters / 100) / 10);
+  const what = fi(t("chainWhat"), { n, km }) + (meters > riskM ? ` ${t("chainRisk")}` : "");
+  return { what, action: t("chainAct") };
+}
+
+/** Its whole line, joined. */
+export function chainLine(t: T, n: number, meters: number, format: (n: number) => string, riskM?: number): string {
+  const g = chainGuide(t, n, meters, format, riskM);
+  return joinGuide(g.what, g.action);
+}
+// ── /straight-chain ──

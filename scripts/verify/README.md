@@ -23,6 +23,7 @@ On fixture rides with the router cache (`smoke.cjs`):
 - **Blocking point** (Grostonas → Ērgļi, three taps, one in Kangaru purvs): named in the chip, ringed on the map, the field says „Pietura 3”; „Pievienot pārējās” drops it and proposes the other two; commit; ↶.
 - **Through road** (Lauriņi → Ērgļi, the rider's GPX ride): a pass-through point moved onto the junction by Ogresgals is a plain proposal — no „strupceļš”, no „atpakaļ pa to pašu ceļu”, and the retraced share does not grow.
 - **A sight from the map card** (backlog 46; `/api/route-pois` and its `/api/detour` stubbed with a manor ~100 m off sigulda-cesis): „Pievienot braucienam” → a proposal with numbers and halo → the „tuvāk ar motociklu netikt” note with its distance → ✓ with no extra routing → ↶; on the result „Atzīmēt” → „1 atzīmēta · Pievienot” on the map → Escape → the card's add and its note on the map.
+- **„Vest pa taisno caur visiem”** (Grostonas → Ērgļi, three taps in a row in Kangaru purvs): the one chain chip with „3 punkti bez ceļa, taisni ~N km” → a proposal with numbers, halo, its note and the honesty line → ✓ keeps a drawn chain through all three with no extra routing → ↶. Screenshots `chain-straight-{offer,proposal,committed}.png` at 375 (`CHAIN_SHOTS` sets their directory).
 - Throughout: the four **`[data-slot]` rects do not move** (idle, proposal, refused, warned, committed), and **no console errors** (the 422 network lines the refused/guard cases ask for are the only ones ignored).
 
 ## What it does NOT catch — read this

@@ -243,6 +243,8 @@ export type RideEdit = {
   onOverride?: (commitNow: boolean) => void;
   /** „Vest pa taisno”: no road reaches the point — as far as a road goes, then straight (a proposal). Absent unless on offer. */
   onStraight?: () => void;
+  // ── straight-chain ── „Vest pa taisno caur visiem”: several pending points in a row off any road, joined straight as one chain (a proposal). Absent unless on offer.
+  onStraightChain?: () => void;
   /**
    * Release B item 1: the proposal's points that stop it (refused or
    * warned) — ringed on the map, fixed per point with the notice area's
@@ -2360,7 +2362,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
    * stay put). What each does is named here (`act`) and wired to the
    * handlers in the controls effect below, as every other control is.
    */
-  type ChoiceAct = { kind: "stop" | "pass" } | { leg: string } | { remove: boolean } | { wide: true } | { override: true } | { straight: true }
+  type ChoiceAct = { kind: "stop" | "pass" } | { leg: string } | { remove: boolean } | { wide: true } | { override: true } | { straight: true } | { chain: true }
     | { block: "move" | "remove" | "straight" | "rest"; id?: number };
   type ChoiceSpec = Omit<MapChoiceGroup, "options"> & { options: (Omit<MapChoiceGroup["options"][number], "onSelect"> & { act: ChoiceAct })[] };
   const choices: ChoiceSpec[] = [];
@@ -2392,6 +2394,11 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   if (edit?.onStraight) choices.push({
     key: "straight", label: t(locale, "editStraightLabel"), action: true,
     options: [{ key: "straight", label: t(locale, "editStraightAccept"), selected: false, act: { straight: true } }],
+  });
+  // ── straight-chain ── one chip for the whole run of off-road points.
+  if (edit?.onStraightChain) choices.push({
+    key: "chain", label: t(locale, "chainLabel"), action: true,
+    options: [{ key: "chain", label: t(locale, "chainOffer"), selected: false, act: { chain: true } }],
   });
   // „Tomēr braukt”: a proposal outside the profile or with a big detour
   // (`EditProposal.accept`) is taken only by this chip — what ✓ would do,
@@ -2868,6 +2875,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
             else if ("leg" in act) h?.chooseLeg(act.leg);
             else if ("wide" in act) h?.wide();
             else if ("straight" in act) edit?.onStraight?.();
+            else if ("chain" in act) edit?.onStraightChain?.();
             // With the mark still pending, confirmed as ✓ would (the composer
             // lets the mark go); once ✓ already let it go (pressed while it
             // routed), the page commits the armed proposal itself.
