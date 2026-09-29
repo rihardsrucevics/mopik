@@ -118,6 +118,22 @@ reason in the notice, ✓ disabled or the off-road bar. `EditHistory` gets only
 committed proposals. Notes belong to a proposal and die with it (fixes the
 lingering „Punkts pārvietots N m…”).
 
+**B5 Chained edits (release B, rider 2026-09-28).** While a landed
+proposal is shown, starting another edit — pressing or dragging another
+point, dragging the line, adding a point, a kind switch, a point dropped on
+the line — chains it: the proposal is kept (not in the ride, not in the
+history) and the next edit is routed on top of it, as if it were committed.
+The preview shows every pending change, the chip the total against the
+committed ride, and from two on the guidance says „2 izmaiņas – ✓ apstiprina
+visas, ↶ atsauc pēdējo, ✕ atmet visas.” ✓ commits the top as ONE history
+step; ↶ takes the last pending change off; ✕ (and Escape) drops them all.
+A change on a warned one inherits the warning, so only „Tomēr braukt”
+commits the chain (`mayCommit`). A proposal still routing is not chained —
+the new edit replaces it, as before. Same slots, same buttons; chaining
+changes nothing about spurs. Model: `lib/map/edit-chain.ts`; page:
+`stackProposal` / `chainConfirm` / `chainUndo` / `chainDiscard` in
+`home-page.tsx`; composer: `stackFirst` in `ride-composer.tsx`.
+
 ## C. Data model
 
 ```ts

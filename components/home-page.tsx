@@ -93,6 +93,7 @@ import {
   type Segments,
 } from "@/lib/map/edit-proposal";
 import { markOutsideProfile, farthestFrom, detourRisk, reachOf, deadEndNoteKey } from "@/lib/map/edit-reach";
+import { NO_CHAIN, chainCount, chainTopOf, inheritWarning, popChain, shownProposal, stackOnto, type EditChain } from "@/lib/map/edit-chain";
 import { blockingFrom, singleCause, type Blocking, type BlockingPoint, type PointProbe } from "@/lib/map/blocking";
 import { drawnIntervals, straightRun } from "@/lib/map/straight";
 import { drawnMeters } from "@/lib/routing/drawn";
@@ -108,7 +109,7 @@ import { LoaderCircle } from "lucide-react";
 // „Labot” opens the phone map full screen first: inline it is a preview.
 import { openMapFullscreen } from "@/lib/map/fullscreen";
 import { passOnLine } from "@/lib/map/line-sheet";
-import { joinGuide, proposalGuide, blockedGuide, blockedLine } from "@/lib/map/edit-guidance";
+import { joinGuide, proposalGuide, blockedGuide, blockedLine, guideAction } from "@/lib/map/edit-guidance";
 
 /** A proposal ready to land, with what `live.landed` records for its commit. */
 type Landing = { proposal: EditProposal; addedAt: number; runs: number };
@@ -492,6 +493,18 @@ export function HomePage() {
    */
   const [blocking, setBlocking] = useState<Blocking | null>(null);
   const blockCtx = useRef<BlockCtx | null>(null);
+  /**
+   * Release B item 4: several edits chained before one ✓ (rider,
+   * 2026-09-28, images/29–30). Each landed proposal the rider builds on is
+   * stacked here — not in the ride, not in the undo — and the next edit is
+   * routed on top of it, so the preview carries every pending change and its
+   * chip the total against the committed ride. ✓ commits the top (which
+   * holds them all) as ONE undo step; ↶ takes the last pending change off;
+   * ✕ drops them all (lib/map/edit-chain.ts).
+   */
+  const [chainState, setChainState] = useState<EditChain>(NO_CHAIN);
+  const chainRef = useRef<EditChain>(NO_CHAIN);
+  const setChain = (next: EditChain) => { chainRef.current = next; setChainState(next); };
   const proposalSeq = useRef(0);
   const live = useRef<LiveProposal | null>(null);
   const proposalAbort = useRef<AbortController | null>(null);
@@ -545,6 +558,9 @@ export function HomePage() {
   /** The edits made to the ride on screen — none when the ride is another one. */
   const history = route && editsFor.routeId === route.id ? editsFor.history : NO_EDITS;
   const edited = history.current;
+  /** The chain on this ride, if any (another ride's is not this one's). */
+  const chainOn = route && chainState.routeId === route.id ? chainState : NO_CHAIN;
+  const chainTop = chainTopOf(chainOn);
   /**
    * The ride on screen, edited or not, in the one shape every consumer reads.
    *
@@ -572,6 +588,8 @@ export function HomePage() {
    * and would stop describing the ride after the first moved stop.
    */
   const canEdit = Boolean(result && shownRoute && ridePlaces && plan && !showingDirect && !result.remoteLoop);
+  /** What the editor works on: the chain's top while edits are chained, else the ride. */
+  const workingPlaces = chainTop?.ride.places ?? ridePlaces;
   /**
    * The routed detours the result panel prefetched  /**
    * The routed detours the result panel prefetched, so a marker's card can
@@ -1198,6 +1216,7 @@ export function HomePage() {
     setFocusPoi(null);
     setEditNote(null);
     discardProposal();
+    setChain(NO_CHAIN);
     // Stops only: a shaping point is a dot of the editor's own, not a pin.
     setPreview({ start: ridePlaces.start, vias: stopsOf(ridePlaces), finish: ridePlaces.finish });
     setEditEntry({ editsFor, plan, places });
@@ -1215,6 +1234,7 @@ export function HomePage() {
    */
   function cancelEdit() {
     discardProposal();
+    setChain(NO_CHAIN);
     if (editEntry) {
       track("route_edit_cancelled", { edited: editEntry.editsFor.history.current !== edited });
       setEditsFor(editEntry.editsFor);
@@ -1230,6 +1250,7 @@ export function HomePage() {
   function finishEdit() {
     // A preview not confirmed is not kept: ✓ is how an edit enters the ride.
     discardProposal();
+    setChain(NO_CHAIN);
     track("route_edit_finished", { edited: Boolean(edited) });
     setEditMode(false);
     setEditNote(null);
@@ -1275,6 +1296,12 @@ export function HomePage() {
     return { after: next };
   }
 
+  /** The line a new proposal is cut from right now: the chain's top, else the committed ride (read from the ref: async-safe). */
+  function baseNow(): { segments: Segments; top: EditProposal | null } {
+    const top = route ? chainTopOf(chainRef.current.routeId === route.id ? chainRef.current : NO_CHAIN) : null;
+    return { segments: top?.ride.segments ?? edited?.segments ?? route!.segments, top };
+  }
+
   /** Stops whatever the live proposal is doing in the background — the debounce and the request. */
   function stopProposalWork() {
     if (proposeTimer.current) clearTimeout(proposeTimer.current.timer);
@@ -1310,8 +1337,11 @@ export function HomePage() {
       opts.confirm?.resolve(false);
       return;
     }
-    const before = ridePlaces;
-    const baseSegments = edited?.segments ?? route.segments;
+    // Chained (release B item 4): cut from the top of the chain.
+    const { top } = baseNow();
+    const before = top?.ride.places ?? ridePlaces;
+    const baseSegments = top?.ride.segments ?? edited?.segments ?? route.segments;
+    const stacked = top ? { baseRide: { distanceMeters: top.ride.distanceMeters, durationSeconds: top.ride.durationSeconds }, origin: ridePlaces } : {};
     live.current = { token, key: changeKey(change), base: baseSegments, routeId: route.id, landed: null, change, renames: {} };
     if (opts.confirm) { commitWaiter.current = { ...opts.confirm, token }; setCommitting(true); }
     // A new proposal: whatever the last one said goes with it.
@@ -1339,7 +1369,7 @@ export function HomePage() {
     if (opts.confirm) dispatchProposal({ type: "confirm" });
     const run = () => {
       proposeTimer.current = null;
-      void routeProposal({ token, before, planned, baseSegments, line, shape: change.kind === "shape", change, wide: opts.wide === true, ...(opts.straight !== undefined ? { straight: true, relax: opts.straight } : {}), ...(opts.then ? { then: opts.then } : {}) });
+      void routeProposal({ token, before, planned, baseSegments, line, shape: change.kind === "shape", change, wide: opts.wide === true, ...(opts.straight !== undefined ? { straight: true, relax: opts.straight } : {}), ...(opts.then ? { then: opts.then } : {}), ...stacked });
     };
     if (opts.delay) proposeTimer.current = { timer: setTimeout(run, opts.delay), run };
     else run();
@@ -1407,7 +1437,8 @@ export function HomePage() {
     };
     /** A proposal into the reducer — or ✓ already pressed, committed (never one that needs „Tomēr braukt”). */
     const land = (l: Landing) => {
-      const { proposal } = l;
+      // A change stacked on a warned one still needs „Tomēr braukt” (`mayCommit`, release B item 4).
+      const proposal = inheritWarning(l.proposal, chainRef.current);
       if (!current()) return;
       // „Vest pa taisno” for one point of a batch: the rest landed — now
       // that point, straight, on top of it; one proposal for ✓.
@@ -1973,7 +2004,7 @@ export function HomePage() {
    */
   function commitProposal(proposal: EditProposal, whileRouting: boolean): boolean {
     const mine = live.current;
-    if (!plan || !route || !mine || mine.token !== proposal.token || !mine.landed || mine.routeId !== route.id || mine.base !== (edited?.segments ?? route.segments)) return false;
+    if (!plan || !route || !mine || mine.token !== proposal.token || !mine.landed || mine.routeId !== route.id || mine.base !== baseNow().segments) return false;
     // A warned proposal enters the ride only through „Tomēr braukt” (`mayCommit`).
     if (!mayCommit(proposal, overrideArmed.current)) return false;
     overrideArmed.current = null;
@@ -1994,6 +2025,9 @@ export function HomePage() {
     setPlaces(resolvedOf(next.places));
     live.current = null;
     dispatchProposal({ type: "committed" });
+    // Every chained change is in it: one step of the undo (release B item 4).
+    if (chainRef.current.rides.length) track("route_edit_chain_confirmed", { changes: chainRef.current.rides.length + 1 });
+    setChain(NO_CHAIN);
     // The proposal's notes were said on the preview; they go with it.
     setEditNote(null);
     reseed(addedAt >= 0 ? addedAt + 1 : undefined);
@@ -2038,6 +2072,89 @@ export function HomePage() {
     dispatchProposal({ type: "discard" });
   }
 
+  // ── release-b: chain ──
+  /**
+   * Another edit starts while a proposal is shown (release B item 4): the
+   * landed proposal is stacked — kept, not committed — and the rows follow
+   * it, so the next edit is cut from it. Returns whether it stacked.
+   */
+  function stackProposal(): boolean {
+    const s = proposalRef.current;
+    const mine = live.current;
+    if (!route || s.phase !== "proposed" || !mine || mine.token !== s.proposal.token || !mine.landed) return false;
+    const kept: EditProposal = { ...s.proposal, ride: { ...s.proposal.ride, places: renamePlaces(s.proposal.ride.places, mine.renames) } };
+    stopProposalWork();
+    live.current = null;
+    proposalSeq.current += 1;
+    overrideArmed.current = null;
+    setWideAsk(null);
+    setStraightAsk(null);
+    setBlocking(null);
+    setChain(stackOnto(chainRef.current, route.id, kept));
+    dispatchProposal({ type: "stacked" });
+    setEditNote(null);
+    reseed();
+    track("route_edit_stacked", { changes: chainRef.current.rides.length, how: kept.how });
+    return true;
+  }
+
+  /** ↶ while edits are chained: the proposal on top goes, else the chain's own top. */
+  function chainUndo() {
+    if (proposalRef.current.phase !== "idle") { discardProposal(); reseed(); return; }
+    if (!chainRef.current.rides.length) return;
+    track("route_edit_chain_undone", { changes: chainRef.current.rides.length });
+    setChain(popChain(chainRef.current));
+    setEditNote(null);
+    reseed();
+  }
+
+  /** ✕ while edits are chained: all of them go; the ride is what was committed. */
+  function chainDiscard() {
+    const n = chainCount(chainRef.current, proposalRef.current);
+    discardProposal();
+    if (!chainRef.current.rides.length) return;
+    track("route_edit_chain_discarded", { changes: n });
+    setChain(NO_CHAIN);
+    setEditNote(null);
+    reseed();
+  }
+
+  /** ✓ with nothing new on the chain: its top — every chained change — is ONE step of the undo. */
+  function chainConfirm(): boolean {
+    const top = chainTopOf(chainRef.current);
+    if (!plan || !route || !top || proposalRef.current.phase !== "idle") return false;
+    if (!mayCommit(top, overrideArmed.current)) return false;
+    overrideArmed.current = null;
+    setEditsFor((prev) => {
+      const own = prev.routeId === route.id;
+      return { routeId: route.id, history: pushEdit(own ? prev.history : NO_EDITS, top.ride), original: own && prev.original ? prev.original : { plan, places } };
+    });
+    setPlan(planWithPlaces(plan, top.ride.places));
+    setPlaces(resolvedOf(top.ride.places));
+    track("route_edit_chain_confirmed", { changes: chainRef.current.rides.length });
+    if (top.accept) track("route_edit_override_accepted", { why: top.accept, relax: top.relax ?? 0 });
+    setChain(NO_CHAIN);
+    setEditNote(null);
+    reseed();
+    return true;
+  }
+
+  /**
+   * A change of places on the same line (a kind switch, a point dropped on
+   * the line) while edits are chained: stacked like the rest, so ✓ still
+   * commits one step and ↶ takes it off again.
+   */
+  function stackPlaces(next: RidePlaces): boolean {
+    const top = chainTopOf(chainRef.current);
+    if (!route || !top) return false;
+    const token = ++proposalSeq.current;
+    setChain(stackOnto(chainRef.current, route.id, { ...top, token, ride: { ...top.ride, places: next }, notes: [] }));
+    setEditNote(null);
+    reseed();
+    return true;
+  }
+  // ── /release-b: chain ──
+
   /**
    * The composer's pending mark changed (`RideEdit.onPropose`): route it in
    * the background. The same change again routes nothing; a stream of
@@ -2057,11 +2174,11 @@ export function HomePage() {
     // A kind switch changes no line: it is committed at once, never previewed.
     if (isKindSwitch(change) || commitWaiter.current || !route) return;
     const mine = live.current;
-    if (mine && mine.key === changeKey(change) && mine.base === (edited?.segments ?? route.segments) && proposalRef.current.phase !== "idle") return;
+    if (mine && mine.key === changeKey(change) && mine.base === baseNow().segments && proposalRef.current.phase !== "idle") return;
     // ── edit-routing ── The dropped pin's name arrived: the same line, so
     // the routing already under way (or landed) stands — the name goes into
     // the places it commits, and ✓ recognises the renamed change as its own.
-    if (mine && mine.base === (edited?.segments ?? route.segments) && proposalRef.current.phase !== "idle" && sameGeometry(mine.change, change)) {
+    if (mine && mine.base === baseNow().segments && proposalRef.current.phase !== "idle" && sameGeometry(mine.change, change)) {
       mine.renames = renamesBetween(mine.change, change, mine.renames);
       mine.change = change;
       mine.key = changeKey(change);
@@ -2092,7 +2209,7 @@ export function HomePage() {
     const key = changeKey(change);
     const state = proposalRef.current;
     const mine = live.current;
-    const sameBase = Boolean(mine && mine.key === key && mine.routeId === route.id && mine.base === (edited?.segments ?? route.segments));
+    const sameBase = Boolean(mine && mine.key === key && mine.routeId === route.id && mine.base === baseNow().segments);
     if (sameBase && state.phase === "proposed" && state.proposal.token === mine?.token) {
       return Promise.resolve(commitProposal(state.proposal, false));
     }
@@ -2137,7 +2254,10 @@ export function HomePage() {
    */
   function switchKind(op: Extract<ShapeEdit, { kind: "promote" | "demote" }>) {
     if (!plan || !result || !route || !ridePlaces || commitWaiter.current) return;
-    const before = ridePlaces;
+    // A proposal on top of a chain is stacked first; the switch goes on top.
+    if (chainRef.current.rides.length) stackProposal();
+    const topNow = chainTopOf(chainRef.current);
+    const before = topNow?.ride.places ?? ridePlaces;
     const next = applyShapeEdit(before, op);
     if ("error" in next) {
       track("route_edit_failed", { reason: next.error });
@@ -2147,7 +2267,7 @@ export function HomePage() {
     // Whatever was previewed was cut from the places this changes.
     discardProposal();
     if (op.kind === "promote") track("shape_point_edited", { kind: op.kind });
-    const baseLine = edited?.coordinates ?? (route.geometry.coordinates as Point[]);
+    const baseLine = topNow?.ride.coordinates ?? edited?.coordinates ?? (route.geometry.coordinates as Point[]);
     // A promoted dot goes onto the line, if it was a little off it (a plan's
     // shaping point is where the rider put it, the line where the router
     // went): a stop is held to the line it is on, and this one is on it by
@@ -2165,7 +2285,8 @@ export function HomePage() {
     };
     // `EditedRide.how` has no "demote" (yet): both switches are the undo's
     // "promote", a change of a point's kind; `point_kind_switched` says which.
-    commitPlacesOnLine(switched, "promote");
+    // Chained (release B item 4): one more change on the chain.
+    if (!stackPlaces(switched)) commitPlacesOnLine(switched, "promote");
     track("point_kind_switched", { to: op.kind === "promote" ? "stop" : "pass", mode: "edit" });
   }
 
@@ -2233,14 +2354,17 @@ export function HomePage() {
    */
   function dropPassHere(spot: { lat: number; lon: number; alongMeters: number }) {
     if (!plan || !result || !route || !ridePlaces || commitWaiter.current) return;
-    const baseLine = edited?.coordinates ?? (route.geometry.coordinates as Point[]);
-    const next = passOnLine(ridePlaces, baseLine, spot);
+    if (chainRef.current.rides.length) stackProposal();
+    const topNow = chainTopOf(chainRef.current);
+    const baseLine = topNow?.ride.coordinates ?? edited?.coordinates ?? (route.geometry.coordinates as Point[]);
+    const next = passOnLine(topNow?.ride.places ?? ridePlaces, baseLine, spot);
     if ("error" in next) {
       track("route_edit_failed", { reason: next.error });
       setEditNote(next.error === "shape-cap" ? fi(ui.shapeCapNote, { n: MAX_SHAPE_POINTS }) : ui.resEditFailed);
       return;
     }
     // Whatever was previewed was cut from the places this changes.
+    if (stackPlaces(next.places)) { track("line_point_added", { chained: true }); return; }
     discardProposal();
     commitPlacesOnLine(next.places, "add-stop");
     track("line_point_added", {});
@@ -2255,6 +2379,8 @@ export function HomePage() {
    * line no longer goes through.
    */
   function undoLastEdit() {
+    // Chained edits first: ↶ takes the last pending change off (release B item 4).
+    if (chainRef.current.rides.length && route && chainRef.current.routeId === route.id) { chainUndo(); return; }
     if (!route || !history.canUndo || commitWaiter.current) return;
     // A preview was cut from the line the undo is about to replace.
     discardProposal();
@@ -2616,7 +2742,9 @@ export function HomePage() {
    * reads as a broken ride, and must never be shown (2026-09-25).
    */
   const mapSegments = useMemo(() => {
-    const ride = shownRoute?.segments ?? null;
+    // Chained edits (release B item 4): the map's ride is the chain's top, so
+    // what is drawn, grabbed and tapped is the ride the next edit changes.
+    const ride = (wiring.editing && chainTop ? chainTop.ride.segments : shownRoute?.segments) ?? null;
     if (!spliced || wiring.editing || !ride) return ride;
     const breaks = lineBreaks(spliced.segments, ride);
     if (breaks.length) {
@@ -2624,7 +2752,7 @@ export function HomePage() {
       return ride;
     }
     return spliced.segments;
-  }, [spliced, shownRoute, wiring.editing]);
+  }, [spliced, shownRoute, wiring.editing, chainTop]);
   /**
    * The map's header, with what an edit is doing said on the map itself
    * (2026-09-25). On a phone the editor is full screen, and the panel that
@@ -2642,16 +2770,22 @@ export function HomePage() {
   // Release B item 1: the proposal's blocking points, when they are this proposal's.
   const proposalToken = proposal.phase === "refused" ? proposal.token : proposal.phase === "proposed" ? proposal.proposal.token : null;
   const blockNow = blocking && blocking.token === proposalToken ? blocking : null;
+  // Release B item 4: with nothing new pending, the chain's top is what is shown.
+  const shown = useMemo(() => shownProposal(chainOn, proposal), [chainOn, proposal]);
+  const pendingChanges = chainCount(chainOn, proposal);
   const proposalNow = useMemo(() => {
     if (!wiring.editing) return null;
-    const view = proposalView(proposal, {
+    const chained = (v: ProposalView | null): ProposalView | null =>
+      // „2 izmaiņas – ✓ apstiprina visas, ↶ atsauc pēdējo, ✕ atmet visas.”
+      v && pendingChanges >= 2 && !v.tone && !v.warn ? { ...v, guide: guideAction((k) => ui[k], { kind: "chain", count: pendingChanges }) } : v;
+    const view = proposalView(shown, {
       routing: ui.previewRouting, delta: ui.previewDelta, deltaTitle: ui.previewDeltaTitle,
       // ── edit-guidance ── what to do, after what is happening.
       guide: proposalGuide((k) => ui[k]),
       wide: wideNow,
       straight: straightNow,
     }, locale);
-    if (!view || !blockNow) return view;
+    if (!view || !blockNow) return chained(view);
     // Which point, and what to do with it — in the guidance line itself.
     const fmt = (n: number) => new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(n);
     const warned = proposal.phase === "proposed";
@@ -2659,8 +2793,8 @@ export function HomePage() {
     if (view.tone === "refused") return { ...view, text: g.what, guide: g.action, title: blockedLine((k) => ui[k], blockNow, false, fmt) };
     // Warned: „Tomēr braukt” already works; the point is named once it is found.
     if (warned && !blockNow.probing) return { ...view, guide: blockedLine((k) => ui[k], blockNow, true, fmt) };
-    return view;
-  }, [wiring.editing, proposal, ui, wideNow, straightNow, locale, blockNow]);
+    return chained(view);
+  }, [wiring.editing, proposal, shown, pendingChanges, ui, wideNow, straightNow, locale, blockNow]);
   // The last proposal that landed stays on the map while the next change
   // routes — its line, halo and numbers, with the spinner — so there is
   // never an empty gap between two proposals (`staleWhileRouting`). Kept in
@@ -2787,18 +2921,22 @@ export function HomePage() {
       {editNote && !proposalShown && <p role="status" className="text-[11px] leading-snug text-[#bd4b00]">{editNote}</p>}
     </div>
   );
-  const editor: RideEdit | null = wiring.editing && ridePlaces
+  const editor: RideEdit | null = wiring.editing && workingPlaces
     ? {
-        seed: { ...rowsOf(ridePlaces), roundTrip: ridePlaces.roundTrip, token: seed.token, active: seed.active },
+        // Chained edits (release B item 4): the rows, dots and line are the chain's top.
+        seed: { ...rowsOf(workingPlaces), roundTrip: workingPlaces.roundTrip, token: seed.token, active: seed.active },
         onCommit: (rows, opts) => commitEdit(rows, opts),
-        shapePoints: shapesOf(ridePlaces).map((v) => ({ lat: v.lat, lon: v.lon })),
+        shapePoints: shapesOf(workingPlaces).map((v) => ({ lat: v.lat, lon: v.lon })),
         // Where a new point goes, and whether a moved one lands on the line
         // elsewhere (Phase 1, lib/map/insert-leg.ts): the ride as drawn.
-        places: ridePlaces,
-        line: route ? ((edited?.coordinates ?? route.geometry.coordinates) as Point[]) : undefined,
+        places: workingPlaces,
+        line: route ? ((chainTop?.ride.coordinates ?? edited?.coordinates ?? route.geometry.coordinates) as Point[]) : undefined,
         onShape: (op) => { commitShape(op); },
         onPropose: proposeChange,
-        proposal,
+        proposal: shown,
+        // Another edit started while this proposal is shown: it is chained, not dropped.
+        onStack: proposal.phase === "proposed" ? stackProposal : undefined,
+        chain: chainOn.rides.length ? { count: pendingChanges, onConfirm: () => { chainConfirm(); }, onDiscard: chainDiscard, onUndo: chainUndo } : undefined,
         // „Pārrēķināt posmu”, on offer while its refusal is shown (`askWide`).
         onWide: wideOffered ? acceptWide : undefined,
         onPassHere: dropPassHere,
@@ -2811,6 +2949,9 @@ export function HomePage() {
         // „Tomēr braukt”: arms the shown warned proposal; the chip then confirms it like ✓.
         onOverride: (commitNow) => {
           const s = proposalRef.current;
+          // Nothing new on a warned chain: the override is for its top.
+          const top = chainTopOf(chainRef.current);
+          if (s.phase === "idle" && top?.accept) { overrideArmed.current = top.token; if (commitNow) chainConfirm(); return; }
           overrideArmed.current = s.phase === "proposed" && s.proposal.accept ? s.proposal.token : null;
           if (commitNow && s.phase === "proposed" && overrideArmed.current !== null) commitProposal(s.proposal, false);
         },
@@ -2820,7 +2961,7 @@ export function HomePage() {
         rerouting: committing,
         // One undo, one place: the map header's ↶ and Ctrl/Cmd+Z (2026-09-25),
         // where the editor used to carry a button of its own.
-        canUndo: history.canUndo && !committing,
+        canUndo: (history.canUndo || chainOn.rides.length > 0) && !committing,
         onUndo: undoLastEdit,
       }
     : null;

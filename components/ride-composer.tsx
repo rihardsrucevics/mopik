@@ -252,6 +252,18 @@ export type RideEdit = {
   blocking?: Blocking | null;
   /** „Vest pa taisno” for one point of a batch: the rest routed, that point straight. Absent unless on offer. */
   onStraightAt?: (at: { lat: number; lon: number }) => void;
+  /**
+   * Release B item 4: another edit is starting while this proposal is shown
+   * — the page chains it (kept, not committed) and re-seeds the rows from it.
+   * Present only while a proposal has landed; returns whether it chained.
+   */
+  onStack?: () => boolean;
+  /**
+   * Edits chained and waiting for one ✓ (`count` of them, the proposal on
+   * top included): ✓ confirms them all as one undo step, ↶ takes the last
+   * off, ✕ drops them all. Absent when nothing is chained.
+   */
+  chain?: { count: number; onConfirm: () => void; onDiscard: () => void; onUndo: () => void };
 };
 
 /** This device's storage for the one-time edit hint, or nothing (a private window, blocked site data). */
@@ -494,6 +506,8 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
    * a discard, and is not sent (see the proposal effect).
    */
   const committedRef = useRef(false);
+  /** A grab that chained the proposal before it: the re-seed that follows keeps it (release B item 4). */
+  const [keepGrabOnSeed, setKeepGrabOnSeed] = useState(false);
   /**
    * The one exit from every transient state on the map (docs/DESIGN-route-
    * editing.md B: generalised from `leaveShape` and `closePointSel`). Every
@@ -531,6 +545,29 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     }
     if ((hadGrab || hadShape) && !opts.keepPick && activeRowRef.current === null) onPickModeChange?.(false);
   };
+  // ── release-b: chain ──
+  /**
+   * Another edit is starting while a proposal is shown (release B item 4):
+   * it is chained — the page keeps it and re-seeds the rows from it — and
+   * the pending mark it came from goes as a ✓ would take it, not as ✕.
+   * Returns whether it chained; the caller then runs the new edit on the
+   * re-seeded rows (`chained` in the handlers below).
+   */
+  const stackFirst = (): boolean => {
+    if (!edit?.onStack || !proposedChangeRef.current || edit.proposal?.phase !== "proposed") return false;
+    if (!edit.onStack()) return false;
+    committedRef.current = true;
+    leaveTransient({ commit: true, keepPick: true });
+    setPreview(null);
+    setOffRoad(null);
+    setMapQuery(null);
+    setRowIsNew(false);
+    setChosenRow(null);
+    endPicking();
+    track("edit_chained", {});
+    return true;
+  };
+  // ── /release-b: chain ──
   /**
    * The point tapped on the map — a ride pin or a shaping point — with its
    * sheet and ring (lib/map/point-selection.ts). A pin's selection is only
@@ -1422,7 +1459,9 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
    * mark — or where a mouse drag of the line is let go — is where the point
    * goes, waiting for Confirm.
    */
-  const grabLine = ({ lat, lon, slot }: { lat: number; lon: number; slot: number }): boolean => {
+  // `fresh`: the grab chained the proposal before it (release B item 4) —
+  // whatever was pending went with it, so the grab starts from nothing.
+  const grabLine = ({ lat, lon, slot }: { lat: number; lon: number; slot: number }, fresh = false): boolean => {
     if (!edit || busy || edit.rerouting) return false;
     if (edit.shapePoints.length >= MAX_SHAPE_POINTS) return false;
     track("route_line_grabbed", { slot });
@@ -1435,7 +1474,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     setChosenRow(null);
     // A line drag takes the map elsewhere: whatever was transient goes first.
     leaveTransient({ keepPick: true });
-    setShapePending(stepShape(shapePending, { type: "grab", at: { lat, lon } }).pending);
+    setShapePending(stepShape(fresh ? null : shapePending, { type: "grab", at: { lat, lon } }).pending);
     shapeAddRef.current = true;
     openPick({ at: null, marker: null });
     return true;
@@ -2197,7 +2236,9 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     setSeenSeed(edit.seed.token);
     setPreview(null);
     setOffRoad(null);
-    setShapePending(null);
+    // A line grabbed as the edit that chained the last one keeps its grab (release B item 4).
+    if (!keepGrabOnSeed) setShapePending(null);
+    else setKeepGrabOnSeed(false);
     const names = edit.seed.names;
     setPlaces(names);
     setPicked({ ...edit.seed.picked });
@@ -2659,12 +2700,22 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   const proposal = edit?.onPropose && proposedChange ? edit.proposal : undefined;
   const proposalRouting = proposal?.phase === "routing";
   const proposalKey = !proposal ? "" : proposal.phase;
+  /** A landed proposal the next edit would chain (release B item 4, `stackFirst`). */
+  const chainable = Boolean(edit?.onStack && proposal?.phase === "proposed");
   /** ✓ and ✕ for a previewed change: their words and the spinner. */
   const previewBar = (bar: MapPendingMark): MapPendingMark => (!edit?.onPropose ? bar : {
     ...bar,
     confirmLabel: bar.onConfirm ? t(locale, "previewConfirm") : bar.confirmLabel,
     confirmBusy: proposalRouting,
     cancelLabel: t(locale, "previewCancel"),
+    // Release B item 4: on top of chained edits ✓ confirms them all, ↶ takes
+    // this last one off (a batch keeps its own ↶: its last point), ✕ drops all.
+    ...(edit.chain ? {
+      confirmLabel: bar.onConfirm ? t(locale, "chainConfirmAll") : bar.confirmLabel,
+      cancelLabel: t(locale, "chainDiscardAll"),
+      onCancel: () => { bar.onCancel(); edit.chain?.onDiscard(); },
+      undo: bar.undo ?? { label: t(locale, "chainUndoLast"), onUndo: () => leaveTransient({ dropMark: true }) },
+    } : {}),
   });
   /** The tapped point's name on its sheet — also the field's words while its removal waits. */
   const pointTitle = !pointSel ? "" : pointSel.kind === "shape" ? t(locale, "shapePointName")
@@ -2739,7 +2790,18 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
       },
     };
     // Editing, a pin's mark is previewed like the rest once it is named.
-    const pending = batchPending ?? shapeBar ?? removeBar ?? (single && edit && markPreview ? previewBar(single) : single);
+    const own = batchPending ?? shapeBar ?? removeBar ?? (single && edit && markPreview ? previewBar(single) : single);
+    // Release B item 4: chained edits with nothing new pending — ✓ ↶ ✕ act on the chain.
+    const chainBar: MapPendingMark | null = !own && edit?.chain ? {
+      confirmLabel: t(locale, "chainConfirmAll"),
+      onConfirm: edit.rerouting ? null : () => edit.chain?.onConfirm(),
+      cancelLabel: t(locale, "chainDiscardAll"),
+      onCancel: () => edit.chain?.onDiscard(),
+      undo: { label: t(locale, "chainUndoLast"), onUndo: () => edit.chain?.onUndo() },
+      offRoad: null,
+      count: edit.chain.count,
+    } : null;
+    const pending = own ?? chainBar;
     // Null at the cap rather than a handler that returns: the button is then
     // disabled and says why, and a control that does nothing is never shipped.
     // Through the ref like the other handlers: whether a blank new row is
@@ -2947,8 +3009,10 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
       // nothing).
       ...(edit ? {
         // Nor while a point is being moved (§3): a tap — or a hold — on the
-        // line is then its new place, never a grab.
-        onLineGrab: batchActive || edit.shapePoints.length >= MAX_SHAPE_POINTS || pointSel?.phase === "move" || shapePending?.kind === "move" || newPoint?.kind === "pass" ? undefined : (g: { lat: number; lon: number; slot: number }) => pendingHandlers.current?.lineGrab(g),
+        // line is then its new place, never a grab. Once that move's
+        // proposal has landed, a drag of the line is the next edit and
+        // chains it (release B item 4); a tap still marks the point again.
+        onLineGrab: batchActive || edit.shapePoints.length >= MAX_SHAPE_POINTS || (!chainable && (pointSel?.phase === "move" || shapePending?.kind === "move" || newPoint?.kind === "pass")) ? undefined : (g: { lat: number; lon: number; slot: number }) => pendingHandlers.current?.lineGrab(g),
         grab: grab?.at ?? null,
         shapePoints: batchActive ? [] : shapeDots,
         onShapeDrag: (index: number, at: { lat: number; lon: number }) => pendingHandlers.current?.shapeDrag(index, at),
@@ -2971,7 +3035,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     // The parent's callback is an inline arrow and is rebuilt every render;
     // listing it would re-report the same controls on every keystroke.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapLive, activeRow, activeLabel, atCap, activeValue, activeConfirmed, anchor, locale, tripType, rowsKey, pendingKey, mapQuery, activeOwn?.lat, activeOwn?.lon, planKey, grab?.at.lat, grab?.at.lon, batchKey, fitAsk, undo.past.length, edit?.canUndo, edit?.rerouting, batchCommitting, shapeKey, stopCount, pointKey, movePreviewKey, proposalKey, proposeKey, passCount, pointTitle, choicesKey, insertWords, rowNumbers.join(","), lineKey, tipOn, blockedItems.map((b) => b.id).join(","), pendingBlocked]);
+  }, [mapLive, activeRow, activeLabel, atCap, activeValue, activeConfirmed, anchor, locale, tripType, rowsKey, pendingKey, mapQuery, activeOwn?.lat, activeOwn?.lon, planKey, grab?.at.lat, grab?.at.lon, batchKey, fitAsk, undo.past.length, edit?.canUndo, edit?.rerouting, batchCommitting, shapeKey, stopCount, pointKey, movePreviewKey, proposalKey, proposeKey, passCount, pointTitle, choicesKey, insertWords, rowNumbers.join(","), lineKey, tipOn, blockedItems.map((b) => b.id).join(","), pendingBlocked, edit?.chain?.count ?? 0]);
   // Nothing is offered once the form is gone. Without this the page would keep
   // drawing a map header for a form the rider has left.
   useEffect(() => () => onMapControlsChange?.(null),
@@ -3015,6 +3079,9 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
       return;
     }
     if (e.key !== "Escape") return;
+    // Chained edits (release B item 4): Escape is ✕ — every pending change goes;
+    // a sheet or a move with nothing proposed yet only closes.
+    if (edit?.chain && (proposedChange || (!shapePending && !pointSel && !lineSel && !batch.length))) { leaveTransient({ dropMark: true }); edit.chain.onDiscard(); return; }
     // Escape is ✕: the one exit, whatever is open.
     if (shapePending || pointSel || lineSel) { leaveTransient(); return; }
     if (batchSel !== null) { setBatchSel(null); return; }
@@ -3068,11 +3135,22 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   // The map's pending-bar handlers, current as of this render (see
   // `pendingHandlers`). After `effectiveProfile`, which `confirmPick` reads.
   useEffect(() => {
+    // Release B item 4: an edit that starts while a proposal is shown chains
+    // it first, then runs on the re-seeded rows (the handler of the render
+    // that follows). A line grab runs at once — the drag is under the finger
+    // — and keeps its grab through the re-seed.
+    type Handlers = NonNullable<typeof pendingHandlers.current>;
+    const chained = <K extends "pinDrag" | "addStop" | "pinPress" | "lineTap" | "shapeDrag" | "shapePress">(key: K, run: Handlers[K]): Handlers[K] =>
+      ((...args: unknown[]) => {
+        if (stackFirst()) { setTimeout(() => (pendingHandlers.current?.[key] as ((...a: unknown[]) => void) | undefined)?.(...args), 40); return; }
+        (run as (...a: unknown[]) => void)(...args);
+      }) as Handlers[K];
     pendingHandlers.current = {
-      confirm: confirmPick, cancel: () => leaveTransient({ dropMark: true }), move: acceptOffRoadMove, dismiss: () => setOffRoad(null), pinDrag: dragPin, addStop: addStopFromMap, pinPress: pressPin, lineGrab: grabLine,
-      lineTap: tapLine, lineVia, linePass, tipClose: () => setTipOn(false),
-      shapeDrag: dragShape, confirmShape, cancelShape, shapeRemove: removeShape, shapePromote: promoteShape,
-      shapePress: pressShape, pointClose: () => leaveTransient(), pointMove: movePoint,
+      confirm: confirmPick, cancel: () => leaveTransient({ dropMark: true }), move: acceptOffRoadMove, dismiss: () => setOffRoad(null), pinDrag: chained("pinDrag", dragPin), addStop: chained("addStop", addStopFromMap), pinPress: chained("pinPress", pressPin),
+      lineGrab: (g) => { const stacked = stackFirst(); if (stacked) setKeepGrabOnSeed(true); return grabLine(g, stacked); },
+      lineTap: chained("lineTap", tapLine), lineVia, linePass, tipClose: () => setTipOn(false),
+      shapeDrag: chained("shapeDrag", dragShape), confirmShape, cancelShape, shapeRemove: removeShape, shapePromote: promoteShape,
+      shapePress: chained("shapePress", pressShape), pointClose: () => leaveTransient(), pointMove: movePoint,
       pointRemove: askRemove, confirmRemove,
       pointPromote: () => { if (pointSel?.kind === "shape") promoteShape(pointSel.index); },
       pointDemote: () => { if (pointSel?.kind === "pin") demoteStop(pointSel.row); },

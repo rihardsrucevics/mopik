@@ -96,6 +96,11 @@ export type AnalyticsEvent =
   | "route_edit_widened" // a place left on a spur the router did not prove a dead end, ridden through by a wider stretch — how often was the window too tight? (spur_m, km_delta)
   | "route_edit_blocked" // a refused or warned proposal with several points, probed each on its own; props: points, blocking (how many were named), causes (far,profile,detour,failed) — which points stop a batch?
   | "batch_rest_kept" // „Pievienot pārējās”: the points that stopped a batch dropped, the rest proposed again; props: dropped, kept
+  | "edit_chained" // the composer chained the shown proposal because another edit started (release B item 4)
+  | "route_edit_stacked" // release B item 4: another edit started while a proposal was shown — the proposal was chained, not committed; props: changes (on the chain now), how
+  | "route_edit_chain_confirmed" // ✓ on chained edits: all of them one undo step; props: changes
+  | "route_edit_chain_undone" // ↶ took the chain's last change off; props: changes (before)
+  | "route_edit_chain_discarded" // ✕ dropped every chained change; props: changes
   // ── line-sheet ── Tap the line (2026-09-28): is the line's sheet found, and which row is used?
   | "line_tapped"             // edit mode: a tap on the drawn line opened its sheet
   | "line_via_asked"          // „Virzīt caur citu vietu”: the line grabbed at the tapped spot, waiting for the tap where to ride through

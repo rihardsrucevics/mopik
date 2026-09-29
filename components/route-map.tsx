@@ -2471,6 +2471,14 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
   const previewFollowRef = useRef(false);
   useEffect(() => { previewFollowRef.current = Boolean(controls?.movePreview?.follow); });
   // ── /line-sheet ──
+  /**
+   * A line drag under way when the handlers' effect re-runs (its `segments`
+   * changed): kept, so the drag goes on in the new handlers. A drag that
+   * chains the proposal on screen changes the ride drawn under the finger
+   * (release B item 4) — without this the release was lost with the old
+   * handlers and the grab waited for a spot that never came.
+   */
+  const lineDragCarryRef = useRef<{ map: maplibregl.Map; drag: LineDragState; from: { point: maplibregl.Point; lngLat: maplibregl.LngLat }; last: maplibregl.LngLat | null } | null>(null);
   /** A grab is waiting for its spot: the next click is that spot, not a new grab. */
   const grabbingRef = useRef(false);
   useEffect(() => { grabbingRef.current = Boolean(controls?.grab); }, [controls?.grab]);
@@ -4285,6 +4293,15 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
       // `dragPan` is gone once the map itself has been removed (the cleanup).
       if (map.dragPan && !map.dragPan.isEnabled()) map.dragPan.enable();
     };
+    // A drag the last run of this effect left under way goes on here (see `lineDragCarryRef`).
+    const carried = lineDragCarryRef.current;
+    lineDragCarryRef.current = null;
+    if (carried && carried.map === map) {
+      lineDrag = carried.drag;
+      lineDragFrom = carried.from;
+      lineDragLast = carried.last;
+      map.dragPan.disable();
+    }
     const lineDragFeed = (ev: LineDragEvent, at?: maplibregl.LngLat) => {
       const was = lineDrag;
       const { state, action } = lineDragStep(lineDrag, ev);
@@ -4407,6 +4424,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
       map.off("mouseout", hideHover);
       map.off("click", onMapClick);
       if (tapTimer) clearTimeout(tapTimer);
+      lineDragCarryRef.current = lineDrag?.phase === "dragging" && lineDragFrom ? { map, drag: lineDrag, from: lineDragFrom, last: lineDragLast } : null;
       lineDragUndo();
       map.off("movestart", hideHover);
       window.removeEventListener("keydown", onKey);
