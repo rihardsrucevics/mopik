@@ -1459,7 +1459,9 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
    * mark — or where a mouse drag of the line is let go — is where the point
    * goes, waiting for Confirm.
    */
-  const grabLine = ({ lat, lon, slot }: { lat: number; lon: number; slot: number }): boolean => {
+  // `fresh`: the grab chained the proposal before it (release B item 4) —
+  // whatever was pending went with it, so the grab starts from nothing.
+  const grabLine = ({ lat, lon, slot }: { lat: number; lon: number; slot: number }, fresh = false): boolean => {
     if (!edit || busy || edit.rerouting) return false;
     if (edit.shapePoints.length >= MAX_SHAPE_POINTS) return false;
     track("route_line_grabbed", { slot });
@@ -1472,7 +1474,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     setChosenRow(null);
     // A line drag takes the map elsewhere: whatever was transient goes first.
     leaveTransient({ keepPick: true });
-    setShapePending(stepShape(shapePending, { type: "grab", at: { lat, lon } }).pending);
+    setShapePending(stepShape(fresh ? null : shapePending, { type: "grab", at: { lat, lon } }).pending);
     shapeAddRef.current = true;
     openPick({ at: null, marker: null });
     return true;
@@ -2698,6 +2700,8 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   const proposal = edit?.onPropose && proposedChange ? edit.proposal : undefined;
   const proposalRouting = proposal?.phase === "routing";
   const proposalKey = !proposal ? "" : proposal.phase;
+  /** A landed proposal the next edit would chain (release B item 4, `stackFirst`). */
+  const chainable = Boolean(edit?.onStack && proposal?.phase === "proposed");
   /** ✓ and ✕ for a previewed change: their words and the spinner. */
   const previewBar = (bar: MapPendingMark): MapPendingMark => (!edit?.onPropose ? bar : {
     ...bar,
@@ -3005,8 +3009,10 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
       // nothing).
       ...(edit ? {
         // Nor while a point is being moved (§3): a tap — or a hold — on the
-        // line is then its new place, never a grab.
-        onLineGrab: batchActive || edit.shapePoints.length >= MAX_SHAPE_POINTS || pointSel?.phase === "move" || shapePending?.kind === "move" || newPoint?.kind === "pass" ? undefined : (g: { lat: number; lon: number; slot: number }) => pendingHandlers.current?.lineGrab(g),
+        // line is then its new place, never a grab. Once that move's
+        // proposal has landed, a drag of the line is the next edit and
+        // chains it (release B item 4); a tap still marks the point again.
+        onLineGrab: batchActive || edit.shapePoints.length >= MAX_SHAPE_POINTS || (!chainable && (pointSel?.phase === "move" || shapePending?.kind === "move" || newPoint?.kind === "pass")) ? undefined : (g: { lat: number; lon: number; slot: number }) => pendingHandlers.current?.lineGrab(g),
         grab: grab?.at ?? null,
         shapePoints: batchActive ? [] : shapeDots,
         onShapeDrag: (index: number, at: { lat: number; lon: number }) => pendingHandlers.current?.shapeDrag(index, at),
@@ -3141,7 +3147,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
       }) as Handlers[K];
     pendingHandlers.current = {
       confirm: confirmPick, cancel: () => leaveTransient({ dropMark: true }), move: acceptOffRoadMove, dismiss: () => setOffRoad(null), pinDrag: chained("pinDrag", dragPin), addStop: chained("addStop", addStopFromMap), pinPress: chained("pinPress", pressPin),
-      lineGrab: (g) => { if (stackFirst()) setKeepGrabOnSeed(true); return grabLine(g); },
+      lineGrab: (g) => { const stacked = stackFirst(); if (stacked) setKeepGrabOnSeed(true); return grabLine(g, stacked); },
       lineTap: chained("lineTap", tapLine), lineVia, linePass, tipClose: () => setTipOn(false),
       shapeDrag: chained("shapeDrag", dragShape), confirmShape, cancelShape, shapeRemove: removeShape, shapePromote: promoteShape,
       shapePress: chained("shapePress", pressShape), pointClose: () => leaveTransient(), pointMove: movePoint,
