@@ -40,7 +40,7 @@ test("edit mode opens the line's sheet; the result and shared maps keep the card
   // The map only has `onLineTap` in edit mode: the composer passes it in its
   // edit branch, and nothing else builds map controls with it.
   const editBranch = composer.slice(composer.indexOf("...(edit ? {"), composer.indexOf("} : {\n        // Planning: the pass-through dots"));
-  assert.match(editBranch, /onLineTap: batchActive \? undefined :/);
+  assert.match(editBranch, /onLineTap: batchActive[^?]*\? undefined :/);
   assert.equal(composer.split("onLineTap:").length - 1, 1, "only the edit branch offers it");
   for (const f of ["components/shared-route.tsx", "components/result-panel.tsx", "components/home-page.tsx"]) {
     assert.doesNotMatch(src(f), /onLineTap/, `${f} never asks for the line sheet`);

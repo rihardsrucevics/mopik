@@ -1779,6 +1779,9 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   const rowExit = () => {
     leaveTransient({ dropMark: true });
     if (edit) setChosenRow(null);
+    // The map field let go too: still focused, its next tap would start nothing (its `onFocus` is the start).
+    const el = typeof document === "undefined" ? null : document.activeElement;
+    if (el instanceof HTMLElement && el.closest("[data-map-chrome]")) el.blur();
   };
   /**
    * Editing, armed: a tap ADDS a pending pass-through point, at once — also

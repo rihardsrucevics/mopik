@@ -13,6 +13,11 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
 
 (async () => {
   const { browser, page, log } = await L.open({ phone });
+  // SECTIONS=1,add runs only those sections (keys: 1 1b add 2 2b 3 4 5 6 7 8 9 10); unset: all.
+  const SECTIONS = process.env.SECTIONS ? process.env.SECTIONS.split(",").map((x) => x.trim()) : null;
+  const want = (k) => !SECTIONS || SECTIONS.includes(k);
+  let t = Date.now();
+  let idle = null;
   const shot = (n) => page.screenshot({ path: `${L.SHOTS}/smoke-${tag}-${n}.png` });
   const slot = async (n) => (await L.slotBtn(page, n)).click();
   const tapXY = async (x, y) => { if (phone) await page.touchscreen.tap(x, y); else await page.mouse.click(x, y); };
@@ -21,8 +26,8 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
   const marker = (name) => page.locator(`.maplibregl-marker[aria-label="${name}"]`).first();
   const dotsLoc = () => page.locator('.maplibregl-marker[aria-label^="Caurbraucams punkts"]');
   const sheetRow = (label) => page.getByText(label, { exact: true }).first();
-  // ── add-kind ── „+” asks what to add: the chooser, then the chip.
-  const plus = async (kind) => { await slot(1); await page.waitForTimeout(250); await page.locator(`[data-add-chooser] [data-add-kind="${kind}"]`).click(); await page.waitForTimeout(250); };
+  // ── add-kind ── A stop starts from the map field (backlog 40): search is for stops; „+” adds pass-through points.
+  const stopFromField = async () => { await page.locator("[data-map-chrome] input:visible").first().click(); await page.waitForTimeout(300); };
   const rects = async () => Object.fromEntries((await L.state(page)).slots.map((s) => [s.slot, s.rect]));
   // ── chain-polish ── how the chip's lines sit: lines of each part, and whether the clamped notes are cut.
   const chipFit = () => page.evaluate(() => {
@@ -103,12 +108,13 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
   }
 
   // ── 1. Sigulda → Līgatne → Cēsis: add a stop, move a stop, the line sheet ──
-  let t = Date.now();
+  if (want("1") || want("1b") || want("add")) {
+  t = Date.now();
   await L.openRide(page, "sigulda-cesis");
   console.log(`[${tag}]   openRide sigulda-cesis ${((Date.now() - t) / 1000).toFixed(1)} s`);
-  const idle = await rects();
+  idle = await rects();
   rec("edit mode: four slots drawn", ["1", "2", "3", "x"].every((k) => idle[k]), idle);
-  await exercise("add stop", async () => { const ll = await pointOn(0.3, 400, 0); await zoomTo(ll); await plus("stop"); await tapAt(ll); }, { tones: ["proposed"], idle });
+  await exercise("add stop", async () => { const ll = await pointOn(0.3, 400, 0); await zoomTo(ll); await stopFromField(); await tapAt(ll); }, { tones: ["proposed"], idle });
   await exercise("move stop", async () => { await L.fit(page, await L.line(page)); await moveMarker(marker("Līgatne"), 70, -40); }, { idle });
   {
     const h0 = L.hash(await L.line(page)); const n0 = log.reroute;
@@ -125,7 +131,9 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
     rec("…↶ takes the dot away", (await dotsLoc().count()) === d0);
   }
 
+  }
   // ── 1b. Backlog 36: a stretch selected, its end dragged, „Izslēgt šo posmu” → proposal → ✓ → ↶ ──
+  if (want("1b")) {
   {
     const t1 = Date.now();
     const SH = process.env.STRETCH_SHOTS || L.SHOTS;
@@ -261,79 +269,124 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
     console.log(`[${tag}]   stretch ${((Date.now() - t1) / 1000).toFixed(1)} s`);
   }
 
-  // ── 1c. „+” asks what to add; the sheet's one kind switch (rider, 2026-09-29) ──
+  }
+  // ── 1c. „+” adds pass-through points in a batch; the empty-map offer; a row waiting has a way out (rider, 2026-09-30) ──
+  if (want("add")) {
   {
     const t = Date.now();
-    const ADD_SHOTS = process.env.ADDKIND_SHOTS || L.SHOTS;
-    const addShot = async (n) => { if (phone) await page.screenshot({ path: `${ADD_SHOTS}/addkind-${n}.png` }); };
+    const ADD_SHOTS = process.env.ADDPOINT_SHOTS || L.SHOTS;
+    const addShot = async (n) => { if (phone) await page.screenshot({ path: `${ADD_SHOTS}/addpoint-${n}.png` }); };
     const field = () => page.evaluate(() => { const vis = (e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; }; const i = [...document.querySelectorAll("[data-map-chrome] input")].filter(vis)[0]; return i ? (i.value || i.placeholder) : null; });
     const stopsLoc = () => page.locator(".maplibregl-marker:not([data-pending])").filter({ hasText: /^\d+$/ });
-    const chooser = page.locator("[data-add-chooser]");
+    const pendingDots = () => page.locator('[data-pending="pass"]');
+    const words = async () => { const st = await L.state(page); return [...st.notices, (await field()) ?? ""].join(" | "); };
+    const slotsNow = async () => Object.fromEntries((await L.state(page)).slots.map((x) => [x.slot, x]));
+    // The guard (images/46.png): a state that is not idle has ✕ on and says what is happening.
+    const guard = async (name, re) => { const sl = await slotsNow(); const w = await words(); rec(`guard: ${name} — ✕ on, the line says what to do`, sl.x?.disabled === false && re.test(w), { x: sl.x?.disabled, w }); };
+    const tapGap = phone ? 420 : 150; // a phone tap settles 300 ms before it counts (TAP_SETTLE_MS)
     const h0 = L.hash(await L.line(page)); const d0 = await dotsLoc().count(); const p0 = await stopsLoc().count(); const u0 = await L.undoEnabled(page);
-    const ll = await pointOn(0.3, 400, 0); await zoomTo(ll);
+    const pts = [await pointOn(0.25, 350, 0), await pointOn(0.3, 350, 0), await pointOn(0.35, 350, 0)];
+    await L.fit(page, pts, 80);
+    // „+”: no chooser, the guidance line, ✓ off, ✕ on, the slots where they were.
     await slot(1); await page.waitForTimeout(300);
-    const guide = ((await chooser.locator('[data-edit-guide="add"]').textContent().catch(() => "")) ?? "").trim();
-    rec("add-kind: „+” shows the chooser „Ko pievienot? – …”", (await chooser.isVisible()) && guide === "Ko pievienot? – izvēlies veidu, tad pieskaries kartei.", { guide });
-    const chips = await chooser.locator("[data-add-kind]").evaluateAll((els) => els.map((e) => { const r = e.getBoundingClientRect(); return { k: e.dataset.addKind, y: Math.round(r.y), right: Math.round(r.right), text: e.textContent.trim(), on: e.getAttribute("aria-checked") }; }));
-    const vw = await page.evaluate(() => innerWidth);
-    rec("add-kind: two chips on one row, with their detail lines, on screen", chips.length === 2 && chips[0].y === chips[1].y && chips.every((c) => c.right <= vw) && /Mopik atradīs ceļu līdz tai/.test(chips[0].text) && /Tikai virza līniju, bez numura/.test(chips[1].text), chips);
-    const sc = await L.state(page);
-    const slotOf = (k) => sc.slots.find((x) => x.slot === k);
-    rec("add-kind: slots did not move, ✓ off, ✕ on (chooser)", JSON.stringify(await rects()) === JSON.stringify(idle) && slotOf("3")?.disabled === true && slotOf("x")?.disabled === false && slotOf("1")?.disabled === true, sc.slots);
-    await addShot("chooser");
+    const g1 = await words();
+    const sl1 = await slotsNow();
+    rec("„+”: no chooser, „Pieskaries kartei, lai pievienotu caurbraucamu punktu – ✓ apstiprina visus, ✕ atmet.”", (await page.locator("[data-add-chooser]").count()) === 0 && g1.includes("Pieskaries kartei, lai pievienotu caurbraucamu punktu – ✓ apstiprina visus, ✕ atmet."), { g1 });
+    rec("„+”: slots did not move, ✓ off, ✕ on, „+” off", JSON.stringify(await rects()) === JSON.stringify(idle) && sl1["3"]?.disabled === true && sl1.x?.disabled === false && sl1["1"]?.disabled === true, sl1);
+    await guard("armed", /Pieskaries kartei/);
+    await addShot("armed");
     await page.keyboard.press("Escape"); await page.waitForTimeout(300);
-    rec("add-kind: Escape dismisses the chooser", !(await chooser.isVisible()));
-    await slot(1); await page.waitForTimeout(300); await chooser.locator("[data-add-close]").click(); await page.waitForTimeout(300);
-    rec("add-kind: ✕ dismisses the chooser", !(await chooser.isVisible()) && L.hash(await L.line(page)) === h0);
-    // „Caurbraucams punkts”: armed, a tap → a white dot pending, the field names its leg.
-    await plus("pass");
-    const armed = await field();
-    rec("pass armed: the field says what to do", /^Pievieno caurbraucamu punktu – pieskaries kartei/.test(armed ?? ""), { armed });
-    await addShot("pass-armed");
-    await tapAt(ll);
-    const sp = await L.waitChip(page);
-    const fp = await field();
-    rec("pass: a pending point, the field „Caurbraucams punkts · starp „A” un „B””", ["proposed", "warn"].includes(sp.chip?.tone) && /^Caurbraucams punkts · starp „.+” un „.+”/.test(fp ?? "") && (await stopsLoc().count()) === p0, { chip: sp.chip, fp });
-    rec("pass: slots did not move (pending)", JSON.stringify(await rects()) === JSON.stringify(idle));
-    await addShot("pass-pending");
+    rec("„+”: Escape ends it", !(await words()).includes("Pieskaries kartei, lai") && (await slotsNow())["1"]?.disabled === false);
+    // Three quick taps: three pending dots at once, one proposal.
+    await slot(1); await page.waitForTimeout(300);
+    for (const ll of pts) { await tapAt(ll); await page.waitForTimeout(tapGap); }
+    await page.waitForTimeout(350);
+    const n3 = await pendingDots().count();
+    const f3 = await field();
+    rec("3 taps: 3 pending dots at once, the field „3 caurbraucami punkti – ✓ apstiprina visus, ↶ noņem pēdējo, ✕ atmet.”", n3 === 3 && f3 === "3 caurbraucami punkti – ✓ apstiprina visus, ↶ noņem pēdējo, ✕ atmet.", { n3, f3 });
+    await addShot("batch");
+    const sp = await L.waitChip(page, ["proposed", "warn", "refused"], 90000);
+    rec("3 taps: one proposal for the batch, no stop added", (await page.locator("[data-proposal-chip]").count()) === 1 && ["proposed", "warn"].includes(sp.chip?.tone) && (await pendingDots().count()) === 3 && (await stopsLoc().count()) === p0, { chip: sp.chip });
+    rec("batch: slots did not move", JSON.stringify(await rects()) === JSON.stringify(idle));
+    await addShot("batch-proposal");
     if (sp.chip?.tone === "warn") await page.locator("button:visible", { hasText: "Tomēr braukt" }).first().click(); else await slot(3);
-    await page.waitForTimeout(900);
-    rec("pass ✓: one more pass-through point, no new stop", (await dotsLoc().count()) === d0 + 1 && (await stopsLoc().count()) === p0 && L.hash(await L.line(page)) !== h0, { dots: await dotsLoc().count(), d0, stops: await stopsLoc().count(), p0 });
-    // The segmented switch on the new dot: „Caurbraucams” selected, „Pietura” a tap away; commits at once, line unchanged.
+    await page.waitForTimeout(1200);
+    rec("✓: the ride has 3 more pass-through points, no new stops or rows", (await dotsLoc().count()) === d0 + 3 && (await stopsLoc().count()) === p0 && (await pendingDots().count()) === 0 && L.hash(await L.line(page)) !== h0, { dots: await dotsLoc().count(), d0, stops: await stopsLoc().count(), p0 });
+    await addShot("committed");
+    // The sheet's switch on one of them: a stop, line unchanged; ↶ brings the dot back.
     {
       const h1 = L.hash(await L.line(page));
-      const dot = dotsLoc().nth(d0);
-      await dot.click(); await page.waitForTimeout(400);
+      await dotsLoc().nth(d0).click(); await page.waitForTimeout(400);
       const sw = page.locator("[data-kind-switch]");
       const selected = await sw.locator('[aria-checked="true"]').getAttribute("data-kind").catch(() => null);
-      const rows = await page.locator('[data-point-sheet="menu"]').innerText().catch(() => "");
-      rec("sheet switch on a dot: „Caurbraucams” selected, no old kind rows", selected === "pass" && !/Padarīt par pieturu|Padarīt caurbraucamu/.test(rows), { selected });
       await addShot("switch-dot");
-      // „Padarīt par pieturu” names the spot first (a reverse lookup): wait for the stop, up to 20 s.
       await sw.locator('[data-kind="stop"]').click();
       for (let k = 0; k < 100 && (await stopsLoc().count()) !== p0 + 1; k++) await page.waitForTimeout(200);
-      rec("sheet switch: the dot is a stop, line unchanged", (await stopsLoc().count()) === p0 + 1 && (await dotsLoc().count()) === d0 && L.hash(await L.line(page)) === h1, { stops: await stopsLoc().count(), dots: await dotsLoc().count() });
+      rec("sheet switch: „Caurbraucams” → a stop, line unchanged", selected === "pass" && (await stopsLoc().count()) === p0 + 1 && (await dotsLoc().count()) === d0 + 2 && L.hash(await L.line(page)) === h1, { selected, stops: await stopsLoc().count(), dots: await dotsLoc().count() });
       await slot(2); await page.waitForTimeout(700);
-      rec("sheet switch: ↶ brings the dot back", (await dotsLoc().count()) === d0 + 1 && (await stopsLoc().count()) === p0);
+      rec("sheet switch: ↶ brings the dot back", (await dotsLoc().count()) === d0 + 3 && (await stopsLoc().count()) === p0);
     }
-    await slot(2); await page.waitForTimeout(700);
-    rec("pass: ↶ takes the new point away", L.hash(await L.line(page)) === h0 && (await dotsLoc().count()) === d0 && (await L.undoEnabled(page)) === u0);
-    // „Pietura”: remembered choice preselected; a numbered stop.
+    await slot(2); await page.waitForTimeout(800);
+    rec("↶: the whole batch goes in one step", L.hash(await L.line(page)) === h0 && (await dotsLoc().count()) === d0 && (await L.undoEnabled(page)) === u0, { dots: await dotsLoc().count() });
+    // ↶ inside a batch takes the last pending dot; ✕ drops the rest. (The undo may move the camera: aim again.)
+    await L.fit(page, pts, 80); await settled();
     await slot(1); await page.waitForTimeout(300);
-    const pre = await chooser.locator('[aria-checked="true"]').getAttribute("data-add-kind").catch(() => null);
-    rec("add-kind: the last choice is preselected („Caurbraucams punkts”)", pre === "pass", { pre });
-    await chooser.locator('[data-add-kind="stop"]').click(); await page.waitForTimeout(300);
-    await tapAt(ll);
+    await tapAt(pts[0]); await page.waitForTimeout(tapGap); await tapAt(pts[2]); await page.waitForTimeout(tapGap + 300);
+    await guard("batch pending", /2 caurbraucami punkti/);
+    await slot(2); await page.waitForTimeout(400);
+    const n1 = await pendingDots().count();
+    await slot("x"); await page.waitForTimeout(600);
+    rec("batch: ↶ takes the last pending dot, ✕ drops the rest, the ride as it was", n1 === 1 && (await pendingDots().count()) === 0 && L.hash(await L.line(page)) === h0 && (await dotsLoc().count()) === d0, { n1 });
+    // A tap on the empty map offers „Pievienot punktu šeit”; a tap elsewhere dismisses it; the chip adds one pending dot.
+    {
+      const far = await pointOn(0.3, 1500, 0), far2 = await pointOn(0.3, 1500, 900);
+      await L.fit(page, [far, far2, pts[1]], 60);
+      await settled();
+      await tapAt(far); await page.waitForTimeout(500);
+      const chip = page.locator('[data-choice-group="offer"] [data-choice="offer"]');
+      const label = ((await chip.textContent().catch(() => "")) ?? "").trim();
+      rec("empty map tap: a marker and „Pievienot punktu šeit”", label === "Pievienot punktu šeit" && (await page.locator("[data-empty-offer]").count()) === 1, { label });
+      await guard("offer", /Te var pievienot caurbraucamu punktu – /);
+      rec("offer: slots did not move", JSON.stringify(await rects()) === JSON.stringify(idle));
+      await addShot("offer");
+      await tapAt(far2); await page.waitForTimeout(500);
+      rec("offer: a tap elsewhere dismisses it", (await chip.count()) === 0 && (await page.locator("[data-empty-offer]").count()) === 0);
+      await tapAt(far); await page.waitForTimeout(500);
+      await page.keyboard.press("Escape"); await page.waitForTimeout(300);
+      rec("offer: Escape dismisses it", (await chip.count()) === 0);
+      await tapAt(far); await page.waitForTimeout(500);
+      await chip.click(); await page.waitForTimeout(400);
+      rec("offer taken: one pending dot there, armed for more", (await pendingDots().count()) === 1 && /1 caurbraucams punkts/.test((await field()) ?? ""), { f: await field() });
+      await addShot("offer-taken");
+      await L.waitChip(page, ["proposed", "warn", "refused"], 90000);
+      await slot("x"); await page.waitForTimeout(600);
+      rec("offer: ✕ leaves the ride as it was", L.hash(await L.line(page)) === h0 && (await pendingDots().count()) === 0);
+    }
+    // The rider's stuck state (images/46.png): the field's tap makes an empty stop row — it says so, and ✕ gets out.
+    {
+      await stopFromField();
+      await guard("a stop row waiting (the field's tap)", /Meklē vietu vai pieskaries kartei – ✕ atceļ\./);
+      await addShot("row-waiting");
+      await slot("x"); await page.waitForTimeout(500);
+      const fx = await field();
+      rec("row waiting: ✕ removes the empty row and returns to idle", /^Meklē (vai atzīmē )?pieturu$/.test(fx ?? "") && (await stopsLoc().count()) === p0 && (await slotsNow())["1"]?.disabled === false, { fx });
+      await stopFromField();
+      await page.keyboard.press("Escape"); await page.waitForTimeout(400);
+      rec("row waiting: Escape does the same", /^Meklē (vai atzīmē )?pieturu$/.test((await field()) ?? ""), { f: await field() });
+    }
+    // A stop still starts from the field and a tap: numbered, pending.
+    await L.fit(page, pts, 80);
+    await stopFromField();
+    await tapAt(pts[1]);
     const ss = await L.waitChip(page);
     const fs = await field();
-    rec("stop: a numbered pending stop, the field „Pietura N · starp …”", ["proposed", "warn"].includes(ss.chip?.tone) && /^Pietura \d+ · starp „/.test(fs ?? ""), { chip: ss.chip, fs });
-    await addShot("stop-pending");
+    rec("stop (field): a numbered pending stop, the field „Pietura N · starp …”", ["proposed", "warn"].includes(ss.chip?.tone) && /^Pietura \d+ · starp „/.test(fs ?? ""), { chip: ss.chip, fs });
     if (ss.chip?.tone === "warn") await page.locator("button:visible", { hasText: "Tomēr braukt" }).first().click(); else await slot(3);
     await page.waitForTimeout(900);
     rec("stop ✓: one more numbered stop, no new dot", (await stopsLoc().count()) === p0 + 1 && (await dotsLoc().count()) === d0);
     await slot(2); await page.waitForTimeout(700);
     rec("stop: ↶ takes it away", L.hash(await L.line(page)) === h0 && (await stopsLoc().count()) === p0);
-    // The switch on an existing stop (Līgatne), and off on the start.
+    // The switch on an existing stop (Līgatne).
     {
       await L.fit(page, await L.line(page));
       await marker("Līgatne").click(); await page.waitForTimeout(400);
@@ -344,17 +397,21 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
       await slot(2); await page.waitForTimeout(700);
       rec("…↶ brings the stop back", (await stopsLoc().count()) === p0 && (await dotsLoc().count()) === d0);
     }
-    console.log(`[${tag}]   add-kind ${((Date.now() - t) / 1000).toFixed(1)} s`);
+    console.log(`[${tag}]   add-point ${((Date.now() - t) / 1000).toFixed(1)} s`);
   }
 
+  }
   // ── 2. The rider's ride-0928 (four pass-through points): move one ──
+  if (want("2")) {
   t = Date.now();
   await L.openRide(page, "ride-0928");
   console.log(`[${tag}]   openRide ride-0928 ${((Date.now() - t) / 1000).toFixed(1)} s`);
   rec("ride-0928 opens with its four pass-through points", (await dotsLoc().count()) === 4, { dots: await dotsLoc().count() });
   await exercise("move pass-through point", async () => { await L.fit(page, await L.line(page)); await moveMarker(dotsLoc().nth(1), -50, -50); });
 
+  }
   // ── 2b. The rider's kapselu-upmali GPX (2026-09-29): „Izņemt” on „Pietura 1 · Viduči” ──
+  if (want("2b")) {
   // Refused in production as a line that could not be joined; a removal only
   // merges the two legs round the point, so it is a proposal whenever roads join them.
   t = Date.now();
@@ -391,7 +448,9 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
     await shot("remove-pass");
   }
 
+  }
   // ── 3. Antiņciems → Puķes → Rīgas apvedceļš: „Vest pa taisno” and the „Tomēr braukt” guard ──
+  if (want("3")) {
   t = Date.now();
   await L.openRide(page, "antinciems-rigas");
   console.log(`[${tag}]   openRide antinciems-rigas ${((Date.now() - t) / 1000).toFixed(1)} s`);
@@ -465,7 +524,9 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
     return best;
   }, p));
 
+  }
   // ── 4. Chained edits (Grostonas → Sidgunda → Mālpils → Augšmala → Ērgļi) ──
+  if (want("4")) {
   t = Date.now();
   await L.openRide(page, "grostonas-chain");
   console.log(`[${tag}]   openRide grostonas-chain ${((Date.now() - t) / 1000).toFixed(1)} s`);
@@ -498,7 +559,9 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
     rec("chain: one ↶ brings back the ride before both", L.hash(await L.line(page)) === h0 && (await L.undoEnabled(page)) === u0);
   }
 
+  }
   // ── 5. A batch with one point off the road: named, ringed, „Pievienot pārējās” (Grostonas → Ērgļi) ──
+  if (want("5")) {
   t = Date.now();
   // Reverse lookups with stable names, as the rider's batchbad script had them.
   const reverse = (route) => {
@@ -514,7 +577,7 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
     const h0 = L.hash(await L.line(page)); const u0 = await L.undoEnabled(page); const r0 = await rects();
     const pts = [[24.4509, 56.9490], [24.5985, 56.9599], [24.7000, 56.9650]];
     await L.fit(page, pts.concat([[24.40, 56.93], [24.80, 56.93]]), 40);
-    await plus("stop");
+    await stopFromField();
     for (const ll of pts) { await tapAt(ll); await page.waitForTimeout(700); }
     const named = await waitUi((s) => s.groups.includes("block"));
     rec("blocking point named: „Kangaru purvs”, ringed, field says „Pietura 3”", named.chip?.tone === "refused" && /Kangaru purvs/.test(named.chip.text) && named.blocked.includes("3") && /^Pietura 3/.test(named.field ?? "") && named.groups.includes("rest"), named);
@@ -531,7 +594,9 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
   }
   await page.unroute(/\/api\/places\?(?=.*\blat=)/, reverse);
 
+  }
   // ── 6. Lauriņi → Ērgļi: a pass-through point moved onto a through road is ridden through ──
+  if (want("6")) {
   t = Date.now();
   await L.openRide(page, "laurini-ergli");
   console.log(`[${tag}]   openRide laurini-ergli ${((Date.now() - t) / 1000).toFixed(1)} s`);
@@ -541,7 +606,7 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
     const c0 = await L.line(page);
     const d2 = (a, b) => (a[0] - b[0]) ** 2 * 0.3 + (a[1] - b[1]) ** 2;
     const onLine = c0.reduce((best, p) => (d2(p, WAS) < d2(best, WAS) ? p : best), c0[0]);
-    await plus("stop");
+    await stopFromField();
     await tapAt(onLine); await page.waitForTimeout(700);
     await L.waitChip(page, ["proposed", "refused", "warn"], 60000);
     await page.locator('[data-choice="pass"]').click(); await page.waitForTimeout(700);
@@ -562,7 +627,9 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
     rec("through road: ✕ leaves the ride", L.hash(await L.line(page)) === h0);
   }
 
+  }
   // ── 7. A sight from the map card (backlog 46): „Pievienot braucienam” adds it ──
+  if (want("7")) {
   // /api/route-pois is stubbed with one manor ~100 m off the line, the way
   // Vatrāne sits in its park: the road the ride is on is as close as a
   // motorcycle gets, and that is said with the distance.
@@ -673,7 +740,9 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
     console.log(`[${tag}]   sight from the map ${((Date.now() - t) / 1000).toFixed(1)} s`);
   }
 
+  }
   // ── 8. Three forest points in a row: „Vest pa taisno caur visiem” (Grostonas → Ērgļi, Kangaru purvs) ──
+  if (want("8")) {
   t = Date.now();
   await page.route(/\/api\/places\?(?=.*\blat=)/, reverse);
   await L.openRide(page, "grostonas-ergli");
@@ -681,7 +750,7 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
     const h0 = L.hash(await L.line(page)); const u0 = await L.undoEnabled(page); const r0 = await rects();
     const CHAIN = [[24.6930, 56.9655], [24.6975, 56.9672], [24.7010, 56.9660]];
     await L.fit(page, CHAIN.concat([[24.66, 56.94], [24.74, 56.99]]), 40);
-    await plus("stop");
+    await stopFromField();
     for (const ll of CHAIN) { await tapAt(ll); await page.waitForTimeout(700); }
     const offered = await waitUi((s) => s.groups.includes("chain"), 90000);
     const chip = page.locator('[data-choice-group="chain"] [data-choice="chain"]');
@@ -738,7 +807,9 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
   }
   await page.unroute(/\/api\/places\?(?=.*\blat=)/, reverse);
 
+  }
   // ── 9. The connection drops while a ride is generated (2026-09-29, the rider's iPhone: „TypeError: Load failed") ──
+  if (want("9")) {
   t = Date.now();
   {
     const f = L.fixture("sigulda-cesis");
@@ -791,7 +862,9 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
     console.log(`[${tag}]   generation connection drop ${((Date.now() - t) / 1000).toFixed(1)} s`);
   }
 
+  }
   // ── 10. „Saglabātie” (backlog 44/47): the card opens the ride; „Labot” is edit
+  if (want("10")) {
   // mode on the saved line; „Pabeigt labošanu” saves in place (own) or as a
   // copy (legacy / someone else's). Seeded rows come from the app's own
   // encoder with the router's labels as names — the shape backlog 47 broke on.
@@ -861,6 +934,7 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
     console.log(`[${tag}]   saved rides ${((Date.now() - t) / 1000).toFixed(1)} s`);
   }
 
+  }
   await shot("end");
   // A 422 is how /api/reroute-leg says "no road reaches it" — the refused and
   // guard cases above ask for exactly that, and Chromium logs every non-2xx load.

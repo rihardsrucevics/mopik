@@ -31,6 +31,9 @@ approaches 1 and 2 mix freely in one ride. A leg is named by its ends
 **"Drawn" is communicated by three layers, no sticky global mode:**
 1. At adding: „+” → „Ko pievienot?” — „Pietura” („Mopik atradīs ceļu līdz
    tai”) / „Zīmēt līniju” („Brauksi tieši pa to, ko uzzīmē”).
+   *(2026-09-30: the rider reversed the „+” chooser — „+” now always adds
+   pass-through points, several in a row, one ✓. Drawing needs its own
+   entry when Phase 3 comes; see BACKLOG 34 and 53.)*
 2. Drawing is a batch session: field „Zīmē: pieskaries kartē nākamajam
    punktam”; ✓/↶/✕ in the existing slots; after ✓/✕ it is over.
 3. Persistent visual language (result, shared page, legend, GPX) and the
