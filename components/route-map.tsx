@@ -389,6 +389,8 @@ type Props = {
     lat: number; lon: number; label: string; kind?: string; token: number;
     /** Whether this place is currently ticked, so the card can say which. */
     picked?: boolean;
+    /** „Pievienot braucienam” pressed and waiting for its detour: the button says „Pievienoju…”. */
+    adding?: boolean;
     /**
      * What riding to this place costs, exactly as the list's row states it.
      *
@@ -417,6 +419,21 @@ type Props = {
    * is no plan to re-plan — a share code old enough to carry none.
    */
   onFocusToggle?: () => void;
+  /**
+   * „Pievienot braucienam” on the card (backlog 46): the focused sight into
+   * the ride — a proposal while editing, the detour splice on a result.
+   */
+  onFocusAdd?: () => void;
+  /**
+   * Ticked sights not yet in the ride, said on the map and not only in the
+   * side panel (backlog 46): „2 atzīmētas · Pievienot”. `ready` false: the
+   * button is shown disabled (its detours are still being routed).
+   */
+  ticked?: { count: string; guide: string; addLabel: string; ready: boolean } | null;
+  onTickedAdd?: () => void;
+  /** What adding a sight did, said on the map: „Vatrāne – tuvākais ceļš ~100 m…”. */
+  sightNote?: { text: string; dismissLabel: string } | null;
+  onSightNoteDismiss?: () => void;
   /**
    * The sights ticked but not yet ridden through.
    *
@@ -2100,9 +2117,10 @@ function stopInfoHtml(m: Messages, stop: { label: string; kind?: string; detail?
 function focusInfoHtml(
   m: Messages,
   place: {
-    label: string; kind?: string; picked?: boolean;
+    label: string; kind?: string; picked?: boolean; adding?: boolean;
     detour?: { delta?: string; note?: string; why?: string; canPick: boolean } | null;
   },
+  canTick: boolean,
   canAdd: boolean,
 ): string {
   const detour = place.detour ?? null;
@@ -2140,17 +2158,32 @@ function focusInfoHtml(
     // detour, so the button would answer a press with nothing — the same
     // reason its row carries no checkbox. A *long* detour is offered here
     // exactly as it is in the list.
+    // Backlog 46 (rider, 2026-09-28): „Pievienot” used to only tick the
+    // place, and the side panel's own button was what added it — a control
+    // that looked like it did something and did not. Now the primary button
+    // adds it to the ride („Pievienot braucienam”), through the list's own
+    // path; ticking several to add at once is its own, named control
+    // („Atzīmēt”), and a ticked place is counted on the map (`ticked`).
     (canAdd && detour?.canPick !== false
-      ? `<button type="button" data-add="1" ` +
+      ? `<button type="button" data-add="1" ${place.adding ? "disabled " : ""}` +
         `style="margin-top:4px;width:100%;display:flex;align-items:center;` +
-        `justify-content:center;gap:4px;height:30px;border-radius:15px;` +
+        `justify-content:center;gap:4px;height:32px;border-radius:16px;` +
+        `border:1px solid #f56300;background:#f56300;color:#fff;` +
+        `${place.adding ? "opacity:.6;cursor:default;" : "cursor:pointer;"}` +
+        `font-size:12px;font-weight:600;padding:0 10px">` +
+        `${esc(place.adding ? m.sightAdding : m.sightAddToRide)}</button>`
+      : "") +
+    (canTick && detour?.canPick !== false
+      ? `<button type="button" data-tick="1" aria-pressed="${place.picked ? "true" : "false"}" ` +
+        `style="width:100%;display:flex;align-items:center;` +
+        `justify-content:center;gap:4px;height:28px;border-radius:14px;` +
         // Ticked reads as filled, unticked as an outline — the same pair the
         // list's own checkbox uses, so one glance says which state this is.
         (place.picked
-          ? `border:1px solid #f56300;background:#f56300;color:#fff;`
-          : `border:1px solid #f5630040;background:#fff;color:#f56300;`) +
-        `font-size:12px;font-weight:600;cursor:pointer;padding:0 10px">` +
-        `${esc(place.picked ? `✓ ${m.resSelectionClear}` : m.resAddStop)}</button>`
+          ? `border:1px solid #f5630040;background:#fff4ec;color:#bd4b00;`
+          : `border:1px solid #e7e5e4;background:#fff;color:#44403c;`) +
+        `font-size:12px;font-weight:500;cursor:pointer;padding:0 10px">` +
+        `${esc(place.picked ? `✓ ${m.sightUntick}` : m.sightTick)}</button>`
       : "") +
     `</div>`
   );
@@ -2353,7 +2386,7 @@ function PhoneColumn({ controls }: { controls: MapControls }) {
   );
 }
 
-export function RouteMap({ segments, start, destination, via, focus, onFocusCleared, onFocusToggle, selectedPois, routePois, showTet, onToggleTet, showSights, onToggleSights, onShowPoi, onPickPoint, pickedPoint, onPickedPointMove, pickCenter, onGeolocated, controls, proposal }: Props) {
+export function RouteMap({ segments, start, destination, via, focus, onFocusCleared, onFocusToggle, onFocusAdd, ticked, onTickedAdd, sightNote, onSightNoteDismiss, selectedPois, routePois, showTet, onToggleTet, showSights, onToggleSights, onShowPoi, onPickPoint, pickedPoint, onPickedPointMove, pickCenter, onGeolocated, controls, proposal }: Props) {
   const [locale] = useLocale();
   const m = messages(locale);
   /** The phone's field: shorter words, the row as a small badge. */
@@ -2411,6 +2444,8 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
   useEffect(() => { onFocusClearedRef.current = onFocusCleared; }, [onFocusCleared]);
   const onFocusToggleRef = useRef(onFocusToggle);
   useEffect(() => { onFocusToggleRef.current = onFocusToggle; }, [onFocusToggle]);
+  const onFocusAddRef = useRef(onFocusAdd);
+  useEffect(() => { onFocusAddRef.current = onFocusAdd; }, [onFocusAdd]);
   /** The pills for the ticked sights, replaced whole whenever the set changes. */
   const selectedMarkersRef = useRef<maplibregl.Marker[]>([]);
   /** The marks for the sights this ride passes or runs near. */
@@ -3769,7 +3804,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
     // `stopInfoHtml` is given no `kind` fallback to fall back to.
     const popup = new maplibregl.Popup({ offset: 20, maxWidth: "260px", closeButton: true })
       .setLngLat([focus.lon, focus.lat])
-      .setHTML(focusInfoHtml(m, focus, Boolean(onFocusToggleRef.current)))
+      .setHTML(focusInfoHtml(m, focus, Boolean(onFocusToggleRef.current), Boolean(onFocusAddRef.current)))
       .addTo(map);
     infoPopupRef.current = popup;
 
@@ -3779,6 +3814,11 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
     // ordinary case for an inline arrow — is not a reason to rebuild the card
     // and lose the rider's place on the map.
     popup.getElement()?.querySelector<HTMLButtonElement>("[data-add]")
+      ?.addEventListener("click", (event) => {
+        event.stopPropagation();
+        onFocusAddRef.current?.();
+      });
+    popup.getElement()?.querySelector<HTMLButtonElement>("[data-tick]")
       ?.addEventListener("click", (event) => {
         event.stopPropagation();
         onFocusToggleRef.current?.();
@@ -4677,6 +4717,24 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
         <Info aria-hidden="true" className="size-4" />
       </button>
       </div>
+      {ticked && (
+        <div data-sight-ticked role="status" title={ticked.guide} aria-label={ticked.guide}
+          className="flex max-w-full items-center gap-2 rounded-full border border-[#f56300]/40 bg-white/95 py-1 pl-3 pr-1 text-xs text-stone-800 shadow-sm backdrop-blur">
+          <span className="truncate font-medium">{ticked.count}</span>
+          <button type="button" data-sight-ticked-add onClick={onTickedAdd} disabled={!ticked.ready || !onTickedAdd}
+            className="h-7 shrink-0 rounded-full bg-[#f56300] px-3 text-xs font-semibold text-white transition hover:bg-[#d85600] disabled:bg-stone-300 disabled:text-stone-500">
+            {ticked.addLabel}
+          </button>
+        </div>
+      )}
+      {sightNote && (
+        <div data-sight-note role="status"
+          className="flex max-w-full items-start gap-2 rounded-xl border border-amber-300 bg-amber-50/95 py-1.5 pl-3 pr-1 text-xs leading-snug text-amber-950 shadow-sm backdrop-blur">
+          <span className="min-w-0 flex-1">{sightNote.text}</span>
+          <button type="button" onClick={onSightNoteDismiss} aria-label={sightNote.dismissLabel} title={sightNote.dismissLabel}
+            className="flex size-6 shrink-0 items-center justify-center rounded-full text-amber-900 hover:bg-amber-100">×</button>
+        </div>
+      )}
       {creditOpen && (
         <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer"
           className="max-w-full truncate rounded-full border border-[#ececf0] bg-white/95 px-3 py-1.5 text-[11px] text-stone-700 shadow-sm backdrop-blur hover:underline">

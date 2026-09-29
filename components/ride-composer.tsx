@@ -2792,10 +2792,13 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     // Editing, a pin's mark is previewed like the rest once it is named.
     const own = batchPending ?? shapeBar ?? removeBar ?? (single && edit && markPreview ? previewBar(single) : single);
     // Release B item 4: chained edits with nothing new pending — ✓ ↶ ✕ act on the chain.
+    // One change (a sight added from the map's card, backlog 46, or a chain
+    // undone down to one) is not „visas”: ✓ and ✕ say it in the singular.
+    const chainOne = edit?.chain?.count === 1;
     const chainBar: MapPendingMark | null = !own && edit?.chain ? {
-      confirmLabel: t(locale, "chainConfirmAll"),
+      confirmLabel: t(locale, chainOne ? "previewConfirm" : "chainConfirmAll"),
       onConfirm: edit.rerouting ? null : () => edit.chain?.onConfirm(),
-      cancelLabel: t(locale, "chainDiscardAll"),
+      cancelLabel: t(locale, chainOne ? "previewCancel" : "chainDiscardAll"),
       onCancel: () => edit.chain?.onDiscard(),
       undo: { label: t(locale, "chainUndoLast"), onUndo: () => edit.chain?.onUndo() },
       offRoad: null,

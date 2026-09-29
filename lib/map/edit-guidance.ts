@@ -203,3 +203,44 @@ export function blockedLine(t: T, blocking: Blocking, warned: boolean, format: (
   const g = blockedGuide(t, blocking, warned, format);
   return joinGuide(g.what, g.action);
 }
+
+// ── sights-add ──
+// A sight added from the map's card (backlog 46): what happened – what to
+// do, in the same two parts. Never a silent "nothing happened".
+
+/** Latvian-style count classes: 1, 21, 31… take the singular (not 11). */
+function one(n: number): boolean {
+  return n % 10 === 1 && n % 100 !== 11;
+}
+
+/** The map bar's count of ticked sights not yet in the ride: „2 atzīmētas”. */
+export function tickedCount(t: T, n: number): string {
+  return fi(t(one(n) ? "sightTickedOne" : "sightTickedMany"), { n });
+}
+
+/** Its whole line, for the title and a screen reader: „2 atzīmētas – vēl nav braucienā – „Pievienot” tās ieliek.” */
+export function tickedGuide(t: T, n: number): string {
+  return joinGuide(tickedCount(t, n), t("sightTickedGuide"));
+}
+
+/**
+ * The ride could not come (much) closer to the sight: „Vatrāne – tuvākais
+ * ceļš ~100 m no apskates vietas; tuvāk ar motociklu netikt – pietura paliek
+ * pie ceļa, tālāk kājām.” Null when the ride reaches it.
+ */
+export function sightReachLine(t: T, name: string, reach: { kind: "notCloser" | "short"; meters: number } | null, format: (n: number) => string): string | null {
+  if (!reach) return null;
+  const what = fi(t(reach.kind === "notCloser" ? "sightNotCloser" : "sightShort"), { name, m: format(reach.meters) });
+  return joinGuide(what, t("sightReachAct"));
+}
+
+/** Added on a plain result: „Vatrāne pievienota braucienam, +0,4 km – ar „Labot” to var pārvietot vai izņemt.” */
+export function sightAddedLine(t: T, name: string, km: string): string {
+  return joinGuide(fi(t("sightAdded"), { name, km }), t("sightAddedAct"));
+}
+
+/** Could not be added: the reason – what to do. */
+export function sightRefusedLine(t: T, name: string, reason: string): string {
+  return joinGuide(joinGuide(name, reason.replace(/^\s*[A-ZĀ-Ž]/u, (c) => c.toLowerCase())), t("sightRefusedAct"));
+}
+// ── /sights-add ──

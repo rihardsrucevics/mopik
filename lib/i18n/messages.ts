@@ -878,6 +878,23 @@ export type MessageKey =
   | "chainConfirmAll"
   | "chainUndoLast"
   | "chainDiscardAll"
+  // ── sights-add ── backlog 46: the map card adds a sight to the ride.
+  | "sightAddToRide"
+  | "sightAdding"
+  | "sightTick"
+  | "sightUntick"
+  | "sightTickedOne"
+  | "sightTickedMany"
+  | "sightTickedGuide"
+  | "sightNotCloser"
+  | "sightShort"
+  | "sightReachAct"
+  | "sightAdded"
+  | "sightAddedAct"
+  | "sightRefusedAct"
+  | "sightFinishFirst"
+  | "sightNoteClose"
+  // ── /sights-add ──
   ;
 
 type Messages = Record<MessageKey, string>;
@@ -1550,6 +1567,23 @@ const lv: Messages = {
   chainUndoLast: "Atsaukt pēdējo izmaiņu",
   chainDiscardAll: "Atmest visas izmaiņas",
   // ── /release-b ──
+  // ── sights-add ──
+  sightAddToRide: "Pievienot braucienam",
+  sightAdding: "Pievienoju…",
+  sightTick: "Atzīmēt",
+  sightUntick: "Noņemt atzīmi",
+  sightTickedOne: "{n} atzīmēta",
+  sightTickedMany: "{n} atzīmētas",
+  sightTickedGuide: "vēl nav braucienā – „Pievienot” tās ieliek.",
+  sightNotCloser: "{name} – tuvākais ceļš ~{m} m no apskates vietas; tuvāk ar motociklu netikt",
+  sightShort: "{name} – ar motociklu var piebraukt līdz ~{m} m no apskates vietas, tālāk ceļa nav",
+  sightReachAct: "pietura paliek pie ceļa, tālāk kājām.",
+  sightAdded: "{name} pievienota braucienam, {km} km",
+  sightAddedAct: "ar „Labot” to var pārvietot vai izņemt.",
+  sightRefusedAct: "izvēlies citu apskates vietu.",
+  sightFinishFirst: "Vispirms apstiprini vai atmet pašreizējo izmaiņu – tad pievieno apskates vietu.",
+  sightNoteClose: "Aizvērt",
+  // ── /sights-add ──
 };
 
 const lt: Messages = {
@@ -2190,6 +2224,23 @@ const lt: Messages = {
   chainUndoLast: "Atšaukti paskutinį pakeitimą",
   chainDiscardAll: "Atmesti visus pakeitimus",
   // ── /release-b ──
+  // ── sights-add ──
+  sightAddToRide: "Pridėti prie kelionės",
+  sightAdding: "Pridedama…",
+  sightTick: "Pažymėti",
+  sightUntick: "Nuimti žymę",
+  sightTickedOne: "Pažymėta: {n}",
+  sightTickedMany: "Pažymėta: {n}",
+  sightTickedGuide: "dar ne kelionėje – „Pridėti“ jas įtraukia.",
+  sightNotCloser: "{name} – artimiausias kelias ~{m} m nuo lankytinos vietos; arčiau motociklu nepavažiuosi",
+  sightShort: "{name} – motociklu galima privažiuoti iki ~{m} m nuo lankytinos vietos, toliau kelio nėra",
+  sightReachAct: "sustojimas lieka prie kelio, toliau pėsčiomis.",
+  sightAdded: "{name} pridėta prie kelionės, {km} km",
+  sightAddedAct: "su „Taisyti“ ją galima perkelti arba pašalinti.",
+  sightRefusedAct: "pasirink kitą lankytiną vietą.",
+  sightFinishFirst: "Pirmiausia patvirtink arba atmesk dabartinį pakeitimą – tada pridėk lankytiną vietą.",
+  sightNoteClose: "Uždaryti",
+  // ── /sights-add ──
 };
 
 const et: Messages = {
@@ -2826,6 +2877,23 @@ const et: Messages = {
   chainUndoLast: "Võta viimane muudatus tagasi",
   chainDiscardAll: "Loobu kõigist muudatustest",
   // ── /release-b ──
+  // ── sights-add ──
+  sightAddToRide: "Lisa sõidule",
+  sightAdding: "Lisan…",
+  sightTick: "Märgi",
+  sightUntick: "Eemalda märge",
+  sightTickedOne: "{n} märgitud",
+  sightTickedMany: "{n} märgitud",
+  sightTickedGuide: "pole veel sõidus – „Lisa” lisab need.",
+  sightNotCloser: "{name} – lähim tee on vaatamisväärsusest ~{m} m kaugusel; mootorrattaga lähemale ei pääse",
+  sightShort: "{name} – mootorrattaga pääseb vaatamisväärsusele ~{m} m lähedale, edasi teed pole",
+  sightReachAct: "peatus jääb tee äärde, edasi jalgsi.",
+  sightAdded: "{name} on sõidule lisatud, {km} km",
+  sightAddedAct: "„Muuda” abil saab seda liigutada või eemaldada.",
+  sightRefusedAct: "vali mõni teine vaatamisväärsus.",
+  sightFinishFirst: "Kinnita või loobu kõigepealt praegusest muudatusest – siis lisa vaatamisväärsus.",
+  sightNoteClose: "Sulge",
+  // ── /sights-add ──
 };
 
 const en: Messages = {
@@ -3460,6 +3528,23 @@ const en: Messages = {
   chainUndoLast: "Undo the last change",
   chainDiscardAll: "Discard all changes",
   // ── /release-b ──
+  // ── sights-add ──
+  sightAddToRide: "Add to ride",
+  sightAdding: "Adding…",
+  sightTick: "Mark",
+  sightUntick: "Unmark",
+  sightTickedOne: "{n} marked",
+  sightTickedMany: "{n} marked",
+  sightTickedGuide: "not in the ride yet – “Add” puts them in.",
+  sightNotCloser: "{name} – the nearest road is ~{m} m from the sight; no closer by motorcycle",
+  sightShort: "{name} – by motorcycle you get to ~{m} m from the sight; no road beyond",
+  sightReachAct: "the stop stays by the road, walk the rest.",
+  sightAdded: "{name} added to the ride, {km} km",
+  sightAddedAct: "“Edit” can move or remove it.",
+  sightRefusedAct: "pick another sight.",
+  sightFinishFirst: "Confirm or discard the current change first – then add the sight.",
+  sightNoteClose: "Close",
+  // ── /sights-add ──
 };
 
 const MESSAGES: Record<UiLocale, Messages> = { lv, lt, et, en };
