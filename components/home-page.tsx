@@ -17,6 +17,7 @@ import { SiteHeader } from "@/components/site-header";
 import { useLocale } from "@/lib/i18n/use-locale";
 import { messages as uiMessages, type MessageKey } from "@/lib/i18n/messages";
 import { fi } from "@/lib/i18n/format";
+import { AUTO_RETRY_DELAY_MS, autoRetryDecision, classifyRequestFailure, rawFailure } from "@/lib/chat/request-failure";
 import { RideComposer } from "@/components/ride-composer";
 import { ChatMessage, ChatQuickReply, ChatResponse, RidePlan, planSummary, planToIntent } from "@/lib/chat/ride-plan";
 import { describeInfeasible, describeUnplannable, minutesLabel } from "@/lib/chat/feasibility";
@@ -170,6 +171,47 @@ function describeError(e: unknown, fallback: string): string {
   const frame = e.stack?.split("\n").find((l) => /@|at /.test(l))?.trim().slice(0, 80);
   console.error("Mopik: request failed", e);
   return `${fallback} (${e.name}: ${e.message}${frame ? ` — ${frame}` : ""})`;
+}
+
+const pageVisible = () => typeof document === "undefined" || document.visibilityState === "visible";
+
+/**
+ * Wait before the one quiet retry: `AUTO_RETRY_DELAY_MS`, and first for the
+ * page to be visible again when it is hidden. False when the rider cancelled
+ * meanwhile (`signal`), so the caller stops.
+ */
+function waitForRetry(signal: AbortSignal, untilVisible: boolean): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (signal.aborted) { resolve(false); return; }
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const done = (ok: boolean) => {
+      if (timer) clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+      signal.removeEventListener("abort", onAbort);
+      resolve(ok);
+    };
+    const onAbort = () => done(false);
+    const arm = () => { timer = setTimeout(() => done(true), AUTO_RETRY_DELAY_MS); };
+    const onVisible = () => { if (pageVisible() && !timer) arm(); };
+    signal.addEventListener("abort", onAbort);
+    if (untilVisible && !pageVisible()) document.addEventListener("visibilitychange", onVisible);
+    else arm();
+  });
+}
+
+/**
+ * Keep the screen on while a ride is searched (~50 s): a phone that dims mid
+ * request is the commonest way the connection dies (Safari's "Load failed").
+ * Only while the page is visible — the browser drops the lock on hide anyway.
+ * Where the API is missing (iOS < 16.4) this does nothing.
+ */
+async function holdScreen(): Promise<(() => void)> {
+  try {
+    const wl = (navigator as Navigator & { wakeLock?: { request(type: "screen"): Promise<{ release(): Promise<void> }> } }).wakeLock;
+    if (!wl || !pageVisible()) return () => {};
+    const lock = await wl.request("screen");
+    return () => { void lock.release().catch(() => {}); };
+  } catch { return () => {}; }
 }
 /**
  * The POI kind for a stop, matched on the place's own name.
@@ -837,7 +879,7 @@ export function HomePage() {
    */
   function reviseUnreachableStop(stop: UnreachableStop, how: "remove" | "move") {
     const current = plan;
-    if (!current) return;
+    if (!current || busyRef.current) return;
     // The via's own position in `viaPlaces`: the ride's index minus the start.
     const viaIndex = stop.index - 1;
     if (stop.role === "via" && (viaIndex < 0 || viaIndex >= current.viaPlaces.length)) return;
@@ -903,18 +945,27 @@ export function HomePage() {
     setChatting(true);
     // Straight back to the search with the corrected ride. The rider asked for
     // a fix, not for a form to fill in again.
-    void generate(nextPlan, conversation, nextPlaces);
+    busyRef.current = true;
+    void generate(nextPlan, conversation, nextPlaces).finally(() => { setPhase("idle"); busyRef.current = false; });
   }
 
-  async function generate(current: RidePlan, conversation: ChatMessage[], pickedPlaces: ResolvedPlace[] = places) {
+  async function generate(current: RidePlan, conversation: ChatMessage[], pickedPlaces: ResolvedPlace[] = places, attempt = 0) {
     setPhase("routing");
+    // The conversation this attempt answers. A retry passes the one before
+    // the failure, so the old error bubble goes the moment the loader comes
+    // back — 2026-09-29 the rider tapped „Mēģināt vēlreiz" and watched
+    // „Meklēju meža ceļus…" under „Neizdevās ģenerēt maršrutu" for 45 s.
+    setMessages(conversation);
     const sourcePrompt = conversation.filter(m => m.role === "user").map(m => m.content).join("\n");
+    const controller = new AbortController();
+    abortRef.current = controller;
+    let hadResponse = false;
+    const releaseScreen = await holdScreen();
     try {
       const isLucky = current.returnToStart === true && current.viaPlaces.length === 0 && !current.focusArea && current.budget.mode === "flexible";
       setLucky(isLucky);
-      const controller = new AbortController();
-      abortRef.current = controller;
       const response = await fetch("/api/generate-route", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ plan: current, prompt: sourcePrompt, places: pickedPlaces, lucky: isLucky }), signal: controller.signal });
+      hadResponse = true;
       const data = await readJson(response, ui);
       // Every candidate failed and no single place is to blame: say what was
       // tried, in the rider's language, and offer the ways out that change
@@ -1051,16 +1102,40 @@ export function HomePage() {
       // no retry. `cancel` has already decided where they land — the form when
       // this was the first generation, the chat and its previous route
       // otherwise — so nothing here may write to the conversation.
-      if (e instanceof DOMException && e.name === "AbortError") {
+      const kind = classifyRequestFailure(e, { userCancelled: controller.signal.aborted });
+      if (kind === "cancelled") {
         firstFromFormRef.current = false;
         setChatting(false);
         setQuickReplies([]);
         return;
       }
+      if (kind === "network") {
+        // The connection went, not the server: the raw text is for us.
+        const visible = pageVisible();
+        console.warn("Mopik: generate-route connection failed", e);
+        track("route_network_error", { error: rawFailure(e), attempt, visible, had_response: hadResponse });
+        const decision = autoRetryDecision({ kind, hadResponse, attempt, visible });
+        if (decision !== "no") {
+          // Cancel must still work while we wait: it aborts this controller.
+          const waiting = new AbortController();
+          abortRef.current = waiting;
+          releaseScreen();
+          if (await waitForRetry(waiting.signal, decision === "when-visible")) {
+            track("route_auto_retry", { when: decision });
+            return await generate(current, conversation, pickedPlaces, attempt + 1);
+          }
+          // Cancelled while waiting: `cancel` has already put the rider where
+          // he belongs, exactly as for an abort in flight.
+          firstFromFormRef.current = false;
+          setChatting(false);
+          setQuickReplies([]);
+          return;
+        }
+      }
       // A failure belongs in the conversation, like every other reply. It used
       // to sit in a box under the whole panel, off-screen on a laptop, so the
       // chat stayed silent and the rider saw nothing happen after ~50 s.
-      setMessages([...conversation, { role: "assistant", content: describeError(e, ui.chatErrGenerate) }]);
+      setMessages([...conversation, { role: "assistant", content: kind === "network" ? ui.chatErrConnection : describeError(e, ui.chatErrGenerate) }]);
       setQuickReplies([{ label: ui.chatRetry, message: "", action: "retry" }]);
       setChatting(true);
       setRetry({ stage: "route", plan: current, messages: conversation });
@@ -1068,6 +1143,7 @@ export function HomePage() {
       // Whatever the outcome — routes, a failure the chat now owns, or the
       // abort handled above — this attempt is over and the next cancel must
       // not inherit its answer.
+      releaseScreen();
       firstFromFormRef.current = false;
       abortRef.current = null;
     }
@@ -1086,7 +1162,11 @@ export function HomePage() {
       if (answer.ready) await generate(answer.plan, updated);
     } catch (e) {
       if (e instanceof DOMException && e.name === "AbortError") return;
-      setMessages([...conversation, { role: "assistant", content: describeError(e, ui.chatErrAnswer) }]);
+      // No quiet retry here: every chat turn is a model call, and a dropped
+      // connection may still have been billed. The rider decides.
+      const network = classifyRequestFailure(e, { userCancelled: false }) === "network";
+      if (network) { console.warn("Mopik: route-chat connection failed", e); track("chat_network_error", { error: rawFailure(e), visible: pageVisible() }); }
+      setMessages([...conversation, { role: "assistant", content: network ? ui.chatErrConnectionChat : describeError(e, ui.chatErrAnswer) }]);
       setQuickReplies([{ label: ui.chatRetry, message: "", action: "retry" }]);
       setChatting(true);
       setRetry({ stage: "chat", messages: conversation, plan: previousPlan });
@@ -2872,7 +2952,10 @@ export function HomePage() {
   }
   async function retryLast() {
     if (!retry || busyRef.current) return;
-    busyRef.current = true; setError(null);
+    busyRef.current = true; setError(null); setQuickReplies([]);
+    // The failure bubble goes: the loader answers the same question again.
+    setMessages(retry.messages);
+    track("route_retry_tapped", { stage: retry.stage });
     try { if (retry.stage === "chat") await converse(retry.messages, retry.plan); else await generate(retry.plan, retry.messages); }
     finally { setPhase("idle"); busyRef.current = false; }
   }
