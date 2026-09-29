@@ -307,6 +307,8 @@ export type MapControls = {
   batchMode?: boolean;
   /** `finish`: the new point rides on past the one-way finish and becomes it (Phase 1): a red pin, no number. */
   batch?: { id: number; lat: number; lon: number; number: number; selected: boolean; failing: boolean; finish?: boolean;
+    /** add-kind: a pending pass-through point (planning's „+” → „Caurbraucams punkts”): a white dot, no number. */
+    pass?: boolean;
     /** Release B item 1: this pending stop is what stops the proposal — ringed in its own colour. */
     blocked?: boolean }[];
   onBatchSelect?: (id: number) => void;
@@ -333,6 +335,21 @@ export type MapControls = {
    * options side by side, the selected one filled.
    */
   choices?: MapChoiceGroup[] | null;
+  // ── add-kind ──
+  /**
+   * „+” asks what to add (rider, 2026-09-29): the guidance line and two
+   * large chips in the notice area, each with its detail line, the
+   * remembered one preselected; ✕ and Escape dismiss it. The bar's slots do
+   * not move while it is up.
+   */
+  addChooser?: {
+    guide: string;
+    label: string;
+    options: { key: string; label: string; detail: string; selected: boolean; onSelect: () => void }[];
+    closeLabel: string;
+    onClose: () => void;
+  } | null;
+  // ── /add-kind ──
 };
 
 /** One group of choice chips; `label` names the group for a screen reader. */
@@ -3534,7 +3551,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
   const batchDropRef = useRef(controls?.onBatchDrop);
   useEffect(() => { batchSelectRef.current = controls?.onBatchSelect; batchMoveRef.current = controls?.onBatchMove; batchDropRef.current = controls?.onBatchDrop; });
   const batchPins = controls?.batch ?? [];
-  const batchPinsKey = batchPins.map((b) => `${b.id}:${b.lat},${b.lon}:${b.number}:${b.selected ? 1 : 0}:${b.failing ? 1 : 0}:${b.finish ? 1 : 0}:${b.blocked ? 1 : 0}`).join("|");
+  const batchPinsKey = batchPins.map((b) => `${b.id}:${b.lat},${b.lon}:${b.number}:${b.selected ? 1 : 0}:${b.failing ? 1 : 0}:${b.finish ? 1 : 0}:${b.blocked ? 1 : 0}:${b.pass ? 1 : 0}`).join("|");
   useEffect(() => {
     const map = mapRef.current;
     for (const marker of batchMarkersRef.current) marker.remove();
@@ -3543,7 +3560,9 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
     batchMarkersRef.current = batchPins.map((b) => {
       const el = numberedStopElement(b.finish ? m.mapFinish : m.mapStop, b.number);
       if (b.finish) { el.textContent = ""; el.style.background = FINISH_PIN_COLOR; }
-      el.dataset.pending = b.finish ? "finish" : "via";
+      // add-kind: a pending pass-through point is the white dot it will be.
+      if (b.pass) { el.textContent = ""; el.style.background = "#fff"; el.style.width = "16px"; el.style.height = "16px"; el.style.borderWidth = "2.5px"; el.style.borderColor = "#1c1917"; }
+      el.dataset.pending = b.finish ? "finish" : b.pass ? "pass" : "via";
       el.dataset.batch = String(b.id);
       el.style.borderStyle = "dashed";
       el.style.zIndex = b.selected ? "4" : "3";
@@ -4599,6 +4618,35 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
           the bar, one row of groups — each group's options side by side,
           wrapping only between groups — so the notice stays compact and the
           slots never move. */}
+      {/* ── add-kind ── „+” asks what to add: the guidance line, then two
+          large chips side by side (one row at 375 px), ✕ to dismiss. */}
+      {controls?.addChooser && (
+        <div role="group" aria-label={controls.addChooser.label} data-add-chooser
+          className="flex w-full max-w-md flex-col gap-1 self-start rounded-2xl border border-[#ececf0] bg-white/95 p-1.5 shadow-sm backdrop-blur max-md:w-auto max-md:mr-16">
+          <div className="flex items-center gap-1 pl-1.5">
+            <span role="status" data-edit-guide="add" className="min-w-0 flex-1 text-xs font-medium leading-snug text-stone-700">{controls.addChooser.guide}</span>
+            <button type="button" onClick={controls.addChooser.onClose} aria-label={controls.addChooser.closeLabel} title={controls.addChooser.closeLabel} data-add-close
+              className="flex size-7 shrink-0 items-center justify-center rounded-full text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-800">
+              <X aria-hidden="true" className="size-3.5" />
+            </button>
+          </div>
+          <div role="radiogroup" aria-label={controls.addChooser.label} className="grid grid-cols-2 gap-1.5">
+            {controls.addChooser.options.map((o) => (
+              <button key={o.key} type="button" role="radio" aria-checked={o.selected} data-add-kind={o.key} onClick={o.onSelect}
+                className={`flex min-h-12 min-w-0 items-start gap-2 rounded-xl border-2 px-2 py-1.5 text-left transition-colors ${o.selected ? "border-stone-900 bg-stone-50" : "border-[#ececf0] bg-white hover:border-stone-300"}`}>
+                {o.key === "pass"
+                  ? <span aria-hidden="true" className="mt-0.5 block size-3.5 shrink-0 rounded-full border-[2.5px] border-[#1c1917] bg-white" />
+                  : <span aria-hidden="true" className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border-2 border-white bg-[#f56300] text-[9px] font-bold text-white shadow-[0_1px_2px_rgba(0,0,0,0.3)]">{1}</span>}
+                <span className="min-w-0">
+                  <span className="block text-[13px] font-semibold leading-tight text-stone-900 max-md:text-[12.5px]">{o.label}</span>
+                  <span className="block text-[11px] leading-snug text-stone-500">{o.detail}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {/* ── /add-kind ── */}
       {controls?.choices && controls.choices.length > 0 && (
         <div data-map-choices className="flex w-max min-w-0 max-w-full flex-wrap items-center gap-1.5 self-start max-md:-ml-16 max-md:mr-16">
           {controls.choices.map((group) => (

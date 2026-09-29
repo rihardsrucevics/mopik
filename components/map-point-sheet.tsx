@@ -62,6 +62,12 @@ export type MapPointSheetModel =
        */
       guide?: string;
       groups: { key: string; rows: MapPointSheetRow[] }[];
+      /**
+       * add-kind (B3, rider 2026-09-29): one segmented „Pietura |
+       * Caurbraucams” control instead of two rows. `onSwitch` switches to
+       * the other kind (null: off, `reason` says why).
+       */
+      kindSwitch?: { label: string; options: { key: string; label: string; selected: boolean }[]; onSwitch: (() => void) | null; reason?: string };
       closeLabel: string;
       cancelLabel: string;
       onClose: () => void;
@@ -158,6 +164,23 @@ export function MapPointSheet({ sheet }: { sheet: MapPointSheetModel }) {
       </div>
       {sheet.explainer && <p data-sheet-explainer className="mb-3 pr-11 text-[13px] leading-snug text-stone-600">{sheet.explainer}</p>}
       <div className="space-y-3">
+        {/* ── add-kind ── the point's kind, switched with one tap on the other segment. */}
+        {sheet.kindSwitch && (
+          <div data-kind-switch className="rounded-2xl bg-white p-1">
+            <div role="radiogroup" aria-label={sheet.kindSwitch.label} className="grid grid-cols-2 gap-1">
+              {sheet.kindSwitch.options.map((o) => (
+                <button key={o.key} type="button" role="radio" aria-checked={o.selected} data-kind={o.key}
+                  onClick={o.selected ? undefined : sheet.kindSwitch!.onSwitch ?? undefined}
+                  disabled={!o.selected && !sheet.kindSwitch!.onSwitch}
+                  title={!o.selected ? sheet.kindSwitch!.reason : undefined}
+                  className={`h-10 min-w-0 truncate rounded-xl px-2 text-[14px] font-semibold transition-colors disabled:opacity-45 ${o.selected ? "bg-stone-900 text-white" : "text-stone-700 hover:bg-stone-100"}`}>
+                  {o.label}
+                </button>
+              ))}
+            </div>
+            {sheet.kindSwitch.reason && <p data-kind-reason className="px-2 pb-1 pt-1 text-xs leading-snug text-stone-500">{sheet.kindSwitch.reason}</p>}
+          </div>
+        )}
         {sheet.groups.map((group) => (
           <div key={group.key} className="overflow-hidden rounded-2xl bg-white">
             {group.rows.map((row, i) => {
