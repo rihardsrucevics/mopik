@@ -5,6 +5,7 @@ import { isShareId } from "@/lib/share/short-link";
 import type { ResolvedPlace } from "@/lib/chat/places";
 import type { GeneratedRoute } from "@/lib/types";
 import type { RidePlan } from "@/lib/chat/ride-plan";
+import { applySavedEdit, type SavedEditTarget, type SavedOrigin } from "@/lib/share/saved-edit";
 
 /**
  * An id for a saved ride. The first 24 characters of a share code are the
@@ -44,6 +45,13 @@ export type SavedRide = {
   savedAt: number;
   /** "shared" when it arrived as someone else's link. */
   from?: "shared";
+  /**
+   * Whose ride it is (backlog 44): "own" when saved from his own planning,
+   * "shared" when saved from someone else's link. Absent on every ride saved
+   * before this, which counts as "shared" (`originOf`): „Labot” then makes a
+   * copy rather than overwrite a ride that may not be his.
+   */
+  origin?: SavedOrigin;
   /**
    * The other versions of the same request, as their own share codes. Saving
    * keeps all three, so a rider who liked the ride but wants the straighter
@@ -131,6 +139,7 @@ export function saveSharedRide(code: string, share: { name: string; km: number; 
     variant: share.variant,
     savedAt: Date.now(),
     from: "shared",
+    origin: "shared",
     ...(shortId && isShareId(shortId) ? { shortId } : {}),
   };
   write([entry, ...read().filter((r) => r.id !== entry.id)]);
@@ -179,6 +188,7 @@ export function saveRide(route: GeneratedRoute, startLabel: string, plan: RidePl
     unpavedPercent: route.surfaces.gravelPercent + route.surfaces.dirtPercent,
     variant: route.variant,
     savedAt: Date.now(),
+    origin: "own",
     ...(alternatives.length ? { alternatives } : {}),
     ...(context?.prompt ? { prompt: context.prompt } : {}),
   };
@@ -187,6 +197,45 @@ export function saveRide(route: GeneratedRoute, startLabel: string, plan: RidePl
   const legacy = legacyRideId(route, startLabel, plan, context?.places);
   write([entry, ...read().filter((r) => r.id !== entry.id && r.id !== legacy)]);
   return entry;
+}
+
+/** One saved ride by id, or null (also when storage cannot be read). */
+export function findSaved(id: string): SavedRide | null {
+  return read().find((r) => r.id === id) ?? null;
+}
+
+/**
+ * „Pabeigt labošanu” on a ride opened from „Saglabātie” (backlog 44): the
+ * edited ride saved in place of his own original, or as a new ride of his own
+ * „<name> (kopija)” when the original was someone else's (or saved before
+ * origins existed). The copy is his from then on, so the next edit updates it.
+ * Returns the saved row, or null when storage refused it.
+ */
+export function saveEditedRide(target: SavedEditTarget, route: GeneratedRoute, startLabel: string, plan: RidePlan | null, places?: ResolvedPlace[] | null, prompt?: string): SavedRide | null {
+  // The saved row's name, not the route's: a copy keeps „… (kopija)” through
+  // every later edit of it.
+  const named = { ...route, name: target.name };
+  const code = encodeRouteShare(named, startLabel, plan, places);
+  const entry: SavedRide = {
+    id: rideId(code),
+    code,
+    name: named.name,
+    km: Math.round(named.distanceMeters / 1000),
+    minutes: Math.round(named.durationSeconds / 60),
+    unpavedPercent: named.surfaces.gravelPercent + named.surfaces.dirtPercent,
+    variant: named.variant,
+    savedAt: Date.now(),
+    origin: "own",
+    ...(prompt ? { prompt } : {}),
+  };
+  try {
+    const next = applySavedEdit(read(), target, entry);
+    window.localStorage.setItem(KEY, JSON.stringify(next.slice(0, MAX)));
+    window.dispatchEvent(new Event("mopik:saved-changed"));
+    return next.find((r) => r.id === entry.id) ?? entry;
+  } catch {
+    return null;
+  }
 }
 
 export function removeRide(id: string): void {

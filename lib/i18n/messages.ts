@@ -343,6 +343,12 @@ export type MessageKey =
   // they are used elsewhere.
   | "savView"
   | "savEdit"
+  // Backlog 44: „Labot” on a saved ride, and what finishing the edit did.
+  | "savEditNotYours"
+  | "savCopySuffix"
+  | "savEditSavedOwn"
+  | "savEditSavedCopy"
+  | "savEditSaveFailed"
   | "savDownload"
   | "savOtherVersions"
   | "beerRideWell"
@@ -1067,7 +1073,7 @@ const lv: Messages = {
   savName: "Nosaukums",
   savNothingYet: "Vēl nav saglabātu maršrutu. Ģenerē braucienu un nospied",
   savBack: "Atpakaļ",
-  savEditRide: "Rediģēt {name} formā",
+  savEditRide: "Labot {name}",
   savDownloadRide: "Lejupielādēt {name} GPX",
   savDeleteRide: "Dzēst {name}",
   savDeleteConfirm: "Izdzēst?",
@@ -1147,7 +1153,12 @@ const lv: Messages = {
   savReceived: "Atsūtīts · saglabāts",
   savSaved: "Saglabāts",
   savView: "Apskatīt",
-  savEdit: "Rediģēt",
+  savEdit: "Labot",
+  savEditNotYours: "Šis brauciens nav tavs – labojumi tiks saglabāti kā kopija.",
+  savCopySuffix: "(kopija)",
+  savEditSavedOwn: "Saglabāts – labotais brauciens aizstāj saglabāto.",
+  savEditSavedCopy: "Saglabāts kā jauns brauciens – „{name}”.",
+  savEditSaveFailed: "Neizdevās saglabāt – ierīces krātuve nav pieejama.",
   savDownload: "Lejupielādēt",
   mixRoad: "Ceļš",
   mixTrack: "Meža ceļš",
@@ -1771,7 +1782,7 @@ const lt: Messages = {
   savName: "Pavadinimas",
   savNothingYet: "Dar nėra išsaugotų maršrutų. Sugeneruok maršrutą ir spausk",
   savBack: "Atgal",
-  savEditRide: "Redaguoti {name} formoje",
+  savEditRide: "Taisyti {name}",
   savDownloadRide: "Atsisiųsti {name} GPX",
   savDeleteRide: "Ištrinti {name}",
   savDeleteConfirm: "Ištrinti?",
@@ -1851,7 +1862,12 @@ const lt: Messages = {
   savReceived: "Atsiųsta · išsaugota",
   savSaved: "Išsaugota",
   savView: "Peržiūrėti",
-  savEdit: "Redaguoti",
+  savEdit: "Taisyti",
+  savEditNotYours: "Šis maršrutas ne jūsų – pakeitimai bus išsaugoti kaip kopija.",
+  savCopySuffix: "(kopija)",
+  savEditSavedOwn: "Išsaugota – pataisytas maršrutas pakeičia išsaugotąjį.",
+  savEditSavedCopy: "Išsaugota kaip naujas maršrutas – „{name}“.",
+  savEditSaveFailed: "Nepavyko išsaugoti – įrenginio saugykla nepasiekiama.",
   savDownload: "Atsisiųsti",
   mixRoad: "Kelias",
   mixTrack: "Miško kelias",
@@ -2445,7 +2461,7 @@ const et: Messages = {
   savName: "Nimi",
   savNothingYet: "Salvestatud marsruute veel pole. Koosta sõit ja vajuta",
   savBack: "Tagasi",
-  savEditRide: "Muuda {name} vormis",
+  savEditRide: "Muuda {name}",
   savDownloadRide: "Laadi alla {name} GPX",
   savDeleteRide: "Kustuta {name}",
   savDeleteConfirm: "Kustutada?",
@@ -2526,6 +2542,11 @@ const et: Messages = {
   savSaved: "Salvestatud",
   savView: "Vaata",
   savEdit: "Muuda",
+  savEditNotYours: "See sõit pole sinu – muudatused salvestatakse koopiana.",
+  savCopySuffix: "(koopia)",
+  savEditSavedOwn: "Salvestatud – muudetud sõit asendab salvestatu.",
+  savEditSavedCopy: "Salvestatud uue sõiduna – „{name}“.",
+  savEditSaveFailed: "Salvestamine ebaõnnestus – seadme mälu pole saadaval.",
   savDownload: "Laadi alla",
   mixRoad: "Tee",
   mixTrack: "Metsatee",
@@ -3115,7 +3136,7 @@ const en: Messages = {
   savName: "Name",
   savNothingYet: "No saved rides yet. Generate a ride and press",
   savBack: "Back",
-  savEditRide: "Edit {name} in the form",
+  savEditRide: "Edit {name}",
   savDownloadRide: "Download {name} GPX",
   savDeleteRide: "Delete {name}",
   savDeleteConfirm: "Delete?",
@@ -3196,6 +3217,11 @@ const en: Messages = {
   savSaved: "Saved",
   savView: "View",
   savEdit: "Edit",
+  savEditNotYours: "This ride is not yours – your edits will be saved as a copy.",
+  savCopySuffix: "(copy)",
+  savEditSavedOwn: "Saved – the edited ride replaces the saved one.",
+  savEditSavedCopy: "Saved as a new ride – “{name}”.",
+  savEditSaveFailed: "Could not save – this device’s storage is unavailable.",
   savDownload: "Download",
   mixRoad: "Road",
   mixTrack: "Forest track",
