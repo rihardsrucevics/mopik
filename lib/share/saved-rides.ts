@@ -189,6 +189,11 @@ export function saveRide(route: GeneratedRoute, startLabel: string, plan: RidePl
   return entry;
 }
 
+/** One saved ride by id, or null (also when storage cannot be read). */
+export function findSaved(id: string): SavedRide | null {
+  return read().find((r) => r.id === id) ?? null;
+}
+
 export function removeRide(id: string): void {
   write(read().filter((r) => r.id !== id));
 }

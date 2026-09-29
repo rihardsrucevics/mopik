@@ -11,7 +11,8 @@ import { InstallPrompt } from "@/components/install-prompt";
 import { MapPanel } from "@/components/map-panel";
 import { track } from "@/lib/analytics";
 import { decodePlanPlaces, decodePlanShare } from "@/lib/share/route-code";
-import { isCodeSaved, removeRide, rideId } from "@/lib/share/saved-rides";
+import { findSaved, isCodeSaved, removeRide, rideId } from "@/lib/share/saved-rides";
+import { rideForEdit } from "@/lib/share/saved-edit";
 import { IntroSplash } from "@/components/intro-splash";
 import { SiteHeader } from "@/components/site-header";
 import { useLocale } from "@/lib/i18n/use-locale";
@@ -737,6 +738,43 @@ export function HomePage() {
       window.history.replaceState(null, "", window.location.pathname);
     }, 0);
   }, []);
+  /**
+   * `?saved=<id>`: „Labot” on a ride in „Saglabātie” (backlog 44/47). The
+   * saved code is the ride — its line, plan and routed places — so it is put
+   * in state exactly as a generation would leave it, and the result's own
+   * „Labot” is pressed on it once it can be (`editOnArrival`). Nothing is
+   * generated. Before this the list sent only the plan to the form, and the
+   * map had no line and, for rides saved under the router's labels, no pins.
+   */
+  const editOnArrival = useRef(false);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get("saved");
+    if (!id) return;
+    // Same no-cleanup timer as `?p=`: StrictMode runs the effect twice.
+    setTimeout(() => {
+      const saved = findSaved(id);
+      const ride = saved ? rideForEdit(saved.code) : null;
+      if (ride) {
+        setPlan(ride.plan);
+        setPlaces(ride.places);
+        setResult(ride.result);
+        setSelected(0);
+        setEntryMode("chat");
+        editOnArrival.current = true;
+        track("ride_edit_opened", { from: "saved", saved: true });
+      }
+      window.history.replaceState(null, "", window.location.pathname);
+    }, 0);
+  }, []);
+  useEffect(() => {
+    if (!editOnArrival.current || !canEdit || editMode) return;
+    editOnArrival.current = false;
+    openMapFullscreen();
+    enterEdit();
+    // `enterEdit` is this render's function; `canEdit` is what makes it callable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canEdit, editMode]);
   // The rider's standing profile (how rough, why, where): remembered on the
   // device, applied to the form and used to seed a fresh chat so it only has
   // to ask where and how long.
