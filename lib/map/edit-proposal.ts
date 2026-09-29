@@ -28,7 +28,9 @@ export type Segments = GeoJSON.FeatureCollection<GeoJSON.LineString, RouteSegmen
  */
 export type ProposedChange =
   | { kind: "rows"; rows: { names: string[]; picked: Record<number, ResolvedPlace | null> } }
-  | { kind: "shape"; op: ShapeEdit };
+  // `more`: further adds routed with `op` as one change (backlog 53: a batch
+  // of pass-through points from „+”) — one routing, one ✓, one ↶ step.
+  | { kind: "shape"; op: ShapeEdit; more?: ShapeEdit[] };
 
 /** The chip's numbers: the ride before the edit and with it. */
 export type EditDelta = {

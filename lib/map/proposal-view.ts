@@ -246,7 +246,7 @@ export function newStretches(routed: Point[], ride: Point[], tolerance = SAME_RO
  * the same rows or the same point operation give the same key.
  */
 export function changeKey(change: ProposedChange): string {
-  if (change.kind === "shape") return `shape:${JSON.stringify(change.op)}`;
+  if (change.kind === "shape") return `shape:${JSON.stringify(change.op)}${change.more?.length ? `+${JSON.stringify(change.more)}` : ""}`;
   const picked = Object.keys(change.rows.picked)
     .map(Number)
     .sort((a, b) => a - b)

@@ -50,7 +50,7 @@ PORT=3290 scripts/verify/smoke.sh     # or: npm run verify:smoke
 - **Production server vs dev**: measured on the same machine (load 15–25 on 8 cores), replay took **118–130 s on `next start`** and **242 s on `next dev`** — the dev bundle is most of the browser's CPU. `next build` writes `.next/`: do not run it in a worktree whose own `next dev` is running. `NEXT_PUBLIC_E2E=1` only exposes `window.__map` (the probes need it); Vercel never sets it.
 - Logs: `scripts/verify/out/smoke-375.log`, `smoke-1280.log`; screenshots in `scripts/verify/out/shots/`. The last lines give the pass count, the time and `cache replay: N hit, M miss`. Any miss is listed in `out/misses-<vp>.json`.
 
-Env knobs (all optional): `SECTIONS=1,reach` (section 1 always, plus only the listed groups `1b-3`, `4-10`, `reach`; `node scripts/verify/smoke.cjs desk` runs one viewport), `PORT` / `BASE`, `RECORD=1`, `CACHE=off|stale-ok`, `TILES=blank|cache|live`, `GL=swiftshader|gpu`, `DPR`, `PLACES=live`, `FIXTURES=off` (old form path in the full scripts), `GEN_TIMEOUT` (ms).
+Env knobs (all optional): `SECTIONS=1,reach` (section 1 always, plus only the listed groups `1b-3`, `add`, `4-10`, `reach`; `node scripts/verify/smoke.cjs desk` runs one viewport), `PORT` / `BASE`, `RECORD=1`, `CACHE=off|stale-ok`, `TILES=blank|cache|live`, `GL=swiftshader|gpu`, `DPR`, `PLACES=live`, `FIXTURES=off` (old form path in the full scripts), `GEN_TIMEOUT` (ms). `add` is „+” and its batch of pass-through points, the empty-map offer and a waiting row's way out (screenshots `addpoint-*.png` at 375, `ADDPOINT_SHOTS` sets their directory).
 
 ## Record and replay
 

@@ -1351,6 +1351,12 @@ Builds on the 2026-09-25 tap sheet („Izņemt” / „Padarīt par pieturu”).
 new point — of either kind — must never create a spur (see the 2026-09-25
 stops-as-spurs fix).
 
+**Reversed 2026-09-30 (rider):** the „Ko pievienot?” chooser that „+” opened
+(PR #14, 2026-09-29) is gone, with its remembered choice. „+” always adds a
+pass-through point; a stop is made of it afterwards with the pending
+„Pietura | Caurbraucams” chip or the point sheet's switch. Search (the map
+field) is for stops only.
+
 ## 35. Draw a straight segment between two points
 
 **Rider, 2026-09-25: "obligāti".** The rider can mark a straight line on the
@@ -1674,6 +1680,16 @@ instead of adding one, so he cannot mark a series of dots quickly along a
 line. Same concept as the stop batch: pins appear instantly, the line and
 chip follow (debounced), the field says how many are pending, ✓ commits
 all, ↶ removes the last pending dot, ✕ discards the batch.
+
+**Done 2026-09-30** (branch `add-point`): „+” arms the map; every tap adds a
+pending dot at once — also while the batch is routed, never a move (moving
+is a drag, or „Pārvietot” once committed). The batch is ONE proposal
+(`ProposedChange` shape `op` + `more`, `lib/map/add-kind.ts` `batchOps`),
+one ✓, one ↶ step; ↶ inside the batch pops the last dot, ✕ drops them all.
+Planning: the same, as `plan.shapePoints` on ✓. A tap on the empty map in
+edit mode offers „Pievienot punktu šeit” (a marker and a chip). An empty
+stop row waiting for a place (the field's tap) now says „Meklē vietu vai
+pieskaries kartei – ✕ atceļ.” and has ✕ on (`images/46.png`).
 
 ## 54. „Vest pa taisno” for a single point should not return on the same line
 
