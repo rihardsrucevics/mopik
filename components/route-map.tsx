@@ -4254,10 +4254,13 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
       if (performance.now() < lineClickMuteUntil) return;
       // A point's sheet is open: a tap on the map closes it, and does nothing
       // else — nothing moves until „Pārvietot”.
+      // An excluded stretch's own tap (stretch-layer.ts answers it) — first:
+      // on a phone this runs after the tap has settled, when the tap has
+      // already opened „Izslēgts posms”, and the sheet check below closed it
+      // again at once (backlog 51).
+      if (excludedTapRef.current && clickOnExcluded(map, e.point)) return;
       const sheet = pointSheetRef.current;
       if (sheet?.mode === "menu") { sheet.onClose(); return; }
-      // An excluded stretch's own tap (stretch-layer.ts answers it).
-      if (excludedTapRef.current && clickOnExcluded(map, e.point)) return;
       const pick = onPickPointRef.current;
       if (pick) { pick({ lat: e.lngLat.lat, lon: e.lngLat.lng }); return; }
       const feature = featureAt(e.point);
