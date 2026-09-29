@@ -44,6 +44,33 @@ test("commitProposal is the only way into the ride, and it asks the guard first,
   assert.match(commit, /overrideArmed\.current = null;/);
 });
 
+test("chained edits (release B item 4): the chain enters the ride only through ✓ on its top, guarded the same way", () => {
+  // Chaining keeps a proposal, it does not commit it: no ride, no history, no plan written; the arming goes.
+  const stack = body(page, "function stackProposal(");
+  assert.match(stack, /dispatchProposal\(\{ type: "stacked" \}\)/);
+  assert.doesNotMatch(stack, /setEditsFor|pushEdit|setPlan\(|commitProposal|chainConfirm/);
+  assert.match(stack, /overrideArmed\.current = null;/);
+  // ✓ on the chain's top (nothing new on it): asks the guard before anything is written, disarms, ONE step of the undo.
+  const confirm = body(page, "function chainConfirm(");
+  const guard = confirm.indexOf("mayCommit(top, overrideArmed.current)");
+  assert.ok(guard > 0 && guard < confirm.indexOf("setEditsFor"), "asked before anything is written");
+  assert.ok(confirm.indexOf("overrideArmed.current = null;") > guard, "disarmed once used");
+  assert.equal(confirm.match(/pushEdit\(/g)?.length, 1, "every chained change is one step");
+  // A proposal on top of the chain still goes through commitProposal, cut from the chain's top…
+  assert.match(body(page, "function commitProposal("), /mine\.base !== baseNow\(\)\.segments/);
+  // …and one stacked on a warned change inherits its warning before it can be committed.
+  const land = body(page, "const land = (l: Landing) =>");
+  const inherit = land.indexOf("inheritWarning(l.proposal, chainRef.current)");
+  assert.ok(inherit >= 0 && inherit < land.indexOf("commitProposal("), "the warning is inherited before ✓-while-routing commits");
+  // Ways into the history: the proposal, the chain, and the two on-the-line changes that existed before (kind switch, point on the line).
+  assert.equal(page.match(/history: pushEdit\(/g)?.length, 4);
+  // „Tomēr braukt” with nothing new on a warned chain arms the chain's top only, and confirms through chainConfirm.
+  assert.match(page, /if \(s\.phase === "idle" && top\?\.accept\) \{ overrideArmed\.current = top\.token; if \(commitNow\) chainConfirm\(\); return; \}/);
+  // A kind switch or a point dropped on the line while chained is one more change on the chain, not a commit.
+  assert.match(page, /if \(!stackPlaces\(switched\)\) commitPlacesOnLine\(switched, "promote"\);/);
+  assert.doesNotMatch(body(page, "function stackPlaces("), /setEditsFor|pushEdit|setPlan\(/);
+});
+
 test("✓ and a batch's confirm-all: one slot, disabled while warned, and through commitProposal anyway", () => {
   // Both are the ConfirmSlot's `pending.onConfirm`; the slot is off while warned.
   assert.match(map, /const onConfirm = refused \|\| warned \|\| idle \? null : pending!\.onConfirm;/);

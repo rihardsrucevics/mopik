@@ -2091,7 +2091,7 @@ export function HomePage() {
     setStraightAsk(null);
     setBlocking(null);
     setChain(stackOnto(chainRef.current, route.id, kept));
-    dispatchProposal({ type: "committed" });
+    dispatchProposal({ type: "stacked" });
     setEditNote(null);
     reseed();
     track("route_edit_stacked", { changes: chainRef.current.rides.length, how: kept.how });
