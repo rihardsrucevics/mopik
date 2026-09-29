@@ -1,0 +1,1 @@
+{"url":"/api/places?lat=57.18740928405046&lon=25.0134960000008","status":200,"contentType":"application/json","request":null,"body":"{\"places\":[{\"name\":\"Slaņi\",\"label\":\"Slaņi · Līgatnes pagasts\",\"lat\":57.18740928405046,\"lon\":25.0134960000008,\"kind\":\"settlement\"}]}"}

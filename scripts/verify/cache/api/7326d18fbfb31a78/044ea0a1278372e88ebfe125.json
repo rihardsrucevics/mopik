@@ -1,0 +1,1 @@
+{"url":"/api/places?lat=57.23410243852507&lon=25.04286196038916","status":200,"contentType":"application/json","request":null,"body":"{\"places\":[{\"name\":\"Pils pagrabi\",\"label\":\"Pils pagrabi · Līgatne\",\"lat\":57.23410243852507,\"lon\":25.04286196038916,\"kind\":\"settlement\"}]}"}

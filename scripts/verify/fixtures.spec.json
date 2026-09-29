@@ -1,0 +1,33 @@
+{
+  "_note": "What each fixture ride is. `node scripts/verify/record-fixtures.cjs [name…]` generates it once against the dev server's router and writes fixtures/<name>.json. `shapePoints` are pass-through points (afterPlace = index in [start, ...stops]).",
+  "sigulda-cesis": {
+    "description": "Sigulda → Līgatne → Cēsis, one way, one stop. The e2e / insert / linesheet / gap / guidance ride.",
+    "places": ["Sigulda", "Līgatne", "Cēsis"]
+  },
+  "antinciems-rigas": {
+    "description": "Antiņciems → Puķes → Rīgas apvedceļš, one way, one stop (the rider's 09-28 ride, before his edits). The straight / guard ride.",
+    "places": ["Antiņciems", "Puķes", "Rīgas apvedceļš"]
+  },
+  "ride-0928": {
+    "description": "The rider's own ride-0928.gpx: Antiņciems → Puķes → Rīgas apvedceļš with his four pass-through points.",
+    "places": ["Antiņciems", "Puķes", "Rīgas apvedceļš"],
+    "shapePoints": [
+      { "lat": 56.838567, "lon": 23.635716, "afterPlace": 0 },
+      { "lat": 56.816313, "lon": 23.684368, "afterPlace": 0 },
+      { "lat": 56.862576, "lon": 23.78798, "afterPlace": 1 },
+      { "lat": 56.891828, "lon": 23.842597, "afterPlace": 1 }
+    ]
+  },
+  "laurini-ergli": {
+    "description": "Lauriņi → Ērgļi, one way, no stops — the rider's ride-laurini-ergli.gpx request.",
+    "places": ["Lauriņi", "Ērgļi"]
+  },
+  "grostonas-ergli": {
+    "description": "Grostonas iela 19 → Ērgļi, one way. The ropazi / ogre / batchbad ride.",
+    "places": ["Grostonas iela 19", "Ērgļi"]
+  },
+  "grostonas-chain": {
+    "description": "Grostonas iela 19 → Sidgunda → Mālpils → Augšmala → Ērgļi, three stops. The chain / mergupe ride.",
+    "places": ["Grostonas iela 19", "Sidgunda", "Mālpils", "Augšmala", "Ērgļi"]
+  }
+}
