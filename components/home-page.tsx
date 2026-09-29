@@ -576,6 +576,8 @@ export function HomePage() {
   const [sightNote, setSightNote] = useState<string | null>(null);
   /** A sight added in edit mode: its proposal's token, and how far the ride was from it before. */
   const sightAsk = useRef<{ token: number; name: string; lat: number; lon: number; lineMeters: number } | null>(null);
+  /** ── stretch ── the token of a stretch proposal the page started itself (backlog 36): stacked when it lands. */
+  const stretchAsk = useRef<number | null>(null);
   /** A sight added on a result before its detour was routed: added the moment it is. */
   const [sightWaiting, setSightWaiting] = useState<SelectedPoi | null>(null);
   // The detour arrived for a sight waiting on it: added now, as pressed.
@@ -1680,6 +1682,8 @@ export function HomePage() {
       }
       // ── sights-add ── a sight from the map card: stacked, so ✓ ↶ ✕ act on it.
       if (sightAsk.current?.token === token && next.phase === "proposed" && next.proposal === proposal) landSight(proposal);
+      // ── stretch ── the page's own proposal (no mark in the composer): stacked, so ✓ ↶ ✕ act on it, as a sight's.
+      if (stretchAsk.current === token && next.phase === "proposed" && next.proposal === proposal) { stretchAsk.current = null; stackProposal(); }
     };
     try {
       type Routed = RoutedRuns;
@@ -2016,6 +2020,15 @@ export function HomePage() {
   function refuseProposal(token: number, how: EditKind, note: string, reason: string, meters?: number) {
     if (proposalSeq.current !== token) return;
     if (refuseSight(token, note)) return;
+    // ── stretch ── no way round: said, and the ride kept — nothing left pending.
+    if (stretchAsk.current === token) {
+      stretchAsk.current = null;
+      live.current = null;
+      dispatchProposal({ type: "discard" });
+      setEditNote(joinGuide(note, ui.guideRefusedStretch));
+      track("route_edit_refused", { how, reason });
+      return;
+    }
     dispatchProposal({ type: "refused", token, reason: note });
     track("route_edit_refused", { how, reason });
     // Which point, and what to do (release B item 1): never the reason alone.
@@ -2818,6 +2831,7 @@ export function HomePage() {
     setEditNote(null);
     const planned: EditPlan = { kind: "avoid-stretch", places: sp.places, runs: [sp.run] };
     dispatchProposal({ type: "route", token, how: planned.kind });
+    stretchAsk.current = token;
     track(kind === "exclude" ? "stretch_exclude_asked" : "stretch_back_asked", { dropped: sp.dropped });
     void routeProposal({
       token, before: b.places, planned, baseSegments: b.segments, line: b.line, shape: false, change, wide: false,

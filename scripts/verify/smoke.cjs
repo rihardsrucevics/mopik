@@ -172,7 +172,8 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
     const title1 = await titleText();
     rec("stretch: dragging an end shortens the stretch, the sheet stays", kmOf(title1) < kmOf(title0) && (await page.locator('[data-point-sheet="menu"]').count()) === 1, { title0, title1, a, b });
     await stretchShot("adjusted");
-    await page.keyboard.press("Escape"); await page.locator('[data-point-sheet="menu"] button[aria-label]').first().click().catch(() => {}); await page.waitForTimeout(300);
+    await page.locator('[data-point-sheet="menu"] button[aria-label]').first().click().catch(() => {}); await page.waitForTimeout(400);
+    rec("stretch: ✕ closes the sheet and the selection", (await page.locator('[data-point-sheet="menu"]').count()) === 0 && (await handles.count()) === 0);
     const exclude = async () => { await openStretch(); await sheetRow("Izslēgt šo posmu").click(); };
     await exercise("exclude stretch", exclude, { idle });
     // Committed: the excluded stretch shows as dashes; tapping it offers „Atļaut atkal”.
