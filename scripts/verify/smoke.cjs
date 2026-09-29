@@ -173,7 +173,9 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
       const rows = await page.locator('[data-point-sheet="menu"]').innerText().catch(() => "");
       rec("sheet switch on a dot: „Caurbraucams” selected, no old kind rows", selected === "pass" && !/Padarīt par pieturu|Padarīt caurbraucamu/.test(rows), { selected });
       await addShot("switch-dot");
-      await sw.locator('[data-kind="stop"]').click(); await page.waitForTimeout(1500);
+      // „Padarīt par pieturu” names the spot first (a reverse lookup): wait for the stop, up to 20 s.
+      await sw.locator('[data-kind="stop"]').click();
+      for (let k = 0; k < 100 && (await stopsLoc().count()) !== p0 + 1; k++) await page.waitForTimeout(200);
       rec("sheet switch: the dot is a stop, line unchanged", (await stopsLoc().count()) === p0 + 1 && (await dotsLoc().count()) === d0 && L.hash(await L.line(page)) === h1, { stops: await stopsLoc().count(), dots: await dotsLoc().count() });
       await slot(2); await page.waitForTimeout(700);
       rec("sheet switch: ↶ brings the dot back", (await dotsLoc().count()) === d0 + 1 && (await stopsLoc().count()) === p0);
