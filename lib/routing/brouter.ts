@@ -4,6 +4,29 @@ import { joinPaths } from "./join-paths";
 import { recallLeg } from "./fetch-route-probe";
 import { probeLegFor, STOP_TOLERANCE_M } from "./routable-point";
 import type { RoutePath, RouteEdge } from "@/lib/types";
+import { AsyncLocalStorage } from "node:async_hooks";
+
+/**
+ * No-go circles every BRouter request inside `withNogos` carries (design D2,
+ * backlog 36): an edit of a ride with excluded stretches, or the run round a
+ * stretch, fenced wherever the request is made — `fetchRoutePath`'s rescues,
+ * `routeThroughPlaces`' fenced legs — without threading a parameter through
+ * each. Request-scoped (AsyncLocalStorage), so two edits never share fences.
+ */
+type Nogo = { lon: number; lat: number; radius: number };
+const nogoScope = new AsyncLocalStorage<Nogo[]>();
+export function withNogos<T>(nogos: Nogo[], fn: () => Promise<T>): Promise<T> {
+  return nogos.length ? nogoScope.run(nogos, fn) : fn();
+}
+const nogoText = (list: Nogo[]) => list.map((n) => `${n.lon.toFixed(6)},${n.lat.toFixed(6)},${Math.round(n.radius)}`).join("|");
+/** The scope's circles added to a request URL (merged with any it already has). */
+function withScopeNogos(url: string): string {
+  const scoped = nogoScope.getStore();
+  if (!scoped?.length) return url;
+  const m = /([?&])nogos=([^&]*)/.exec(url);
+  if (m) return url.replace(m[0], `${m[1]}nogos=${m[2]}${encodeURIComponent("|" + nogoText(scoped))}`);
+  return `${url}&nogos=${encodeURIComponent(nogoText(scoped))}`;
+}
 
 /**
  * BRouter client.
@@ -285,7 +308,8 @@ export async function fetchRoutePath(params: {
   // this profile, and on a long ride that leg is the most expensive search of
   // the whole generation. Paying for it twice would eat the budget the probe
   // exists to protect.
-  const probed = recallLeg(profileId, params.points);
+  // A leg the probe routed had no fences: never recalled inside `withNogos`.
+  const probed = nogoScope.getStore()?.length ? undefined : recallLeg(profileId, params.points);
   if (probed) return probed;
 
   // A leg already known to be beyond the public instance is split up front,
@@ -970,7 +994,7 @@ export async function fetchRouteAvoiding(params: {
 }
 
 async function requestPath(url: string): Promise<RoutePath> {
-  const res = await fetchWithRetry(url);
+  const res = await fetchWithRetry(withScopeNogos(url));
   const data = (await res.json()) as { features?: BrouterFeature[] };
   const feature = data.features?.[0];
   if (!feature) throw new Error("BRouter returned no route");

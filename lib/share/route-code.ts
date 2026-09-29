@@ -394,6 +394,11 @@ export function encodePlanShare(plan: RidePlan, places?: ResolvedPlace[] | null)
   if (plan.shapePoints?.length) {
     compact.sp = plan.shapePoints.map((p) => [Number(p.lat.toFixed(5)), Number(p.lon.toFixed(5)), p.afterPlace]);
   }
+  // Excluded stretches (backlog 36) as `x`: a list of [[lat, lon], …] lines,
+  // 5 decimals, written only when the ride has any — old codes unchanged.
+  if (plan.avoid?.length) {
+    compact.x = plan.avoid.map((a) => a.line.map(([lat, lon]) => [Number(lat.toFixed(5)), Number(lon.toFixed(5))]));
+  }
   if (places?.length) {
     // Two extra slots, appended, and only when the place has them: a place
     // that came from a suggestion carries its POI kind and OSM id so the
@@ -450,12 +455,25 @@ function decodeShapePoints(raw: unknown): RidePlan["shapePoints"] {
   return rows.length ? rows : undefined;
 }
 
+/** A code's excluded stretches (`x`), row by row: a bad line costs that line only. */
+function decodeAvoid(raw: unknown): RidePlan["avoid"] {
+  if (!Array.isArray(raw)) return undefined;
+  const ok = (q: unknown): q is [number, number] => Array.isArray(q) && Number.isFinite(q[0]) && Number.isFinite(q[1]) && Math.abs(q[0]) <= 90 && Math.abs(q[1]) <= 180;
+  const rows = raw
+    .filter((l): l is [number, number][] => Array.isArray(l) && l.length >= 2 && l.length <= 24 && l.every(ok))
+    .slice(0, 10)
+    .map((l) => ({ line: l.map(([lat, lon]): [number, number] => [lat, lon]) }));
+  return rows.length ? rows : undefined;
+}
+
 export function decodePlanShare(code: string): RidePlan | null {
   try {
     const c = JSON.parse(fromBase64Url(code));
     const shapePoints = decodeShapePoints(c.sp);
+    const avoid = decodeAvoid(c.x);
     return RidePlanSchema.parse({
       ...(shapePoints ? { shapePoints } : {}),
+      ...(avoid ? { avoid } : {}),
       startPlace: c.s ?? null, viaPlaces: c.v ?? [], destinationPlace: c.d ?? null, directionPlace: null, focusArea: c.f ?? null,
       budgetScope: c.bs ?? "total", returnToStart: c.r ?? true, budget: c.b ?? { mode: "flexible", value: null, constraint: "target", minimumValue: null },
       difficulty: c.df ?? "adventure", rideStyle: c.st ?? "explore", gravelPreference: c.g ?? 55, trailPreference: c.t ?? "some",
