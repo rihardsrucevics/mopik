@@ -4566,8 +4566,15 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
           slot of the row. Notices, the off-road verdict, the move hint and
           the point popover stack above the bar (`flex-col-reverse`), well
           under the switch row at the top. The field's suggestions open
-          upward, over the map. */}
-      <div ref={headerRef} data-map-chrome className={controls ? "absolute bottom-3 left-3 right-3 z-20 flex flex-col-reverse gap-2 has-[input:focus]:z-30 max-md:left-[4.75rem]" : "hidden"}>
+          upward, over the map.
+
+          The column itself is `pointer-events-none`, only its children take
+          the pointer (backlog 51): it spans the map's width up to the top of
+          the tallest sheet, and that band — beside the popover, between the
+          rows — ate every press on the map under it: a stretch handle there
+          could not be held, an excluded stretch not tapped, a pan not
+          started ("the map deactivates"). */}
+      <div ref={headerRef} data-map-chrome className={controls ? "pointer-events-none absolute bottom-3 left-3 right-3 z-20 flex flex-col-reverse gap-2 has-[input:focus]:z-30 max-md:left-[4.75rem] [&>*]:pointer-events-auto" : "hidden"}>
       {controls && (
         /* The header, in ONE row — backlog 30. The rider's screenshot at
            375 px showed three stacked pills (the field, "+ Pietura", the hint)
