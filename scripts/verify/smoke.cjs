@@ -21,6 +21,8 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
   const marker = (name) => page.locator(`.maplibregl-marker[aria-label="${name}"]`).first();
   const dotsLoc = () => page.locator('.maplibregl-marker[aria-label^="Caurbraucams punkts"]');
   const sheetRow = (label) => page.getByText(label, { exact: true }).first();
+  // ── add-kind ── „+” asks what to add: the chooser, then the chip.
+  const plus = async (kind) => { await slot(1); await page.waitForTimeout(250); await page.locator(`[data-add-chooser] [data-add-kind="${kind}"]`).click(); await page.waitForTimeout(250); };
   const rects = async () => Object.fromEntries((await L.state(page)).slots.map((s) => [s.slot, s.rect]));
   // ── chain-polish ── how the chip's lines sit: lines of each part, and whether the clamped notes are cut.
   const chipFit = () => page.evaluate(() => {
@@ -106,7 +108,7 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
   console.log(`[${tag}]   openRide sigulda-cesis ${((Date.now() - t) / 1000).toFixed(1)} s`);
   const idle = await rects();
   rec("edit mode: four slots drawn", ["1", "2", "3", "x"].every((k) => idle[k]), idle);
-  await exercise("add stop", async () => { const ll = await pointOn(0.3, 400, 0); await zoomTo(ll); await slot(1); await page.waitForTimeout(300); await tapAt(ll); }, { tones: ["proposed"], idle });
+  await exercise("add stop", async () => { const ll = await pointOn(0.3, 400, 0); await zoomTo(ll); await plus("stop"); await tapAt(ll); }, { tones: ["proposed"], idle });
   await exercise("move stop", async () => { await L.fit(page, await L.line(page)); await moveMarker(marker("Līgatne"), 70, -40); }, { idle });
   {
     const h0 = L.hash(await L.line(page)); const n0 = log.reroute;
@@ -121,6 +123,90 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
     rec("…and ↶ is live", (await L.undoEnabled(page)) === true);
     await slot(2); await page.waitForTimeout(600);
     rec("…↶ takes the dot away", (await dotsLoc().count()) === d0);
+  }
+
+  // ── add-kind: „+” asks what to add; the sheet's one kind switch (rider, 2026-09-29) ──
+  {
+    const t = Date.now();
+    const ADD_SHOTS = process.env.ADDKIND_SHOTS || L.SHOTS;
+    const addShot = async (n) => { if (phone) await page.screenshot({ path: `${ADD_SHOTS}/addkind-${n}.png` }); };
+    const field = () => page.evaluate(() => { const vis = (e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; }; const i = [...document.querySelectorAll("[data-map-chrome] input")].filter(vis)[0]; return i ? (i.value || i.placeholder) : null; });
+    const stopsLoc = () => page.locator(".maplibregl-marker:not([data-pending])").filter({ hasText: /^\d+$/ });
+    const chooser = page.locator("[data-add-chooser]");
+    const h0 = L.hash(await L.line(page)); const d0 = await dotsLoc().count(); const p0 = await stopsLoc().count(); const u0 = await L.undoEnabled(page);
+    const ll = await pointOn(0.6, 350, 0); await zoomTo(ll);
+    await slot(1); await page.waitForTimeout(300);
+    const guide = ((await chooser.locator('[data-edit-guide="add"]').textContent().catch(() => "")) ?? "").trim();
+    rec("add-kind: „+” shows the chooser „Ko pievienot? – …”", (await chooser.isVisible()) && guide === "Ko pievienot? – izvēlies veidu, tad pieskaries kartei.", { guide });
+    const chips = await chooser.locator("[data-add-kind]").evaluateAll((els) => els.map((e) => { const r = e.getBoundingClientRect(); return { k: e.dataset.addKind, y: Math.round(r.y), right: Math.round(r.right), text: e.textContent.trim(), on: e.getAttribute("aria-checked") }; }));
+    const vw = await page.evaluate(() => innerWidth);
+    rec("add-kind: two chips on one row, with their detail lines, on screen", chips.length === 2 && chips[0].y === chips[1].y && chips.every((c) => c.right <= vw) && /Mopik atradīs ceļu līdz tai/.test(chips[0].text) && /Tikai virza līniju, bez numura/.test(chips[1].text), chips);
+    const sc = await L.state(page);
+    const slotOf = (k) => sc.slots.find((x) => x.slot === k);
+    rec("add-kind: slots did not move, ✓ off, ✕ on (chooser)", JSON.stringify(await rects()) === JSON.stringify(idle) && slotOf("3")?.disabled === true && slotOf("x")?.disabled === false && slotOf("1")?.disabled === true, sc.slots);
+    await addShot("chooser");
+    await page.keyboard.press("Escape"); await page.waitForTimeout(300);
+    rec("add-kind: Escape dismisses the chooser", !(await chooser.isVisible()));
+    await slot(1); await page.waitForTimeout(300); await chooser.locator("[data-add-close]").click(); await page.waitForTimeout(300);
+    rec("add-kind: ✕ dismisses the chooser", !(await chooser.isVisible()) && L.hash(await L.line(page)) === h0);
+    // „Caurbraucams punkts”: armed, a tap → a white dot pending, the field names its leg.
+    await plus("pass");
+    const armed = await field();
+    rec("pass armed: the field says what to do", /^Pievieno caurbraucamu punktu – pieskaries kartei/.test(armed ?? ""), { armed });
+    await addShot("pass-armed");
+    await tapAt(ll);
+    const sp = await L.waitChip(page);
+    const fp = await field();
+    rec("pass: a pending point, the field „Caurbraucams punkts · starp „A” un „B””", ["proposed", "warn"].includes(sp.chip?.tone) && /^Caurbraucams punkts · starp „.+” un „.+”/.test(fp ?? "") && (await stopsLoc().count()) === p0, { chip: sp.chip, fp });
+    rec("pass: slots did not move (pending)", JSON.stringify(await rects()) === JSON.stringify(idle));
+    await addShot("pass-pending");
+    if (sp.chip?.tone === "warn") await page.locator("button:visible", { hasText: "Tomēr braukt" }).first().click(); else await slot(3);
+    await page.waitForTimeout(900);
+    rec("pass ✓: one more pass-through point, no new stop", (await dotsLoc().count()) === d0 + 1 && (await stopsLoc().count()) === p0 && L.hash(await L.line(page)) !== h0, { dots: await dotsLoc().count(), d0, stops: await stopsLoc().count(), p0 });
+    // The segmented switch on the new dot: „Caurbraucams” selected, „Pietura” a tap away; commits at once, line unchanged.
+    {
+      const h1 = L.hash(await L.line(page));
+      const dot = dotsLoc().nth(d0);
+      await dot.click(); await page.waitForTimeout(400);
+      const sw = page.locator("[data-kind-switch]");
+      const selected = await sw.locator('[aria-checked="true"]').getAttribute("data-kind").catch(() => null);
+      const rows = await page.locator('[data-point-sheet="menu"]').innerText().catch(() => "");
+      rec("sheet switch on a dot: „Caurbraucams” selected, no old kind rows", selected === "pass" && !/Padarīt par pieturu|Padarīt caurbraucamu/.test(rows), { selected });
+      await addShot("switch-dot");
+      await sw.locator('[data-kind="stop"]').click(); await page.waitForTimeout(1500);
+      rec("sheet switch: the dot is a stop, line unchanged", (await stopsLoc().count()) === p0 + 1 && (await dotsLoc().count()) === d0 && L.hash(await L.line(page)) === h1, { stops: await stopsLoc().count(), dots: await dotsLoc().count() });
+      await slot(2); await page.waitForTimeout(700);
+      rec("sheet switch: ↶ brings the dot back", (await dotsLoc().count()) === d0 + 1 && (await stopsLoc().count()) === p0);
+    }
+    await slot(2); await page.waitForTimeout(700);
+    rec("pass: ↶ takes the new point away", L.hash(await L.line(page)) === h0 && (await dotsLoc().count()) === d0 && (await L.undoEnabled(page)) === u0);
+    // „Pietura”: remembered choice preselected; a numbered stop.
+    await slot(1); await page.waitForTimeout(300);
+    const pre = await chooser.locator('[aria-checked="true"]').getAttribute("data-add-kind").catch(() => null);
+    rec("add-kind: the last choice is preselected („Caurbraucams punkts”)", pre === "pass", { pre });
+    await chooser.locator('[data-add-kind="stop"]').click(); await page.waitForTimeout(300);
+    await tapAt(ll);
+    const ss = await L.waitChip(page);
+    const fs = await field();
+    rec("stop: a numbered pending stop, the field „Pietura N · starp …”", ["proposed", "warn"].includes(ss.chip?.tone) && /^Pietura \d+ · starp „/.test(fs ?? ""), { chip: ss.chip, fs });
+    await addShot("stop-pending");
+    if (ss.chip?.tone === "warn") await page.locator("button:visible", { hasText: "Tomēr braukt" }).first().click(); else await slot(3);
+    await page.waitForTimeout(900);
+    rec("stop ✓: one more numbered stop, no new dot", (await stopsLoc().count()) === p0 + 1 && (await dotsLoc().count()) === d0);
+    await slot(2); await page.waitForTimeout(700);
+    rec("stop: ↶ takes it away", L.hash(await L.line(page)) === h0 && (await stopsLoc().count()) === p0);
+    // The switch on an existing stop (Līgatne), and off on the start.
+    {
+      await L.fit(page, await L.line(page));
+      await marker("Līgatne").click(); await page.waitForTimeout(400);
+      const sw = page.locator("[data-kind-switch]");
+      const selected = await sw.locator('[aria-checked="true"]').getAttribute("data-kind").catch(() => null);
+      await sw.locator('[data-kind="pass"]').click(); await page.waitForTimeout(1200);
+      rec("sheet switch on a stop: „Pietura” → a dot, line unchanged", selected === "stop" && (await stopsLoc().count()) === p0 - 1 && (await dotsLoc().count()) === d0 + 1 && L.hash(await L.line(page)) === h0, { selected, stops: await stopsLoc().count(), dots: await dotsLoc().count() });
+      await slot(2); await page.waitForTimeout(700);
+      rec("…↶ brings the stop back", (await stopsLoc().count()) === p0 && (await dotsLoc().count()) === d0);
+    }
+    console.log(`[${tag}]   add-kind ${((Date.now() - t) / 1000).toFixed(1)} s`);
   }
 
   // ── 2. The rider's ride-0928 (four pass-through points): move one ──
@@ -290,7 +376,7 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
     const h0 = L.hash(await L.line(page)); const u0 = await L.undoEnabled(page); const r0 = await rects();
     const pts = [[24.4509, 56.9490], [24.5985, 56.9599], [24.7000, 56.9650]];
     await L.fit(page, pts.concat([[24.40, 56.93], [24.80, 56.93]]), 40);
-    await slot(1); await page.waitForTimeout(300);
+    await plus("stop");
     for (const ll of pts) { await tapAt(ll); await page.waitForTimeout(700); }
     const named = await waitUi((s) => s.groups.includes("block"));
     rec("blocking point named: „Kangaru purvs”, ringed, field says „Pietura 3”", named.chip?.tone === "refused" && /Kangaru purvs/.test(named.chip.text) && named.blocked.includes("3") && /^Pietura 3/.test(named.field ?? "") && named.groups.includes("rest"), named);
@@ -317,7 +403,7 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
     const c0 = await L.line(page);
     const d2 = (a, b) => (a[0] - b[0]) ** 2 * 0.3 + (a[1] - b[1]) ** 2;
     const onLine = c0.reduce((best, p) => (d2(p, WAS) < d2(best, WAS) ? p : best), c0[0]);
-    await slot(1); await page.waitForTimeout(300);
+    await plus("stop");
     await tapAt(onLine); await page.waitForTimeout(700);
     await L.waitChip(page, ["proposed", "refused", "warn"], 60000);
     await page.locator('[data-choice="pass"]').click(); await page.waitForTimeout(700);
@@ -457,7 +543,7 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
     const h0 = L.hash(await L.line(page)); const u0 = await L.undoEnabled(page); const r0 = await rects();
     const CHAIN = [[24.6930, 56.9655], [24.6975, 56.9672], [24.7010, 56.9660]];
     await L.fit(page, CHAIN.concat([[24.66, 56.94], [24.74, 56.99]]), 40);
-    await slot(1); await page.waitForTimeout(300);
+    await plus("stop");
     for (const ll of CHAIN) { await tapAt(ll); await page.waitForTimeout(700); }
     const offered = await waitUi((s) => s.groups.includes("chain"), 90000);
     const chip = page.locator('[data-choice-group="chain"] [data-choice="chain"]');

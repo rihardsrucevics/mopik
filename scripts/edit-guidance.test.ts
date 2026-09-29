@@ -87,7 +87,9 @@ test("the sheets and the map wear the object's own colour", () => {
   assert.equal(sheets.split("explainer:").length - 1, 2, "the line sheet and the point sheet");
   assert.match(sheets, /hint: guidance\(tk, \{ kind: "via" \}\)/);
   assert.match(sheets, /hint: guidance\(tk, \{ kind: "move", name: pointTitle \}\)/);
-  assert.ok(sheets.split("detailed(").length - 1 >= 5, "every action row has its detail");
+  // add-kind (2026-09-29): the kind is one segmented control, not two rows — move, remove, and the line's two.
+  assert.ok(sheets.split("detailed(").length - 1 >= 3, "every action row has its detail");
+  assert.match(sheets, /kindSwitch: \(\(\) => \{/, "the point sheet's one kind switch");
 });
 
 test("spur-0928's warned, dead-end, straight and no-road copy go through the guidance, one tail", () => {
