@@ -1628,3 +1628,36 @@ lost when the connection drops, and no work is redone. Needs a small store
 and a way to run the search after the response is sent (Vercel `waitUntil`
 or a background function within the 60 s limit). Related: 39 (the search's
 50 s budget).
+
+## 50. BUG: a new finish (or start) cannot be placed — always „neizdevās savienot”
+
+**Rider, 2026-09-30.** Editing a ride in Latvia, he cannot put a new
+finish anywhere: it is refused every time with „Finišs „Gaujas iela” – to
+neizdevās savienot ar maršrutu – pārvieto vai izņem.” (Madona town centre,
+plainly on roads; screenshot `images/40.webp`). "Kaut kas galīgi nav ok
+algoritmā." Removal already climbs the relaxed ladder (car-fast); moves and
+adds of stops do too; finish/start changes evidently do not, or the finish
+leg is judged against the wrong anchors. A finish or start change must end
+in a proposal, or a named blocker with „Vest pa taisno”.
+
+## 51. BUG: after tapping a stretch the map stops responding; the page scrolls instead
+
+**Rider, 2026-09-30.** Tapping a stretch (backlog 36) selects it and the end
+handles cannot be dragged further; he cannot remove particular exclusions;
+at some moment "the map deactivates" and dragging scrolls the page itself —
+after tapping a stretch the map is no longer touchable or movable
+(`images/41.webp`). Looks like a touch-action / overlay problem: something
+takes the map's gestures while the sheet or the handles are up, or the page
+scroll is not locked in full screen.
+
+## 52. Stops in forest with no road: batch with several blockers offers no „Vest pa taisno”
+
+**Rider, 2026-09-30.** Four new stops in a forest: the note names „Pietura 2”
+(~754 m from a road) and „Pietura 4” („Ceplīši · 56.4819, 25.7056”, ~318 m)
+as blockers, with chips Pārvietot / Izņemt / Pievienot pārējās — but no
+„Vest pa taisno”; he expected it to be offered (`images/42.webp`). Also a
+raw coordinate is again used as a place name in the note. The straight
+chain (shipped 2026-09-29) only covers consecutive off-road points; a batch
+where off-road and reachable points alternate needs the straight option per
+blocker (or one „Vest pa taisno visiem”), and names by nearest place or
+„punkts N”, never coordinates.
