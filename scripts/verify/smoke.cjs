@@ -473,6 +473,29 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
       rec("chain: ✓ keeps the drawn chain through all three, no extra routing", L.hash(await L.line(page)) !== h0 && through && log.reroute === n0, { drawnFeatures: drawn.length, through, extra: log.reroute - n0 });
       rec("chain: slots did not move (committed)", JSON.stringify(await rects()) === JSON.stringify(r0));
       if (tag === "375") { await L.fit(page, CHAIN, 90); await page.waitForTimeout(400); await page.screenshot({ path: `${process.env.CHAIN_SHOTS || L.SHOTS}/chain-straight-committed.png` }); }
+      // ── chain-polish ── „Izņemt” on the middle point: the chain re-forms through the other two, nothing routed; ✓, then ↶ brings the three back.
+      {
+        const hc = L.hash(await L.line(page)); const n1 = log.reroute;
+        await L.fit(page, CHAIN, 90); await page.waitForTimeout(400);
+        const pin = await nearestPin(CHAIN[1]);
+        await tapXY(pin.x, pin.y); await page.waitForTimeout(500);
+        await sheetRow("Izņemt").click();
+        const s3 = await L.waitChip(page, ["proposed", "warn", "refused"], 30000);
+        rec("chain: „Izņemt” on a chain point → a proposal with numbers, not refused, nothing routed", ["proposed", "warn"].includes(s3.chip?.tone) && CHIP_RE.test(s3.chip.text) && log.reroute === n1, { chip: s3.chip, extra: log.reroute - n1 });
+        rec("chain: slots did not move (point removed)", JSON.stringify(await rects()) === JSON.stringify(r0));
+        if (tag === "375") await page.screenshot({ path: `${process.env.CHAIN_SHOTS || L.SHOTS}/chain-remove-proposal.png` });
+        const ok2 = await L.slotBtn(page, 3);
+        if (!(await ok2.isDisabled())) await ok2.click(); else await page.locator("button:visible", { hasText: "Tomēr braukt" }).first().click();
+        await page.waitForTimeout(900);
+        const d2 = await page.evaluate(() => { const m = window.__map; const src = m.getSource(m.getLayer("route-road").source); const d = src._data?.geojson ?? src.serialize().data; return (d.features ?? []).filter((f) => f.properties?.drawn); });
+        // The taps land within a few metres of CHAIN; the middle point is ~150 m off the line from the first to the last.
+        const gap = (p) => Math.min(...d2.flatMap((f) => f.geometry.coordinates.map((q) => hv(p, q))));
+        const gaps = CHAIN.map((p) => Math.round(gap(p)));
+        rec("chain: ✓ keeps the chain through the other two, not the one taken out", L.hash(await L.line(page)) !== hc && gaps[0] < 40 && gaps[2] < 40 && gaps[1] > 80 && !(await L.state(page)).chip, { drawn: d2.length, gaps });
+        if (tag === "375") { await L.fit(page, CHAIN, 90); await page.waitForTimeout(400); await page.screenshot({ path: `${process.env.CHAIN_SHOTS || L.SHOTS}/chain-remove-committed.png` }); }
+        await slot(2); await page.waitForTimeout(800);
+        rec("chain: ↶ brings the three back in one step", L.hash(await L.line(page)) === hc);
+      }
       await slot(2); await page.waitForTimeout(800);
       rec("chain: ↶ takes the chain back", L.hash(await L.line(page)) === h0 && (await L.undoEnabled(page)) === u0);
     } else { await shot("fail-chain"); await slot("x"); await page.waitForTimeout(500); }

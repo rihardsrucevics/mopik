@@ -3,9 +3,10 @@ import type { RouteSegmentProperties } from "@/lib/types";
 import { cumulative, pointAtDistance } from "@/lib/routing/detour";
 import { connector, drawnSeconds } from "@/lib/routing/drawn";
 import {
-  anchorsAlong, anchorsOf, insertStopsByAlong, nearestAlong, nearestWithin,
-  type EditRun, type RidePlace, type RidePlaces, type RoutedRun,
+  anchorsAlong, anchorsOf, coordinatesOf as coordinatesOfSegs, insertStopsByAlong, nearestAlong, nearestWithin,
+  type EditPlan, type EditRun, type RidePlace, type RidePlaces, type RoutedRun,
 } from "@/lib/routing/reroute-leg";
+import { drawnIntervals as drawnIntervalsOf } from "@/lib/map/straight";
 
 /**
  * „Vest pa taisno caur visiem” (rider, 2026-09-29): several points in a row
@@ -159,3 +160,110 @@ export function chainRun(params: {
     to,
   };
 }
+
+// ── chain-polish ──
+// A point of a committed chain taken out or moved (rider, 2026-09-29). Chain
+// points are ordinary vias (not `reach: "straight"`); what makes them a chain
+// is the drawn stretch they sit on. The drawn stretch is fixed — no window
+// re-routes it — so the ordinary removal could not touch it. Instead the
+// chain is re-formed from the points left: the same entry and exit (where
+// the drawn line leaves and rejoins a road), straight through the rest, no
+// router asked. The last point taken out takes the whole drawn stretch with
+// it, and the two legs round it are joined by roads like any removed stop.
+
+type Segs = GeoJSON.FeatureCollection<GeoJSON.LineString, RouteSegmentProperties>;
+
+const samePlace = (a: { lat: number; lon: number }, b: { lat: number; lon: number }) => Math.abs(a.lat - b.lat) < 1e-6 && Math.abs(a.lon - b.lon) < 1e-6;
+
+/** A via this close to the ride and inside a drawn stretch sits on it (connectors end exactly at their points). */
+const ON_CHAIN_M = 2;
+
+/**
+ * The ride's chains: each drawn stretch (metres along the ride) and the vias
+ * that sit inside it, in riding order. A point reached straight on its own
+ * (`reach: "straight"`) is not a chain point: its out-and-back goes with it.
+ */
+export function chainsOf(segments: Segs, places: RidePlaces): { interval: [number, number]; vias: number[] }[] {
+  const line = coordinatesOfSegs(segments);
+  if (line.length < 2) return [];
+  const cum = cumulative(line);
+  const out = drawnIntervalsOf(segments).map((interval) => ({ interval, vias: [] as number[] }));
+  places.vias.forEach((v, i) => {
+    if (v.reach === "straight") return;
+    const n = nearestAlong([v.lon, v.lat], line, cum);
+    if (n.meters > ON_CHAIN_M) return;
+    const c = out.find(({ interval: [a, b] }) => n.alongMeters > a + 1 && n.alongMeters < b - 1);
+    c?.vias.push(i);
+  });
+  return out.filter((c) => c.vias.length > 0);
+}
+
+export type ChainEdit =
+  /** Points left: the chain drawn again through them, between its old entry and exit — nothing to route. */
+  | { kind: "reform"; plan: EditPlan; routed: RoutedRun; drawnMeters: number; sameEnd: boolean; points: RidePlace[] }
+  /** Its only point taken out: the drawn stretch goes, the legs either side are joined by roads (a plain removal). */
+  | { kind: "rejoin"; plan: EditPlan };
+
+/**
+ * A change that takes out or moves one point of a chain, as the edit to make
+ * of it — or null when the change touches no chain point (the ordinary
+ * `planEdit` then plans it).
+ */
+export function chainEdit(params: { segments: Segs; before: RidePlaces; after: RidePlaces }): ChainEdit | null {
+  const { segments, before, after } = params;
+  if (!samePlace(before.start, after.start) || (before.finish === null) !== (after.finish === null)) return null;
+  if (before.finish && after.finish && !samePlace(before.finish, after.finish)) return null;
+  const bv = before.vias, av = after.vias;
+  let gone = -1, moved = -1;
+  if (av.length === bv.length - 1) {
+    gone = bv.findIndex((v, i) => !av[i] || !samePlace(v, av[i]));
+    if (gone < 0 || !bv.filter((_, i) => i !== gone).every((v, i) => samePlace(v, av[i]))) return null;
+  } else if (av.length === bv.length) {
+    const changed = bv.map((v, i) => (samePlace(v, av[i]) ? -1 : i)).filter((i) => i >= 0);
+    if (changed.length !== 1) return null;
+    moved = changed[0];
+  } else return null;
+  const touched = gone >= 0 ? gone : moved;
+  const all = chainsOf(segments, before);
+  const chain = all.find((c) => c.vias.includes(touched));
+  if (!chain) return null;
+  const line = coordinatesOfSegs(segments);
+  const cum = cumulative(line);
+  const at = (m: number) => pointAtDistance(line, cum, m).point as Point;
+  const [a, b] = chain.interval;
+  // The chain's points as `after` has them: one fewer, or one moved.
+  const left = gone >= 0 ? chain.vias.filter((i) => i !== gone).map((i) => (i > gone ? i - 1 : i)) : chain.vias;
+  const kind = gone >= 0 ? "remove-stop" : "move-stop";
+  if (left.length) {
+    const points = left.map((i) => av[i]);
+    const from = at(a);
+    const to = at(b);
+    const pts = points.map((v): Point => [v.lon, v.lat]);
+    const drawn: Feature[] = [connector(from, pts[0])];
+    for (let i = 1; i < pts.length; i++) drawn.push(connector(pts[i - 1], pts[i]));
+    drawn.push(connector(pts[pts.length - 1], to));
+    const drawnMeters = drawn.reduce((s, f) => s + f.properties.distanceMeters, 0);
+    return {
+      kind: "reform",
+      plan: { kind, places: after, runs: [{ fromMeters: a, toMeters: b, points: [from, ...pts, to] }] },
+      routed: { segments: { type: "FeatureCollection", features: drawn }, distanceMeters: Math.round(drawnMeters), durationSeconds: Math.round(drawnSeconds(drawnMeters)) },
+      drawnMeters,
+      sameEnd: haversineMeters(from, to) <= SAME_END_M,
+      points,
+    };
+  }
+  // The only point: from the kept place before to the kept place after — the
+  // road in, the drawn stretch and the road out all go — never into another
+  // drawn stretch (fixed).
+  const along = anchorsAlong(anchorsOf(before, line[line.length - 1]), line, cum);
+  const k = touched + 1;
+  let f = along[k - 1];
+  let t = along[k + 1];
+  for (const [x, y] of drawnIntervalsOf(segments)) {
+    if (x === a && y === b) continue;
+    if (y <= a && y > f) f = y;
+    if (x >= b && x < t) t = x;
+  }
+  return { kind: "rejoin", plan: { kind: "remove-stop", places: after, runs: [{ fromMeters: f, toMeters: t, points: [at(f), at(t)] }] } };
+}
+// ── /chain-polish ──

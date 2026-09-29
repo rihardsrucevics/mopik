@@ -98,7 +98,7 @@ import { markOutsideProfile, farthestFrom, detourRisk, reachOf, deadEndNoteKey }
 import { NO_CHAIN, chainCount, chainTopOf, inheritWarning, popChain, shownProposal, stackOnto, type EditChain } from "@/lib/map/edit-chain";
 import { blockingFrom, singleCause, type Blocking, type BlockingPoint, type PointProbe } from "@/lib/map/blocking";
 import { drawnIntervals, straightRun } from "@/lib/map/straight";
-import { CHAIN_OFF_M, CHAIN_RISK_M, chainJoins, chainMeters, chainRun, insertChain, offRoadRuns } from "@/lib/map/straight-chain";
+import { CHAIN_OFF_M, CHAIN_RISK_M, chainEdit, chainJoins, chainMeters, chainRun, insertChain, offRoadRuns } from "@/lib/map/straight-chain";
 import { drawnMeters } from "@/lib/routing/drawn";
 import { profileAt, type RelaxDrop } from "@/lib/routing/relax";
 import { buildMotoProfileOptions } from "@/lib/routing/moto-profile";
@@ -1460,8 +1460,14 @@ export function HomePage() {
     const target = placesForChange(change, before, line);
     if ("note" in target) { refuseNow(target.how, target.note, target.reason); return; }
     if (line.length < 2) { refuseNow("move-stop", ui.resEditFailed, "degenerate"); return; }
+    // ── chain-polish ── a point of a straight chain taken out or moved: the chain re-formed from the points left (no router), or, the last one gone, its legs joined by roads.
+    const chained = chainEdit({ segments: baseSegments, before, after: target.after });
+    const chainExtra = chained?.kind === "reform" ? {
+      prefetched: { runs: [chained.routed] },
+      chain: { meters: chained.drawnMeters, count: chained.points.length, sameEnd: chained.sameEnd, first: chained.points[0].name || ui.shapePointName, last: chained.points[chained.points.length - 1].name || ui.shapePointName },
+    } : {};
     // Drawn straight stretches are fixed: no window re-routes them (design C).
-    const planned = planEdit({ line, cum: cumulative(line), before, after: target.after, keepOrder: target.keepOrder, fixed: drawnIntervals(baseSegments) });
+    const planned = chained?.plan ?? planEdit({ line, cum: cumulative(line), before, after: target.after, keepOrder: target.keepOrder, fixed: drawnIntervals(baseSegments) });
     if (!planned) {
       // Nothing about the line changes: nothing to preview, nothing to commit.
       live.current = null;
@@ -1475,7 +1481,7 @@ export function HomePage() {
     if (opts.confirm) dispatchProposal({ type: "confirm" });
     const run = () => {
       proposeTimer.current = null;
-      void routeProposal({ token, before, planned, baseSegments, line, shape: change.kind === "shape", change, wide: opts.wide === true, ...(opts.straight !== undefined ? { straight: true, relax: opts.straight } : {}), ...(opts.then ? { then: opts.then } : {}), ...(opts.thenChain ? { thenChain: opts.thenChain, relax: opts.thenChain.level } : {}), ...stacked });
+      void routeProposal({ token, before, planned, baseSegments, line, shape: change.kind === "shape", change, wide: opts.wide === true, ...(opts.straight !== undefined ? { straight: true, relax: opts.straight } : {}), ...(opts.then ? { then: opts.then } : {}), ...(opts.thenChain ? { thenChain: opts.thenChain, relax: opts.thenChain.level } : {}), ...chainExtra, ...stacked });
     };
     if (opts.delay) proposeTimer.current = { timer: setTimeout(run, opts.delay), run };
     else run();

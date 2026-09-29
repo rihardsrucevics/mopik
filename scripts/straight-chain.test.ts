@@ -13,7 +13,7 @@ import { haversineMeters, type Point } from "@/lib/geo/geometry";
 import { cumulative, lineMeters, pointAtDistance } from "@/lib/routing/detour";
 import { drawnSeconds } from "@/lib/routing/drawn";
 import { drawnIntervals } from "@/lib/map/straight";
-import { CHAIN_OFF_M, chainEstimate, chainJoins, chainMeters, chainRun, insertChain, offRoadRuns } from "@/lib/map/straight-chain";
+import { CHAIN_OFF_M, chainEdit, chainEstimate, chainJoins, chainMeters, chainRun, chainsOf, insertChain, offRoadRuns } from "@/lib/map/straight-chain";
 import { chainGuide, chainLine, GUIDE_DASH } from "@/lib/map/edit-guidance";
 import { applyRuns, nearestAlong, outAndBacks, summariseSegments, type RidePlace, type RidePlaces, type RoutedRun } from "@/lib/routing/reroute-leg";
 import { decodeRouteShare, encodeRouteShare, sharedRouteSegments } from "@/lib/share/route-code";
@@ -174,3 +174,104 @@ test("the flow: offered for a batch's run, the chip proposes, the proposal is ho
   assert.match(page, /const risk = p\.chain \? null : detourRisk\(/);
   assert.match(page, /const through = straight \|\| p\.chain \? null/);
 });
+
+// ── chain-polish ── a committed chain's point taken out or moved: the chain re-formed, never refused.
+{
+  const committed = () => {
+    const pts = [place(P1, "1"), place(P2, "2"), place(P3, "3")];
+    const j = chainJoins(LINE, BEFORE, [P1, P2, P3]);
+    const c = chainRun({ points: [P1, P2, P3], ...j });
+    const out = applyRuns({ segments: segs(LINE), distanceMeters: Math.round(lineMeters(LINE)), durationSeconds: 3_600, runs: [c.run], routed: [c.routed], keep: [LINE[0], LINE[LINE.length - 1]] });
+    return { out, places: insertChain(LINE, BEFORE, pts), from: c.from, to: c.to };
+  };
+  const apply = (seg: Segs, e: NonNullable<ReturnType<typeof chainEdit>>) =>
+    applyRuns({ segments: seg, distanceMeters: 10_000, durationSeconds: 3_600, runs: e.plan.runs, routed: e.kind === "reform" ? [e.routed] : [], keep: [] });
+  const drawnCoords = (s: Segs) => s.features.filter((f) => f.properties.drawn).flatMap((f) => f.geometry.coordinates as Point[]);
+  const without = (p: RidePlaces, i: number): RidePlaces => ({ ...p, vias: p.vias.filter((_, k) => k !== i) });
+
+  test("the committed chain's points are found on its drawn stretch; a lone straight point is not a chain", () => {
+    const { out, places } = committed();
+    const cs = chainsOf(out.segments, places);
+    assert.equal(cs.length, 1);
+    assert.deepEqual(cs[0].vias, [0, 1, 2]);
+    const lone = { ...places, vias: places.vias.map((v) => ({ ...v, reach: "straight" as const })) };
+    assert.equal(chainsOf(out.segments, lone).length, 0);
+  });
+
+  for (const [which, i, left] of [["first", 0, [P2, P3]], ["middle", 1, [P1, P3]], ["last", 2, [P1, P2]]] as const) {
+    test(`removing the ${which} of three: the chain re-forms through the other two, same way in and out, nothing routed`, () => {
+      const { out, places, from, to } = committed();
+      const e = chainEdit({ segments: out.segments, before: places, after: without(places, i) });
+      assert.ok(e && e.kind === "reform", "re-formed, not refused");
+      assert.equal(e.plan.kind, "remove-stop");
+      assert.equal(e.points.length, 2);
+      const s = apply(out.segments, e);
+      const d = drawnCoords(s.segments);
+      assert.deepEqual(d[0], from, "the same entry");
+      assert.deepEqual(d[d.length - 1], to, "the same exit");
+      const sc = cumulative(s.coordinates);
+      for (const p of left) assert.ok(nearestAlong(p, s.coordinates, sc).meters < 1, "through the points left");
+      const gone = [P1, P2, P3][i];
+      assert.ok(!d.some((q) => haversineMeters(q, gone) < 1), "not through the one taken out");
+      assert.equal(drawnIntervals(s.segments).length, 1, "still one drawn stretch");
+      assert.ok(e.drawnMeters < chainRun({ points: [P1, P2, P3], ...chainJoins(LINE, BEFORE, [P1, P2, P3]) }).drawnMeters);
+    });
+  }
+
+  test("moving a chain point: only its two straight legs change, nothing routed", () => {
+    const { out, places } = committed();
+    const moved = off(P2, 120, 80);
+    const after = { ...places, vias: places.vias.map((v, k) => (k === 1 ? { ...v, lat: moved[1], lon: moved[0] } : v)) };
+    const e = chainEdit({ segments: out.segments, before: places, after });
+    assert.ok(e && e.kind === "reform");
+    assert.equal(e.plan.kind, "move-stop");
+    const s = apply(out.segments, e);
+    const d = s.segments.features.filter((f) => f.properties.drawn);
+    const before = out.segments.features.filter((f) => f.properties.drawn);
+    assert.equal(d.length, 4);
+    assert.deepEqual(d[0].geometry.coordinates, before[0].geometry.coordinates, "the way in is as it was");
+    assert.deepEqual(d[3].geometry.coordinates, before[3].geometry.coordinates, "the way out is as it was");
+    assert.deepEqual(d[1].geometry.coordinates.at(-1), moved);
+    assert.deepEqual(d[2].geometry.coordinates[0], moved);
+  });
+
+  test("removing the only point left: the drawn stretch goes and the legs round it are joined by roads", () => {
+    const { out, places } = committed();
+    // Two taken out in turn: a chain of one.
+    const e1 = chainEdit({ segments: out.segments, before: places, after: without(places, 0) });
+    assert.ok(e1 && e1.kind === "reform");
+    const s1 = apply(out.segments, e1);
+    const one = without(without(places, 0), 0);
+    const e2 = chainEdit({ segments: s1.segments, before: without(places, 0), after: one });
+    assert.ok(e2 && e2.kind === "reform");
+    const s2 = apply(s1.segments, e2);
+    assert.equal(chainsOf(s2.segments, one)[0].vias.length, 1);
+    const e3 = chainEdit({ segments: s2.segments, before: one, after: without(one, 0) });
+    assert.ok(e3 && e3.kind === "rejoin", "a plain removal, routed by roads");
+    assert.equal(e3.plan.kind, "remove-stop");
+    const run = e3.plan.runs[0];
+    const tot = lineMeters(s2.coordinates);
+    assert.ok(run.fromMeters < 1 && run.toMeters > tot - 1, "from the kept place before to the one after");
+    assert.equal(run.points.length, 2, "no place in between: the legs join");
+    // Spliced with a road answer, nothing drawn is left.
+    const road: RoutedRun = { segments: segs([run.points[0], run.points[1]]), distanceMeters: 1_000, durationSeconds: 60 };
+    const back = applyRuns({ segments: s2.segments, distanceMeters: 10_000, durationSeconds: 3_600, runs: e3.plan.runs, routed: [road], keep: [] });
+    assert.equal(drawnIntervals(back.segments).length, 0);
+  });
+
+  test("a change to no chain point is left to the ordinary plan", () => {
+    const { out, places } = committed();
+    const stop = place(at(TOTAL * 0.9), "S");
+    const withStop = { ...places, vias: [...places.vias, stop] };
+    assert.equal(chainEdit({ segments: out.segments, before: withStop, after: places }), null);
+    assert.equal(chainEdit({ segments: segs(LINE), before: { ...BEFORE, vias: [stop] }, after: BEFORE }), null);
+  });
+
+  test("the page plans a chain point's change with `chainEdit` before `planEdit`", () => {
+    const page = readFileSync(new URL("../components/home-page.tsx", import.meta.url), "utf8");
+    assert.match(page, /const chained = chainEdit\(\{ segments: baseSegments, before, after: target\.after \}\);/);
+    assert.match(page, /const planned = chained\?\.plan \?\? planEdit\(/);
+    assert.match(page, /\.\.\.chainExtra, \.\.\.stacked \}\);/);
+  });
+}
+
