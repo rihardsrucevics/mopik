@@ -8,6 +8,7 @@ import { t } from "@/lib/i18n/messages";
 import { mapPanelMounted, setMapFullscreen, useMapFullscreen, useMapPendingCount } from "@/lib/map/fullscreen";
 import { fi } from "@/lib/i18n/format";
 import { guardFullscreenZoom } from "@/lib/map/page-zoom";
+import { lockPageScroll } from "@/lib/map/scroll-lock";
 
 /**
  * The map with its full-screen control. Wherever a map is shown — the planner,
@@ -41,15 +42,16 @@ export function MapPanel({ children, className = "", expandedClassName = "" }: {
 
   useEffect(() => {
     if (!expanded) return;
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    // The page under it does not move while it is open — not by a touch,
+    // not by a focus — and is where it was when it closes (lib/map/scroll-lock).
+    const unlock = lockPageScroll(rootRef.current);
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !pendingMark()) setMapFullscreen(false); };
     window.addEventListener("keydown", onKey);
     // The page itself must not zoom under the full-screen map, and a zoom
     // that happens anyway is undone — here, and on the way out
     // (lib/map/page-zoom; rider's iPhone, 2026-09-27).
     const unguard = guardFullscreenZoom();
-    return () => { document.body.style.overflow = previous; window.removeEventListener("keydown", onKey); unguard(); };
+    return () => { unlock(); window.removeEventListener("keydown", onKey); unguard(); };
   }, [expanded]);
 
   return (
