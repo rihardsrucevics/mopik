@@ -1611,3 +1611,20 @@ whether the preview map frames the places.
 navigation, rider reports and risks, seeing other riders, help when needed,
 more social than Waze, season challenges and badges, a theme in the bike's
 colours. Details in `docs/VISION.md`.
+
+## 49. Generation without one 50-second connection
+
+**Found 2026-09-29.** On an iPhone the request to `/api/generate-route`
+can be lost while it runs (screen dims, app switch, Wi-Fi ↔ 5G): the server
+finished with 200, the phone saw „TypeError: Load failed”. Shipped as a
+stopgap: a friendly message, one quiet automatic retry, and „Mēģināt vēlreiz”
+(PR #9). The retry redoes the whole search, so the server's work is thrown
+away and the rider waits again.
+
+Proper fix: start a generation and get a job id straight away; the server
+stores the finished result briefly (KV/Redis, ~5 min); the client polls or
+fetches by id, and fetches again when the page becomes visible. Nothing is
+lost when the connection drops, and no work is redone. Needs a small store
+and a way to run the search after the response is sent (Vercel `waitUntil`
+or a background function within the 60 s limit). Related: 39 (the search's
+50 s budget).

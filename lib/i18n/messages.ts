@@ -185,6 +185,15 @@ export type MessageKey =
   | "chatSayWhatToChange"
   | "chatErrGenerate"
   | "chatErrAnswer"
+  /**
+   * The connection dropped while a ride was being searched (Safari's
+   * "TypeError: Load failed", Chrome's "Failed to fetch": the phone slept,
+   * the tab went to the background, Wi-Fi handed over to 5G). What happened
+   * – what to do; the raw error goes to the console and analytics only.
+   */
+  | "chatErrConnection"
+  /** The same for a chat answer. */
+  | "chatErrConnectionChat"
   | "chatErrNoMatch"
   | "chatErrTimeout"
   /** One-way ride the rider left open: "man vienalga, kur beidzas". */
@@ -1075,6 +1084,8 @@ const lv: Messages = {
   chatSayWhatToChange: "Saki, ko mainīt: īsāku, vairāk pa mežu, caur kādu vietu…",
   chatErrGenerate: "Neizdevās ģenerēt maršrutu.",
   chatErrAnswer: "Neizdevās saņemt atbildi.",
+  chatErrConnection: "Savienojums pārtrūka, kamēr meklēju maršrutu – mēģini vēlreiz.",
+  chatErrConnectionChat: "Savienojums pārtrūka, kamēr gaidīju atbildi – mēģini vēlreiz.",
   chatErrNoMatch: "Neizdevās atrast prasībām atbilstošu maršrutu.",
   chatErrTimeout: "Serveris pārtrauca ģenerēšanu, jo tā aizņēma pārāk ilgi (limits ~60 s). Garš brauciens pa meža ceļiem var neietilpt. Mēģini vēlreiz vai īsāku ilgumu.",
   chatAnyDestination: "galamērķis brīvs",
@@ -1777,6 +1788,8 @@ const lt: Messages = {
   chatSayWhatToChange: "Sakyk, ką keisti: trumpiau, daugiau per mišką, per kokią vietą…",
   chatErrGenerate: "Nepavyko sugeneruoti maršruto.",
   chatErrAnswer: "Nepavyko gauti atsakymo.",
+  chatErrConnection: "Ryšys nutrūko, kol ieškojau maršruto – bandyk dar kartą.",
+  chatErrConnectionChat: "Ryšys nutrūko, kol laukiau atsakymo – bandyk dar kartą.",
   chatErrNoMatch: "Nepavyko rasti reikalavimus atitinkančio maršruto.",
   chatErrTimeout: "Serveris nutraukė generavimą, nes jis užtruko per ilgai (limitas ~60 s). Ilgas maršrutas miško keliais gali netilpti. Bandyk dar kartą arba trumpesnę trukmę.",
   chatAnyDestination: "tikslas laisvas",
@@ -2449,6 +2462,8 @@ const et: Messages = {
   chatSayWhatToChange: "Ütle, mida muuta: lühemalt, rohkem läbi metsa, läbi mõne koha…",
   chatErrGenerate: "Marsruudi koostamine ebaõnnestus.",
   chatErrAnswer: "Vastuse saamine ebaõnnestus.",
+  chatErrConnection: "Ühendus katkes, kui otsisin marsruuti – proovi uuesti.",
+  chatErrConnectionChat: "Ühendus katkes, kui ootasin vastust – proovi uuesti.",
   chatErrNoMatch: "Nõuetele vastavat marsruuti ei leitud.",
   chatErrTimeout: "Server katkestas koostamise, sest see võttis liiga kaua (piir ~60 s). Pikk metsateede sõit ei pruugi mahtuda. Proovi uuesti või lühemat kestust.",
   chatAnyDestination: "sihtkoht vaba",
@@ -3117,6 +3132,8 @@ const en: Messages = {
   chatSayWhatToChange: "Tell me what to change: shorter, more forest, via somewhere…",
   chatErrGenerate: "Could not generate a route.",
   chatErrAnswer: "Could not get an answer.",
+  chatErrConnection: "The connection dropped while I was searching for the route – try again.",
+  chatErrConnectionChat: "The connection dropped while I was waiting for the answer – try again.",
   chatErrNoMatch: "Could not find a route matching the requirements.",
   chatErrTimeout: "The server stopped generating because it took too long (the limit is ~60 s). A long ride on forest roads may not fit. Try again or a shorter duration.",
   chatAnyDestination: "any finish",

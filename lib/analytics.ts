@@ -28,6 +28,10 @@ export type AnalyticsEvent =
   | "batch_discarded"        // ✕ on an open batch; props: n
   | "plan_undone"            // ↶ / Ctrl+Z in planning
   | "route_no_route_retry"   // a way out of that chosen; props: how (drop-stops, easier-profile)
+  | "route_network_error"    // /api/generate-route died below HTTP (Safari "Load failed"); props: error (raw), attempt, visible, had_response
+  | "route_auto_retry"       // the one quiet retry after it; props: when (now|when-visible)
+  | "route_retry_tapped"     // „Mēģināt vēlreiz" after a failure; props: stage (route|chat)
+  | "chat_network_error"     // /api/route-chat died below HTTP; props: error (raw), visible
   | "direct_leg_shown"       // rider took the direct-road offer (item 7b); props: km, minutes
   | "generation_cancelled"   // "Atcelt" on the loader; props: case (first_from_form → back to the form | later → stays in the chat)
   | "overlap_chat_shown"     // best version retraces > 20 %
