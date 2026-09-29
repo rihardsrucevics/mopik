@@ -174,8 +174,60 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
     const title1 = await titleText();
     rec("stretch: dragging an end shortens the stretch, the sheet stays", kmOf(title1) < kmOf(title0) && (await page.locator('[data-point-sheet="menu"]').count()) === 1, { title0, title1, a, b });
     await stretchShot("adjusted");
+    // Backlog 51: an end dragged far, twice, keeps following (MapLibre's marker
+    // drag left it dead once let go over anything above the canvas), and the
+    // map still pans afterwards with the page where it was.
+    const dragPx = async (p, q) => {
+      if (phone) {
+        const cdp = await page.context().newCDPSession(page);
+        const tp = (type, x, y) => cdp.send("Input.dispatchTouchEvent", { type, touchPoints: type === "touchEnd" ? [] : [{ x, y }] });
+        await tp("touchStart", p.x, p.y);
+        for (let k = 1; k <= 12; k++) { await tp("touchMove", p.x + (q.x - p.x) * k / 12, p.y + (q.y - p.y) * k / 12); await page.waitForTimeout(30); }
+        await tp("touchEnd"); await cdp.detach().catch(() => {});
+      } else {
+        await page.mouse.move(p.x, p.y); await page.mouse.down();
+        for (let k = 1; k <= 12; k++) { await page.mouse.move(p.x + (q.x - p.x) * k / 12, p.y + (q.y - p.y) * k / 12); await page.waitForTimeout(30); }
+        await page.mouse.up();
+      }
+      await page.waitForTimeout(400);
+    };
+    const scroll0 = await page.evaluate(() => window.scrollY);
+    const kms = [kmOf(await titleText())];
+    for (let k = 0; k < 2; k++) {
+      const f = await hb("from"), e = await hb("to");
+      if (!f || !e) break;
+      await dragPx(e, { x: e.x + (e.x - f.x) * 1.2, y: e.y + (e.y - f.y) * 1.2 });
+      kms.push(kmOf(await titleText()));
+    }
+    rec("stretch: the far end dragged far twice — it follows both times, the stretch grows", kms.length === 3 && kms[1] > kms[0] && kms[2] > kms[1] && (await handles.count()) === 2, { kms });
+    {
+      const f = await hb("from"), e = await hb("to");
+      const km0 = kmOf(await titleText());
+      if (f && e) await dragPx(f, { x: f.x + (f.x - e.x) * 0.5, y: f.y + (f.y - e.y) * 0.5 });
+      rec("stretch: …and then the near end follows too", kmOf(await titleText()) > km0, { km0, km1: kmOf(await titleText()) });
+    }
+    await stretchShot("dragged-far");
+    const panOnce = async () => {
+      const box = await page.evaluate(() => { const r = window.__map.getContainer().getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; });
+      const p = { x: box.x + box.w * 0.45, y: box.y + box.h * 0.22 };
+      const hit = await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.className?.toString() ?? "", p);
+      const c0 = await page.evaluate(() => window.__map.getCenter().toArray());
+      await dragPx(p, { x: p.x + 90, y: p.y + 70 }); await settled();
+      const c1 = await page.evaluate(() => window.__map.getCenter().toArray());
+      return { moved: Math.abs(c1[0] - c0[0]) + Math.abs(c1[1] - c0[1]) > 1e-5, hit, c0, c1, scrollY: await page.evaluate(() => window.scrollY) };
+    };
+    const pan1 = await panOnce();
+    rec("stretch: with the selection up the map still pans, the page did not scroll", pan1.moved && pan1.scrollY === scroll0 && (await handles.count()) === 2, { ...pan1, scroll0 });
     await page.locator('[data-point-sheet="menu"] button[aria-label]').first().click().catch(() => {}); await page.waitForTimeout(400);
     rec("stretch: ✕ closes the sheet and the selection", (await page.locator('[data-point-sheet="menu"]').count()) === 0 && (await handles.count()) === 0);
+    const pan2 = await panOnce();
+    rec("stretch: after closing, the map pans and the page did not scroll", pan2.moved && pan2.scrollY === scroll0 && !(await page.evaluate(() => Boolean(window.__map.getLayer("stretch-sel")))), { ...pan2, scroll0 });
+    // Escape clears a selection too (desktop: on a phone Escape also leaves full screen).
+    if (!phone) {
+      await openStretch();
+      await page.keyboard.press("Escape"); await page.waitForTimeout(400);
+      rec("stretch: Escape clears the selection", (await handles.count()) === 0 && (await page.locator('[data-point-sheet="menu"]').count()) === 0);
+    }
     const exclude = async () => { await openStretch(); await sheetRow("Izslēgt šo posmu").click(); };
     await exercise("exclude stretch", exclude, { idle });
     // Committed: the excluded stretch shows as dashes; tapping it offers „Atļaut atkal”.
@@ -189,6 +241,20 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
       rec("stretch: ✓ keeps the exclusion — dark-red dashes in edit mode", exLayer);
       await zoomTo(await pointOn(0.55), 14); await page.waitForTimeout(400);
       await stretchShot("excluded");
+      // Backlog 51: a tap on the dashes opens „Izslēgts posms”, and „Atļaut atkal” takes the exclusion off.
+      const ex = await page.evaluate(() => { const src = window.__map.getSource("stretch-excluded"); const f = (d) => d?.features?.[0]?.geometry?.coordinates ?? d?.geojson?.features?.[0]?.geometry?.coordinates ?? null; return f(src?._data) ?? f(src?.serialize?.().data); });
+      if (ex?.length) {
+        const mid = ex[Math.floor(ex.length / 2)];
+        await zoomTo(mid, 15); await tapAt(mid); await page.waitForTimeout(900);
+        const exTitle = await titleText();
+        const allow = page.getByText("Atļaut atkal", { exact: true }).first();
+        rec("stretch: a tap on the excluded stretch opens „Izslēgts posms” with „Atļaut atkal”", exTitle === "Izslēgts posms" && (await allow.count()) === 1, { exTitle });
+        await stretchShot("excluded-sheet");
+        if (await allow.count()) { await allow.click(); await page.waitForTimeout(1500); }
+        rec("stretch: „Atļaut atkal” takes the exclusion off", !(await page.evaluate(() => Boolean(window.__map.getLayer("stretch-excluded")))));
+        await slot(2); await page.waitForTimeout(700);
+        rec("stretch: ↶ brings the exclusion back", await page.evaluate(() => Boolean(window.__map.getLayer("stretch-excluded"))));
+      } else rec("stretch: the excluded stretch's line is readable", false);
       await slot(2); await page.waitForTimeout(700);
       rec("stretch: ↶ takes the exclusion back", !(await page.evaluate(() => Boolean(window.__map.getLayer("stretch-excluded")))));
     } else { rec("stretch: second exclusion proposal", false, sx.chip); await slot("x"); }
