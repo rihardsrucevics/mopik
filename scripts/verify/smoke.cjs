@@ -530,6 +530,8 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
     const added = log.errors.splice(e0);
     log.errors.push(...added.filter((e) => !/net::ERR_FAILED|net::ERR_NETWORK_IO_SUSPENDED/.test(e)));
     console.log(`[${tag}]   generation connection drop ${((Date.now() - t) / 1000).toFixed(1)} s`);
+  }
+
   // ── 10. „Saglabātie” (backlog 44/47): the card opens the ride; „Labot” is edit
   // mode on the saved line; „Pabeigt labošanu” saves in place (own) or as a
   // copy (legacy / someone else's). Seeded rows come from the app's own
