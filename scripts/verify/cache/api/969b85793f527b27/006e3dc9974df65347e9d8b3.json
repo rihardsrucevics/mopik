@@ -1,0 +1,1 @@
+{"url":"/api/places?lat=56.954999999999444&lon=24.905253968255636","status":200,"contentType":"application/json","request":null,"body":"{\"places\":[{\"name\":\"Piereni\",\"label\":\"Piereni · Mālpils pagasts\",\"lat\":56.954999999999444,\"lon\":24.905253968255636,\"kind\":\"settlement\"}]}"}

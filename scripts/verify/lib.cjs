@@ -92,11 +92,16 @@ function fixture(name) {
 function fixtureNames() {
   return fs.readdirSync(FIXTURES).filter((f) => f.endsWith(".json")).map((f) => f.replace(/\.json$/, ""));
 }
-/** The plain fixture (no shaping points) whose places are exactly these names, if one exists. */
+/**
+ * The plain fixture (no shaping points) for these places, if one exists.
+ * Places compare by their first three letters, the rule the place stub uses
+ * ("Grostonas" in a script is the fixture's "Grostonas iela 19").
+ */
 function fixtureFor(places) {
+  const key = (list) => list.map((p) => p.toLowerCase().slice(0, 3)).join("|");
   for (const n of fixtureNames()) {
     const f = fixture(n);
-    if (!f.shapePoints?.length && JSON.stringify(f.places) === JSON.stringify(places)) return f;
+    if (!f.shapePoints?.length && key(f.places) === key(places)) return f;
   }
   return null;
 }

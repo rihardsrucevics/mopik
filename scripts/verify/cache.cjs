@@ -78,9 +78,27 @@ function cacheDir() {
   return (dirChosen = null);
 }
 
+/**
+ * Numbers are rounded to 5 decimals (~1 m in degrees) before hashing. A tap
+ * goes through map.project/unproject, and the same gesture comes back as
+ * 56.83635566439787 one run and 56.83635566439864 the next — float jitter in
+ * the 12th digit that missed the cache every run. 1 m is far below anything
+ * the router or the edit flow distinguishes.
+ */
+const DECIMALS = 5;
+const round = (n) => (Number.isInteger(n) ? n : Number(n.toFixed(DECIMALS)));
+function normalise(v) {
+  if (typeof v === "number") return round(v);
+  if (Array.isArray(v)) return v.map(normalise);
+  if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, normalise(x)]));
+  return v;
+}
 function keyOf(req) {
   const u = new URL(req.url());
-  return crypto.createHash("sha256").update(`${req.method()} ${u.pathname}${u.search}\n${req.postData() ?? ""}`).digest("hex").slice(0, 24);
+  for (const [k, x] of [...u.searchParams]) if (/^-?\d+\.\d+$/.test(x)) u.searchParams.set(k, String(round(Number(x))));
+  let body = req.postData() ?? "";
+  try { if (body) body = JSON.stringify(normalise(JSON.parse(body))); } catch {}
+  return crypto.createHash("sha256").update(`${req.method()} ${u.pathname}${u.search}\n${body}`).digest("hex").slice(0, 24);
 }
 
 /** Install the layer on a page (or context). Returns the stats object. */

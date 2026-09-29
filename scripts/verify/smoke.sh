@@ -2,6 +2,7 @@
 # Smoke suite, both viewports in parallel, on fixtures + the router cache.
 #   PORT=3290 scripts/verify/smoke.sh          (npm run verify:smoke)
 #   RECORD=1 scripts/verify/smoke.sh           re-record the router answers
+#   SERVER=dev scripts/verify/smoke.sh         start next dev instead of a production build
 # Uses the dev server already on $PORT; if none answers, starts one and stops
 # it again by its own PID at the end (never pkill — other agents' servers).
 set -u
@@ -14,8 +15,18 @@ T0=$(date +%s)
 STARTED=""
 
 if ! curl -s -o /dev/null -m 5 "http://localhost:$PORT/"; then
-  echo "no server on :$PORT — starting next dev (PID in $OUT/dev-$PORT.pid)"
-  npx next dev -p "$PORT" > "$OUT/dev-$PORT.log" 2>&1 &
+  if [ "${SERVER:-prod}" = "dev" ]; then
+    echo "no server on :$PORT — starting next dev (PID in $OUT/dev-$PORT.pid)"
+    npx next dev -p "$PORT" > "$OUT/dev-$PORT.log" 2>&1 &
+  else
+    # A production build runs the page at about half the CPU of next dev
+    # (measured: 118 s vs 242 s for the suite). NEXT_PUBLIC_E2E=1 keeps the
+    # window.__map hook the probes need. It writes .next/: do not run it in a
+    # worktree whose own next dev is running.
+    echo "no server on :$PORT — building (NEXT_PUBLIC_E2E=1) and starting next start (PID in $OUT/dev-$PORT.pid)"
+    NEXT_PUBLIC_E2E=1 npx next build > "$OUT/build.log" 2>&1 || { echo "build failed — $OUT/build.log"; exit 3; }
+    npx next start -p "$PORT" > "$OUT/dev-$PORT.log" 2>&1 &
+  fi
   STARTED=$!
   echo "$STARTED" > "$OUT/dev-$PORT.pid"
   for _ in $(seq 1 60); do curl -s -o /dev/null -m 2 "http://localhost:$PORT/" && break; sleep 1; done

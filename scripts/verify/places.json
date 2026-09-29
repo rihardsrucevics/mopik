@@ -11,5 +11,7 @@
   "gro": { "name": "Grostonas iela 19", "label": "Grostonas iela 19, Rīga", "lat": 56.9704052, "lon": 24.1244022 },
   "sid": { "name": "Sidgunda", "label": "Sidgunda, Mālpils pagasts", "lat": 56.9597989, "lon": 24.9171946 },
   "māl": { "name": "Mālpils", "label": "Mālpils, Mālpils pagasts", "lat": 57.0094587, "lon": 24.941152 },
+  "van": { "name": "Vangaži", "label": "Vangaži", "lat": 57.09222, "lon": 24.5446193, "kind": "settlement" },
+  "inč": { "name": "Inčukalns", "label": "Inčukalns · Inčukalna pagasts", "lat": 57.0993895, "lon": 24.6866055, "kind": "settlement" },
   "aug": { "name": "Augšmala", "label": "Augšmala, Mālpils pagasts", "lat": 56.999, "lon": 24.965 }
 }

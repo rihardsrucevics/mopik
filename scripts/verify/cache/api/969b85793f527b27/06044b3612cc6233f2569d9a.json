@@ -1,0 +1,1 @@
+{"url":"/api/places?lat=56.81221349615495&lon=24.68989830508204","status":200,"contentType":"application/json","request":null,"body":"{\"places\":[{\"name\":\"Alnīši\",\"label\":\"Alnīši · Ogresgala pagasts\",\"lat\":56.81221349615495,\"lon\":24.68989830508204,\"kind\":\"settlement\"}]}"}

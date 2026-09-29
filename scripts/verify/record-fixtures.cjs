@@ -10,7 +10,12 @@ const { execFileSync } = require("child_process");
 const L = require("./lib.cjs");
 
 const SPEC = JSON.parse(fs.readFileSync(path.join(__dirname, "fixtures.spec.json"), "utf8"));
-const names = process.argv.slice(2).length ? process.argv.slice(2) : Object.keys(SPEC).filter((k) => !k.startsWith("_"));
+// `--response=FILE`: take the generation from a captured /api/generate-route
+// answer instead of the router (the plan code still comes from the form).
+const args = process.argv.slice(2);
+const RESPONSE = args.find((a) => a.startsWith("--response="))?.slice("--response=".length) ?? null;
+const named = args.filter((a) => !a.startsWith("--"));
+const names = named.length ? named : Object.keys(SPEC).filter((k) => !k.startsWith("_"));
 const ROOT = path.resolve(__dirname, "../..");
 
 async function record(name) {
@@ -23,6 +28,10 @@ async function record(name) {
     const body = JSON.parse(route.request().postData());
     if (spec.shapePoints) body.plan.shapePoints = spec.shapePoints;
     request = body;
+    if (RESPONSE) {
+      response = fs.readFileSync(RESPONSE, "utf8");
+      return route.fulfill({ status: 200, contentType: "application/json", body: response });
+    }
     const res = await route.fetch({ postData: JSON.stringify(body), timeout: 120000 });
     response = await res.text();
     await route.fulfill({ response: res, body: response });
@@ -38,7 +47,7 @@ async function record(name) {
   const parsed = JSON.parse(response);
   const out = {
     name, description: spec.description, places: spec.places, ...(spec.shapePoints ? { shapePoints: spec.shapePoints } : {}),
-    recordedAt: new Date().toISOString(),
+    recordedAt: new Date().toISOString(), ...(RESPONSE ? { source: `captured generation ${path.basename(RESPONSE)}` } : {}),
     routes: (parsed.routes ?? []).map((r) => ({ variant: r.variant, km: Math.round(r.distanceMeters / 100) / 10, points: r.geometry?.coordinates?.length })),
     planCode, request, response,
   };

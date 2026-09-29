@@ -2590,7 +2590,10 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
     });
 
     map.on("error", (e) => console.error("MapLibre error:", e.error ?? e));
-    if (process.env.NODE_ENV === "development") {
+    // The Playwright kit (scripts/verify) reads the map through this. A
+    // production build gets it only when built with NEXT_PUBLIC_E2E=1, which
+    // `scripts/verify/smoke.sh` does for its local `next start`; Vercel never sets it.
+    if (process.env.NODE_ENV === "development" || process.env.NEXT_PUBLIC_E2E === "1") {
       (window as unknown as Record<string, unknown>).__map = map;
     }
 

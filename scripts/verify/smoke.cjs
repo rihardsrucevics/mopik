@@ -51,9 +51,11 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
       await page.mouse.up();
     }
   };
+  // „Pārvietot” zooms in on the point: a tap read off the marker mid-animation lands somewhere else each run.
+  const settled = async () => { for (let k = 0; k < 50 && (await page.evaluate(() => window.__map.isMoving() || window.__map.isZooming())); k++) await page.waitForTimeout(60); await page.waitForTimeout(100); };
   const moveMarker = async (loc, dx, dy) => {
     await loc.click(); await page.waitForTimeout(400);
-    await sheetRow("Pārvietot").click(); await page.waitForTimeout(700);
+    await sheetRow("Pārvietot").click(); await page.waitForTimeout(400); await settled();
     const box = await loc.boundingBox();
     await tapXY(box.x + box.width / 2 + dx, box.y + box.height / 2 + dy);
   };
@@ -174,6 +176,122 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
       rec("↶ after „Tomēr braukt”", L.hash(await L.line(page)) === h0 && (await L.undoEnabled(page)) === u0);
     } else rec("„Tomēr braukt” offered", false);
     await page.unroute("**/api/reroute-leg", force);
+  }
+
+  const ui = () => page.evaluate(() => {
+    const vis = (e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+    const input = [...document.querySelectorAll("[data-map-chrome] input")].filter(vis)[0];
+    const chip = document.querySelector("[data-proposal-chip]");
+    return {
+      field: input ? (input.value || input.placeholder) : null,
+      chip: chip ? { tone: chip.dataset.proposalChip, text: chip.textContent.trim() } : null,
+      groups: [...document.querySelectorAll("[data-choice-group]")].map((g) => g.dataset.choiceGroup),
+      blocked: [...document.querySelectorAll('[data-blocked="true"]')].map((e) => e.textContent.trim()),
+      pins: document.querySelectorAll("[data-batch]").length,
+    };
+  });
+  const waitUi = async (pred, timeout = 60000) => { const t0 = Date.now(); let s; while (Date.now() - t0 < timeout) { s = await ui(); if (pred(s)) return s; await page.waitForTimeout(200); } return s; };
+  const nearestPin = (ll) => L.px(page, ll).then((p) => page.evaluate(({ x, y }) => {
+    let best = null, d = Infinity;
+    for (const e of document.querySelectorAll(".maplibregl-marker")) { if (e.dataset.pending) continue; const r = e.getBoundingClientRect(); const cx = r.x + r.width / 2, cy = r.y + r.height / 2; const dd = Math.hypot(cx - x, cy - y); if (dd < d) { d = dd; best = { x: cx, y: cy }; } }
+    return best;
+  }, p));
+
+  // ── 4. Chained edits (Grostonas → Sidgunda → Mālpils → Augšmala → Ērgļi) ──
+  t = Date.now();
+  await L.openRide(page, "grostonas-chain");
+  console.log(`[${tag}]   openRide grostonas-chain ${((Date.now() - t) / 1000).toFixed(1)} s`);
+  {
+    const P = L.PLACES;
+    const h0 = L.hash(await L.line(page)); const u0 = await L.undoEnabled(page); const r0 = await rects();
+    const movePin = async (place, to) => {
+      await L.fit(page, [[24.86, 56.94], [25.02, 57.03]], 30);
+      const b = await nearestPin([place.lon, place.lat]);
+      await tapXY(b.x, b.y); await page.waitForTimeout(500);
+      await sheetRow("Pārvietot").click(); await page.waitForTimeout(400); await settled();
+      await page.evaluate((c) => window.__map.jumpTo({ center: c, zoom: Math.min(window.__map.getZoom(), 14) }), to); await page.waitForTimeout(500);
+      await tapAt(to);
+      await page.waitForTimeout(600);
+      return L.waitChip(page, ["proposed", "warn", "refused"], 60000);
+    };
+    const c1 = await movePin(P.sid, [24.905, 56.955]);
+    const c2 = await movePin(P["māl"], [24.955, 57.002]);
+    rec("chain: two moves stack — „2 izmaiņas”", c1.chip?.tone === "proposed" && c2.chip?.tone === "proposed" && /2 izmaiņas/.test(c2.chip.text), { c1: c1.chip, c2: c2.chip });
+    rec("chain: slots did not move", JSON.stringify(await rects()) === JSON.stringify(r0));
+    await slot(2); await page.waitForTimeout(700);
+    const u = await L.state(page);
+    rec("chain: ↶ takes only the last change off", u.chip?.tone === "proposed" && !/izmaiņas/.test(u.chip.text), u.chip);
+    const c3 = await movePin(P.aug, [24.975, 56.994]);
+    rec("chain: a new move stacks on what is left", /2 izmaiņas/.test(c3.chip?.text ?? ""), c3.chip);
+    const n0 = log.reroute;
+    await slot(3); await page.waitForTimeout(900);
+    rec("chain: ✓ commits all, no extra routing", L.hash(await L.line(page)) !== h0 && !(await L.state(page)).chip && log.reroute === n0);
+    await slot(2); await page.waitForTimeout(800);
+    rec("chain: one ↶ brings back the ride before both", L.hash(await L.line(page)) === h0 && (await L.undoEnabled(page)) === u0);
+  }
+
+  // ── 5. A batch with one point off the road: named, ringed, „Pievienot pārējās” (Grostonas → Ērgļi) ──
+  t = Date.now();
+  // Reverse lookups with stable names, as the rider's batchbad script had them.
+  const reverse = (route) => {
+    const u = new URL(route.request().url());
+    const lon = Number(u.searchParams.get("lon"));
+    const name = lon > 24.68 ? "Kangaru purvs" : lon > 24.55 ? "Rīgas iela" : "Silenieki";
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ places: [{ name, label: `${name}, Ropažu novads`, lat: Number(u.searchParams.get("lat")), lon }] }) });
+  };
+  await page.route(/\/api\/places\?(?=.*\blat=)/, reverse);
+  await L.openRide(page, "grostonas-ergli");
+  console.log(`[${tag}]   openRide grostonas-ergli ${((Date.now() - t) / 1000).toFixed(1)} s`);
+  {
+    const h0 = L.hash(await L.line(page)); const u0 = await L.undoEnabled(page); const r0 = await rects();
+    const pts = [[24.4509, 56.9490], [24.5985, 56.9599], [24.7000, 56.9650]];
+    await L.fit(page, pts.concat([[24.40, 56.93], [24.80, 56.93]]), 40);
+    await slot(1); await page.waitForTimeout(300);
+    for (const ll of pts) { await tapAt(ll); await page.waitForTimeout(700); }
+    const named = await waitUi((s) => s.groups.includes("block"));
+    rec("blocking point named: „Kangaru purvs”, ringed, field says „Pietura 3”", named.chip?.tone === "refused" && /Kangaru purvs/.test(named.chip.text) && named.blocked.includes("3") && /^Pietura 3/.test(named.field ?? "") && named.groups.includes("rest"), named);
+    rec("blocking point: slots did not move", JSON.stringify(await rects()) === JSON.stringify(r0));
+    await page.locator('[data-choice-group="rest"] [data-choice="rest"]').click();
+    const rest = await waitUi((s) => s.pins === 2 && s.chip && s.chip.tone !== "routing" && s.chip.tone !== "refused");
+    rec("„Pievienot pārējās”: the bad point dropped, the other two proposed", rest.pins === 2 && ["proposed", "warn"].includes(rest.chip?.tone), rest);
+    const acc = page.locator("button:visible", { hasText: "Tomēr braukt" }).first();
+    if (rest.chip?.tone === "warn" && (await acc.count())) await acc.click(); else await slot(3);
+    await page.waitForTimeout(900);
+    rec("…committed", L.hash(await L.line(page)) !== h0 && (await L.undoEnabled(page)) === true);
+    await slot(2); await page.waitForTimeout(800);
+    rec("…↶ undoes", L.hash(await L.line(page)) === h0 && (await L.undoEnabled(page)) === u0);
+  }
+  await page.unroute(/\/api\/places\?(?=.*\blat=)/, reverse);
+
+  // ── 6. Lauriņi → Ērgļi: a pass-through point moved onto a through road is ridden through ──
+  t = Date.now();
+  await L.openRide(page, "laurini-ergli");
+  console.log(`[${tag}]   openRide laurini-ergli ${((Date.now() - t) / 1000).toFixed(1)} s`);
+  {
+    const WAS = [24.6885, 56.8108], JUNCTION = [24.7100, 56.8160], BOX = [WAS, JUNCTION, [24.66, 56.79], [24.73, 56.83]];
+    await L.fit(page, BOX, 40);
+    const c0 = await L.line(page);
+    const d2 = (a, b) => (a[0] - b[0]) ** 2 * 0.3 + (a[1] - b[1]) ** 2;
+    const onLine = c0.reduce((best, p) => (d2(p, WAS) < d2(best, WAS) ? p : best), c0[0]);
+    await slot(1); await page.waitForTimeout(300);
+    await tapAt(onLine); await page.waitForTimeout(700);
+    await L.waitChip(page, ["proposed", "refused", "warn"], 60000);
+    await page.locator('[data-choice="pass"]').click(); await page.waitForTimeout(700);
+    await L.waitChip(page, ["proposed", "refused", "warn"], 60000);
+    await slot(3); await page.waitForTimeout(900);
+    const d0 = await dotsLoc().count();
+    const h0 = L.hash(await L.line(page));
+    await dotsLoc().first().click(); await page.waitForTimeout(400);
+    await sheetRow("Pārvietot").click(); await page.waitForTimeout(400); await settled();
+    await L.fit(page, BOX, 40);
+    await tapAt(JUNCTION); await page.waitForTimeout(700);
+    const s = await L.waitChip(page, ["proposed", "refused", "warn"], 120000);
+    const rep = s.chip?.text.match(/atkārtoti (\d+) → (\d+) %/);
+    rec("through road: a plain proposal, no dead end said", s.chip?.tone === "proposed" && !/strupceļ|atpakaļ pa to pašu ceļu/.test(s.chip.text), { chip: s.chip, dots: d0 });
+    // The bug was an out-and-back: 0 → 7 % retraced. Ridden through, the share stays put.
+    rec("through road: nothing ridden twice (retraced % does not grow)", rep && Number(rep[2]) <= Number(rep[1]), { retraced: rep?.slice(1) });
+    await slot("x"); await page.waitForTimeout(500);
+    rec("through road: ✕ leaves the ride", L.hash(await L.line(page)) === h0);
   }
 
   await shot("end");
