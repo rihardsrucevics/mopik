@@ -925,6 +925,33 @@ export type MessageKey =
   | "sightFinishFirst"
   | "sightNoteClose"
   // ── /sights-add ──
+  // ── stretch ── backlog 36: a marked stretch excluded, or ridden back another way.
+  | "stretchHeading"
+  | "stretchExclude"
+  | "detailExclude"
+  | "stretchBack"
+  | "detailBack"
+  | "guideStretchChoose"
+  | "guideStretchEnds"
+  | "stretchEndsHint"
+  | "stretchStopInside"
+  | "stretchNoWayRound"
+  | "guideRefusedStretch"
+  | "stretchDropped"
+  | "stretchDroppedOne"
+  | "stretchDrawn"
+  | "stretchFull"
+  | "stretchExcludedLead"
+  | "stretchBackLead"
+  | "excludedTitle"
+  | "excludedExplain"
+  | "excludedAllow"
+  | "detailAllow"
+  | "excludedAllowed"
+  | "searchOffAvoid"
+  | "stretchHandleFrom"
+  | "stretchHandleTo"
+  // ── /stretch ──
   ;
 
 type Messages = Record<MessageKey, string>;
@@ -1636,6 +1663,33 @@ const lv: Messages = {
   sightFinishFirst: "Vispirms apstiprini vai atmet pašreizējo izmaiņu – tad pievieno apskates vietu.",
   sightNoteClose: "Aizvērt",
   // ── /sights-add ──
+  // ── stretch ──
+  stretchHeading: "Šis posms",
+  stretchExclude: "Izslēgt šo posmu",
+  detailExclude: "Maršruts to apies",
+  stretchBack: "Atpakaļ pa citu ceļu",
+  detailBack: "Otrreiz pa šo ceļu nebrauks",
+  guideStretchChoose: "velc galus, lai precizētu posmu, vai izvēlies darbību.",
+  guideStretchEnds: "Precizē posmu – velc galu pa līniju, tad izvēlies darbību.",
+  stretchEndsHint: "Velc galus, lai precizētu posmu",
+  stretchStopInside: "Šajā posmā ir pietura „{name}” – vispirms pārvieto vai izņem to.",
+  stretchNoWayRound: "Šo posmu apbraukt nevar – starp „{a}” un „{b}” cita ceļa nav.",
+  guideRefusedStretch: "brauciens paliek, kā bija.",
+  stretchDropped: "{n} caurbraucami punkti posmā izņemti.",
+  stretchDroppedOne: "Caurbraucamais punkts posmā izņemts.",
+  stretchDrawn: "Posmā ir zīmēta taisne – to apbraukt nevar.",
+  stretchFull: "Izslēgti jau {n} posmi – vairāk nevar.",
+  stretchExcludedLead: "Posms izslēgts",
+  stretchBackLead: "Atpakaļ pa citu ceļu",
+  excludedTitle: "Izslēgts posms",
+  excludedExplain: "Šo ceļu maršruts neizmanto.",
+  excludedAllow: "Atļaut atkal",
+  detailAllow: "Līnija nemainās; nākamās izmaiņas to atkal var izmantot",
+  excludedAllowed: "Posms atkal atļauts – līnija nemainījās.",
+  searchOffAvoid: "Braucienā ir izslēgti posmi – pilnā meklēšana tos neņemtu vērā. Labo uz kartes.",
+  stretchHandleFrom: "Posma sākums",
+  stretchHandleTo: "Posma beigas",
+  // ── /stretch ──
 };
 
 const lt: Messages = {
@@ -2315,6 +2369,33 @@ const lt: Messages = {
   sightFinishFirst: "Pirmiausia patvirtink arba atmesk dabartinį pakeitimą – tada pridėk lankytiną vietą.",
   sightNoteClose: "Uždaryti",
   // ── /sights-add ──
+  // ── stretch ──
+  stretchHeading: "Ši atkarpa",
+  stretchExclude: "Neįtraukti šios atkarpos",
+  detailExclude: "Maršrutas ją aplenks",
+  stretchBack: "Atgal kitu keliu",
+  detailBack: "Antrą kartą šiuo keliu nevažiuos",
+  guideStretchChoose: "tempkite galus, kad patikslintumėte atkarpą, arba pasirinkite veiksmą.",
+  guideStretchEnds: "Tikslinama atkarpa – tempkite galą linija, tada pasirinkite veiksmą.",
+  stretchEndsHint: "Tempkite galus, kad patikslintumėte atkarpą",
+  stretchStopInside: "Šioje atkarpoje yra sustojimas „{name}“ – pirmiausia perkelkite arba pašalinkite jį.",
+  stretchNoWayRound: "Šios atkarpos aplenkti negalima – tarp „{a}“ ir „{b}“ kito kelio nėra.",
+  guideRefusedStretch: "maršrutas lieka koks buvo.",
+  stretchDropped: "Atkarpoje pašalinta pravažiavimo taškų: {n}.",
+  stretchDroppedOne: "Atkarpoje pašalintas pravažiavimo taškas.",
+  stretchDrawn: "Atkarpoje yra nubrėžta tiesė – jos aplenkti negalima.",
+  stretchFull: "Jau neįtraukta atkarpų: {n} – daugiau negalima.",
+  stretchExcludedLead: "Atkarpa neįtraukta",
+  stretchBackLead: "Atgal kitu keliu",
+  excludedTitle: "Neįtraukta atkarpa",
+  excludedExplain: "Maršrutas šio kelio nenaudoja.",
+  excludedAllow: "Vėl leisti",
+  detailAllow: "Linija nesikeičia; kiti pakeitimai vėl galės ją naudoti",
+  excludedAllowed: "Atkarpa vėl leidžiama – linija nepasikeitė.",
+  searchOffAvoid: "Maršrute yra neįtrauktų atkarpų – visa paieška į jas neatsižvelgtų. Taisykite žemėlapyje.",
+  stretchHandleFrom: "Atkarpos pradžia",
+  stretchHandleTo: "Atkarpos pabaiga",
+  // ── /stretch ──
 };
 
 const et: Messages = {
@@ -2990,6 +3071,33 @@ const et: Messages = {
   sightFinishFirst: "Kinnita või loobu kõigepealt praegusest muudatusest – siis lisa vaatamisväärsus.",
   sightNoteClose: "Sulge",
   // ── /sights-add ──
+  // ── stretch ──
+  stretchHeading: "See lõik",
+  stretchExclude: "Jäta see lõik välja",
+  detailExclude: "Marsruut läheb sellest mööda",
+  stretchBack: "Tagasi teist teed",
+  detailBack: "Teist korda sellel teel ei sõida",
+  guideStretchChoose: "lohista otsi, et lõiku täpsustada, või vali tegevus.",
+  guideStretchEnds: "Täpsustad lõiku – lohista otsa mööda joont, siis vali tegevus.",
+  stretchEndsHint: "Lohista otsi, et lõiku täpsustada",
+  stretchStopInside: "Selles lõigus on peatus „{name}” – kõigepealt liiguta või eemalda see.",
+  stretchNoWayRound: "Sellest lõigust ei saa mööda – „{a}” ja „{b}” vahel teist teed pole.",
+  guideRefusedStretch: "sõit jääb nagu oli.",
+  stretchDropped: "Lõigust eemaldati läbisõidupunkte: {n}.",
+  stretchDroppedOne: "Lõigust eemaldati läbisõidupunkt.",
+  stretchDrawn: "Lõigus on joonistatud sirge – sellest ei saa mööda.",
+  stretchFull: "Välja on jäetud juba {n} lõiku – rohkem ei saa.",
+  stretchExcludedLead: "Lõik välja jäetud",
+  stretchBackLead: "Tagasi teist teed",
+  excludedTitle: "Välja jäetud lõik",
+  excludedExplain: "Marsruut seda teed ei kasuta.",
+  excludedAllow: "Luba uuesti",
+  detailAllow: "Joon ei muutu; järgmised muudatused võivad seda jälle kasutada",
+  excludedAllowed: "Lõik on jälle lubatud – joon ei muutunud.",
+  searchOffAvoid: "Sõidus on välja jäetud lõike – täisotsing ei arvestaks neid. Paranda kaardil.",
+  stretchHandleFrom: "Lõigu algus",
+  stretchHandleTo: "Lõigu lõpp",
+  // ── /stretch ──
 };
 
 const en: Messages = {
@@ -3663,6 +3771,33 @@ const en: Messages = {
   sightFinishFirst: "Confirm or discard the current change first – then add the sight.",
   sightNoteClose: "Close",
   // ── /sights-add ──
+  // ── stretch ──
+  stretchHeading: "This stretch",
+  stretchExclude: "Exclude this stretch",
+  detailExclude: "The route will go round it",
+  stretchBack: "Back another way",
+  detailBack: "Not the same road twice",
+  guideStretchChoose: "drag the ends to adjust the stretch, or choose an action.",
+  guideStretchEnds: "Adjusting the stretch – drag an end along the line, then choose an action.",
+  stretchEndsHint: "Drag the ends to adjust the stretch",
+  stretchStopInside: "There is a stop “{name}” on this stretch – move or remove it first.",
+  stretchNoWayRound: "This stretch cannot be avoided – there is no other road between “{a}” and “{b}”.",
+  guideRefusedStretch: "the ride stays as it was.",
+  stretchDropped: "{n} pass-through points on the stretch removed.",
+  stretchDroppedOne: "The pass-through point on the stretch removed.",
+  stretchDrawn: "The stretch has a drawn straight line – it cannot be avoided.",
+  stretchFull: "{n} stretches already excluded – no more.",
+  stretchExcludedLead: "Stretch excluded",
+  stretchBackLead: "Back another way",
+  excludedTitle: "Excluded stretch",
+  excludedExplain: "The route does not use this road.",
+  excludedAllow: "Allow again",
+  detailAllow: "The line stays; later edits may use it again",
+  excludedAllowed: "Stretch allowed again – the line did not change.",
+  searchOffAvoid: "The ride has excluded stretches – the full search would ignore them. Edit on the map.",
+  stretchHandleFrom: "Start of the stretch",
+  stretchHandleTo: "End of the stretch",
+  // ── /stretch ──
 };
 
 const MESSAGES: Record<UiLocale, Messages> = { lv, lt, et, en };

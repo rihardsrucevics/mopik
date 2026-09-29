@@ -24,6 +24,14 @@ export const RidePlanSchema = z.object({
     lon: z.number().min(-180).max(180),
     afterPlace: z.number().int().min(0).max(MAX_STOPS),
   })).max(MAX_SHAPE_POINTS).optional(),
+  /**
+   * Stretches the ride must not use („Izslēgt šo posmu”, backlog 36): each
+   * a line of [lat, lon] points. Optional and absent when empty, as
+   * `shapePoints`: old plans, codes and saved-ride ids are unchanged.
+   */
+  avoid: z.array(z.object({
+    line: z.array(z.tuple([z.number().min(-90).max(90), z.number().min(-180).max(180)])).min(2).max(24),
+  })).max(10).optional(),
   destinationPlace: z.string().max(160).nullable(),
   /**
    * "Man vienalga" — the rider was asked where the one-way ride should

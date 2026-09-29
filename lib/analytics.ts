@@ -112,6 +112,9 @@ export type AnalyticsEvent =
   // ── line-sheet ── Tap the line (2026-09-28): is the line's sheet found, and which row is used?
   | "line_tapped"             // edit mode: a tap on the drawn line opened its sheet
   | "line_via_asked"          // „Virzīt caur citu vietu”: the line grabbed at the tapped spot, waiting for the tap where to ride through
+  | "stretch_exclude_asked"   // backlog 36: „Izslēgt šo posmu” pressed on the line sheet
+  | "stretch_back_asked"      // backlog 36: „Atpakaļ pa citu ceļu” pressed on a stretch ridden twice
+  | "stretch_allowed"         // backlog 36: „Atļaut atkal” on an excluded stretch
   | "line_point_added";       // „Pievienot punktu šeit”: a pass-through point on the line, committed at once
   // ── /line-sheet ──
 
