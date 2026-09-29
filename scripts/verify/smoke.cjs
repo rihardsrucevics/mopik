@@ -124,6 +124,43 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
   rec("ride-0928 opens with its four pass-through points", (await dotsLoc().count()) === 4, { dots: await dotsLoc().count() });
   await exercise("move pass-through point", async () => { await L.fit(page, await L.line(page)); await moveMarker(dotsLoc().nth(1), -50, -50); });
 
+  // ── 2b. The rider's kapselu-upmali GPX (2026-09-29): „Izņemt” on „Pietura 1 · Viduči” ──
+  // Refused in production as a line that could not be joined; a removal only
+  // merges the two legs round the point, so it is a proposal whenever roads join them.
+  t = Date.now();
+  await L.openRide(page, "kapselu-upmali");
+  console.log(`[${tag}]   openRide kapselu-upmali ${((Date.now() - t) / 1000).toFixed(1)} s`);
+  {
+    const VIDUCI = [24.896296, 56.896211];
+    const remove = async (loc, zoom = 12) => {
+      await zoomTo(VIDUCI, zoom);
+      await loc.click(); await page.waitForTimeout(400);
+      await sheetRow("Izņemt").click();
+    };
+    await exercise("remove stop", () => remove(marker("Viduči, Suntažu pagasts")), { tones: ["proposed"] });
+    await shot("remove-stop");
+    // The production failure's shape: the ride's own profile cannot join the
+    // cuts (forced 422 on rung 0) — the removal climbs the ladder, never refused.
+    const force = async (route) => {
+      const body = JSON.parse(route.request().postData() ?? "{}");
+      if (!body.relax) return route.fulfill({ status: 422, contentType: "application/json", body: JSON.stringify({ error: "unreachable" }) });
+      return route.fallback();
+    };
+    await page.route("**/api/reroute-leg", force);
+    const h0 = L.hash(await L.line(page));
+    await remove(marker("Viduči, Suntažu pagasts"));
+    const s = await L.waitChip(page, ["proposed", "warn", "refused"], 40000);
+    rec("remove stop, own profile cannot join: a proposal on a relaxed rung, not refused", ["proposed", "warn"].includes(s.chip?.tone) && CHIP_RE.test(s.chip.text), s.chip);
+    await shot("remove-stop-relaxed");
+    await slot("x"); await page.waitForTimeout(500);
+    rec("…✕ leaves the ride", L.hash(await L.line(page)) === h0);
+    await page.unroute("**/api/reroute-leg", force);
+    // The pass-through point after the stop, the same way (its removal is a
+    // longer way round, so it may be warned as a big detour — still a proposal).
+    await exercise("remove pass-through point", () => remove(dotsLoc().nth(4), 11), { tones: ["proposed", "warn"] });
+    await shot("remove-pass");
+  }
+
   // ── 3. Antiņciems → Puķes → Rīgas apvedceļš: „Vest pa taisno” and the „Tomēr braukt” guard ──
   t = Date.now();
   await L.openRide(page, "antinciems-rigas");
