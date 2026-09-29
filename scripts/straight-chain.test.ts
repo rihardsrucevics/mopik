@@ -14,7 +14,9 @@ import { cumulative, lineMeters, pointAtDistance } from "@/lib/routing/detour";
 import { drawnSeconds } from "@/lib/routing/drawn";
 import { drawnIntervals } from "@/lib/map/straight";
 import { CHAIN_OFF_M, chainEdit, chainEstimate, chainJoins, chainMeters, chainRun, chainsOf, insertChain, offRoadRuns } from "@/lib/map/straight-chain";
-import { chainGuide, chainLine, GUIDE_DASH } from "@/lib/map/edit-guidance";
+import { chainGuide, chainLine, chainProposalLines, GUIDE_DASH } from "@/lib/map/edit-guidance";
+import { proposalView } from "@/lib/map/proposal-view";
+import type { EditProposal } from "@/lib/map/edit-proposal";
 import { applyRuns, nearestAlong, outAndBacks, summariseSegments, type RidePlace, type RidePlaces, type RoutedRun } from "@/lib/routing/reroute-leg";
 import { decodeRouteShare, encodeRouteShare, sharedRouteSegments } from "@/lib/share/route-code";
 import { t, type MessageKey } from "@/lib/i18n/messages";
@@ -132,7 +134,7 @@ test("the share code carries the chain as trail|unknown|d with dk and reopens id
   assert.equal(decodeRouteShare(encodeRouteShare(again, "A"))!.drawnKm, share.drawnKm);
 });
 
-const KEYS: MessageKey[] = ["chainOffer", "chainLabel", "chainWhat", "chainRisk", "chainAct", "chainNote", "chainSameEnd"];
+const KEYS: MessageKey[] = ["chainOffer", "chainLabel", "chainWhat", "chainRisk", "chainAct", "chainHead", "chainHeadOne", "chainDetail", "chainDetailOne", "chainToStop", "chainToPoint", "chainSameEnd"];
 
 test("the guidance: what is happening – what to do, with the drawn length and the risk above 1 km", () => {
   const lv = (k: MessageKey) => t("lv", k);
@@ -169,7 +171,7 @@ test("the flow: offered for a batch's run, the chip proposes, the proposal is ho
   assert.match(page, /const offM = \(q: Point\) => nearestAlong\(q, landed, lc\)\.meters;\n\s*offerChain\(token, planned\.places, asked, \(q\) => offM\(q\) >= CHAIN_OFF_M, offM, level\);/);
   // Refused: the points the probe found too far from a road, with how far.
   assert.match(page, /offerChain\(token, ctx\.planned\.places, ctx\.asked, \(q\) => Boolean\(farAt\(q\)\), \(q\) => farAt\(q\)\?\.meters \?\? 0, 0\);/);
-  assert.match(page, /notes\.push\(fi\(ui\.panelDrawn, \{ km \}\)\);/);
+  assert.match(page, /chainSaid = \{ lead: said\.lead, aside: \[fi\(ui\.panelDrawn, \{ km \}\)\] \};/);
   // His own drawn line: no detour warning, no re-routing of it.
   assert.match(page, /const risk = p\.chain \? null : detourRisk\(/);
   assert.match(page, /const through = straight \|\| p\.chain \? null/);
@@ -275,3 +277,45 @@ test("the flow: offered for a batch's run, the chip proposes, the proposal is ho
   });
 }
 
+// ── chain-polish ── the chain's proposal said in two short lines: what and how much, then the way.
+test("the chain's proposal: a lead with what and how much, one detail line by the pins' numbers, never a coordinate", () => {
+  const lv = (k: MessageKey) => t("lv", k);
+  const fmt = (n: number) => new Intl.NumberFormat("lv", { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(n);
+  const three = chainProposalLines(lv, { count: 3, meters: 1_500, numbers: [4, 5, 6] }, fmt);
+  assert.equal(three.lead, "Taisni caur 3 punktiem – 1,5 km bez ceļa");
+  assert.equal(three.detail, "No ceļa gala līdz pieturai 4, tad 4 → 5 → 6, pēc tam atpakaļ uz maršrutu.");
+  assert.equal(joinGuideLike(three.lead, t("lv", "guideProposed")), "Taisni caur 3 punktiem – 1,5 km bez ceļa – ✓ apstiprina, ✕ atmet.");
+  // A pass-through point has no number: the chain's own 1, 2, 3.
+  assert.equal(chainProposalLines(lv, { count: 3, meters: 900, numbers: [4, null, 6] }, fmt).detail, "No ceļa gala līdz punktam 1, tad 1 → 2 → 3, pēc tam atpakaļ uz maršrutu.");
+  assert.equal(chainProposalLines(lv, { count: 3, meters: 1_400, numbers: [1, 2, 3], risk: true }, fmt).lead, "Taisni caur 3 punktiem – 1,4 km bez ceļa, pāri mežam vai ūdenim");
+  const one = chainProposalLines(lv, { count: 1, meters: 600, numbers: [2], sameEnd: true }, fmt);
+  assert.equal(one.lead, "Taisni līdz punktam – 0,6 km bez ceļa");
+  assert.equal(one.detail, "No ceļa gala līdz pieturai 2 un atpakaļ uz maršrutu. Iebrauc un izbrauc pa to pašu ceļa galu.");
+  assert.equal(chainProposalLines(lv, { count: 7, meters: 3_000, numbers: [1, 2, 3, 4, 5, 6, 7] }, fmt).detail, "No ceļa gala līdz pieturai 1, tad 1 → 2 → … → 7, pēc tam atpakaļ uz maršrutu.");
+  for (const locale of ["lv", "lt", "et", "en"] as const) {
+    const l = chainProposalLines((k) => t(locale, k), { count: 3, meters: 1_500, numbers: [4, 5, 6], sameEnd: true, risk: true }, fmt);
+    assert.doesNotMatch(l.lead + l.detail, /\d+\.\d{3,}|—|\{/, `${locale}: no coordinate, no em dash, no hole`);
+    // Short enough for a phone: the lead with its „✓ … ✕ …” in two lines, the detail in three (~48 characters a line at 375 px).
+    assert.ok(l.lead.length <= 70, `${locale} lead ${l.lead.length}: ${l.lead}`);
+    assert.ok(l.detail.length <= 140, `${locale} detail ${l.detail.length}: ${l.detail}`);
+    assert.match(l.detail, /[.!]$/, "a whole sentence");
+  }
+});
+
+test("the chip: a lead takes the numbers' place on the first line; the numbers go last; the honesty line stays in the title", () => {
+  const delta = { kmBefore: 72.4, kmAfter: 74.0, minutesDelta: 6, repeatedBefore: 4, repeatedAfter: 4 } as unknown as EditProposal["delta"];
+  const proposal = { token: 1, how: "add-stops", before: BEFORE, ride: {} as EditProposal["ride"], changed: [], delta, notes: ["No ceļa gala līdz pieturai 4, tad 4 → 5 → 6, pēc tam atpakaļ uz maršrutu."], lead: "Taisni caur 3 punktiem – 1,5 km bez ceļa", aside: ["Zīmēti posmi: 1,5 km"] } as unknown as EditProposal;
+  const copy = { routing: "R", delta: t("lv", "previewDelta"), deltaTitle: t("lv", "previewDelta"), guide: { routing: "r", proposed: t("lv", "guideProposed"), refused: "x", refusedWide: "x" } };
+  const v = proposalView({ phase: "proposed", proposal } as never, copy, "lv")!;
+  assert.equal(v.text, "Taisni caur 3 punktiem – 1,5 km bez ceļa");
+  assert.equal(v.guide, "✓ apstiprina, ✕ atmet.");
+  assert.equal(v.notes, "No ceļa gala līdz pieturai 4, tad 4 → 5 → 6, pēc tam atpakaļ uz maršrutu.");
+  assert.ok(v.numbers && /km/.test(v.numbers));
+  assert.match(v.title, /Zīmēti posmi: 1,5 km$/);
+  // Without a lead: as it always was.
+  const plain = proposalView({ phase: "proposed", proposal: { ...proposal, lead: undefined, aside: undefined } } as never, copy, "lv")!;
+  assert.equal(plain.numbers, undefined);
+  assert.equal(plain.text, plain.title.split(" No ceļa")[0]);
+});
+
+function joinGuideLike(what: string, action: string) { return `${what}${GUIDE_DASH}${action}`; }

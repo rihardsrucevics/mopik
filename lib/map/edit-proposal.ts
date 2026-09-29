@@ -63,6 +63,14 @@ export type EditProposal = {
   accept?: "profile" | "detour" | "deadEnd";
   /** The profile rung it was routed on (`relaxedProfiles`); absent: the rider's own. */
   relax?: number;
+  /**
+   * ── chain-polish ── What and how much, said in place of the numbers on the
+   * chip's first line („Taisni caur 3 punktiem – 1,5 km bez ceļa”); the
+   * numbers then go under the notes. Absent: the numbers lead, as always.
+   */
+  lead?: string;
+  /** Said in the chip's title only (hover, screen reader) — the honesty line a phone has no room for. */
+  aside?: string[];
 };
 
 /**
@@ -130,6 +138,8 @@ export type ProposalView = {
   changed: [number, number][];
   /** What to do now, said after `text` with an en dash (lib/map/edit-guidance.ts): „✓ apstiprina, ✕ atmet.” */
   guide?: string;
+  /** ── chain-polish ── the chip's numbers when a `lead` took their place on the first line: said last, small. */
+  numbers?: string;
 };
 
 /**

@@ -906,7 +906,12 @@ export type MessageKey =
   | "chainWhat"
   | "chainRisk"
   | "chainAct"
-  | "chainNote"
+  | "chainHead"
+  | "chainHeadOne"
+  | "chainDetail"
+  | "chainDetailOne"
+  | "chainToStop"
+  | "chainToPoint"
   | "chainSameEnd"
   | "sightAdded"
   | "sightAddedAct"
@@ -1607,7 +1612,12 @@ const lv: Messages = {
   chainWhat: "{n} punkti bez ceļa, taisni ~{km} km",
   chainRisk: "pāri mežam vai ūdenim",
   chainAct: "„Vest pa taisno caur visiem” vai pārvieto katru.",
-  chainNote: "Taisni caur {n} punktiem – {km} km bez ceļa: no ceļa gala līdz „{a}”, punkts pa punktam, pēc „{b}” atpakaļ uz maršrutu.",
+  chainHead: "Taisni caur {n} punktiem – {km} km bez ceļa",
+  chainHeadOne: "Taisni līdz punktam – {km} km bez ceļa",
+  chainDetail: "No ceļa gala līdz {a}, tad {path}, pēc tam atpakaļ uz maršrutu.",
+  chainDetailOne: "No ceļa gala līdz {a} un atpakaļ uz maršrutu.",
+  chainToStop: "pieturai {n}",
+  chainToPoint: "punktam {n}",
   chainSameEnd: "Iebrauc un izbrauc pa to pašu ceļa galu.",
   sightAdded: "{name} pievienota braucienam, {km} km",
   sightAddedAct: "ar „Labot” to var pārvietot vai izņemt.",
@@ -2276,7 +2286,12 @@ const lt: Messages = {
   chainWhat: "{n} taškai be kelio, tiesiai ~{km} km",
   chainRisk: "per mišką ar vandenį",
   chainAct: "„Vesti tiesiai per visus“ arba perkelkite kiekvieną.",
-  chainNote: "Tiesiai per {n} taškus – {km} km be kelio: nuo kelio galo iki „{a}“, taškas po taško, po „{b}“ atgal į maršrutą.",
+  chainHead: "Tiesiai per {n} taškus – {km} km be kelio",
+  chainHeadOne: "Tiesiai iki taško – {km} km be kelio",
+  chainDetail: "Nuo kelio galo iki {a}, tada {path}, po to atgal į maršrutą.",
+  chainDetailOne: "Nuo kelio galo iki {a} ir atgal į maršrutą.",
+  chainToStop: "sustojimo {n}",
+  chainToPoint: "taško {n}",
   chainSameEnd: "Įvažiuojate ir išvažiuojate tuo pačiu kelio galu.",
   sightAdded: "{name} pridėta prie kelionės, {km} km",
   sightAddedAct: "su „Taisyti“ ją galima perkelti arba pašalinti.",
@@ -2941,7 +2956,12 @@ const et: Messages = {
   chainWhat: "{n} punkti teeta, otse ~{km} km",
   chainRisk: "üle metsa või vee",
   chainAct: "„Vii otse läbi kõigi“ või liiguta igaüht.",
-  chainNote: "Otse läbi {n} punkti – {km} km teeta: tee otsast kohani „{a}“, punkt punkti haaval, pärast „{b}“ tagasi marsruudile.",
+  chainHead: "Otse läbi {n} punkti – {km} km teeta",
+  chainHeadOne: "Otse punktini – {km} km teeta",
+  chainDetail: "Tee otsast kuni {a}, siis {path}, seejärel tagasi marsruudile.",
+  chainDetailOne: "Tee otsast kuni {a} ja tagasi marsruudile.",
+  chainToStop: "peatuseni {n}",
+  chainToPoint: "punktini {n}",
   chainSameEnd: "Sisse ja välja sama tee otsa kaudu.",
   sightAdded: "{name} on sõidule lisatud, {km} km",
   sightAddedAct: "„Muuda” abil saab seda liigutada või eemaldada.",
@@ -3604,7 +3624,12 @@ const en: Messages = {
   chainWhat: "{n} points off any road, ~{km} km straight",
   chainRisk: "across forest or water",
   chainAct: "„Go straight through all” or move each one.",
-  chainNote: "Straight through {n} points – {km} km off road: from the road's end to „{a}”, point by point, after „{b}” back to the route.",
+  chainHead: "Straight through {n} points – {km} km off road",
+  chainHeadOne: "Straight to the point – {km} km off road",
+  chainDetail: "From the road's end to {a}, then {path}, then back to the route.",
+  chainDetailOne: "From the road's end to {a} and back to the route.",
+  chainToStop: "stop {n}",
+  chainToPoint: "point {n}",
   chainSameEnd: "In and out by the same road end.",
   sightAdded: "{name} added to the ride, {km} km",
   sightAddedAct: "“Edit” can move or remove it.",

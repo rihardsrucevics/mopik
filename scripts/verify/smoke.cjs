@@ -22,6 +22,12 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
   const dotsLoc = () => page.locator('.maplibregl-marker[aria-label^="Caurbraucams punkts"]');
   const sheetRow = (label) => page.getByText(label, { exact: true }).first();
   const rects = async () => Object.fromEntries((await L.state(page)).slots.map((s) => [s.slot, s.rect]));
+  // ── chain-polish ── how the chip's lines sit: lines of each part, and whether the clamped notes are cut.
+  const chipFit = () => page.evaluate(() => {
+    const part = (sel) => { const e = document.querySelector(`[data-proposal-chip] ${sel}`); if (!e) return null; const lh = parseFloat(getComputedStyle(e).lineHeight) || 14; return { lines: Math.round(e.getBoundingClientRect().height / lh), clipped: e.scrollHeight > e.clientHeight + 1, text: e.textContent.trim() }; };
+    return { text: part("[data-proposal-text]"), notes: part("[data-proposal-notes]"), numbers: part("[data-proposal-numbers]"), title: document.querySelector("[data-proposal-chip]")?.getAttribute("title") ?? "" };
+  });
+  const fits = (f) => !f.notes || (f.notes.lines <= 3 && !f.notes.clipped);
   const cum = async () => { const c = await L.line(page); const m = [0]; for (let i = 1; i < c.length; i++) m.push(m[i - 1] + hv(c[i - 1], c[i])); return { c, m, tot: m.at(-1) }; };
   const pointOn = async (frac, north = 0, east = 0) => {
     const { c, m, tot } = await cum(); const i = m.findIndex((x) => x >= tot * frac); const p = c[Math.max(0, i)];
@@ -202,6 +208,7 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
     const ok = await L.slotBtn(page, 3);
     rec("guard: warned, ✓ off, „Tomēr braukt” said once", s.chip?.tone === "warn" && (await ok.isDisabled()) && s.chip.text.split("Tomēr braukt").length === 2, s.chip);
     rec("guard: slots did not move", JSON.stringify(await rects()) === JSON.stringify(r0));
+    { const f = await chipFit(); rec("guard: its notes fit, never cut mid-sentence", fits(f), f); if (tag === "375") await page.screenshot({ path: `${process.env.CHAIN_SHOTS || L.SHOTS}/chainpolish-guard.png` }); }
     await page.evaluate(() => document.querySelectorAll('[data-slot="3"]').forEach((b) => b.click()));
     await page.keyboard.press("Enter"); await page.waitForTimeout(500);
     rec("guard: a forced click on ✓ and Enter keep nothing", L.hash(await L.line(page)) === h0);
@@ -400,6 +407,7 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
     const said = [s1.chip?.text ?? "", ...(s1.notices ?? [])].join(" ");
     rec("sight: „tuvāk ar motociklu netikt” with the distance", /Smoke muiža – tuvākais ceļš ~\d+ m no apskates vietas; tuvāk ar motociklu netikt – pietura paliek pie ceļa, tālāk kājām\./.test(said), { said });
     await shot("sights-note");
+    { const f = await chipFit(); rec("sight: its note fits, never cut mid-sentence", fits(f), f); if (tag === "375") await page.screenshot({ path: `${process.env.CHAIN_SHOTS || L.SHOTS}/chainpolish-sight.png` }); }
     const n1 = log.reroute;
     await slot(3); await page.waitForTimeout(900);
     const s2 = await L.state(page);
@@ -460,10 +468,12 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
       await chip.click();
       const s2 = await L.waitChip(page, ["proposed", "warn"], 60000);
       const st = await L.state(page);
-      rec("chain: the chip → a proposal with numbers and halo", ["proposed", "warn"].includes(s2.chip?.tone) && CHIP_RE.test(s2.chip.text) && st.proposalLayers.length > 0, s2.chip);
-      const notes = [((await page.locator("[data-proposal-chip]").first().evaluate((e) => (e.closest("[data-map-notice]") ?? e.parentElement ?? e).innerText).catch(() => "")) ?? ""), JSON.stringify(st.notices ?? [])].join(" ");
-      rec("chain: its note and the honesty line", /Taisni caur 3 punktiem – \d+(,\d)? km bez ceļa/.test(notes) && /Mopik nav pārbaudījis, vai tur var izbraukt un vai tas ir atļauts/.test(notes), { notes });
-      if (tag === "375") { await L.fit(page, CHAIN, 90); await page.waitForTimeout(400); await page.screenshot({ path: `${process.env.CHAIN_SHOTS || L.SHOTS}/chain-straight-proposal.png` }); }
+      const f2 = await chipFit();
+      rec("chain: the chip → a proposal with numbers and halo", ["proposed", "warn"].includes(s2.chip?.tone) && CHIP_RE.test(f2.numbers?.text ?? "") && st.proposalLayers.length > 0, { chip: s2.chip, numbers: f2.numbers });
+      rec("chain: one line what and how much – what to do; the way by the pins' numbers; the honesty line in the title", /^Taisni caur 3 punktiem – \d+(,\d)? km bez ceļa(, pāri mežam vai ūdenim)? – (✓ apstiprina, ✕ atmet\.|spied „Tomēr braukt” vai ✕ atmet\.)$/.test(f2.text?.text ?? "") && /^No ceļa gala līdz pieturai \d+, tad \d+ → \d+ → \d+, pēc tam atpakaļ uz maršrutu\./.test(f2.notes?.text ?? "") && /Mopik nav pārbaudījis, vai tur var izbraukt un vai tas ir atļauts/.test(f2.title), f2);
+      rec("chain: no point named by its coordinates", !/\d+[.,]\d{4}/.test(s2.chip?.text ?? ""), s2.chip);
+      rec("chain: the note fits (≤ 3 lines, the lead ≤ 2), never cut mid-sentence", fits(f2) && (f2.text?.lines ?? 9) <= 2, f2);
+      if (tag === "375") { await L.fit(page, CHAIN, 90); await page.waitForTimeout(400); await page.screenshot({ path: `${process.env.CHAIN_SHOTS || L.SHOTS}/chainpolish-proposal.png` }); }
       const n0 = log.reroute;
       const ok = await L.slotBtn(page, 3);
       if (!(await ok.isDisabled())) await ok.click(); else await page.locator("button:visible", { hasText: "Tomēr braukt" }).first().click();
@@ -481,9 +491,10 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
         await tapXY(pin.x, pin.y); await page.waitForTimeout(500);
         await sheetRow("Izņemt").click();
         const s3 = await L.waitChip(page, ["proposed", "warn", "refused"], 30000);
-        rec("chain: „Izņemt” on a chain point → a proposal with numbers, not refused, nothing routed", ["proposed", "warn"].includes(s3.chip?.tone) && CHIP_RE.test(s3.chip.text) && log.reroute === n1, { chip: s3.chip, extra: log.reroute - n1 });
+        rec("chain: „Izņemt” on a chain point → a proposal with numbers, not refused, nothing routed", ["proposed", "warn"].includes(s3.chip?.tone) && CHIP_RE.test((await chipFit()).numbers?.text ?? "") && /^Taisni caur 2 punktiem/.test(s3.chip.text) && log.reroute === n1, { chip: s3.chip, extra: log.reroute - n1 });
+        { const f = await chipFit(); rec("chain: the re-formed chain's note fits, never cut mid-sentence", fits(f), f); }
         rec("chain: slots did not move (point removed)", JSON.stringify(await rects()) === JSON.stringify(r0));
-        if (tag === "375") await page.screenshot({ path: `${process.env.CHAIN_SHOTS || L.SHOTS}/chain-remove-proposal.png` });
+        if (tag === "375") await page.screenshot({ path: `${process.env.CHAIN_SHOTS || L.SHOTS}/chainpolish-remove-proposal.png` });
         const ok2 = await L.slotBtn(page, 3);
         if (!(await ok2.isDisabled())) await ok2.click(); else await page.locator("button:visible", { hasText: "Tomēr braukt" }).first().click();
         await page.waitForTimeout(900);
@@ -492,7 +503,7 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
         const gap = (p) => Math.min(...d2.flatMap((f) => f.geometry.coordinates.map((q) => hv(p, q))));
         const gaps = CHAIN.map((p) => Math.round(gap(p)));
         rec("chain: ✓ keeps the chain through the other two, not the one taken out", L.hash(await L.line(page)) !== hc && gaps[0] < 40 && gaps[2] < 40 && gaps[1] > 80 && !(await L.state(page)).chip, { drawn: d2.length, gaps });
-        if (tag === "375") { await L.fit(page, CHAIN, 90); await page.waitForTimeout(400); await page.screenshot({ path: `${process.env.CHAIN_SHOTS || L.SHOTS}/chain-remove-committed.png` }); }
+        if (tag === "375") { await L.fit(page, CHAIN, 90); await page.waitForTimeout(400); await page.screenshot({ path: `${process.env.CHAIN_SHOTS || L.SHOTS}/chainpolish-remove-committed.png` }); }
         await slot(2); await page.waitForTimeout(800);
         rec("chain: ↶ brings the three back in one step", L.hash(await L.line(page)) === hc);
       }
@@ -551,7 +562,8 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
 
     // The aborted loads are what Chromium logs for route.abort — asked for above.
     const added = log.errors.splice(e0);
-    log.errors.push(...added.filter((e) => !/net::ERR_FAILED|net::ERR_NETWORK_IO_SUSPENDED/.test(e)));
+    // So are the base map's tile loads the reloads cut off mid-flight (MapLibre logs each as „AJAXError: Failed to fetch (0)”).
+    log.errors.push(...added.filter((e) => !/net::ERR_FAILED|net::ERR_NETWORK_IO_SUSPENDED|AJAXError: Failed to fetch \(0\): https:\/\/tile\.openstreetmap\.org\//.test(e)));
     console.log(`[${tag}]   generation connection drop ${((Date.now() - t) / 1000).toFixed(1)} s`);
   }
 
