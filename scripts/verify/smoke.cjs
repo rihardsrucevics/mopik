@@ -6,6 +6,8 @@ const L = require("./lib.cjs");
 const phone = process.argv[2] === "phone";
 const tag = phone ? "375" : "1280";
 const T0 = Date.now();
+// SECTIONS=1,reach runs section 1 (always) and only the listed groups: 1b-3, 4-10, reach. Unset: all.
+const want = (k) => !process.env.SECTIONS || process.env.SECTIONS.split(",").includes(k);
 const results = [];
 const rec = (name, ok, detail) => { results.push({ name, ok, detail }); console.log(`[${tag}] ${ok ? "PASS" : "FAIL"} ${name}${!ok && detail ? " " + JSON.stringify(detail) : ""}`); };
 const CHIP_RE = /^\d+(,\d)? → \d+(,\d)? km · [+−±-]?\d+ (min|h( \d+ min)?) · atkārtoti \d+ → \d+ %/;
@@ -125,6 +127,7 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
     rec("…↶ takes the dot away", (await dotsLoc().count()) === d0);
   }
 
+  if (want("1b-3")) { // SECTIONS 1b-3
   // ── 1b. Backlog 36: a stretch selected, its end dragged, „Izslēgt šo posmu” → proposal → ✓ → ↶ ──
   {
     const t1 = Date.now();
@@ -380,6 +383,7 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
     await page.unroute("**/api/reroute-leg", force);
   }
 
+  } // SECTIONS 1b-3
   const ui = () => page.evaluate(() => {
     const vis = (e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
     const input = [...document.querySelectorAll("[data-map-chrome] input")].filter(vis)[0];
@@ -399,6 +403,7 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
     return best;
   }, p));
 
+  if (want("4-10")) { // SECTIONS 4-10
   // ── 4. Chained edits (Grostonas → Sidgunda → Mālpils → Augšmala → Ērgļi) ──
   t = Date.now();
   await L.openRide(page, "grostonas-chain");
@@ -795,7 +800,9 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
     console.log(`[${tag}]   saved rides ${((Date.now() - t) / 1000).toFixed(1)} s`);
   }
 
-  // ── 9. Backlog 50/52 (reach-all): a far finish in a town, a finish in a forest, an alternating batch ──
+  } // SECTIONS 4-10
+  if (want("reach")) { // SECTIONS reach
+  // ── 11. Backlog 50/52 (reach-all): a far finish in a town, a finish in a forest, an alternating batch ──
   t = Date.now();
   {
     const RS = process.env.REACH_SHOTS || L.SHOTS;
@@ -803,13 +810,31 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
     const choices = () => page.evaluate(() => [...document.querySelectorAll("[data-choice-group]")].map((g) => ({ group: g.dataset.choiceGroup, chips: [...g.querySelectorAll("[data-choice]")].map((c) => c.textContent.trim()) })));
     // The finish pin: its label marker sits at the place's coordinate.
     const finishLL = () => page.evaluate(() => {
-      const e = [...document.querySelectorAll(".maplibregl-marker")].find((m) => /^Finišs: /.test(m.getAttribute("aria-label") ?? ""));
-      const r = e.getBoundingClientRect(); const c = window.__map.getContainer().getBoundingClientRect();
+      const c = window.__map.getContainer().getBoundingClientRect();
+      // The edit map's own (another map's pin may still be in the DOM, hidden).
+      const e = [...document.querySelectorAll(".maplibregl-marker")].find((m) => /^Finišs: /.test(m.getAttribute("aria-label") ?? "") && window.__map.getContainer().contains(m));
+      const r = e.getBoundingClientRect();
       const ll = window.__map.unproject([r.x - c.x, r.y - c.y]); return [ll.lng, ll.lat];
     });
     const moveFinish = async (to) => {
-      const at = await finishLL(); await zoomTo(at, 14);
-      const q = await L.px(page, at); await tapXY(q.x, q.y - 8); await page.waitForTimeout(500);
+      const at = await finishLL(); await zoomTo(at, 14); await settled();
+      // The pin's head is above its coordinate; a sight's glyph may sit on it (the earlier sections leave layers on): a few spots.
+      // The pin itself: MapLibre's marker at the finish's coordinate that is not its label.
+      const pin = await page.evaluate(() => {
+        const m = window.__map; const all = m._markers ?? [];
+        const lab = all.find((k) => /^Finišs: /.test(k.getElement().getAttribute("aria-label") ?? ""));
+        if (!lab) return null; const ll = lab.getLngLat();
+        const own = all.find((k) => k !== lab && Math.abs(k.getLngLat().lng - ll.lng) < 1e-7 && Math.abs(k.getLngLat().lat - ll.lat) < 1e-7);
+        const r = own?.getElement().getBoundingClientRect();
+        return r && r.width ? { x: r.x + r.width / 2, y: r.y + r.height / 3 } : null;
+      });
+      const c0 = await L.px(page, at);
+      const spots = [[c0.x, c0.y - 8], [c0.x, c0.y - 20], ...(pin ? [[pin.x, pin.y]] : []), [c0.x, c0.y - 2]];
+      for (const [x, y] of spots) {
+        await tapXY(x, y); await page.waitForTimeout(700);
+        if (await sheetRow("Pārvietot").isVisible().catch(() => false)) break;
+      }
+      if (!(await sheetRow("Pārvietot").isVisible().catch(() => false))) await shot("reach-no-sheet");
       await sheetRow("Pārvietot").click(); await page.waitForTimeout(500); await settled();
       await zoomTo(to, 13);
       await tapAt(to);
@@ -819,6 +844,8 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
       if (chip?.tone === "warn" && (await acc.count())) await acc.click(); else await slot(3);
       await page.waitForTimeout(900);
     };
+    // A clean page: the sections before leave preferences (layers, the add kind, saved rides) that change what a tap on a pin does.
+    await page.evaluate(() => { try { localStorage.clear(); sessionStorage.clear(); } catch {} });
     await L.openRide(page, "grostonas-ergli");
     const h0 = L.hash(await L.line(page)); const u0 = await L.undoEnabled(page); const r0 = await rects();
     // (a) A new finish in Madona, ~60 km east, on roads: a proposal (warned for the detour), ✓, ↶.
@@ -884,6 +911,7 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
     console.log(`[${tag}]   reach-all ${((Date.now() - t) / 1000).toFixed(1)} s`);
   }
 
+  } // SECTIONS reach
   await shot("end");
   // A 422 is how /api/reroute-leg says "no road reaches it" — the refused and
   // guard cases above ask for exactly that, and Chromium logs every non-2xx load.
