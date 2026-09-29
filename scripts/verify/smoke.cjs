@@ -185,7 +185,7 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
       await slot(3); await page.waitForTimeout(800);
       const exLayer = await page.evaluate(() => Boolean(window.__map.getLayer("stretch-excluded")));
       rec("stretch: ✓ keeps the exclusion — dark-red dashes in edit mode", exLayer);
-      await L.fit(page, await L.line(page)); await page.waitForTimeout(400);
+      await zoomTo(await pointOn(0.55), 14); await page.waitForTimeout(400);
       await stretchShot("excluded");
       await slot(2); await page.waitForTimeout(700);
       rec("stretch: ↶ takes the exclusion back", !(await page.evaluate(() => Boolean(window.__map.getLayer("stretch-excluded")))));
