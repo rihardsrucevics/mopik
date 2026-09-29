@@ -140,7 +140,8 @@ test("rider's Ogre case (2026-09-28): a point far off the ride is never the gene
   // ladder, and a far point that the line does reach is a proposal (warned
   // for the detour), not a bend that „missed”.
   const page = readFileSync(new URL("../components/home-page.tsx", import.meta.url), "utf8");
-  assert.match(page, /if \("status" in data\) return data\.status === 422 \? unreached\(reachM\) : refuse\(ui\.resEditFailed, String\(data\.status\)\);/);
+  // Any failure now climbs (2026-09-30): a timeout or another status is one more rung that did not answer.
+  assert.match(page, /if \("status" in data\) return unreached\(reachM, \{ timedOut: data\.error === "timeout" \|\| data\.status !== 422 \}\);/);
   // Dropped 18 km off, the line now through it: a bend, proposed.
   assert.equal(bendMissed(18_000, 30), false);
   // …and the same drop the router could only bring 17.9 km nearer by 100 m: missed, the ladder goes on.

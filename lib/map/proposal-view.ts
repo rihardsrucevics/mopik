@@ -15,7 +15,7 @@ export type ProposalCopy = {
   // ── edit-guidance ── what to do, per phase (`guideRouting`, `guideProposed`, `guideRefused`, `guideRefusedWide`).
   // `warned` and `refusedStraight` (spur-0928) are optional so older callers keep their copy.
   // `refusedRemove` (remove-stop, 2026-09-29): a refused removal says what to try instead of „izvēlies citu vietu”.
-  guide?: { routing: string; proposed: string; refused: string; refusedWide: string; warned?: string; refusedStraight?: string; refusedRemove?: string; refusedStretch?: string };
+  guide?: { routing: string; proposed: string; refused: string; refusedWide: string; warned?: string; refusedStraight?: string; refusedRemove?: string; refusedStretch?: string; refusedRetry?: string };
   /** „Pārrēķināt posmu” is on offer with this refusal. */
   wide?: boolean;
   /** „Vest pa taisno” is on offer with this refusal. */
@@ -42,7 +42,7 @@ export function proposalView(state: ProposalState, copy: ProposalCopy, locale: U
   const g = copy.guide;
   if (state.phase === "routing") return { text: copy.routing, title: copy.routing, tone: "routing", line: null, changed: [], ...(g ? { guide: g.routing } : {}) };
   // A refusal's sentence loses its full stop before the dash („…nostāk – izvēlies citu vietu.”).
-  if (state.phase === "refused") return { text: g ? state.reason.trim().replace(/\.+$/u, "") : state.reason, title: state.reason, tone: "refused", line: null, changed: [], ...(g ? { guide: copy.straight && g.refusedStraight ? g.refusedStraight : copy.wide ? g.refusedWide : state.how === "remove-stop" && g.refusedRemove ? g.refusedRemove : state.how === "avoid-stretch" && g.refusedStretch ? g.refusedStretch : g.refused } : {}) };
+  if (state.phase === "refused") return { text: g ? state.reason.trim().replace(/\.+$/u, "") : state.reason, title: state.reason, tone: "refused", line: null, changed: [], ...(g ? { guide: state.retry && g.refusedRetry ? g.refusedRetry : copy.straight && g.refusedStraight ? g.refusedStraight : copy.wide ? g.refusedWide : state.how === "remove-stop" && g.refusedRemove ? g.refusedRemove : state.how === "avoid-stretch" && g.refusedStretch ? g.refusedStretch : g.refused } : {}) };
   const { proposal } = state;
   const notes = proposal.notes.filter(Boolean).join(" ");
   const chip = formatEditDelta(copy.delta, proposal.delta, locale);

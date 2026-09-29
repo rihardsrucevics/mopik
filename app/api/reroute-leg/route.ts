@@ -240,7 +240,10 @@ export async function POST(req: NextRequest) {
     const unreachable = /re-tracking track|island detected|position not mapped|target island|edit deadline/i.test(message);
     // Fenced and refused: no way round what the ride must not ride.
     return NextResponse.json(
-      { error: fenced ? "no-way-round" : unreachable ? "unreachable" : "failed", ms: Date.now() - startedAt },
+      // Out of time is said as that (rider, 2026-09-30: a removal refused „ne ar
+      // vienu profilu” where roads were plain): the page tries the next rung
+      // and, if every one ran out, says „Pārrēķins aizņēma pārāk ilgi”.
+      { error: /edit deadline/i.test(message) ? "timeout" : fenced ? "no-way-round" : unreachable ? "unreachable" : "failed", ms: Date.now() - startedAt },
       { status: 422 },
     );
   }

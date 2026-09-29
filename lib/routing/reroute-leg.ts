@@ -419,6 +419,9 @@ export function planEdit(params: {
   const along = anchorsAlong(oldA, line, cum);
   const windowFor = (moved: number) => Math.max(EDIT_WINDOW_M, moved * WINDOW_PER_METRE_MOVED);
   const plan = (kind: EditKind, runs: EditRun[]): EditPlan => ({ kind, runs, places: after });
+  /** A cut moved out of any drawn stretch it falls in: past its end, or before its start. */
+  const afterFixed = (m: number) => { for (const [a, b] of fixed) if (m > a && m < b) return Math.min(b, total); return m; };
+  const beforeFixed = (m: number) => { for (const [a, b] of fixed) if (m > a && m < b) return Math.max(a, 0); return m; };
 
   const startMoved = !same(before.start, after.start);
   const sameVias = before.vias.length === after.vias.length && before.vias.every((v, i) => same(v, after.vias[i]));
@@ -431,10 +434,14 @@ export function planEdit(params: {
   if (startMoved && sameVias && !finishMoved) {
     const moved = haversineMeters(toPoint(before.start), toPoint(after.start));
     const w = windowFor(moved);
+    // A drawn straight stretch is fixed (design C): the cut is never inside one —
+    // the router cannot start from a point in a field, and the splice broke
+    // (rider, 2026-09-30: a new start or finish was refused every time).
+    const headTo = beforeFixed(Math.min(along[1], w));
     const head: EditRun = {
       fromMeters: 0,
-      toMeters: Math.min(along[1], w),
-      points: [toPoint(after.start), at(Math.min(along[1], w))],
+      toMeters: headTo,
+      points: [toPoint(after.start), at(headTo)],
     };
     if (!before.roundTrip) return plan("move-start", [head]);
     const last = along.length - 1;
@@ -453,7 +460,7 @@ export function planEdit(params: {
     const last = along.length - 1;
     const target = after.finish ? toPoint(after.finish) : end;
     const moved = haversineMeters(oldA[last], target);
-    const from = Math.max(along[last - 1], total - windowFor(moved));
+    const from = afterFixed(Math.max(along[last - 1], total - windowFor(moved)));
     return plan("move-finish", [{ fromMeters: from, toMeters: total, points: [at(from), target] }]);
   }
 
@@ -602,8 +609,12 @@ export function planEdit(params: {
         // still on the line; otherwise the spur to the stop, if it was
         // visited by riding in and back out, and a window beyond it. Never
         // past the places either side.
-        const joined = joinsOnLine(bv[gone].joins, line, cum, along[k - 1], along[k + 1]);
         const w = spurLength(line, cum, along[k]) + EDIT_WINDOW_M;
+        // The joins of a stretch a whole-span re-route made can be tens of km
+        // apart (rider, 2026-09-30: „Bez šī punkta „Deģi” un „Madona”…”): a
+        // removal re-routes only around the point, never such a span.
+        const joinedAll = joinsOnLine(bv[gone].joins, line, cum, along[k - 1], along[k + 1]);
+        const joined = joinedAll && joinedAll[1] - joinedAll[0] <= 2 * w + 2 * EDIT_WINDOW_M ? joinedAll : null;
         const f = joined && joined[0] < along[k] ? joined[0] : Math.max(along[k - 1], along[k] - w);
         const t = joined && joined[1] > along[k] ? joined[1] : Math.min(along[k + 1], along[k] + w);
         const fp = at(f);
