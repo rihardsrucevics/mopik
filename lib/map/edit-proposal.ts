@@ -86,7 +86,7 @@ export type ProposalState =
   | { phase: "idle" }
   | { phase: "routing"; token: number; how: EditKind; confirmWhenReady: boolean }
   | { phase: "proposed"; proposal: EditProposal; confirmNow: boolean }
-  | { phase: "refused"; token: number; how: EditKind; reason: string };
+  | { phase: "refused"; token: number; how: EditKind; reason: string; retry?: true };
 
 export type ProposalAction =
   /** A pending mark (re)sent for routing under a new token. */
@@ -94,7 +94,7 @@ export type ProposalAction =
   /** An answer arrived; ignored unless `proposal.token` is the one routing. */
   | { type: "landed"; proposal: EditProposal }
   /** The answer was a refusal; ignored unless `token` is the one routing. */
-  | { type: "refused"; token: number; reason: string }
+  | { type: "refused"; token: number; reason: string; retry?: true }
   /** ✓. While routing: confirm when ready. */
   | { type: "confirm" }
   /** ✕, or the pending mark went away: back to idle, nothing kept. */
@@ -167,7 +167,7 @@ export function proposalReducer(state: ProposalState, action: ProposalAction): P
       return { phase: "proposed", proposal: action.proposal, confirmNow: state.confirmWhenReady };
     case "refused":
       if (state.phase !== "routing" || action.token !== state.token) return state;
-      return { phase: "refused", token: state.token, how: state.how, reason: action.reason };
+      return { phase: "refused", token: state.token, how: state.how, reason: action.reason, ...(action.retry ? { retry: true as const } : {}) };
     case "confirm":
       if (state.phase === "routing") return state.confirmWhenReady ? state : { ...state, confirmWhenReady: true };
       if (state.phase === "proposed") return state.confirmNow ? state : { ...state, confirmNow: true };

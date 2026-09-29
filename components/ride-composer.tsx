@@ -260,6 +260,8 @@ export type RideEdit = {
   onStraight?: () => void;
   // ── straight-chain ── „Vest pa taisno caur visiem”: several pending points in a row off any road, joined straight as one chain (a proposal). Absent unless on offer.
   onStraightChain?: () => void;
+  /** …offered for several points off the road that are not all in a row (backlog 52): „Vest pa taisno visiem”. */
+  straightChainAll?: boolean;
   /**
    * Release B item 1: the proposal's points that stop it (refused or
    * warned) — ringed on the map, fixed per point with the notice area's
@@ -2609,14 +2611,14 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     key: "wide", label: t(locale, "editWideAccept"), action: true,
     options: [{ key: "wide", label: t(locale, "editWideAccept"), selected: false, act: { wide: true } }],
   });
-  if (edit?.onStraight) choices.push({
+  if (edit?.onStraight && !(blockingNow && (pendingBlocked || blockingNow.total === 1))) choices.push({
     key: "straight", label: t(locale, "editStraightLabel"), action: true,
     options: [{ key: "straight", label: t(locale, "editStraightAccept"), selected: false, act: { straight: true } }],
   });
   // ── straight-chain ── one chip for the whole run of off-road points.
   if (edit?.onStraightChain) choices.push({
     key: "chain", label: t(locale, "chainLabel"), action: true,
-    options: [{ key: "chain", label: t(locale, "chainOffer"), selected: false, act: { chain: true } }],
+    options: [{ key: "chain", label: t(locale, edit.straightChainAll ? "chainOfferAll" : "chainOffer"), selected: false, act: { chain: true } }],
   });
   // „Tomēr braukt”: a proposal outside the profile or with a big detour
   // (`EditProposal.accept`) is taken only by this chip — what ✓ would do,
@@ -2627,28 +2629,42 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   });
   // ── release-b: blocking ── The points that stop the proposal (item 1):
   // their fixes, per point, and „Pievienot pārējās” for the rest of a batch.
-  if (blockingNow && blockedItems.length) {
-    const first = blockedItems[0];
-    const point = blockingNow.points.find((q) => sameSpot(q, first));
+  if (blockingNow && blockedItems.length && blockingNow.total > 1) {
     const fixes = fixesFor(blockingNow, edit?.proposal?.phase === "proposed");
-    const who = point ? pointLabel(point) : "";
-    choices.push({
-      key: "block", label: who ? `${t(locale, "blockChipLabel")}: ${who}` : t(locale, "blockChipLabel"), action: true,
-      options: [
-        { key: "move", label: t(locale, "blockChipMove"), title: who ? `${t(locale, "blockChipMove")}: ${who}` : undefined, selected: false, act: { block: "move", id: first.id } },
-        { key: "remove", label: t(locale, "blockChipRemove"), title: who ? `${t(locale, "blockChipRemove")}: ${who}` : undefined, selected: false, act: { block: "remove", id: first.id } },
-        ...(fixes.straight && edit?.onStraightAt ? [{ key: "straight", label: t(locale, "editStraightAccept"), selected: false, act: { block: "straight" as const, id: first.id } }] : []),
-      ],
+    // One group per blocking point (backlog 52): each its own „Pārvietot”,
+    // „Izņemt” and, off the road, „Vest pa taisno” — the first group keeps
+    // the key "block"; the rest are "block:2", "block:3"…
+    blockedItems.forEach((item, n) => {
+      const point = blockingNow.points.find((q) => sameSpot(q, item));
+      const who = point ? pointLabel(point) : "";
+      const picked = Boolean(blockingNow.picked?.some((q) => sameSpot(q, item)));
+      const straightHere = Boolean(point && edit?.onStraightAt && (point.cause === "far" || (fixes.straight && blockedItems.length === 1)));
+      choices.push({
+        key: n ? `block:${n + 1}` : "block", label: who ? `${t(locale, "blockChipLabel")}: ${who}` : t(locale, "blockChipLabel"), action: true,
+        options: [
+          { key: "move", label: t(locale, "blockChipMove"), title: who ? `${t(locale, "blockChipMove")}: ${who}` : undefined, selected: false, act: { block: "move", id: item.id } },
+          { key: "remove", label: t(locale, "blockChipRemove"), title: who ? `${t(locale, "blockChipRemove")}: ${who}` : undefined, selected: false, act: { block: "remove", id: item.id } },
+          ...(straightHere ? [{ key: "straight", label: t(locale, "editStraightAccept"), title: who ? `${t(locale, "editStraightAccept")}: ${who}` : undefined, selected: picked, act: { block: "straight" as const, id: item.id } }] : []),
+        ],
+      });
     });
     if (blockedItems.length < batch.length) choices.push({
       key: "rest", label: t(locale, "blockChipRest"), action: true,
       options: [{ key: "rest", label: t(locale, "blockChipRest"), selected: false, act: { block: "rest" } }],
     });
-  } else if (blockingNow && pendingBlocked) {
-    // One point, not a batch: ✕ takes it out, a tap elsewhere moves it; „Vest pa taisno” is its own chip.
+  } else if (blockingNow && (pendingBlocked || blockingNow.total === 1)) {
+    // One point, not a batch: a tap elsewhere moves it (said, `blockActTap`),
+    // „Izņemt” takes it out, and „Vest pa taisno” is here whenever the words
+    // say it (`blockOptions`) — the page offers it for every single point off
+    // the road: a stop, a pass-through point, a finish, a start.
+    const only = blockedItems[0];
+    const fixes = fixesFor(blockingNow, edit?.proposal?.phase === "proposed");
     choices.push({
       key: "block", label: t(locale, "blockChipLabel"), action: true,
-      options: [{ key: "remove", label: t(locale, "blockChipRemove"), selected: false, act: { block: "remove" } }],
+      options: [
+        { key: "remove", label: t(locale, "blockChipRemove"), selected: false, act: only ? { block: "remove", id: only.id } : { block: "remove" } },
+        ...(fixes.straight && edit?.onStraight ? [{ key: "straight", label: t(locale, "editStraightAccept"), selected: false, act: { straight: true as const } }] : []),
+      ],
     });
   }
   // ── /release-b: blocking ──

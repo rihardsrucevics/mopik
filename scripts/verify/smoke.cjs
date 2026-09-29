@@ -6,6 +6,8 @@ const L = require("./lib.cjs");
 const phone = process.argv[2] === "phone";
 const tag = phone ? "375" : "1280";
 const T0 = Date.now();
+// SECTIONS=1,reach runs section 1 (always) and only the listed groups: 1b-3, add, 4-10, reach. Unset: all.
+const want = (k) => !process.env.SECTIONS || process.env.SECTIONS.split(",").includes(k);
 const results = [];
 const rec = (name, ok, detail) => { results.push({ name, ok, detail }); console.log(`[${tag}] ${ok ? "PASS" : "FAIL"} ${name}${!ok && detail ? " " + JSON.stringify(detail) : ""}`); };
 const CHIP_RE = /^\d+(,\d)? → \d+(,\d)? km · [+−±-]?\d+ (min|h( \d+ min)?) · atkārtoti \d+ → \d+ %/;
@@ -13,11 +15,6 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
 
 (async () => {
   const { browser, page, log } = await L.open({ phone });
-  // SECTIONS=1,add runs only those sections (keys: 1 1b add 2 2b 3 4 5 6 7 8 9 10); unset: all.
-  const SECTIONS = process.env.SECTIONS ? process.env.SECTIONS.split(",").map((x) => x.trim()) : null;
-  const want = (k) => !SECTIONS || SECTIONS.includes(k);
-  let t = Date.now();
-  let idle = null;
   const shot = (n) => page.screenshot({ path: `${L.SHOTS}/smoke-${tag}-${n}.png` });
   const slot = async (n) => (await L.slotBtn(page, n)).click();
   const tapXY = async (x, y) => { if (phone) await page.touchscreen.tap(x, y); else await page.mouse.click(x, y); };
@@ -108,11 +105,10 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
   }
 
   // ── 1. Sigulda → Līgatne → Cēsis: add a stop, move a stop, the line sheet ──
-  if (want("1") || want("1b") || want("add")) {
-  t = Date.now();
+  let t = Date.now();
   await L.openRide(page, "sigulda-cesis");
   console.log(`[${tag}]   openRide sigulda-cesis ${((Date.now() - t) / 1000).toFixed(1)} s`);
-  idle = await rects();
+  const idle = await rects();
   rec("edit mode: four slots drawn", ["1", "2", "3", "x"].every((k) => idle[k]), idle);
   await exercise("add stop", async () => { const ll = await pointOn(0.3, 400, 0); await zoomTo(ll); await stopFromField(); await tapAt(ll); }, { tones: ["proposed"], idle });
   await exercise("move stop", async () => { await L.fit(page, await L.line(page)); await moveMarker(marker("Līgatne"), 70, -40); }, { idle });
@@ -131,9 +127,8 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
     rec("…↶ takes the dot away", (await dotsLoc().count()) === d0);
   }
 
-  }
+  if (want("1b-3")) { // SECTIONS 1b-3
   // ── 1b. Backlog 36: a stretch selected, its end dragged, „Izslēgt šo posmu” → proposal → ✓ → ↶ ──
-  if (want("1b")) {
   {
     const t1 = Date.now();
     const SH = process.env.STRETCH_SHOTS || L.SHOTS;
@@ -269,7 +264,7 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
     console.log(`[${tag}]   stretch ${((Date.now() - t1) / 1000).toFixed(1)} s`);
   }
 
-  }
+  } // SECTIONS 1b-3
   // ── 1c. „+” adds pass-through points in a batch; the empty-map offer; a row waiting has a way out (rider, 2026-09-30) ──
   if (want("add")) {
   {
@@ -402,17 +397,15 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
   }
 
   }
+  if (want("1b-3")) { // SECTIONS 1b-3
   // ── 2. The rider's ride-0928 (four pass-through points): move one ──
-  if (want("2")) {
   t = Date.now();
   await L.openRide(page, "ride-0928");
   console.log(`[${tag}]   openRide ride-0928 ${((Date.now() - t) / 1000).toFixed(1)} s`);
   rec("ride-0928 opens with its four pass-through points", (await dotsLoc().count()) === 4, { dots: await dotsLoc().count() });
   await exercise("move pass-through point", async () => { await L.fit(page, await L.line(page)); await moveMarker(dotsLoc().nth(1), -50, -50); });
 
-  }
   // ── 2b. The rider's kapselu-upmali GPX (2026-09-29): „Izņemt” on „Pietura 1 · Viduči” ──
-  if (want("2b")) {
   // Refused in production as a line that could not be joined; a removal only
   // merges the two legs round the point, so it is a proposal whenever roads join them.
   t = Date.now();
@@ -449,9 +442,7 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
     await shot("remove-pass");
   }
 
-  }
   // ── 3. Antiņciems → Puķes → Rīgas apvedceļš: „Vest pa taisno” and the „Tomēr braukt” guard ──
-  if (want("3")) {
   t = Date.now();
   await L.openRide(page, "antinciems-rigas");
   console.log(`[${tag}]   openRide antinciems-rigas ${((Date.now() - t) / 1000).toFixed(1)} s`);
@@ -505,8 +496,8 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
     } else rec("„Tomēr braukt” offered", false);
     await page.unroute("**/api/reroute-leg", force);
   }
-  }
 
+  } // SECTIONS 1b-3
   const ui = () => page.evaluate(() => {
     const vis = (e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
     const input = [...document.querySelectorAll("[data-map-chrome] input")].filter(vis)[0];
@@ -526,8 +517,8 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
     return best;
   }, p));
 
+  if (want("4-10")) { // SECTIONS 4-10
   // ── 4. Chained edits (Grostonas → Sidgunda → Mālpils → Augšmala → Ērgļi) ──
-  if (want("4")) {
   t = Date.now();
   await L.openRide(page, "grostonas-chain");
   console.log(`[${tag}]   openRide grostonas-chain ${((Date.now() - t) / 1000).toFixed(1)} s`);
@@ -560,17 +551,15 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
     rec("chain: one ↶ brings back the ride before both", L.hash(await L.line(page)) === h0 && (await L.undoEnabled(page)) === u0);
   }
 
-  }
   // ── 5. A batch with one point off the road: named, ringed, „Pievienot pārējās” (Grostonas → Ērgļi) ──
-  // Reverse lookups with stable names, as the rider's batchbad script had them (sections 5 and 8).
+  t = Date.now();
+  // Reverse lookups with stable names, as the rider's batchbad script had them.
   const reverse = (route) => {
     const u = new URL(route.request().url());
     const lon = Number(u.searchParams.get("lon"));
     const name = lon > 24.68 ? "Kangaru purvs" : lon > 24.55 ? "Rīgas iela" : "Silenieki";
     route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ places: [{ name, label: `${name}, Ropažu novads`, lat: Number(u.searchParams.get("lat")), lon }] }) });
   };
-  if (want("5")) {
-  t = Date.now();
   await page.route(/\/api\/places\?(?=.*\blat=)/, reverse);
   await L.openRide(page, "grostonas-ergli");
   console.log(`[${tag}]   openRide grostonas-ergli ${((Date.now() - t) / 1000).toFixed(1)} s`);
@@ -595,9 +584,7 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
   }
   await page.unroute(/\/api\/places\?(?=.*\blat=)/, reverse);
 
-  }
   // ── 6. Lauriņi → Ērgļi: a pass-through point moved onto a through road is ridden through ──
-  if (want("6")) {
   t = Date.now();
   await L.openRide(page, "laurini-ergli");
   console.log(`[${tag}]   openRide laurini-ergli ${((Date.now() - t) / 1000).toFixed(1)} s`);
@@ -628,9 +615,7 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
     rec("through road: ✕ leaves the ride", L.hash(await L.line(page)) === h0);
   }
 
-  }
   // ── 7. A sight from the map card (backlog 46): „Pievienot braucienam” adds it ──
-  if (want("7")) {
   // /api/route-pois is stubbed with one manor ~100 m off the line, the way
   // Vatrāne sits in its park: the road the ride is on is as close as a
   // motorcycle gets, and that is said with the distance.
@@ -741,9 +726,7 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
     console.log(`[${tag}]   sight from the map ${((Date.now() - t) / 1000).toFixed(1)} s`);
   }
 
-  }
   // ── 8. Three forest points in a row: „Vest pa taisno caur visiem” (Grostonas → Ērgļi, Kangaru purvs) ──
-  if (want("8")) {
   t = Date.now();
   await page.route(/\/api\/places\?(?=.*\blat=)/, reverse);
   await L.openRide(page, "grostonas-ergli");
@@ -808,9 +791,7 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
   }
   await page.unroute(/\/api\/places\?(?=.*\blat=)/, reverse);
 
-  }
   // ── 9. The connection drops while a ride is generated (2026-09-29, the rider's iPhone: „TypeError: Load failed") ──
-  if (want("9")) {
   t = Date.now();
   {
     const f = L.fixture("sigulda-cesis");
@@ -863,9 +844,7 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
     console.log(`[${tag}]   generation connection drop ${((Date.now() - t) / 1000).toFixed(1)} s`);
   }
 
-  }
   // ── 10. „Saglabātie” (backlog 44/47): the card opens the ride; „Labot” is edit
-  if (want("10")) {
   // mode on the saved line; „Pabeigt labošanu” saves in place (own) or as a
   // copy (legacy / someone else's). Seeded rows come from the app's own
   // encoder with the router's labels as names — the shape backlog 47 broke on.
@@ -935,7 +914,118 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
     console.log(`[${tag}]   saved rides ${((Date.now() - t) / 1000).toFixed(1)} s`);
   }
 
+  } // SECTIONS 4-10
+  if (want("reach")) { // SECTIONS reach
+  // ── 11. Backlog 50/52 (reach-all): a far finish in a town, a finish in a forest, an alternating batch ──
+  t = Date.now();
+  {
+    const RS = process.env.REACH_SHOTS || L.SHOTS;
+    const reachShot = (n) => tag === "375" && page.screenshot({ path: `${RS}/reach-${n}.png` });
+    const choices = () => page.evaluate(() => [...document.querySelectorAll("[data-choice-group]")].map((g) => ({ group: g.dataset.choiceGroup, chips: [...g.querySelectorAll("[data-choice]")].map((c) => c.textContent.trim()) })));
+    // The finish pin: its label marker sits at the place's coordinate.
+    const finishLL = () => page.evaluate(() => {
+      const c = window.__map.getContainer().getBoundingClientRect();
+      // The edit map's own (another map's pin may still be in the DOM, hidden).
+      const e = [...document.querySelectorAll(".maplibregl-marker")].find((m) => /^Finišs: /.test(m.getAttribute("aria-label") ?? "") && window.__map.getContainer().contains(m));
+      const r = e.getBoundingClientRect();
+      const ll = window.__map.unproject([r.x - c.x, r.y - c.y]); return [ll.lng, ll.lat];
+    });
+    const moveFinish = async (to) => {
+      const at = await finishLL(); await zoomTo(at, 14); await settled();
+      // The pin's head is above its coordinate; a sight's glyph may sit on it (the earlier sections leave layers on): a few spots.
+      // The pin itself: MapLibre's marker at the finish's coordinate that is not its label.
+      const pin = await page.evaluate(() => {
+        const m = window.__map; const all = m._markers ?? [];
+        const lab = all.find((k) => /^Finišs: /.test(k.getElement().getAttribute("aria-label") ?? ""));
+        if (!lab) return null; const ll = lab.getLngLat();
+        const own = all.find((k) => k !== lab && Math.abs(k.getLngLat().lng - ll.lng) < 1e-7 && Math.abs(k.getLngLat().lat - ll.lat) < 1e-7);
+        const r = own?.getElement().getBoundingClientRect();
+        return r && r.width ? { x: r.x + r.width / 2, y: r.y + r.height / 3 } : null;
+      });
+      const c0 = await L.px(page, at);
+      const spots = [[c0.x, c0.y - 8], [c0.x, c0.y - 20], ...(pin ? [[pin.x, pin.y]] : []), [c0.x, c0.y - 2]];
+      for (const [x, y] of spots) {
+        await tapXY(x, y); await page.waitForTimeout(700);
+        if (await sheetRow("Pārvietot").isVisible().catch(() => false)) break;
+      }
+      if (!(await sheetRow("Pārvietot").isVisible().catch(() => false))) await shot("reach-no-sheet");
+      await sheetRow("Pārvietot").click(); await page.waitForTimeout(500); await settled();
+      await zoomTo(to, 13);
+      await tapAt(to);
+    };
+    const commit = async (chip) => {
+      const acc = page.locator("button:visible", { hasText: "Tomēr braukt" }).first();
+      if (chip?.tone === "warn" && (await acc.count())) await acc.click(); else await slot(3);
+      await page.waitForTimeout(900);
+    };
+    // A clean page: the sections before leave preferences (layers, the add kind, saved rides) that change what a tap on a pin does.
+    await page.evaluate(() => { try { localStorage.clear(); sessionStorage.clear(); } catch {} });
+    await L.openRide(page, "grostonas-ergli");
+    const h0 = L.hash(await L.line(page)); const u0 = await L.undoEnabled(page); const r0 = await rects();
+    // (a) A new finish in Madona, ~60 km east, on roads: a proposal (warned for the detour), ✓, ↶.
+    const MADONA = [26.2195, 56.8545];
+    await moveFinish(MADONA);
+    const a = await L.waitChip(page, ["proposed", "warn", "refused"], 90000);
+    rec("reach: a far finish in a town → a proposal with numbers, never „neizdevās savienot”", ["proposed", "warn"].includes(a.chip?.tone) && CHIP_RE.test(a.chip.text) && !/neizdevās savienot/.test(a.chip.text), a.chip);
+    rec("reach: slots did not move (far finish)", JSON.stringify(await rects()) === JSON.stringify(r0));
+    await reachShot("finish-town");
+    await commit(a.chip);
+    const endA = (await L.line(page)).at(-1);
+    rec("reach: ✓ commits the far finish, the ride ends in Madona", L.hash(await L.line(page)) !== h0 && hv(endA, MADONA) < 300 && (await L.undoEnabled(page)) === true, { end: endA, m: Math.round(hv(endA, MADONA)) });
+    await slot(2); await page.waitForTimeout(900);
+    rec("reach: ↶ brings the old finish back", L.hash(await L.line(page)) === h0 && (await L.undoEnabled(page)) === u0);
+    // (b) A finish in the forest (Kangaru purvs, ~590 m from a road): named, „Vest pa taisno” as a chip → proposal → ✓ ends there → ↶.
+    const FOREST = [24.7000, 56.9650];
+    await moveFinish(FOREST);
+    const b = await L.waitChip(page, ["refused", "proposed", "warn"], 120000);
+    await page.waitForTimeout(600);
+    const bc = await choices();
+    const straightChip = page.locator('[data-choice-group="block"] [data-choice="straight"]');
+    rec("reach: a finish in a forest → named, „Vest pa taisno” offered as a chip", b.chip?.tone === "refused" && /^Finišs/.test(b.chip.text) && /Vest pa taisno/.test(b.chip.text) && (await straightChip.count()) === 1 && !/\d+[.,]\d{4}/.test(b.chip.text), { chip: b.chip, choices: bc });
+    await reachShot("finish-forest-offer");
+    if (await straightChip.count()) {
+      await straightChip.click();
+      const b2 = await L.waitChip(page, ["proposed", "warn", "refused"], 60000);
+      rec("reach: „Vest pa taisno” for the finish → a proposal with numbers", ["proposed", "warn"].includes(b2.chip?.tone) && /\d+(,\d)? → \d+(,\d)? km/.test(b2.chip.text), b2.chip);
+      await reachShot("finish-forest-proposal");
+      await commit(b2.chip);
+      const endB = (await L.line(page)).at(-1);
+      rec("reach: ✓ keeps the straight way to the finish, the ride ends at it", L.hash(await L.line(page)) !== h0 && hv(endB, FOREST) < 30, { m: Math.round(hv(endB, FOREST)) });
+      await slot(2); await page.waitForTimeout(900);
+      rec("reach: ↶ undoes the straight finish", L.hash(await L.line(page)) === h0);
+    }
+    // (c) An alternating batch: on a road, off, on, off — each off-road point its own „Vest pa taisno”, and „Vest pa taisno visiem”.
+    // Two on the ride itself, two in the forest (~500 and ~670 m from a road, `/api/routable-point`), in the ride's order.
+    const ALT = [await pointOn(0.55), [24.8541, 56.9445], await pointOn(0.75), [25.1438, 56.8895]];
+    await L.fit(page, ALT, 40);
+    await stopFromField();
+    for (const ll of ALT) { await tapAt(ll); await page.waitForTimeout(700); }
+    const c = await waitUi((s) => s.groups.includes("block") && s.groups.includes("block:2"), 120000);
+    await page.waitForTimeout(400);
+    const cc = await choices();
+    const per = cc.filter((g) => /^block/.test(g.group));
+    // Every blocker its own „Pārvietot”/„Izņemt”; the two in the forest „Vest pa taisno” too (a point on the ride may still block, as „neizdevās savienot”, with no straight chip — the words then do not offer it).
+    rec("reach: alternating batch → each blocker its own chips, the off-road ones with „Vest pa taisno”", per.length >= 2 && per.every((g) => g.chips.includes("Pārvietot") && g.chips.includes("Izņemt")) && per.filter((g) => g.chips.includes("Vest pa taisno")).length >= 2 && /Pietura \d/.test(c.chip?.text ?? "") && /„Vest pa taisno visiem”/.test(c.chip?.text ?? ""), { chip: c.chip, choices: cc });
+    rec("reach: …and „Vest pa taisno visiem”, „Pievienot pārējās”, no coordinates", cc.some((g) => g.chips.includes("Vest pa taisno visiem")) && cc.some((g) => g.chips.includes("Pievienot pārējās")) && !/\d+[.,]\d{4}/.test(c.chip?.text ?? ""), { chip: c.chip, choices: cc });
+    rec("reach: slots did not move (batch)", JSON.stringify(await rects()) === JSON.stringify(r0));
+    await reachShot("batch-offer");
+    const all = page.locator('[data-choice-group="chain"] [data-choice="chain"]');
+    if (await all.count()) {
+      await all.click();
+      const c2 = await waitUi((s) => s.chip && (["proposed", "warn"].includes(s.chip.tone) || (s.chip.tone === "refused" && /^Pietura \d/.test(s.chip.text))), 120000);
+      rec("reach: „Vest pa taisno visiem” → one proposal, or the rest's own blocker named (never the generic line)", ["proposed", "warn"].includes(c2.chip?.tone) || (c2.chip?.tone === "refused" && /^Pietura \d/.test(c2.chip.text) && !/vienā līnijā/.test(c2.chip.text)), c2.chip);
+      await reachShot("batch-proposal");
+      if (["proposed", "warn"].includes(c2.chip?.tone)) {
+        await commit(c2.chip);
+        rec("reach: …✓ commits", L.hash(await L.line(page)) !== h0 && !(await L.state(page)).chip);
+        await slot(2); await page.waitForTimeout(900);
+        rec("reach: …↶ undoes", L.hash(await L.line(page)) === h0);
+      } else { await slot("x"); await page.waitForTimeout(600); }
+    }
+    console.log(`[${tag}]   reach-all ${((Date.now() - t) / 1000).toFixed(1)} s`);
   }
+
+  } // SECTIONS reach
   await shot("end");
   // A 422 is how /api/reroute-leg says "no road reaches it" — the refused and
   // guard cases above ask for exactly that, and Chromium logs every non-2xx load.

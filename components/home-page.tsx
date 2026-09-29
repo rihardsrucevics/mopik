@@ -100,7 +100,7 @@ import { NO_CHAIN, chainCount, chainTopOf, inheritWarning, popChain, shownPropos
 import { blockingFrom, singleCause, type Blocking, type BlockingPoint, type PointProbe } from "@/lib/map/blocking";
 import { drawnIntervals, straightRun } from "@/lib/map/straight";
 import { CHAIN_OFF_M, CHAIN_RISK_M, chainEdit, chainJoins, chainMeters, chainRun, insertChain, offRoadRuns } from "@/lib/map/straight-chain";
-import { drawnMeters } from "@/lib/routing/drawn";
+import { connector, drawnMeters, drawnSeconds } from "@/lib/routing/drawn";
 import { profileAt, type RelaxDrop } from "@/lib/routing/relax";
 import { buildMotoProfileOptions } from "@/lib/routing/moto-profile";
 import { bendMissed, changeKey, changedAlong, isKindSwitch, NOTE_JOINER, proposalView, proposeDelay, staleWhileRouting, newStretches, wideNeedsAsking, renamePlaces, renamesBetween, sameGeometry, type Renames } from "@/lib/map/proposal-view";
@@ -114,7 +114,7 @@ import { LoaderCircle } from "lucide-react";
 import { openMapFullscreen } from "@/lib/map/fullscreen";
 import { passOnLine } from "@/lib/map/line-sheet";
 import { MAX_AVOID, avoidPoints, defaultStretch, planStretch, retracedPasses, stretchLine, type Stretch } from "@/lib/routing/stretch";
-import { chainGuide, chainLine, chainProposalLines, joinGuide, proposalGuide, blockedGuide, blockedLine, guideAction, sightAddedLine, sightReachLine, sightRefusedLine, tickedCount, tickedGuide } from "@/lib/map/edit-guidance";
+import { chainGuide, chainLine, chainProposalLines, joinGuide, placeWords, proposalGuide, blockedGuide, blockedLine, guideAction, sightAddedLine, sightReachLine, sightRefusedLine, tickedCount, tickedGuide } from "@/lib/map/edit-guidance";
 import { metersToLine, rowsWithSight, sightReach } from "@/lib/map/sight-add";
 
 /** A proposal ready to land, with what `live.landed` records for its commit. */
@@ -535,7 +535,9 @@ export function HomePage() {
   /** „Vest pa taisno” on offer: the refused change no road reaches (`askStraight`). */
   const [straightAsk, setStraightAsk] = useState<{ token: number; change: ProposedChange; level: number } | null>(null);
   // ── straight-chain ── „Vest pa taisno caur visiem” on offer: the runs of consecutive pending points off any road (`offerChain`).
-  const [chainAsk, setChainAsk] = useState<{ token: number; runs: RidePlace[][]; meters: number; count: number; level: number } | null>(null);
+  const [chainAsk, setChainAsk] = useState<{ token: number; runs: RidePlace[][]; meters: number; count: number; level: number; all?: boolean } | null>(null);
+  /** „Vest pa taisno” pressed on points of one batch (backlog 52): kept while the batch is the same, so the next press adds to them. */
+  const straightPicks = useRef<{ key: string; points: { lat: number; lon: number }[] }>({ key: "", points: [] });
   const [wideAsk, setWideAsk] = useState<{ token: number; change: ProposedChange } | null>(null);
   /**
    * Release B item 1: which point stops the proposal — named in the
@@ -1600,10 +1602,11 @@ export function HomePage() {
     // any rung of the ladder can join the places either side; past car-fast
     // it says which two it could not join.
     const removal = planned.kind === "remove-stop" && !p.straight;
-    const placeName = (v: RidePlace | null, fallback: string) => (v ? v.name || (isShape(v) ? ui.shapePointName : fallback) : fallback);
+    const placeName = (v: RidePlace | null, fallback: string) => (v ? placeWords(v.name) || (isShape(v) ? ui.shapePointName : fallback) : fallback);
     const refuseRemoval = () => {
       const n = removedNeighbours(before, planned.places);
-      return refuse(n ? fi(ui.editRemoveNoJoin, { a: placeName(n.named.from, ui.mapStart), b: placeName(n.named.to, ui.mapFinish) }) : ui.editBrokenLine, "remove-no-join");
+      // The two places the merged leg really joins — the adjacent ones, a pass-through point too — not the nearest named ones tens of km away (rider, 2026-09-30).
+      return refuse(n ? fi(ui.editRemoveNoJoin, { a: placeName(n.from, ui.mapStart), b: placeName(n.to, ui.mapFinish) }) : ui.editBrokenLine, "remove-no-join");
     };
     const ownProfile = buildMotoProfileOptions(planToIntent(nextPlan));
     // Where the edit asks the ride to go: the places it adds or moves, or
@@ -1617,7 +1620,8 @@ export function HomePage() {
     const baseMeters = p.baseRide?.distanceMeters ?? edited?.distanceMeters ?? route.distanceMeters;
     const baseSeconds = p.baseRide?.durationSeconds ?? edited?.durationSeconds ?? route.durationSeconds;
     // What the probes need if this is refused or warned: the first attempt's view (release B item 1).
-    if (blockCtx.current?.token !== token && !p.then && !p.thenChain) blockCtx.current = { token, before, planned, line, baseSegments, nextPlan, asked, baseMeters };
+    // The rest of a batch under „Vest pa taisno visiem” too: if it is refused, its own blocker is named (never the generic line).
+    if (blockCtx.current?.token !== token && !p.then) blockCtx.current = { token, before, planned, line, baseSegments, nextPlan, asked, baseMeters };
     /** The detour this proposal adds, when it is one worth his say-so (the warned landing names it). */
     let riskPlus: number | null = null;
     /**
@@ -1625,7 +1629,7 @@ export function HomePage() {
      * rung is tried; past the last, it is said plainly (rules 1 and 3) —
      * with the nearest any attempt came.
      */
-    const unreached = async (offM: number): Promise<void> => {
+    const unreached = async (offM: number, why: { broke?: boolean; timedOut?: boolean } = {}): Promise<void> => {
       const bestOff = Math.min(p.bestOff ?? Infinity, offM);
       // ── stretch ── no way round on this rung: the next is tried; past the last, said plainly — no straight line here.
       if (p.stretch) {
@@ -1638,13 +1642,23 @@ export function HomePage() {
       // A lower rung reached the point only by a dead end: that is still a
       // road that reaches it (rule 1), offered with the dead end said.
       if (p.fallback) return land(p.fallback);
+      // Past the last rung, the last attempt ran out of time: said as that — never „no road”.
+      if (why.timedOut) return refuse(ui.editTimeout, "timeout");
       if (removal) return refuseRemoval();
       // No road at all, even on car-fast (rule 3, as the rider changed it):
       // said, and „Vest pa taisno” offered — as far as a road goes, then
       // straight (`lib/map/straight.ts`). One new point only: a batch or a
       // move is said as it is.
-      const addsOne = asked.length === 1 && (planned.kind === "add-stop");
-      if (addsOne) return askStraight(token, planned.kind, fi(ui.editNoRoadStraight, { m: Math.round(bestOff) }), p.change, level, bestOff);
+      // One new or moved point — a stop or a pass-through point (rider,
+      // 2026-09-30, images/45: the words said „Vest pa taisno”, no chip did).
+      const addsOne = asked.length === 1 && (planned.kind === "add-stop" || planned.kind === "move-stop");
+      // A new finish or start (rider, 2026-09-30, backlog 50): as a stop — no
+      // road on any rung, „Vest pa taisno” from where the road ends.
+      const endMove = asked.length === 1 && (planned.kind === "move-finish" || planned.kind === "move-start") && planned.runs.length === 1;
+      if (addsOne || (endMove && !why.broke)) return askStraight(token, planned.kind, fi(ui.editNoRoadStraight, { m: Math.round(bestOff) }), p.change, level, bestOff);
+      if (endMove) return askStraight(token, planned.kind, ui.editBrokenLine, p.change, level);
+      // Joined on no rung: said as that, and the page names the point (never „no road” for a point on one).
+      if (why.broke) return refuse(ui.editBrokenLine, "broken-line");
       return refuse(fi(ui.editNoRoad, { m: Math.round(bestOff) }), "no-road", bestOff);
     };
     /** A proposal into the reducer — or ✓ already pressed, committed (never one that needs „Tomēr braukt”). */
@@ -1694,7 +1708,7 @@ export function HomePage() {
       // for a way through each place whose way in and way out share road
       // (`routeThroughPlaces`) — a lone stop, a batch, the whole-span
       // fallback alike. Shaping points are flagged: a spur to one is cut.
-      const request = async (runs: typeof planned.runs, keepSpurs = p.keepSpurs): Promise<Routed | { status: number }> => {
+      const request = async (runs: typeof planned.runs, keepSpurs = p.keepSpurs): Promise<Routed | { status: number; error?: string }> => {
         const response = await fetch("/api/reroute-leg", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1709,7 +1723,7 @@ export function HomePage() {
             ...(p.stretch ? { fences: runs.map(() => p.stretch!.fence.map(([lon, lat]) => ({ lat, lon }))) } : {}),
           }),
         });
-        if (!response.ok) return { status: response.status };
+        if (!response.ok) return { status: response.status, error: await response.json().then((b: { error?: string }) => b.error).catch(() => undefined) };
         const routed = (await response.json()) as Routed;
         // A relaxed rung: its new metres are outside the profile, ⚠️ on the map.
         return !level ? routed : { runs: routed.runs.map((r) => ({ ...r, segments: markOutsideProfile(r.segments, line).segments })) };
@@ -1726,12 +1740,35 @@ export function HomePage() {
       });
       // „Pārrēķināt posmu” (the rider asked for it): the whole span at once.
       let runs = p.wide ? [spanRun({ line, cum: cumulative(line), before, after: planned.places, runs: planned.runs })] : planned.runs;
-      let data: Routed | { status: number };
+      let data: Routed | { status: number; error?: string };
       // „Vest pa taisno”: as far as a road goes toward the point (the router
       // ends a leg to a pin in a field at the nearest road it can reach),
       // then straight to it and back along the same line.
       let straight: { meters: number } | null = null;
-      if (p.straight && asked.length === 1) {
+      const endStraight = p.straight && asked.length === 1 && (planned.kind === "move-finish" || planned.kind === "move-start") && planned.runs.length === 1;
+      if (endStraight) {
+        // A finish or start off any road (backlog 50): the road as far as the
+        // router takes it toward the place, then straight to it — one way,
+        // the ride ends (or begins) there. No road answered: straight from the cut.
+        const run = planned.runs[0];
+        const finishing = planned.kind === "move-finish";
+        const toward = await request([run]).catch((): { status: number } => ({ status: 0 }));
+        if (!current()) return;
+        const road = "status" in toward ? null : toward.runs[0];
+        const roadLine = road ? coordinatesOf(road.segments) : [];
+        const cut = finishing ? run.points[0] : run.points[run.points.length - 1];
+        const gapAt = roadLine.length >= 2 ? (finishing ? roadLine[roadLine.length - 1] : roadLine[0]) : cut;
+        const c = finishing ? connector(gapAt, asked[0]) : connector(asked[0], gapAt);
+        const m = c.properties.distanceMeters;
+        const own = road && roadLine.length >= 2 ? road.segments.features : [];
+        runs = [run];
+        data = { runs: [{
+          segments: { type: "FeatureCollection" as const, features: finishing ? [...own, c] : [c, ...own] },
+          distanceMeters: Math.round((own.length ? road!.distanceMeters : 0) + m),
+          durationSeconds: Math.round((own.length ? road!.durationSeconds : 0) + drawnSeconds(m)),
+        }] };
+        straight = { meters: m };
+      } else if (p.straight && asked.length === 1) {
         const lc = cumulative(line);
         const near = nearestAlong(asked[0], line, lc);
         const join = pointAtDistance(line, lc, near.alongMeters).point as Point;
@@ -1749,7 +1786,8 @@ export function HomePage() {
       }
       if (!current()) return;
       // 422: the router reached no road through the point on this profile.
-      if ("status" in data) return data.status === 422 ? unreached(reachM) : refuse(ui.resEditFailed, String(data.status));
+      // Any other failure (a platform timeout, a dropped connection) is one more rung that did not answer.
+      if ("status" in data) return unreached(reachM, { timedOut: data.error === "timeout" || data.status !== 422 });
       let spliced = splice(runs, data);
       // A stretch cut at a neighbouring place that came back leaving it the
       // way the kept ride came in: routed again THROUGH that place, so the
@@ -1813,7 +1851,10 @@ export function HomePage() {
       // may not start where the kept ride was cut — a stretch an earlier edit
       // rode on a relaxed rung — and a gap there is no reason to keep a place
       // the rider took out.
-      if (!verdict.ok) return level || removal || p.stretch ? unreached(reachM) : refuse(ui.editBrokenLine, "broken-line");
+      // A new finish or start too (rider, 2026-09-30, backlog 50: every new
+      // finish refused „neizdevās savienot”): his own profile could not join
+      // the cut, and that was the end of it — now the next rung is tried.
+      if (!verdict.ok) return unreached(reachM, { broke: true });
       // Where the line actually reaches each changed place. A point in a
       // field is answered by the router with a line that turns back at the
       // nearest track, silently; the place follows the line and the rider is
@@ -1917,9 +1958,12 @@ export function HomePage() {
         notes.push(fi(ui.editBigDetour, { km: `${plus >= 0 ? "+" : "−"}${kmFormat.format(Math.abs(plus))}`, far: kmFormat.format(risk.farthestM / 1000) }));
       }
       if (straight) {
-        const name = planned.places.vias.find((v) => v.lon === asked[0][0] && v.lat === asked[0][1]);
+        const name = [...planned.places.vias, planned.places.start, ...(planned.places.finish ? [planned.places.finish] : [])].find((v) => v.lon === asked[0][0] && v.lat === asked[0][1]);
         const m = Math.round(straight.meters);
-        notes.push(fi(ui.editStraightNote, { m: new Intl.NumberFormat(locale).format(m), name: name?.name || ui.shapePointName }));
+        const end = planned.kind === "move-finish" ? "finish" : planned.kind === "move-start" ? "start" : null;
+        const said = (name ? placeWords(renamed(name.name)) : "") || (end === "finish" ? ui.mapFinish : end === "start" ? ui.mapStart : ui.shapePointName);
+        // A finish or start is reached one way: no „un atpakaļ”.
+        notes.push(fi(ui[end === "finish" ? "editStraightNoteFinish" : end === "start" ? "editStraightNoteStart" : "editStraightNote"], { m: new Intl.NumberFormat(locale).format(m), name: said }));
         if (m > 1000) notes.push(fi(ui.editStraightRisk, { km: kmFormat.format(m / 1000) }));
       }
       // ── chain-polish ── what and how much in the chip's first line, the way in one short line under it (never cut mid-sentence on a phone).
@@ -2031,10 +2075,11 @@ export function HomePage() {
       track("route_edit_refused", { how, reason });
       return;
     }
-    dispatchProposal({ type: "refused", token, reason: note });
+    dispatchProposal({ type: "refused", token, reason: note, ...(reason === "timeout" ? { retry: true as const } : {}) });
     track("route_edit_refused", { how, reason });
     // Which point, and what to do (release B item 1): never the reason alone.
-    const named = noteBlocking(token, { reason, meters });
+    // Out of time is no point's fault: „mēģini vēlreiz” is the fix.
+    const named = reason === "timeout" ? joinGuide(note, ui.guideRefusedRetry) : noteBlocking(token, { reason, meters });
     const waiter = settleWaiter(token, false);
     if (waiter && !waiter.keepOnFailure) {
       live.current = null;
@@ -2055,7 +2100,7 @@ export function HomePage() {
    * and the detour it adds). The guidance line says „Meklēju, kurš punkts
    * traucē…” meanwhile, never the bare reason.
    */
-  function noteBlocking(token: number, info: { reason?: string; meters?: number | null; accept?: EditProposal["accept"]; plus?: number | null }): string | null {
+  function noteBlocking(token: number, info: { reason?: string; meters?: number | null; accept?: EditProposal["accept"]; plus?: number | null; straight?: boolean }): string | null {
     const ctx = blockCtx.current;
     if (!ctx || ctx.token !== token || !plan) return null;
     const points = askedPoints(ctx).map((q) => ({ ...q, name: renamed(q.name) }));
@@ -2063,7 +2108,7 @@ export function HomePage() {
     const refused = !info.accept;
     const fmt = (n: number) => new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(n);
     if (points.length === 1) {
-      const b: Blocking = { token, probing: false, points: [{ ...points[0], ...singleCause(info.reason ?? "", info.meters ?? null, info.accept, info.plus) }], total: 1, refused };
+      const b: Blocking = { token, probing: false, points: [{ ...points[0], ...singleCause(info.reason ?? "", info.meters ?? null, info.accept, info.plus) }], total: 1, refused, ...(info.straight ? { straight: true } : {}) };
       setBlocking(b);
       return blockedLine((k) => ui[k], b, !refused, fmt);
     }
@@ -2176,6 +2221,27 @@ export function HomePage() {
     const mine = live.current;
     if (!mine || mine.change.kind !== "rows") return;
     const whole = mine.change;
+    // Several points of the batch off the road (backlog 52): each „Vest pa
+    // taisno” is remembered for this batch, and all picked so far are drawn
+    // straight together (short chains on the routed rest) — so a second
+    // blocker does not undo the first one's choice.
+    const key = changeKey(whole);
+    const same = (a: { lat: number; lon: number }, b: { lat: number; lon: number }) => Math.abs(a.lat - b.lat) < 1e-9 && Math.abs(a.lon - b.lon) < 1e-9;
+    if (straightPicks.current.key !== key) straightPicks.current = { key, points: [] };
+    if (!straightPicks.current.points.some((q) => same(q, at))) straightPicks.current.points.push(at);
+    const ctx = blockCtx.current;
+    const picks = straightPicks.current.points;
+    const farLeft = (blocking?.points ?? []).filter((b) => b.cause === "far" && !picks.some((q) => same(q, b)));
+    // Another point still off the road and not yet chosen: this one is
+    // marked (its chip shows it), the guidance names the rest — nothing is
+    // routed that would only be refused again.
+    if (blocking && farLeft.length) { setBlocking({ ...blocking, picked: [...picks] }); return; }
+    if (ctx && ctx.token === mine.token && picks.length > 1) {
+      const vias = ctx.planned.places.vias;
+      const flags = vias.map((v) => picks.some((q) => same(q, v)));
+      const runs = offRoadRuns(flags, 1).map(([a, b]) => vias.slice(a, b + 1));
+      if (runs.length) { track("route_edit_straight_asked", { batch: true, points: picks.length }); acceptChain({ token: mine.token, runs, count: picks.length, level: 0 }); return; }
+    }
     const row = Object.entries(whole.rows.picked).find(([, v]) => v && Math.abs(v.lat - at.lat) < 1e-9 && Math.abs(v.lon - at.lon) < 1e-9)?.[0];
     if (row === undefined) return;
     const r = Number(row);
@@ -2215,11 +2281,17 @@ export function HomePage() {
     if (proposalSeq.current !== token) return;
     const isAsked = (v: RidePlace) => asked.some(([lon, lat]) => Math.abs(v.lon - lon) < 1e-9 && Math.abs(v.lat - lat) < 1e-9);
     const flags = places.vias.map((v) => isAsked(v) && off([v.lon, v.lat]));
-    const runs = offRoadRuns(flags).map(([a, b]) => places.vias.slice(a, b + 1));
+    // Several off the road but not all in a row (backlog 52: reachable and
+    // off-road points alternating): one „Vest pa taisno visiem” for all of
+    // them, each its own short chain; in a row, the one chain as before.
+    const far = flags.filter(Boolean).length;
+    const inRows = offRoadRuns(flags).reduce((n, [a, b]) => n + b - a + 1, 0);
+    const all = far >= 2 && inRows < far;
+    const runs = offRoadRuns(flags, all ? 1 : 2).map(([a, b]) => places.vias.slice(a, b + 1));
     if (!runs.length) return;
     // The drawn length to expect: from the nearest road to the first, through all, and from the last to a road.
     const meters = runs.reduce((sum, r) => { const q = r.map((v): Point => [v.lon, v.lat]); return sum + roadM(q[0]) + chainMeters(q) + roadM(q[q.length - 1]); }, 0);
-    setChainAsk({ token, runs, meters, count: runs.reduce((n, r) => n + r.length, 0), level });
+    setChainAsk({ token, runs, meters, count: runs.reduce((n, r) => n + r.length, 0), level, ...(all ? { all } : {}) });
   }
 
   /**
@@ -2228,8 +2300,8 @@ export function HomePage() {
    * drawn on top of it (`chainOnTop`). One proposal, one ✓, one ↶ step; the
    * live proposal keeps the batch's own change, so ✓ commits this one.
    */
-  function acceptChain() {
-    const ask = chainAsk;
+  function acceptChain(given?: { token: number; runs: RidePlace[][]; count: number; level: number }) {
+    const ask = given ?? chainAsk;
     const mine = live.current;
     if (!ask || !mine || mine.token !== ask.token || mine.change.kind !== "rows" || !plan || !route || !ridePlaces) return;
     const whole = mine.change;
@@ -2350,7 +2422,7 @@ export function HomePage() {
     if (refuseSight(token, note)) return;
     dispatchProposal({ type: "refused", token, reason: note });
     track("route_edit_refused", { how, reason: "no-road" });
-    const named = noteBlocking(token, { reason: "no-road", meters });
+    const named = noteBlocking(token, { reason: "no-road", meters, straight: true });
     const waiter = settleWaiter(token, false);
     if (waiter && !waiter.keepOnFailure) {
       live.current = null;
@@ -2367,7 +2439,13 @@ export function HomePage() {
     const ask = straightAsk;
     if (!ask || proposalRef.current.phase !== "refused") return;
     track("route_edit_straight_asked", {});
-    proposePlaces(ask.change, { straight: ask.level });
+    // The pin named since it was refused (its reverse lookup): the change as
+    // it is now, so ✓ recognises it — else ✓ routed it again, without the
+    // straight line (found on a new finish in a forest, 2026-09-30).
+    const mine = live.current;
+    const now = mine && mine.token === ask.token ? { change: mine.change, renames: mine.renames } : { change: ask.change, renames: {} };
+    proposePlaces(now.change, { straight: ask.level });
+    if (live.current && live.current !== mine) live.current.renames = now.renames;
   }
 
   function askWide(token: number, how: EditKind, note: string, change: ProposedChange) {
@@ -3373,7 +3451,7 @@ export function HomePage() {
       wide: wideNow,
       straight: straightNow,
     }, locale);
-    if (view && chainNow && view.tone !== "routing") {
+    if (view && chainNow && !chainNow.all && view.tone !== "routing") {
       // „3 punkti bez ceļa, taisni ~1,4 km – „Vest pa taisno caur visiem” vai pārvieto katru.”
       const fmt = (n: number) => new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(n);
       const g = chainGuide((k) => ui[k], chainNow.count, chainNow.meters, fmt, CHAIN_RISK_M);
@@ -3381,13 +3459,15 @@ export function HomePage() {
       return { ...view, guide: joinGuide(g.what, g.action) };
     }
     if (!view || !blockNow) return chained(view);
+    // Several off the road, not in a row: the per-point line, with „Vest pa taisno visiem” among its fixes (the chain chip).
+    const said: Blocking = chainNow?.all ? { ...blockNow, straightAll: true } : blockNow;
     // Which point, and what to do with it — in the guidance line itself.
     const fmt = (n: number) => new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(n);
     const warned = proposal.phase === "proposed";
-    const g = blockedGuide((k) => ui[k], blockNow, warned, fmt);
-    if (view.tone === "refused") return { ...view, text: g.what, guide: g.action, title: blockedLine((k) => ui[k], blockNow, false, fmt) };
+    const g = blockedGuide((k) => ui[k], said, warned, fmt);
+    if (view.tone === "refused") return { ...view, text: g.what, guide: g.action, title: blockedLine((k) => ui[k], said, false, fmt) };
     // Warned: „Tomēr braukt” already works; the point is named once it is found.
-    if (warned && !blockNow.probing) return { ...view, guide: blockedLine((k) => ui[k], blockNow, true, fmt) };
+    if (warned && !said.probing) return { ...view, guide: blockedLine((k) => ui[k], said, true, fmt) };
     return chained(view);
   }, [wiring.editing, proposal, shown, pendingChanges, ui, wideNow, straightNow, locale, blockNow, chainNow]);
   // The last proposal that landed stays on the map while the next change
@@ -3558,7 +3638,8 @@ export function HomePage() {
         // „Vest pa taisno”, on offer while its guidance line is shown (`askStraight`).
         onStraight: straightOffered ? acceptStraight : undefined,
         // ── straight-chain ── one chip for a run of off-road points.
-        onStraightChain: chainNow ? acceptChain : undefined,
+        onStraightChain: chainNow ? () => acceptChain() : undefined,
+        straightChainAll: Boolean(chainNow?.all),
         // Release B item 1: which points stop the proposal, and „Vest pa taisno” for one of a batch.
         blocking: blockNow,
         onStraightAt: blockNow && !blockNow.probing && blockNow.total > 1 ? acceptStraightAt : undefined,

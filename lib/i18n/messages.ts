@@ -550,6 +550,11 @@ export type MessageKey =
   | "editDeadEnd"
   /** An edit whose new line would not join the ride; refused, the ride kept. */
   | "editBrokenLine"
+  | "editTimeout"
+  | "editStraightNoteFinish"
+  | "editStraightNoteStart"
+  | "guideRefusedRetry"
+  | "chainOfferAll"
   | "editRemoveNoJoin"
   /**
    * The out-and-back an edit kept because the search for another way ran out
@@ -881,6 +886,8 @@ export type MessageKey =
   | "blockProbing"
   | "blockProbingAct"
   | "blockActMove"
+  | "blockActStraightAll"
+  | "blockActTap"
   | "blockActRemove"
   | "blockActStraight"
   | "blockActOverride"
@@ -1430,6 +1437,7 @@ const lv: Messages = {
   editDone: "Pabeigt labošanu",
   editCancel: "Atcelt labošanu",
   editDeadEnd: "Pietura ir strupceļā – atpakaļ pa to pašu ceļu {km} km.",
+  editTimeout: "Pārrēķins aizņēma pārāk ilgi.",
   editBrokenLine: "Šo labojumu neizdevās savienot ar maršrutu vienā līnijā – maršruts palika, kāds bija.",
   editRemoveNoJoin: "Bez šī punkta „{a}” un „{b}” neizdevās savienot pa ceļiem ne ar vienu profilu.",
   editSameWayBack: "Uz pieturu un atpakaļ pa to pašu ceļu {km} km – citu ceļu laikus atrast neizdevās.",
@@ -1549,6 +1557,8 @@ const lv: Messages = {
   editNoRoadStraight: "Pa ceļu šeit nevar izbraukt, tuvākais ceļš ir ~{m} m nostāk.",
   editStraightAccept: "Vest pa taisno",
   editStraightLabel: "Kā tikt līdz šai vietai",
+  editStraightNoteFinish: "Pēdējie {m} m līdz „{name}” – taisni, bez ceļa.",
+  editStraightNoteStart: "Pirmie {m} m no „{name}” – taisni, bez ceļa.",
   editStraightNote: "Pēdējie {m} m līdz „{name}” – taisni, bez ceļa, un atpakaļ pa to pašu līniju.",
   editStraightRisk: "{km} km taisni pāri mežam vai ūdenim",
   legendDrawn: "Zīmēts taisni",
@@ -1602,6 +1612,7 @@ const lv: Messages = {
   guideRefusedWide: "spied „Pārrēķināt posmu” vai ✕ atmet.",
   guideWarned: "spied „Tomēr braukt” vai ✕ atmet.",
   guideRefusedStraight: "spied „Vest pa taisno” vai ✕ atmet.",
+  guideRefusedRetry: "mēģini vēlreiz.",
   guideRefusedRemove: "mēģini pārvietot tuvējo punktu vai izņemt citu.",
   searchDrawnBlocked: "Braucienā ir zīmēti posmi – pilnā meklēšana tos izmestu. Labo uz kartes.",
   explainStop: "Maršruts iet caur šo vietu, un tā ir GPX failā.",
@@ -1633,6 +1644,8 @@ const lv: Messages = {
   blockTogetherAct: "izņem kādu vai pievieno tos pa vienam.",
   blockProbing: "Meklēju, kurš punkts traucē",
   blockProbingAct: "pagaidi mirkli.",
+  blockActTap: "pieskaries citur kartē",
+  blockActStraightAll: "„Vest pa taisno visiem”",
   blockActMove: "pārvieto",
   blockActRemove: "izņem",
   blockActStraight: "„Vest pa taisno”",
@@ -1661,6 +1674,7 @@ const lv: Messages = {
   sightShort: "{name} – ar motociklu var piebraukt līdz ~{m} m no apskates vietas, tālāk ceļa nav",
   sightReachAct: "pietura paliek pie ceļa, tālāk kājām.",
   // ── straight-chain ──
+  chainOfferAll: "Vest pa taisno visiem",
   chainOffer: "Vest pa taisno caur visiem",
   chainLabel: "Kā tikt caur šiem punktiem",
   chainWhat: "{n} punkti bez ceļa, taisni ~{km} km",
@@ -2148,6 +2162,7 @@ const lt: Messages = {
   editDone: "Baigti taisyti",
   editCancel: "Atšaukti taisymą",
   editDeadEnd: "Sustojimas yra akligatvyje – atgal tuo pačiu keliu {km} km.",
+  editTimeout: "Perskaičiavimas užtruko per ilgai.",
   editBrokenLine: "Šio pataisymo nepavyko sujungti su maršrutu viena linija – maršrutas liko toks, koks buvo.",
   editRemoveNoJoin: "Be šio taško „{a}“ ir „{b}“ nepavyko sujungti keliais jokiu profiliu.",
   editSameWayBack: "Į sustojimą ir atgal tuo pačiu keliu {km} km – kito kelio laiku rasti nepavyko.",
@@ -2271,6 +2286,8 @@ const lt: Messages = {
   editNoRoadStraight: "Keliu čia nuvažiuoti negalima, artimiausias kelias yra už ~{m} m.",
   editStraightAccept: "Vesti tiesiai",
   editStraightLabel: "Kaip pasiekti šią vietą",
+  editStraightNoteFinish: "Paskutiniai {m} m iki „{name}“ – tiesiai, be kelio.",
+  editStraightNoteStart: "Pirmieji {m} m nuo „{name}“ – tiesiai, be kelio.",
   editStraightNote: "Paskutiniai {m} m iki „{name}“ – tiesiai, be kelio, ir atgal ta pačia linija.",
   editStraightRisk: "{km} km tiesiai per mišką ar vandenį",
   legendDrawn: "Nubrėžta tiesiai",
@@ -2324,6 +2341,7 @@ const lt: Messages = {
   guideRefusedWide: "spauskite „Perskaičiuoti atkarpą” arba ✕ atmeskite.",
   guideWarned: "spauskite „Vis tiek važiuoti“ arba ✕ atmeskite.",
   guideRefusedStraight: "spauskite „Vesti tiesiai“ arba ✕ atmeskite.",
+  guideRefusedRetry: "bandykite dar kartą.",
   guideRefusedRemove: "pabandykite perkelti gretimą tašką arba pašalinti kitą.",
   searchDrawnBlocked: "Kelionėje yra nubrėžtų atkarpų – visa paieška jas išmestų. Taisykite žemėlapyje.",
   explainStop: "Maršrutas eina per šią vietą, ir ji yra GPX faile.",
@@ -2355,6 +2373,8 @@ const lt: Messages = {
   blockTogetherAct: "pašalinkite kurį nors arba pridėkite po vieną.",
   blockProbing: "Ieškau, kuris taškas trukdo",
   blockProbingAct: "palaukite akimirką.",
+  blockActTap: "bakstelėkite kitur žemėlapyje",
+  blockActStraightAll: "„Vesti tiesiai visus“",
   blockActMove: "perkelkite",
   blockActRemove: "pašalinkite",
   blockActStraight: "„Vesti tiesiai“",
@@ -2383,6 +2403,7 @@ const lt: Messages = {
   sightShort: "{name} – motociklu galima privažiuoti iki ~{m} m nuo lankytinos vietos, toliau kelio nėra",
   sightReachAct: "sustojimas lieka prie kelio, toliau pėsčiomis.",
   // ── straight-chain ──
+  chainOfferAll: "Vesti tiesiai visus",
   chainOffer: "Vesti tiesiai per visus",
   chainLabel: "Kaip pasiekti šiuos taškus",
   chainWhat: "{n} taškai be kelio, tiesiai ~{km} km",
@@ -2870,6 +2891,7 @@ const et: Messages = {
   editDone: "Lõpeta muutmine",
   editCancel: "Tühista muutmine",
   editDeadEnd: "Peatus on umbteel – tagasi sama teed {km} km.",
+  editTimeout: "Ümberarvutus võttis liiga kaua.",
   editBrokenLine: "Seda muudatust ei õnnestunud marsruudiga üheks jooneks ühendada – marsruut jäi endiseks.",
   editRemoveNoJoin: "Ilma selle punktita ei õnnestunud „{a}” ja „{b}” teedpidi ühegi profiiliga ühendada.",
   editSameWayBack: "Peatusesse ja tagasi sama teed {km} km – teist teed ei õnnestunud õigel ajal leida.",
@@ -2989,6 +3011,8 @@ const et: Messages = {
   editNoRoadStraight: "Teed mööda siia sõita ei saa, lähim tee on ~{m} m eemal.",
   editStraightAccept: "Vii otse",
   editStraightLabel: "Kuidas selle kohani jõuda",
+  editStraightNoteFinish: "Viimased {m} m kohani „{name}“ – otse, teeta.",
+  editStraightNoteStart: "Esimesed {m} m kohast „{name}“ – otse, teeta.",
   editStraightNote: "Viimased {m} m kohani „{name}“ – otse, teeta, ja tagasi sama joont mööda.",
   editStraightRisk: "{km} km otse üle metsa või vee",
   legendDrawn: "Joonistatud otse",
@@ -3042,6 +3066,7 @@ const et: Messages = {
   guideRefusedWide: "vajuta „Arvuta lõik ümber” või ✕ loobu.",
   guideWarned: "vajuta „Sõida ikkagi“ või ✕ loobu.",
   guideRefusedStraight: "vajuta „Vii otse“ või ✕ loobu.",
+  guideRefusedRetry: "proovi uuesti.",
   guideRefusedRemove: "proovi naaberpunkti liigutada või eemalda mõni teine.",
   searchDrawnBlocked: "Sõidus on joonistatud lõike – täisotsing viskaks need välja. Paranda kaardil.",
   explainStop: "Marsruut läheb läbi selle koha ja see on GPX-failis.",
@@ -3073,6 +3098,8 @@ const et: Messages = {
   blockTogetherAct: "eemalda mõni või lisa need ükshaaval.",
   blockProbing: "Otsin, milline punkt segab",
   blockProbingAct: "oota hetk.",
+  blockActTap: "puuduta kaardil mujal",
+  blockActStraightAll: "„Vii kõik otse“",
   blockActMove: "liiguta",
   blockActRemove: "eemalda",
   blockActStraight: "„Vii otse“",
@@ -3101,6 +3128,7 @@ const et: Messages = {
   sightShort: "{name} – mootorrattaga pääseb vaatamisväärsusele ~{m} m lähedale, edasi teed pole",
   sightReachAct: "peatus jääb tee äärde, edasi jalgsi.",
   // ── straight-chain ──
+  chainOfferAll: "Vii kõik otse",
   chainOffer: "Vii otse läbi kõigi",
   chainLabel: "Kuidas nende punktideni jõuda",
   chainWhat: "{n} punkti teeta, otse ~{km} km",
@@ -3586,6 +3614,7 @@ const en: Messages = {
   editDone: "Done editing",
   editCancel: "Discard edits",
   editDeadEnd: "The stop is on a dead end – back the same way for {km} km.",
+  editTimeout: "Recalculating took too long.",
   editBrokenLine: "This change couldn't be joined into one line with the route – the route stays as it was.",
   editRemoveNoJoin: "Without this point, “{a}” and “{b}” could not be joined by road on any profile.",
   editSameWayBack: "To the stop and back the same way for {km} km – no other way was found in time.",
@@ -3705,6 +3734,8 @@ const en: Messages = {
   editNoRoadStraight: "You can’t reach this by road, the nearest road is ~{m} m away.",
   editStraightAccept: "Go straight",
   editStraightLabel: "How to reach this spot",
+  editStraightNoteFinish: "The last {m} m to “{name}” – straight, no road.",
+  editStraightNoteStart: "The first {m} m from “{name}” – straight, no road.",
   editStraightNote: "The last {m} m to “{name}” – straight, no road, and back along the same line.",
   editStraightRisk: "{km} km straight across forest or water",
   legendDrawn: "Drawn straight",
@@ -3758,6 +3789,7 @@ const en: Messages = {
   guideRefusedWide: "press “Re-route the stretch” or ✕ to discard.",
   guideWarned: "press “Ride it anyway” or ✕ to discard.",
   guideRefusedStraight: "press “Go straight” or ✕ to discard.",
+  guideRefusedRetry: "try again.",
   guideRefusedRemove: "try moving a point nearby or removing another.",
   searchDrawnBlocked: "This ride has drawn stretches – a full search would drop them. Fix it on the map.",
   explainStop: "The route rides through this place, and it is in the GPX file.",
@@ -3789,6 +3821,8 @@ const en: Messages = {
   blockTogetherAct: "remove one or add them one at a time.",
   blockProbing: "Finding which point is in the way",
   blockProbingAct: "one moment.",
+  blockActTap: "tap elsewhere on the map",
+  blockActStraightAll: "“Go straight for all”",
   blockActMove: "move it",
   blockActRemove: "remove it",
   blockActStraight: "“Go straight”",
@@ -3817,6 +3851,7 @@ const en: Messages = {
   sightShort: "{name} – by motorcycle you get to ~{m} m from the sight; no road beyond",
   sightReachAct: "the stop stays by the road, walk the rest.",
   // ── straight-chain ──
+  chainOfferAll: "Go straight for all",
   chainOffer: "Go straight through all",
   chainLabel: "How to reach these points",
   chainWhat: "{n} points off any road, ~{km} km straight",

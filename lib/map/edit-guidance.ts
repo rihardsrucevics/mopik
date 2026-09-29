@@ -1,6 +1,6 @@
 import { fi } from "@/lib/i18n/format";
 import type { MessageKey } from "@/lib/i18n/messages";
-import { fixesFor, type BlockFixes, type Blocking, type BlockingPoint } from "@/lib/map/blocking";
+import { blockOptions, fixesFor, type BlockFixes, type BlockOption, type Blocking, type BlockingPoint } from "@/lib/map/blocking";
 
 /**
  * What the rider is looking at and what to do next, for every edit state
@@ -96,7 +96,7 @@ export type GuideState =
   // `wide`: „Pārrēķināt posmu” is on offer; `straight`: „Vest pa taisno” is.
   // `remove`: the refused edit took a point out — choosing another place is no answer.
   // `stretch`: an exclusion or „Atpakaļ pa citu ceļu” that found no way round — the ride stays.
-  | { kind: "refused"; reason: string; wide?: boolean; straight?: boolean; remove?: boolean; stretch?: boolean }
+  | { kind: "refused"; reason: string; wide?: boolean; straight?: boolean; remove?: boolean; stretch?: boolean; retry?: boolean }
   // Backlog 36: a stretch of the line selected (its ends can be dragged), and while an end is dragged.
   | { kind: "stretch"; name: string }
   | { kind: "stretchEnds" }
@@ -111,7 +111,7 @@ export function guideAction(t: T, state: GuideState): string {
     case "via": return t("guideTapVia");
     case "routing": return t("guideRouting");
     case "proposed": return t(state.warned ? "guideWarned" : "guideProposed");
-    case "refused": return t(state.stretch ? "guideRefusedStretch" : state.straight ? "guideRefusedStraight" : state.wide ? "guideRefusedWide" : state.remove ? "guideRefusedRemove" : "guideRefused");
+    case "refused": return t(state.retry ? "guideRefusedRetry" : state.stretch ? "guideRefusedStretch" : state.straight ? "guideRefusedStraight" : state.wide ? "guideRefusedWide" : state.remove ? "guideRefusedRemove" : "guideRefused");
     case "stretch": return t("guideStretchChoose");
     case "stretchEnds": return "";
     case "chain": return fi(t("chainGuide"), { n: state.count });
@@ -124,7 +124,7 @@ export function guideAction(t: T, state: GuideState): string {
  * a warned proposal with several notes (a dead end and a profile note) says
  * „Tomēr braukt” once, after its numbers — never once per note.
  */
-export function proposalGuide(t: T): { routing: string; proposed: string; warned: string; refused: string; refusedWide: string; refusedStraight: string; refusedRemove: string; refusedStretch: string } {
+export function proposalGuide(t: T): { routing: string; proposed: string; warned: string; refused: string; refusedWide: string; refusedStraight: string; refusedRemove: string; refusedStretch: string; refusedRetry: string } {
   return {
     routing: guideAction(t, { kind: "routing" }),
     proposed: guideAction(t, { kind: "proposed" }),
@@ -134,6 +134,7 @@ export function proposalGuide(t: T): { routing: string; proposed: string; warned
     refusedStraight: guideAction(t, { kind: "refused", reason: "", straight: true }),
     refusedRemove: guideAction(t, { kind: "refused", reason: "", remove: true }),
     refusedStretch: guideAction(t, { kind: "refused", reason: "", stretch: true }),
+    refusedRetry: guideAction(t, { kind: "refused", reason: "", retry: true }),
   };
 }
 
@@ -172,9 +173,21 @@ export function joinGuide(what: string, action: string): string {
 
 /** „Pietura 4 „Rīgas iela”” — the name only when it says more than the title. */
 export function pointLabel(p: Pick<BlockingPoint, "title" | "name">): string {
-  const name = p.name.trim();
-  if (!name || name === p.title || /^-?\d+[.,]\d+,\s*-?\d+[.,]\d+$/.test(name)) return p.title;
+  const name = placeWords(p.name);
+  if (!name || name === p.title) return p.title;
   return `${p.title} „${name}”`;
+}
+
+/** A coordinate pair, as a name that is none („56.4819, 25.7056”, „56,48 25,70”). */
+const COORDS_RE = /-?\d{1,3}[.,]\d{2,}\s*[,;]?\s+-?\d{1,3}[.,]\d{2,}/gu;
+
+/**
+ * A place's name without any coordinates in it (backlog 52: „Ceplīši ·
+ * 56.4819, 25.7056” in the note): the words left, or "" when only numbers
+ * were there — the caller then says the point's own title („Pietura 4”).
+ */
+export function placeWords(name: string): string {
+  return name.replace(COORDS_RE, "").replace(/(\s*[·,;–-]\s*)+$/u, "").replace(/^(\s*[·,;–-]\s*)+/u, "").replace(/\s{2,}/gu, " ").trim();
 }
 
 /** „tuvākais ceļš ~N m nostāk” — why this point stops it. */
@@ -189,10 +202,8 @@ export function causeWords(t: T, p: Pick<BlockingPoint, "cause" | "meters">, for
 
 /** „pārvieto, izņem vai „Vest pa taisno”” — what he can do, as a list. */
 export function fixWords(t: T, fixes: BlockFixes): string {
-  const parts = [t("blockActMove"), t("blockActRemove")];
-  if (fixes.straight) parts.push(t("blockActStraight"));
-  if (fixes.override) parts.push(t("blockActOverride"));
-  if (fixes.rest > 0) parts.push(t("blockActRest"));
+  const words: Record<BlockOption, MessageKey> = { move: "blockActMove", tap: "blockActTap", remove: "blockActRemove", straight: "blockActStraight", straightAll: "blockActStraightAll", override: "blockActOverride", rest: "blockActRest" };
+  const parts = blockOptions(fixes).map((o) => t(words[o]));
   const last = parts.pop()!;
   return `${parts.join(", ")} ${t("blockOr")} ${last}.`;
 }

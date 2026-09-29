@@ -51,6 +51,12 @@ export type Blocking = {
   total: number;
   /** The proposal was refused (not only warned). */
   refused: boolean;
+  /** „Vest pa taisno” is on offer for it whatever the cause (a new finish or start the router could not join). */
+  straight?: boolean;
+  /** Points of a batch the rider already chose „Vest pa taisno” for, waiting for the others (backlog 52). */
+  picked?: { lat: number; lon: number }[];
+  /** „Vest pa taisno visiem” is on offer (the chain chip): several points off the road, not all in a row. */
+  straightAll?: boolean;
 };
 
 /** One point's probe, as the page measured it. */
@@ -99,16 +105,43 @@ export function singleCause(reason: string, meters: number | null, accept?: "pro
   return { cause: "failed" };
 }
 
-/** What the fixes are, in the order the chips offer them. */
-export type BlockFixes = { straight: boolean; override: boolean; rest: number };
+/** What the fixes are, in the order the chips offer them. `single`: one pending point, not a batch — a tap elsewhere moves it (no „Pārvietot” chip). */
+export type BlockFixes = { straight: boolean; override: boolean; rest: number; single?: boolean; straightAll?: boolean };
+
+/** One fix, as the words name it and a chip offers it. „tap” is the gesture of a single pending point: said, no chip. */
+export type BlockOption = "move" | "tap" | "remove" | "straight" | "straightAll" | "override" | "rest";
+
+/**
+ * The fixes a blocked state offers, in order — the ONE list both the
+ * guidance words (`fixWords`) and the composer's chips are built from, so
+ * the words never name an option that has no chip (rider, 2026-09-30,
+ * images/45: „…vai „Vest pa taisno”” over a lone „Izņemt”).
+ */
+export function blockOptions(fixes: BlockFixes): BlockOption[] {
+  return [
+    fixes.single ? "tap" as const : "move" as const,
+    "remove" as const,
+    ...(fixes.straight ? ["straight" as const] : []),
+    ...(fixes.straightAll ? ["straightAll" as const] : []),
+    ...(fixes.override ? ["override" as const] : []),
+    ...(fixes.rest > 0 ? ["rest" as const] : []),
+  ];
+}
 
 /** Which fixes a blocked point gets: „Vest pa taisno” when no road reaches it, „Tomēr braukt” for its profile or detour. */
-export function fixesFor(blocking: Pick<Blocking, "points" | "total">, warned: boolean): BlockFixes {
+export function pointFixes(p: Pick<BlockingPoint, "cause">, blocking: Pick<Blocking, "straight">): { straight: boolean } {
+  return { straight: p.cause === "far" || Boolean(blocking.straight) };
+}
+
+export function fixesFor(blocking: Pick<Blocking, "points" | "total" | "straight" | "straightAll">, warned: boolean): BlockFixes {
   const causes = new Set(blocking.points.map((p) => p.cause));
   return {
-    straight: blocking.points.length === 1 && causes.has("far"),
+    // Every point off the road gets it, one or several (backlog 52).
+    straight: Boolean(blocking.straight) || causes.has("far"),
     override: warned && (causes.has("profile") || causes.has("detour")),
     rest: Math.max(0, blocking.total - blocking.points.length),
+    ...(blocking.total === 1 ? { single: true } : {}),
+    ...(blocking.straightAll ? { straightAll: true } : {}),
   };
 }
 
