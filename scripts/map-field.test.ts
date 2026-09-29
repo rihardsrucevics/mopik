@@ -32,7 +32,11 @@ test("when nothing can act the field is off — the cap, an edit being routed, a
 
 test("the composer wires the field to „+”'s own handler, not a parallel one", () => {
   const src = readFileSync(join(__dirname, "../components/ride-composer.tsx"), "utf8");
-  assert.match(src, /onFocus: fieldMode === "new-stop" \? onAddStop : null/);
+  // add-kind (2026-09-29): „+” now asks what to add; the field still runs
+  // the stop path „+” ran (`addStopFromMap`) — search is for stops only.
+  assert.match(src, /onFocus: fieldMode === "new-stop" \? onFieldAdd : null/);
+  assert.match(src, /const onFieldAdd = [^\n]*pendingHandlers\.current\?\.addStop\(\)/);
+  assert.match(src, /addStop: chained\("addStop", addStopFromMap\)/);
   assert.match(src, /disabled: fieldMode === "off"/);
   assert.match(src, /^\s+onAddStop,$/m);
   const map = readFileSync(join(__dirname, "../components/route-map.tsx"), "utf8");

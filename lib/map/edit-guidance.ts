@@ -299,3 +299,36 @@ export function chainProposalLines(t: T, c: { count: number; meters: number; num
   return { lead, detail: c.sameEnd ? `${way} ${t("chainSameEnd")}` : way };
 }
 // ── /straight-chain ──
+
+// ── add-kind ──
+// „+” asks what to add (rider, 2026-09-29), in the same two parts: „Ko
+// pievienot? – izvēlies veidu, tad pieskaries kartei.”, then, armed, what he
+// is adding – what to do.
+
+/** The chooser: its guidance line and its two chips, each with a detail line. */
+export function addChooserCopy(t: T): { guide: string; options: { key: "stop" | "pass"; label: string; detail: string }[] } {
+  return {
+    guide: joinGuide(t("addChooseWhat"), t("addChooseAct")),
+    options: [
+      { key: "stop", label: t("addStopLabel"), detail: t("addStopDetail") },
+      { key: "pass", label: t("addPassLabel"), detail: t("addPassDetail") },
+    ],
+  };
+}
+
+/** Armed, before the first tap: „Pievieno caurbraucamu punktu – pieskaries kartei vietā, caur kuru braukt.” */
+export function addArmedGuide(t: T, kind: "stop" | "pass"): string {
+  return kind === "pass" ? joinGuide(t("addArmedPassWhat"), t("addArmedPassAct")) : joinGuide(t("addArmedStopWhat"), t("addArmedStopAct"));
+}
+
+/** Why the sheet's kind switch is off, in words (null: it is on). */
+export function kindSwitchReason(t: T, reason: "end" | "shapeCap" | "stopCap" | "busy" | null, caps: { shapeCap: string; stopCap: string }): string | null {
+  switch (reason) {
+    case null: return null;
+    case "end": return t("kindSwitchEnds");
+    case "shapeCap": return caps.shapeCap;
+    case "stopCap": return caps.stopCap;
+    case "busy": return t("resEditRouting");
+  }
+}
+// ── /add-kind ──
