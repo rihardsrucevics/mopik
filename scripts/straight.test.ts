@@ -168,7 +168,8 @@ test("design F2: „Meklēt labāku apli” is off on a ride with drawn stretche
   const read = (f: string) => readFileSync(new URL(`../${f}`, import.meta.url), "utf8");
   const panel = read("components/result-panel.tsx");
   const card = read("components/suggestions-card.tsx");
-  assert.match(panel, /const searchBlocked = drawnMeters\(route\.segments\.features\) > 0 \? m\.searchDrawnBlocked : undefined;/);
+  // Backlog 36 adds the excluded stretches' reason after the drawn one.
+  assert.match(panel, /const searchBlocked = drawnMeters\(route\.segments\.features\) > 0 \? m\.searchDrawnBlocked : plan\?\.avoid\?\.length \? m\.searchOffAvoid : undefined;/);
   assert.match(panel, /onClick=\{onSearchBetterLoop\} disabled=\{busy \|\| rerouting \|\| Boolean\(searchBlocked\)\}/);
   assert.match(panel, /searchBlocked=\{searchBlocked\}/);
   assert.match(card, /disabled=\{busy \|\| overCap \|\| Boolean\(searchBlocked\)\}/);

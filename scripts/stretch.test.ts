@@ -143,3 +143,25 @@ test("share code: plan.avoid round-trips as `x`; a plan without it encodes to th
   const bad = decodePlanShare(Buffer.from(JSON.stringify(raw)).toString("base64url"))!;
   assert.equal(bad.avoid?.length, 1);
 });
+
+test("guidance: stretch selected, ends adjusted, no way round — what – what to do, in four languages, en dashes", async () => {
+  const { t } = await import("../lib/i18n/messages");
+  const { guidance } = await import("../lib/map/edit-guidance");
+  for (const loc of ["lv", "lt", "et", "en"] as const) {
+    const tk = (k: Parameters<typeof t>[1]) => t(loc, k);
+    const lines = [
+      guidance(tk, { kind: "stretch", name: tk("lineObjectName") }),
+      guidance(tk, { kind: "stretchEnds" }),
+      guidance(tk, { kind: "refused", reason: tk("stretchNoWayRound"), stretch: true }),
+      tk("stretchStopInside"), tk("searchOffAvoid"),
+    ];
+    for (const l of lines) {
+      assert.ok(l.includes(" – "), `${loc}: ${l}`);
+      assert.ok(!l.includes(" - ") && !l.includes("—"), `${loc}: ${l}`);
+      assert.ok(l.length < 130, `${loc}: short enough for three lines at 375: ${l}`);
+    }
+    if (loc === "lv") for (const l of lines) assert.ok(!/piesit/i.test(l));
+  }
+  assert.equal(t("lv", "stretchExclude"), "Izslēgt šo posmu");
+  assert.equal(t("lv", "stretchHeading"), "Šis posms");
+});
