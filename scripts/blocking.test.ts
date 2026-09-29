@@ -37,7 +37,7 @@ test("one point: the refusal's own reason is that point's", () => {
 
 test("the spec's line: „Pietura 4 „Rīgas iela” – tuvākais ceļš ~N m nostāk – pārvieto, izņem vai „Vest pa taisno”.”", () => {
   const b: Blocking = { token: 1, probing: false, refused: true, total: 1, points: [{ ...at, title: "Pietura 4", name: "Rīgas iela", cause: "far", meters: 120 }] };
-  assert.equal(blockedLine(lv, b, false, fmt), "Pietura 4 „Rīgas iela” – tuvākais ceļš ~120 m nostāk – pārvieto, izņem vai „Vest pa taisno”.");
+  assert.equal(blockedLine(lv, b, false, fmt), "Pietura 4 „Rīgas iela” – tuvākais ceļš ~120 m nostāk – pieskaries citur kartē, izņem vai „Vest pa taisno”.");
 });
 
 test("a batch with one bad point: named, and „Pievienot pārējās” offered for the rest", () => {
@@ -63,7 +63,7 @@ test("never the generic „neizdevās” without a point or a fix — probing sa
   assert.equal(blockedLine(lv, together, false, fmt), "Katru no 7 punktiem var pievienot atsevišķi, bet kopā tos neizdevās savienot – izņem kādu vai pievieno tos pa vienam.");
   const failed: Blocking = { token: 5, probing: false, refused: true, total: 1, points: [{ ...at, title: "Pietura 1", name: "56.9490, 24.4509", cause: "failed" }] };
   const line = blockedLine(lv, failed, false, fmt);
-  assert.equal(line, "Pietura 1 – to neizdevās savienot ar maršrutu – pārvieto vai izņem.", "a coordinate name is not said twice");
+  assert.equal(line, "Pietura 1 – to neizdevās savienot ar maršrutu – pieskaries citur kartē vai izņem.", "a coordinate name is not said twice");
   assert.doesNotMatch(line, /Šeit neizdevās izbraukt/);
 });
 
@@ -72,7 +72,7 @@ test("two bad points are both named", () => {
     { ...at, title: "Pietura 1", name: "A", cause: "far", meters: 500 },
     { ...at, title: "Caurbraucams punkts", name: "", cause: "failed" },
   ] };
-  assert.equal(blockedLine(lv, b, false, fmt), "Pietura 1 „A” – tuvākais ceļš ~500 m nostāk; Caurbraucams punkts – to neizdevās savienot ar maršrutu – pārvieto, izņem vai „Pievienot pārējās”.");
+  assert.equal(blockedLine(lv, b, false, fmt), "Pietura 1 „A” – tuvākais ceļš ~500 m nostāk; Caurbraucams punkts – to neizdevās savienot ar maršrutu – pārvieto, izņem, „Vest pa taisno” vai „Pievienot pārējās”.");
   assert.equal(pointLabel({ title: "Finišs", name: "Finišs" }), "Finišs");
 });
 
@@ -105,8 +105,8 @@ test("the page: every refusal and every warned landing goes through the naming; 
   const { readFileSync } = await import("node:fs");
   const page = readFileSync(new URL("../components/home-page.tsx", import.meta.url), "utf8");
   const body = (name: string) => page.slice(page.indexOf(name), page.indexOf("\n  }\n", page.indexOf(name)));
-  assert.match(body("function refuseProposal("), /const named = noteBlocking\(token, \{ reason, meters \}\);[\s\S]*setEditNote\(named \?\? note\)/);
-  assert.match(body("function askStraight("), /noteBlocking\(token, \{ reason: "no-road", meters \}\)/);
+  assert.match(body("function refuseProposal("), /const named = reason === "timeout" \? joinGuide\(note, ui\.guideRefusedRetry\) : noteBlocking\(token, \{ reason, meters \}\);[\s\S]*setEditNote\(named \?\? note\)/);
+  assert.match(body("function askStraight("), /noteBlocking\(token, \{ reason: "no-road", meters, straight: true \}\)/);
   assert.match(body("function askWide("), /noteBlocking\(token, \{ reason: "wide" \}\)/);
   assert.match(page, /if \(proposal\.accept === "profile" \|\| proposal\.accept === "detour"\) noteBlocking\(token, \{ accept: proposal\.accept, plus: riskPlus \}\);/);
   const composer = readFileSync(new URL("../components/ride-composer.tsx", import.meta.url), "utf8");

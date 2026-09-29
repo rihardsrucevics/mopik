@@ -166,7 +166,7 @@ test("the copy in four locales: en dashes, never em dashes, Latvian quotes and n
 test("the flow: offered for a batch's run, the chip proposes, the proposal is honest", () => {
   const page = readFileSync(new URL("../components/home-page.tsx", import.meta.url), "utf8");
   const composer = readFileSync(new URL("../components/ride-composer.tsx", import.meta.url), "utf8");
-  assert.match(page, /onStraightChain: chainNow \? acceptChain : undefined,/);
+  assert.match(page, /onStraightChain: chainNow \? \(\) => acceptChain\(\) : undefined,/);
   assert.match(composer, /else if \("chain" in act\) edit\?\.onStraightChain\?\.\(\);/);
   assert.match(page, /const offM = \(q: Point\) => nearestAlong\(q, landed, lc\)\.meters;\n\s*offerChain\(token, planned\.places, asked, \(q\) => offM\(q\) >= CHAIN_OFF_M, offM, level\);/);
   // Refused: the points the probe found too far from a road, with how far.
