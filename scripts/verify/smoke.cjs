@@ -934,16 +934,17 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
       const at = await finishLL(); await zoomTo(at, 14); await settled();
       // The pin's head is above its coordinate; a sight's glyph may sit on it (the earlier sections leave layers on): a few spots.
       // The pin itself: MapLibre's marker at the finish's coordinate that is not its label.
+      // (MapLibre keeps no public marker list: found in the DOM — the pin whose tip is nearest the finish's 0×0 label anchor.)
       const pin = await page.evaluate(() => {
-        const m = window.__map; const all = m._markers ?? [];
-        const lab = all.find((k) => /^Finišs: /.test(k.getElement().getAttribute("aria-label") ?? ""));
-        if (!lab) return null; const ll = lab.getLngLat();
-        const own = all.find((k) => k !== lab && Math.abs(k.getLngLat().lng - ll.lng) < 1e-7 && Math.abs(k.getLngLat().lat - ll.lat) < 1e-7);
-        const r = own?.getElement().getBoundingClientRect();
-        return r && r.width ? { x: r.x + r.width / 2, y: r.y + r.height / 3 } : null;
+        const inMap = [...document.querySelectorAll(".maplibregl-marker")].filter((e) => window.__map.getContainer().contains(e));
+        const lab = inMap.find((e) => /^Finišs: /.test(e.getAttribute("aria-label") ?? ""));
+        if (!lab) return null; const l = lab.getBoundingClientRect();
+        let best = null, d = Infinity;
+        for (const e of inMap) { if (e === lab || e.dataset.pending) continue; const r = e.getBoundingClientRect(); if (!r.width) continue; const dd = Math.hypot(r.x + r.width / 2 - l.x, r.bottom - l.y); if (dd < d) { d = dd; best = { x: r.x + r.width / 2, y: r.y + r.height / 3 }; } }
+        return best && d < 40 ? best : null;
       });
       const c0 = await L.px(page, at);
-      const spots = [[c0.x, c0.y - 8], [c0.x, c0.y - 20], ...(pin ? [[pin.x, pin.y]] : []), [c0.x, c0.y - 2]];
+      const spots = [...(pin ? [[pin.x, pin.y]] : []), [c0.x, c0.y - 8], [c0.x, c0.y - 20], [c0.x, c0.y - 2]];
       for (const [x, y] of spots) {
         await tapXY(x, y); await page.waitForTimeout(700);
         if (await sheetRow("Pārvietot").isVisible().catch(() => false)) break;
