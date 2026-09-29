@@ -1,0 +1,1 @@
+{"url":"/api/places?lat=57.18209062354441&lon=24.982679915342743","status":200,"contentType":"application/json","request":null,"body":"{\"places\":[{\"name\":\"Dzelzceļa ēka 62. km\",\"label\":\"Dzelzceļa ēka 62. km · Siguldas pagasts\",\"lat\":57.18209062354441,\"lon\":24.982679915342743,\"kind\":\"settlement\"}]}"}

@@ -1,0 +1,1 @@
+{"url":"/api/places?lat=57.216481715949385&lon=25.030108915343703","status":200,"contentType":"application/json","request":null,"body":"{\"places\":[{\"name\":\"Biemupīte\",\"label\":\"Biemupīte · Līgatnes pagasts\",\"lat\":57.216481715949385,\"lon\":25.030108915343703,\"kind\":\"settlement\"}]}"}

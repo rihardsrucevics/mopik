@@ -1,0 +1,1 @@
+{"url":"/api/places?lat=57.2331358&lon=25.0397886","status":200,"contentType":"application/json","request":null,"body":"{\"places\":[{\"name\":\"Līgatne\",\"label\":\"Līgatne\",\"lat\":57.2331358,\"lon\":25.0397886,\"kind\":\"settlement\"}]}"}

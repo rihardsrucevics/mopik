@@ -1,0 +1,1 @@
+{"url":"/api/places?lat=57.247720623543785&lon=25.06141032679122","status":200,"contentType":"application/json","request":null,"body":"{\"places\":[{\"name\":\"Podupīte\",\"label\":\"Podupīte · Līgatnes pagasts\",\"lat\":57.247720623543785,\"lon\":25.06141032679122,\"kind\":\"settlement\"}]}"}
