@@ -340,7 +340,8 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
     // A tap on the empty map offers „Pievienot punktu šeit”; a tap elsewhere dismisses it; the chip adds one pending dot.
     {
       const far = await pointOn(0.3, 1500, 0), far2 = await pointOn(0.3, 1500, 900);
-      await L.fit(page, [far, far2, pts[1]], 60);
+      // Padding clear of the desktop's header bar (top) and the phone's field (bottom): a tap there is on the chrome, not the map.
+      await L.fit(page, [far, far2, pts[1]], 170);
       await settled();
       await tapAt(far); await page.waitForTimeout(500);
       const chip = page.locator('[data-choice-group="offer"] [data-choice="offer"]');
@@ -504,6 +505,7 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
     } else rec("„Tomēr braukt” offered", false);
     await page.unroute("**/api/reroute-leg", force);
   }
+  }
 
   const ui = () => page.evaluate(() => {
     const vis = (e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
@@ -524,7 +526,6 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
     return best;
   }, p));
 
-  }
   // ── 4. Chained edits (Grostonas → Sidgunda → Mālpils → Augšmala → Ērgļi) ──
   if (want("4")) {
   t = Date.now();
@@ -561,15 +562,15 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
 
   }
   // ── 5. A batch with one point off the road: named, ringed, „Pievienot pārējās” (Grostonas → Ērgļi) ──
-  if (want("5")) {
-  t = Date.now();
-  // Reverse lookups with stable names, as the rider's batchbad script had them.
+  // Reverse lookups with stable names, as the rider's batchbad script had them (sections 5 and 8).
   const reverse = (route) => {
     const u = new URL(route.request().url());
     const lon = Number(u.searchParams.get("lon"));
     const name = lon > 24.68 ? "Kangaru purvs" : lon > 24.55 ? "Rīgas iela" : "Silenieki";
     route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ places: [{ name, label: `${name}, Ropažu novads`, lat: Number(u.searchParams.get("lat")), lon }] }) });
   };
+  if (want("5")) {
+  t = Date.now();
   await page.route(/\/api\/places\?(?=.*\blat=)/, reverse);
   await L.openRide(page, "grostonas-ergli");
   console.log(`[${tag}]   openRide grostonas-ergli ${((Date.now() - t) / 1000).toFixed(1)} s`);
