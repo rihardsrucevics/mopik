@@ -15,7 +15,7 @@ import { isCodeSaved, removeRide, rideId } from "@/lib/share/saved-rides";
 import { IntroSplash } from "@/components/intro-splash";
 import { SiteHeader } from "@/components/site-header";
 import { useLocale } from "@/lib/i18n/use-locale";
-import { messages as uiMessages } from "@/lib/i18n/messages";
+import { messages as uiMessages, type MessageKey } from "@/lib/i18n/messages";
 import { fi } from "@/lib/i18n/format";
 import { RideComposer } from "@/components/ride-composer";
 import { ChatMessage, ChatQuickReply, ChatResponse, RidePlan, planSummary, planToIntent } from "@/lib/chat/ride-plan";
@@ -28,7 +28,7 @@ import { DESKTOP_QUERY, useMediaQuery } from "@/lib/use-media-query";
 import { GenerateRouteResponse, type DirectLegOffer, type UnreachableStop } from "@/lib/types";
 import { POI_KIND, type RoutePoi } from "@/lib/poi/kinds";
 import { describeDetourForFocus } from "@/lib/routing/use-detours";
-import { type DetourResult } from "@/lib/routing/detour";
+import { spliceDetours, type DetourResult } from "@/lib/routing/detour";
 import { useRoutePois } from "@/lib/poi/use-route-pois";
 import { useMapLayer } from "@/lib/map/layer-prefs";
 import type { SplicedRoute } from "@/lib/routing/detour";
@@ -109,7 +109,8 @@ import { LoaderCircle } from "lucide-react";
 // „Labot” opens the phone map full screen first: inline it is a preview.
 import { openMapFullscreen } from "@/lib/map/fullscreen";
 import { passOnLine } from "@/lib/map/line-sheet";
-import { joinGuide, proposalGuide, blockedGuide, blockedLine, guideAction } from "@/lib/map/edit-guidance";
+import { joinGuide, proposalGuide, blockedGuide, blockedLine, guideAction, sightAddedLine, sightReachLine, sightRefusedLine, tickedCount, tickedGuide } from "@/lib/map/edit-guidance";
+import { metersToLine, rowsWithSight, sightReach } from "@/lib/map/sight-add";
 
 /** A proposal ready to land, with what `live.landed` records for its commit. */
 type Landing = { proposal: EditProposal; addedAt: number; runs: number };
@@ -391,6 +392,8 @@ export function HomePage() {
     picked?: boolean;
     /** What the list's row says this place costs, so the card says the same. */
     detour?: DetourFocusNote | null;
+    /** „Pievienot braucienam” pressed, its detour still routing (backlog 46). */
+    adding?: boolean;
   } | null>(null);
   const focusTokenRef = useRef(0);
   const clearFocusPoi = useCallback(() => setFocusPoi(null), []);
@@ -520,6 +523,17 @@ export function HomePage() {
   }, []);
   /** What went wrong with the last edit, shown once and cleared by the next one. */
   const [editNote, setEditNote] = useState<string | null>(null);
+  // ── sights-add ── (backlog 46)
+  /** What adding a sight on a plain result did, said on the map („Vatrāne – tuvākais ceļš ~100 m…”). */
+  const [sightNote, setSightNote] = useState<string | null>(null);
+  /** A sight added in edit mode: its proposal's token, and how far the ride was from it before. */
+  const sightAsk = useRef<{ token: number; name: string; lat: number; lon: number; lineMeters: number } | null>(null);
+  /** A sight added on a result before its detour was routed: added the moment it is. */
+  const [sightWaiting, setSightWaiting] = useState<SelectedPoi | null>(null);
+  // The detour arrived for a sight waiting on it: added now, as pressed.
+  // Through a ref, as `renameRef` is: the function is this render's.
+  const addSightRef = useRef<(poi: SelectedPoi) => void>(() => {});
+  // ── /sights-add ──
   /**
    * Re-reads the editor's rows from the ride — after an undo, after an edit
    * the router refused (the ride keeps its places), and after a new stop was
@@ -599,6 +613,10 @@ export function HomePage() {
    * for.
    */
   const [detoursForMap, setDetoursForMap] = useState<Record<string, DetourResult>>({});
+  // ── sights-add ── the waiting sight is added once its detour is here.
+  useEffect(() => {
+    if (sightWaiting && !editMode && detoursForMap[sightWaiting.id]) addSightRef.current(sightWaiting);
+  }, [sightWaiting, editMode, detoursForMap]);
   const toggleSelectPoi = useCallback((poi: SelectedPoi) => {
     setSelectedPois((current) =>
       current.some((p) => p.id === poi.id) ? current.filter((p) => p.id !== poi.id) : [...current, poi],
@@ -1152,6 +1170,7 @@ export function HomePage() {
     detour?: DetourFocusNote | null,
   ) {
     focusTokenRef.current += 1;
+    setSightNote(null);
     const entry = POI_KIND[poi.category as keyof typeof POI_KIND];
     track("suggestion_shown", { kind: poi.category });
     setFocusPoi({
@@ -1208,6 +1227,8 @@ export function HomePage() {
   function enterEdit() {
     if (!ridePlaces || !shownRoute) return;
     setSelectedPois([]);
+    setSightNote(null);
+    setSightWaiting(null);
     // The result panel unmounts in this same commit and never gets to report
     // its ticked sights gone: the spliced preview is dropped here, or the edit
     // map kept drawing the pre-edit line with a sight's detour spliced in
@@ -1461,6 +1482,8 @@ export function HomePage() {
         if (proposal.accept) settleWaiter(token, false);
         else commitProposal(proposal, true);
       }
+      // ── sights-add ── a sight from the map card: stacked, so ✓ ↶ ✕ act on it.
+      if (sightAsk.current?.token === token && next.phase === "proposed" && next.proposal === proposal) landSight(proposal);
     };
     try {
       type Routed = RoutedRuns;
@@ -1772,6 +1795,7 @@ export function HomePage() {
    */
   function refuseProposal(token: number, how: EditKind, note: string, reason: string, meters?: number) {
     if (proposalSeq.current !== token) return;
+    if (refuseSight(token, note)) return;
     dispatchProposal({ type: "refused", token, reason: note });
     track("route_edit_refused", { how, reason });
     // Which point, and what to do (release B item 1): never the reason alone.
@@ -1957,6 +1981,7 @@ export function HomePage() {
    */
   function askStraight(token: number, how: EditKind, note: string, change: ProposedChange, level: number, meters?: number) {
     if (proposalSeq.current !== token) return;
+    if (refuseSight(token, note)) return;
     dispatchProposal({ type: "refused", token, reason: note });
     track("route_edit_refused", { how, reason: "no-road" });
     const named = noteBlocking(token, { reason: "no-road", meters });
@@ -2078,11 +2103,14 @@ export function HomePage() {
    * landed proposal is stacked — kept, not committed — and the rows follow
    * it, so the next edit is cut from it. Returns whether it stacked.
    */
-  function stackProposal(): boolean {
+  function stackProposal(extra?: { notes: string[]; dropMoved?: boolean }): boolean {
     const s = proposalRef.current;
     const mine = live.current;
     if (!route || s.phase !== "proposed" || !mine || mine.token !== s.proposal.token || !mine.landed) return false;
-    const kept: EditProposal = { ...s.proposal, ride: { ...s.proposal.ride, places: renamePlaces(s.proposal.ride.places, mine.renames) } };
+    // A sight's reach note says where the stop went; „Punkts pārvietots N m” would say it twice.
+    const movedHead = fi(ui.resEditMoved, { m: "\u0000" }).split("\u0000")[0];
+    const notes = extra ? [...s.proposal.notes.filter((n) => !(extra.dropMoved && n.startsWith(movedHead))), ...extra.notes] : s.proposal.notes;
+    const kept: EditProposal = { ...s.proposal, notes, ride: { ...s.proposal.ride, places: renamePlaces(s.proposal.ride.places, mine.renames) } };
     stopProposalWork();
     live.current = null;
     proposalSeq.current += 1;
@@ -2475,8 +2503,12 @@ export function HomePage() {
     // is still pending or unreachable. Falling through to the search would be
     // the slow path arriving unannounced, so the press simply waits.
     if (!spliced || spliced.applied.length === 0) return;
+    commitSights(fresh, spliced);
+  }
 
-    if (!route || !ridePlaces) return;
+  /** The sights in `fresh` that `spliced` carries, into the ride — the list's „Pievienot” and the map card's alike. */
+  function commitSights(fresh: SelectedPoi[], spliced: SplicedRoute): boolean {
+    if (!plan || !route || !ridePlaces) return false;
 
     const startedAt = startClock();
     const coordinates = spliced.coordinates as Point[];
@@ -2525,12 +2557,102 @@ export function HomePage() {
     setSelectedPois(selectedPois.filter((p) => !appliedIds.has(p.id)));
     setFocusPoi(null);
     setEditNote(null);
+    setSightNote(null);
     track("sights_committed", {
       pois: spliced.applied.length,
       delta_km: Math.round((spliced.addedMeters / 1000) * 10) / 10,
       ms: elapsedMsSince(startedAt),
     });
+    return true;
   }
+
+  // ── sights-add ── „Pievienot braucienam” on the map card (backlog 46).
+  //
+  // It adds the sight to the ride, through the list's own path: on a result
+  // the detour splice (`commitSights`), in edit mode a proposal with its
+  // preview, chip and ✓ ↶ ✕ like every other edit. When the ride cannot
+  // come closer to the sight than it already was, that is said, with the
+  // distance — never a line that barely moves and nothing said.
+
+  const sightFmt = (n: number) => new Intl.NumberFormat(locale).format(n);
+  function dismissSightNote() { setSightNote(null); }
+  const tl = (k: MessageKey) => ui[k];
+
+  function addFocusedToRide() {
+    const poi = focusPoi?.poi;
+    if (!poi) return;
+    if (editMode) addSightInEdit(poi);
+    else addSightOnResult(poi);
+  }
+
+  function addSightOnResult(poi: SelectedPoi) {
+    if (busyRef.current || !plan || !shownRoute) return;
+    if (plan.viaPlaces.includes(poi.name)) { setFocusPoi(null); return; }
+    const detour = detoursForMap[poi.id];
+    // Not routed yet: the card says „Pievienoju…”, and it is added when it is.
+    if (!detour) {
+      setSightWaiting(poi);
+      setFocusPoi((c) => (c ? { ...c, adding: true } : c));
+      return;
+    }
+    setSightWaiting(null);
+    if (!detour.ok) { setFocusPoi(null); setSightNote(sightRefusedLine(tl, poi.name, ui.resDetourUnreachable)); return; }
+    const one = spliceDetours({ segments: shownRoute.segments, distanceMeters: shownRoute.distanceMeters, durationSeconds: shownRoute.durationSeconds, detours: [detour] });
+    if (!one.applied.length) { setFocusPoi(null); setSightNote(sightRefusedLine(tl, poi.name, ui.resEditFailed)); return; }
+    const lineMeters = metersToLine(poi, shownRoute.geometry.coordinates as Point[]);
+    if (!commitSights([poi], one)) return;
+    const reach = sightReach({ lineMeters, reachedMeters: metersToLine(poi, one.coordinates) });
+    const km = new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(one.addedMeters / 1000);
+    setSightNote(sightReachLine(tl, poi.name, reach, sightFmt) ?? sightAddedLine(tl, poi.name, `${one.addedMeters >= 0 ? "+" : "−"}${km.replace("-", "")}`));
+    track("sight_added_from_map", { mode: "result", reach: reach?.kind ?? "reached" });
+  }
+
+  useEffect(() => { addSightRef.current = addSightOnResult; });
+
+  function addSightInEdit(poi: SelectedPoi) {
+    if (!plan || !route || !ridePlaces || commitWaiter.current) return;
+    // A change of the composer's own is pending: it is his to ✓ or ✕ first.
+    if (proposalRef.current.phase !== "idle") { setEditNote(ui.sightFinishFirst); return; }
+    const top = chainTopOf(chainRef.current.routeId === route.id ? chainRef.current : NO_CHAIN);
+    const before = top?.ride.places ?? ridePlaces;
+    const line = (top?.ride.coordinates ?? edited?.coordinates ?? route.geometry.coordinates) as Point[];
+    const sight: ResolvedPlace = { name: poi.name, label: poi.name, lat: poi.lat, lon: poi.lon, kind: poi.category, poiId: poi.id };
+    const rows = rowsWithSight(before, sight, line);
+    setFocusPoi(null);
+    if (!rows) { setEditNote(sightRefusedLine(tl, poi.name, ui.resEditFailed)); return; }
+    const lineMeters = metersToLine(poi, line);
+    proposePlaces({ kind: "rows", rows });
+    track("sight_added_from_map", { mode: "edit" });
+    // Nothing about the line changes: the stop is on the road the ride has.
+    if (!live.current) {
+      setEditNote(sightReachLine(tl, poi.name, sightReach({ lineMeters, reachedMeters: lineMeters }), sightFmt) ?? sightAddedLine(tl, poi.name, "+0"));
+      return;
+    }
+    sightAsk.current = { token: live.current.token, name: poi.name, lat: poi.lat, lon: poi.lon, lineMeters };
+  }
+
+  /** The sight's proposal landed: its reach said, and stacked so the bar's ✓ ↶ ✕ act on it. */
+  function landSight(proposal: EditProposal) {
+    const ask = sightAsk.current;
+    sightAsk.current = null;
+    if (!ask) return;
+    const reach = sightReach({ lineMeters: ask.lineMeters, reachedMeters: metersToLine(ask, proposal.ride.coordinates as Point[]) });
+    const line = sightReachLine(tl, ask.name, reach, sightFmt);
+    stackProposal({ notes: line ? [line] : [], dropMoved: Boolean(line) });
+  }
+
+  /** The sight's proposal was refused: said with its name and what to do; no chip left without a bar. */
+  function refuseSight(token: number, note: string): boolean {
+    const ask = sightAsk.current;
+    if (!ask || ask.token !== token) return false;
+    sightAsk.current = null;
+    live.current = null;
+    dispatchProposal({ type: "discard" });
+    setEditNote(sightRefusedLine(tl, ask.name, note));
+    track("route_edit_refused", { how: "add-stop", reason: "sight" });
+    return true;
+  }
+  // ── /sights-add ──
 
   /**
    * The tick inside the card the map opens on a focused suggestion.
@@ -2846,7 +2968,20 @@ export function HomePage() {
         via={mapVia}
         focus={focusPoi}
         onFocusCleared={clearFocusPoi}
-        onFocusToggle={toggleFocusedPoi}
+        // Backlog 46: the card's „Pievienot braucienam” adds; „Atzīmēt” (a
+        // result only) ticks for several at once, and the ticks are counted
+        // on the map with their own „Pievienot”.
+        onFocusToggle={wiring.editing ? undefined : toggleFocusedPoi}
+        onFocusAdd={addFocusedToRide}
+        ticked={!wiring.editing && selectedPois.length > 0 ? {
+          count: tickedCount((k) => ui[k], selectedPois.length),
+          guide: tickedGuide((k) => ui[k], selectedPois.length),
+          addLabel: ui.resAddStop,
+          ready: Boolean(spliced && spliced.applied.length > 0),
+        } : null}
+        onTickedAdd={commitSelection}
+        sightNote={!wiring.editing && sightNote ? { text: sightNote, dismissLabel: ui.sightNoteClose } : null}
+        onSightNoteDismiss={dismissSightNote}
         selectedPois={selectedPois}
         // The sights the ride passes and the ones it runs near. The map draws
         // the first group as soon as this arrives — the rider does not have to

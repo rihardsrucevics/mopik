@@ -1581,6 +1581,17 @@ stays useful in the list, the map card's wording must say what it does
 be visible on the map and in the bar („2 atzīmētas · Pievienot”), never only
 in the side panel.
 
+**Done 2026-09-29 (branch `sights-add`, not deployed).** The card's primary
+button is „Pievienot braucienam” and adds: on a result through the detour
+splice (`commitSights`), in edit mode as a proposal stacked on the chain so
+✓ ↶ ✕ act on it. „Atzīmēt” / „✓ Noņemt atzīmi” is its own control (result
+only); ticks are counted on the map („1 atzīmēta · Pievienot”). When the
+ride cannot come closer than it was, it is said with the distance
+(`lib/map/sight-add.ts` `sightReach`, copy in `lib/map/edit-guidance.ts`):
+„Vatrāne – tuvākais ceļš ~100 m no apskates vietas; tuvāk ar motociklu
+netikt – pietura paliek pie ceļa, tālāk kājām.” Smoke section 7. Not done:
+the shared page's card still only ticks (it has no ticked bar yet).
+
 ## 47. BUG: from „Saglabātie”, edit opens the form but the map shows no ride
 
 **Rider, 2026-09-28, iPhone, production (c40401b).** In „Saglabātie” he

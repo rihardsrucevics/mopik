@@ -64,6 +64,7 @@ export type AnalyticsEvent =
   | "suggestion_shown"        // "Kartē" in Ieteikumi: the map flew to a suggestion without changing the ride; props: kind
   | "detour_previewed"       // a sight was ticked and its detour spliced into the drawn line; props: pois, delta_km
   | "sights_committed"       // "Pievienot izvēlētos": the spliced ride became the ride, with no search; props: pois, delta_km, ms — is the instant path actually the one riders take?
+  | "sight_added_from_map"   // backlog 46: „Pievienot braucienam” on the map card; props: mode (result | edit), reach (reached | notCloser | short)
   | "search_better_loop"     // the full search asked for explicitly, with the ride's (possibly edited) places and any ticked sights as vias; props: pois, after_edit — how often is a cleaner loop worth 30-60 s?
   | "route_edit_opened"      // "Labot" on the result: edit mode on the same page; props: km, stops — do riders correct rides on the map?
   | "route_edit_finished"    // "Pabeigt labošanu"; props: edited — did the edits survive the session?

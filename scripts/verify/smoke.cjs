@@ -294,6 +294,116 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
     rec("through road: ✕ leaves the ride", L.hash(await L.line(page)) === h0);
   }
 
+  // ── 7. A sight from the map card (backlog 46): „Pievienot braucienam” adds it ──
+  // /api/route-pois is stubbed with one manor ~100 m off the line, the way
+  // Vatrāne sits in its park: the road the ride is on is as close as a
+  // motorcycle gets, and that is said with the distance.
+  {
+    t = Date.now();
+    const SIGHT = "Smoke muiža";
+    const pois = async (route) => {
+      const body = JSON.parse(route.request().postData() || "{}");
+      const c = body.geometry?.coordinates ?? [];
+      const m = [0]; for (let i = 1; i < c.length; i++) m.push(m[i - 1] + hv(c[i - 1], c[i]));
+      // 20 % in: a stretch with no road nearer the manor than the ride's own
+      // (at 45 % a track reaches it, and the router rides it — nothing to say).
+      const i = Math.max(1, m.findIndex((x) => x >= m.at(-1) * 0.2));
+      const a = c[i - 1], b = c[i];
+      const dx = (b[0] - a[0]) * Math.cos((a[1] * Math.PI) / 180), dy = b[1] - a[1], n = Math.hypot(dx, dy) || 1;
+      const off = 100;
+      const lat = a[1] + (off * (dx / n)) / 111195, lon = a[0] - (off * (dy / n)) / (111195 * Math.cos((a[1] * Math.PI) / 180));
+      const poi = { id: "smoke-manor", name: SIGHT, category: "manor", lat, lon, distanceMeters: off, alongKm: m[i] / 1000 };
+      route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ onRoute: [], nearby: [poi] }) });
+    };
+    // Its detour, as the server answers a sight no road gets closer to: a
+    // short out-and-back on the ride's own road (live, the answer to a made-up
+    // place varies with the router's load — ok one run, "unreachable" the next).
+    const detour = async (route) => {
+      const body = JSON.parse(route.request().postData() || "{}");
+      if (!(body.pois ?? []).some((p) => p.id === "smoke-manor")) return route.fallback();
+      const c = body.geometry?.coordinates ?? [];
+      const m = [0]; for (let i = 1; i < c.length; i++) m.push(m[i - 1] + hv(c[i - 1], c[i]));
+      const i = Math.max(1, m.findIndex((x) => x >= m.at(-1) * 0.2));
+      const a = c[i - 1], b = c[i], len = hv(a, b);
+      const seg = { type: "Feature", geometry: { type: "LineString", coordinates: [a, b, a] }, properties: { roadClass: "secondary", surface: "asphalt", distanceMeters: Math.round(2 * len) } };
+      const ok = { ok: true, poiId: "smoke-manor", shape: "outAndBack", coordinates: [a, b, a], segments: { type: "FeatureCollection", features: [seg] }, distanceMeters: 2 * len, durationSeconds: Math.round(2 * len / 13), deltaMeters: 2 * len, deltaSeconds: Math.round(2 * len / 13), entryMeters: m[i - 1], exitMeters: m[i - 1] };
+      route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ detours: [ok], partial: false, ms: 1 }) });
+    };
+    await page.route(/\/api\/route-pois/, pois);
+    await page.route(/\/api\/detour/, detour);
+    await L.openRide(page, "sigulda-cesis");
+    console.log(`[${tag}]   openRide sigulda-cesis (sight) ${((Date.now() - t) / 1000).toFixed(1)} s`);
+    const sightMark = () => page.locator(`.maplibregl-marker[aria-label^="${SIGHT}"]`).first();
+    // A marker off screen cannot be tapped: centre the map on it first.
+    const openSight = async (dispatch = false) => {
+      await sightMark().waitFor({ state: "attached", timeout: 15000 }).catch(() => {});
+      const at = await sightMark().evaluate((e) => { const r = e.getBoundingClientRect(), c = window.__map.getContainer().getBoundingClientRect(); return window.__map.unproject([r.x + r.width / 2 - c.x, r.y + r.height / 2 - c.y]).toArray(); });
+      await zoomTo(at, 14);
+      // On the result the phone map is the inline preview; its canvas sits over the markers for Playwright's hit test.
+      if (dispatch) await sightMark().dispatchEvent("click"); else await sightMark().click();
+      await page.waitForTimeout(1000);
+    };
+    const h0 = L.hash(await L.line(page)); const u0 = await L.undoEnabled(page);
+    const r0 = await rects();
+    await openSight();
+    const add = page.locator(".maplibregl-popup [data-add]");
+    const addText = (await add.textContent().catch(() => "")) ?? "";
+    rec("sight card: the button says „Pievienot braucienam”", addText.trim() === "Pievienot braucienam", { addText });
+    rec("sight card in edit mode: no tick-only control", (await page.locator(".maplibregl-popup [data-tick]").count()) === 0);
+    await shot("sights-card-before");
+    const n0 = log.reroute;
+    await add.click();
+    const s1 = await L.waitChip(page, ["proposed", "warn", "refused"], 60000);
+    await page.waitForTimeout(300);
+    await shot("sights-card-after");
+    rec("sight: a proposal with numbers, not a tick", ["proposed", "warn"].includes(s1.chip?.tone) && CHIP_RE.test(s1.chip.text), s1.chip);
+    rec("sight: halo over the dimmed ride", s1.proposalLayers.length > 0 && JSON.stringify(s1.routeOpacity).includes("0.3"), { layers: s1.proposalLayers });
+    rec("sight: routed (not only ticked)", log.reroute > n0, { reroutes: log.reroute - n0 });
+    rec("sight: slots did not move (proposal)", JSON.stringify(await rects()) === JSON.stringify(r0), { idle: r0, now: await rects() });
+    const said = [s1.chip?.text ?? "", ...(s1.notices ?? [])].join(" ");
+    rec("sight: „tuvāk ar motociklu netikt” with the distance", /Smoke muiža – tuvākais ceļš ~\d+ m no apskates vietas; tuvāk ar motociklu netikt – pietura paliek pie ceļa, tālāk kājām\./.test(said), { said });
+    await shot("sights-note");
+    const n1 = log.reroute;
+    await slot(3); await page.waitForTimeout(900);
+    const s2 = await L.state(page);
+    rec("sight: ✓ commits, no extra routing", !s2.chip && (await L.undoEnabled(page)) === true && log.reroute === n1, { chip: s2.chip, extra: log.reroute - n1 });
+    rec("sight: the stop is in the ride", (await page.locator(`.maplibregl-marker[aria-label*="${SIGHT}"]`).count()) > 0);
+    rec("sight: slots did not move (committed)", JSON.stringify(await rects()) === JSON.stringify(r0), { idle: r0, now: await rects() });
+    await slot(2); await page.waitForTimeout(800);
+    rec("sight: ↶ undoes", L.hash(await L.line(page)) === h0 && (await L.undoEnabled(page)) === u0);
+
+    // On the result: „Atzīmēt” ticks, and the tick is counted on the map with its own „Pievienot”.
+    if (phone) { await page.getByRole("button", { name: "Aizvērt pilnekrāna karti" }).first().click(); await page.waitForTimeout(500); }
+    await page.getByRole("button", { name: "Pabeigt labošanu" }).first().click(); await page.waitForTimeout(1200);
+    await openSight(true);
+    const tick = page.locator(".maplibregl-popup [data-tick]");
+    const cardOk = ((await page.locator(".maplibregl-popup [data-add]").textContent({ timeout: 5000 }).catch(() => "")) ?? "").trim() === "Pievienot braucienam" && ((await tick.textContent({ timeout: 5000 }).catch(() => "")) ?? "").trim() === "Atzīmēt";
+    rec("result card: „Pievienot braucienam” and „Atzīmēt”", cardOk, { popup: await page.locator(".maplibregl-popup").first().innerText({ timeout: 2000 }).catch(() => null) });
+    if (!cardOk) await shot("fail-result-card");
+    await tick.click(); await page.waitForTimeout(800);
+    const bar = page.locator("[data-sight-ticked]");
+    const barText = ((await bar.textContent().catch(() => "")) ?? "").trim();
+    rec("ticked: counted on the map „1 atzīmēta · Pievienot”", /^1 atzīmēta\s*Pievienot$/.test(barText), { barText });
+    await shot("sights-ticked");
+    // The card's own „Pievienot braucienam” on the result: the detour splice, and what it did said on the map.
+    const barAdd = page.locator("[data-sight-ticked-add]");
+    for (let k = 0; k < 100 && (await barAdd.isDisabled().catch(() => true)); k++) await page.waitForTimeout(200);
+    rec("ticked: the bar's „Pievienot” is live once the detour is routed", !(await barAdd.isDisabled().catch(() => true)));
+    // Escape drops the ticks; the card's own „Pievienot braucienam” then adds it.
+    await page.keyboard.press("Escape"); await page.waitForTimeout(400);
+    rec("ticked: Escape drops the tick and the bar", (await page.locator("[data-sight-ticked]").count()) === 0);
+    await openSight(true);
+    await page.locator(".maplibregl-popup [data-add]").click();
+    await page.locator("[data-sight-note]").waitFor({ timeout: 30000 }).catch(() => {});
+    const note = ((await page.locator("[data-sight-note]").textContent().catch(() => "")) ?? "").trim();
+    rec("result: added, and said on the map", /^Smoke muiža (– tuvākais ceļš ~\d+ m no apskates vietas; tuvāk ar motociklu netikt – pietura paliek pie ceļa, tālāk kājām\.|pievienota braucienam, [+−]\d+,\d km – ar „Labot” to var pārvietot vai izņemt\.)/.test(note), { note });
+    rec("result: the tick is gone with it", (await page.locator("[data-sight-ticked]").count()) === 0);
+    await shot("sights-result-note");
+    await page.unroute(/\/api\/route-pois/, pois);
+    await page.unroute(/\/api\/detour/, detour);
+    console.log(`[${tag}]   sight from the map ${((Date.now() - t) / 1000).toFixed(1)} s`);
+  }
+
   await shot("end");
   // A 422 is how /api/reroute-leg says "no road reaches it" — the refused and
   // guard cases above ask for exactly that, and Chromium logs every non-2xx load.
