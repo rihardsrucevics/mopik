@@ -257,7 +257,8 @@ export function anchorsAlong(anchors: Point[], line: Point[], cum: number[]): nu
  * edit — and is answered by re-routing the whole stretch between the first and
  * last place that changed.
  */
-export type EditKind = "move-start" | "move-stop" | "move-finish" | "add-stop" | "add-stops" | "remove-stop" | "reorder";
+/** `avoid-stretch`: „Izslēgt šo posmu” / „Atpakaļ pa citu ceļu” (backlog 36, lib/routing/stretch.ts). */
+export type EditKind = "move-start" | "move-stop" | "move-finish" | "add-stop" | "add-stops" | "remove-stop" | "reorder" | "avoid-stretch";
 
 /**
  * One stretch of the old line to throw away, and the points to route instead.

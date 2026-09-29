@@ -113,6 +113,7 @@ import { LoaderCircle } from "lucide-react";
 // „Labot” opens the phone map full screen first: inline it is a preview.
 import { openMapFullscreen } from "@/lib/map/fullscreen";
 import { passOnLine } from "@/lib/map/line-sheet";
+import { MAX_AVOID, avoidPoints, defaultStretch, planStretch, retracedPasses, stretchLine, type Stretch } from "@/lib/routing/stretch";
 import { chainGuide, chainLine, chainProposalLines, joinGuide, proposalGuide, blockedGuide, blockedLine, guideAction, sightAddedLine, sightReachLine, sightRefusedLine, tickedCount, tickedGuide } from "@/lib/map/edit-guidance";
 import { metersToLine, rowsWithSight, sightReach } from "@/lib/map/sight-add";
 
@@ -1528,6 +1529,8 @@ export function HomePage() {
     const line = coordinatesOf(baseSegments);
     const target = placesForChange(change, before, line);
     if ("note" in target) { refuseNow(target.how, target.note, target.reason); return; }
+    // ── stretch ── the ride's excluded stretches stay with every later edit (backlog 36).
+    if (before.avoid?.length && !target.after.avoid) target.after = { ...target.after, avoid: before.avoid };
     if (line.length < 2) { refuseNow("move-stop", ui.resEditFailed, "degenerate"); return; }
     // ── chain-polish ── a point of a straight chain taken out or moved: the chain re-formed from the points left (no router), or, the last one gone, its legs joined by roads.
     const chained = chainEdit({ segments: baseSegments, before, after: target.after });
@@ -1571,6 +1574,10 @@ export function HomePage() {
     thenChain?: { runs: RidePlace[][]; level: number };
     /** The chain itself, already built (`chainOnTop`): its drawn metres, how many points, whether in and out share a road end, the first and last names. */
     chain?: { meters: number; count: number; sameEnd: boolean; points: { lat: number; lon: number }[] };
+    /** ── stretch ── „Izslēgt šo posmu” / „Atpakaļ pa citu ceļu”: the run's fence, and the places either side for „cita ceļa nav”. */
+    stretch?: { fence: Point[]; a: string; b: string };
+    /** Notes the edit itself brings (pass-through points inside the stretch dropped). */
+    notesExtra?: string[];
   }): Promise<void> {
     if (!plan || !route) return;
     const { token, before, planned, baseSegments, line } = p;
@@ -1616,6 +1623,11 @@ export function HomePage() {
      */
     const unreached = async (offM: number): Promise<void> => {
       const bestOff = Math.min(p.bestOff ?? Infinity, offM);
+      // ── stretch ── no way round on this rung: the next is tried; past the last, said plainly — no straight line here.
+      if (p.stretch) {
+        if (profileAt(ownProfile, level + 1)) return routeProposal({ ...p, relax: level + 1, bestOff, keepSpurs: false });
+        return refuse(fi(ui.stretchNoWayRound, { a: p.stretch.a, b: p.stretch.b }), "no-way-round");
+      }
       // The straight line itself would not join: said as it is.
       if (p.straight || p.chain) return refuse(ui.editBrokenLine, "broken-line");
       if (profileAt(ownProfile, level + 1)) return routeProposal({ ...p, relax: level + 1, bestOff, keepSpurs: false });
@@ -1688,6 +1700,7 @@ export function HomePage() {
             shapes: runs.map((run) => shapeFlags(run, planned.places)),
             ...(level ? { relax: level } : {}),
             ...(keepSpurs ? { keepSpurs: true } : {}),
+            ...(p.stretch ? { fences: runs.map(() => p.stretch!.fence.map(([lon, lat]) => ({ lat, lon }))) } : {}),
           }),
         });
         if (!response.ok) return { status: response.status };
@@ -1794,7 +1807,7 @@ export function HomePage() {
       // may not start where the kept ride was cut — a stretch an earlier edit
       // rode on a relaxed rung — and a gap there is no reason to keep a place
       // the rider took out.
-      if (!verdict.ok) return level || removal ? unreached(reachM) : refuse(ui.editBrokenLine, "broken-line");
+      if (!verdict.ok) return level || removal || p.stretch ? unreached(reachM) : refuse(ui.editBrokenLine, "broken-line");
       // Where the line actually reaches each changed place. A point in a
       // field is answered by the router with a line that turns back at the
       // nearest track, silently; the place follows the line and the rider is
@@ -1834,7 +1847,7 @@ export function HomePage() {
       }
       // Where a grabbed line point was taken only mattered to this edit's
       // plan; the shaping point it became is an ordinary one from here on.
-      const settled = { ...snapped.places, vias: snapped.places.vias.map((v) => {
+      const settled = { ...snapped.places, ...(planned.places.avoid ? { avoid: planned.places.avoid } : {}), vias: snapped.places.vias.map((v) => {
         const { grabbedAt: _g, ...rest } = v; void _g;
         // The point reached straight carries it: taking it out takes its stretch out.
         return straight && v.lon === asked[0][0] && v.lat === asked[0][1] ? { ...rest, reach: "straight" as const } : rest;
@@ -1874,6 +1887,7 @@ export function HomePage() {
         // Named by whose spur it is (the server says), not by the kind of
         // edit: a bend can leave a neighbouring stop on one.
         deadEndNote,
+        ...(p.notesExtra ?? []),
       ].filter(Boolean);
       const beforeRide = { distanceMeters: edited?.distanceMeters ?? route.distanceMeters, durationSeconds: edited?.durationSeconds ?? route.durationSeconds, overlap: edited?.overlap ?? route.overlap };
       // Rules 2 and 4: outside the profile, or a big detour — said with what
@@ -2738,6 +2752,98 @@ export function HomePage() {
   }
   // ── /line-sheet ──
 
+  // ── stretch ── backlog 36: a stretch of the line excluded, or ridden back another way (lib/routing/stretch.ts).
+  /** The line a stretch is measured on: the chain's top, else the ride. */
+  function stretchBase(): { segments: Segments; line: Point[]; cum: number[]; places: RidePlaces } | null {
+    if (!route || !ridePlaces) return null;
+    const { segments, top } = baseNow();
+    const line = coordinatesOf(segments);
+    if (line.length < 2) return null;
+    return { segments, line, cum: cumulative(line), places: top?.ride.places ?? ridePlaces };
+  }
+  function stretchAt(alongMeters: number): { stretch: Stretch; passes: { first: Stretch; second: Stretch } | null } | null {
+    const b = stretchBase();
+    if (!b) return null;
+    // Breaks: where the ride's segments split (a change of road — our junctions) and its places.
+    const breaks: number[] = [];
+    let walked = 0;
+    for (const f of b.segments.features) { walked += lineMeters(f.geometry.coordinates as Point[]); breaks.push(walked); }
+    breaks.push(...anchorsAlong(anchorsOf(b.places, b.line[b.line.length - 1]), b.line, b.cum));
+    const stretch = defaultStretch({ total: b.cum[b.cum.length - 1], alongMeters, breaks });
+    return { stretch, passes: retracedPasses(b.line, b.cum, stretch) };
+  }
+  /** A place's name for „starp „A” un „B””: -1 the start, vias.length the finish. */
+  function stretchPlaceName(places: RidePlaces, index: number): string {
+    if (index < 0) return places.start.name || ui.mapStart;
+    if (index >= places.vias.length) return places.roundTrip ? places.start.name || ui.mapStart : places.finish?.name || ui.mapFinish;
+    const v = places.vias[index];
+    if (isShape(v)) return ui.shapePointName;
+    const n = places.vias.slice(0, index + 1).filter((q) => !isShape(q)).length;
+    return v.name || `${ui.mapStop} ${n}`;
+  }
+  function planFor(kind: "exclude" | "back", s: Stretch) {
+    const b = stretchBase();
+    if (!b) return null;
+    const passes = kind === "back" ? retracedPasses(b.line, b.cum, s) : null;
+    if (kind === "back" && !passes) return null;
+    const fence = stretchLine(b.line, b.cum, kind === "back" ? passes!.first : s);
+    const route = kind === "back" ? passes!.second : s;
+    return { b, planned: planStretch({ places: b.places, line: b.line, cum: b.cum, route, fence, persist: kind === "exclude", fixed: drawnIntervals(b.segments) }) };
+  }
+  /** Why the row is off for this stretch (said in the row, never swallowed), or null. */
+  function stretchBlock(kind: "exclude" | "back", s: Stretch): string | null {
+    const got = planFor(kind, s);
+    if (!got) return ui.resEditFailed;
+    const pl = got.planned;
+    if (!("error" in pl)) return null;
+    if (pl.error === "stop-inside") return fi(ui.stretchStopInside, { name: stretchPlaceName(got.b.places, pl.index) });
+    if (pl.error === "drawn") return ui.stretchDrawn;
+    return fi(ui.stretchFull, { n: MAX_AVOID });
+  }
+  /** „Izslēgt šo posmu” / „Atpakaļ pa citu ceļu”: routed round the fence, shown as a proposal (✓ ✕ ↶, chained like any edit). */
+  function proposeStretch(kind: "exclude" | "back", s: Stretch) {
+    const reason = stretchBlock(kind, s);
+    if (reason) { setEditNote(reason); return; }
+    const got = planFor(kind, s);
+    if (!got || "error" in got.planned || !plan || !route) return;
+    const { b, planned: sp } = got;
+    stopProposalWork();
+    const token = ++proposalSeq.current;
+    overrideArmed.current = null;
+    setBlocking(null); setWideAsk(null); setStraightAsk(null); setChainAsk(null);
+    const { top } = baseNow();
+    const stacked = top ? { baseRide: { distanceMeters: top.ride.distanceMeters, durationSeconds: top.ride.durationSeconds }, origin: ridePlaces! } : {};
+    const change: ProposedChange = { kind: "rows", rows: rowsOf(sp.places) };
+    live.current = { token, key: `stretch:${kind}:${Math.round(s.fromMeters)}:${Math.round(s.toMeters)}`, base: b.segments, routeId: route.id, landed: null, change, renames: {} };
+    setEditNote(null);
+    const planned: EditPlan = { kind: "avoid-stretch", places: sp.places, runs: [sp.run] };
+    dispatchProposal({ type: "route", token, how: planned.kind });
+    track(kind === "exclude" ? "stretch_exclude_asked" : "stretch_back_asked", { dropped: sp.dropped });
+    void routeProposal({
+      token, before: b.places, planned, baseSegments: b.segments, line: b.line, shape: false, change, wide: false,
+      stretch: { fence: sp.fence, a: stretchPlaceName(b.places, sp.between[0]), b: stretchPlaceName(b.places, sp.between[1]) },
+      ...(sp.dropped ? { notesExtra: [sp.dropped === 1 ? ui.stretchDroppedOne : fi(ui.stretchDropped, { n: sp.dropped })] } : {}),
+      ...stacked,
+    });
+  }
+  /** „Atļaut atkal”: the exclusion goes; the line does not change — one commit, one ↶ step. */
+  function allowStretch(index: number) {
+    if (!plan || !route || !ridePlaces || commitWaiter.current) return;
+    if (chainRef.current.rides.length) stackProposal();
+    const topNow = chainTopOf(chainRef.current);
+    const base = topNow?.ride.places ?? ridePlaces;
+    const avoid = (base.avoid ?? []).filter((_, i) => i !== index);
+    const { avoid: _was, ...rest } = base;
+    void _was;
+    const next: RidePlaces = avoid.length ? { ...rest, avoid } : rest;
+    track("stretch_allowed", {});
+    if (stackPlaces(next)) return;
+    discardProposal();
+    commitPlacesOnLine(next, "avoid-stretch");
+    setEditNote(ui.excludedAllowed);
+  }
+  // ── /stretch ──
+
   /**
    * One step back: the ride exactly as it was on screen before the last edit.
    *
@@ -3426,6 +3532,12 @@ export function HomePage() {
         // „Pārrēķināt posmu”, on offer while its refusal is shown (`askWide`).
         onWide: wideOffered ? acceptWide : undefined,
         onPassHere: dropPassHere,
+        // ── stretch ──
+        stretchAt,
+        stretchBlock,
+        onStretch: proposeStretch,
+        excluded: (workingPlaces.avoid ?? []).map(avoidPoints),
+        onAllow: allowStretch,
         onRename: (from, to) => renameRef.current(from, to),
         // „Vest pa taisno”, on offer while its guidance line is shown (`askStraight`).
         onStraight: straightOffered ? acceptStraight : undefined,
