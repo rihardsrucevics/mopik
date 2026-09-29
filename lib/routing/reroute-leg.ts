@@ -1502,6 +1502,29 @@ export function spanRun(params: {
 }
 
 /**
+ * The place a removal takes out, and the kept places either side of it — the
+ * two the merged leg has to join (rider, 2026-09-29: „Izņemt” on a stop by
+ * the Rīga–Ērgļi road was refused as a line that could not be joined, with
+ * roads all round). `named` are the nearest places either side that have a
+ * name — the start, a stop, the finish — for saying which stretch it is: a
+ * pass-through point has none of its own. Null when `after` is not `before`
+ * with one via less. A round trip's last neighbour is its start; a one-way
+ * ride with no finish has none (`to` null).
+ */
+export function removedNeighbours(before: RidePlaces, after: RidePlaces): {
+  gone: RidePlace; from: RidePlace; to: RidePlace | null; named: { from: RidePlace; to: RidePlace | null };
+} | null {
+  if (after.vias.length !== before.vias.length - 1) return null;
+  const i = before.vias.findIndex((v, k) => !after.vias[k] || !same(v, after.vias[k]));
+  if (i < 0 || !before.vias.filter((_, k) => k !== i).every((v, k) => same(v, after.vias[k]))) return null;
+  const list: (RidePlace | null)[] = [before.start, ...before.vias, before.roundTrip ? before.start : before.finish];
+  let a = i, b = i + 2;
+  while (a > 0 && list[a] && isShape(list[a]!)) a--;
+  while (b < list.length - 1 && list[b] && isShape(list[b]!)) b++;
+  return { gone: before.vias[i], from: list[i]!, to: list[i + 2] ?? null, named: { from: list[a]!, to: list[b] ?? null } };
+}
+
+/**
  * The places at the two ends of a span (`spanRun`): the kept places the
  * whole stretch is re-routed between, for saying which stretch it is. Null
  * for an end that is no place — the drawn line's own end on a one-way ride

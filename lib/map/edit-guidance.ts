@@ -91,7 +91,8 @@ export type GuideState =
   // dead end, a big detour) — its notes say what, this says what to do, once.
   | { kind: "proposed"; warned?: boolean }
   // `wide`: „Pārrēķināt posmu” is on offer; `straight`: „Vest pa taisno” is.
-  | { kind: "refused"; reason: string; wide?: boolean; straight?: boolean }
+  // `remove`: the refused edit took a point out — choosing another place is no answer.
+  | { kind: "refused"; reason: string; wide?: boolean; straight?: boolean; remove?: boolean }
   // Release B item 4: `count` edits chained, waiting for one ✓.
   | { kind: "chain"; count: number };
 
@@ -103,7 +104,7 @@ export function guideAction(t: T, state: GuideState): string {
     case "via": return t("guideTapVia");
     case "routing": return t("guideRouting");
     case "proposed": return t(state.warned ? "guideWarned" : "guideProposed");
-    case "refused": return t(state.straight ? "guideRefusedStraight" : state.wide ? "guideRefusedWide" : "guideRefused");
+    case "refused": return t(state.straight ? "guideRefusedStraight" : state.wide ? "guideRefusedWide" : state.remove ? "guideRefusedRemove" : "guideRefused");
     case "chain": return fi(t("chainGuide"), { n: state.count });
   }
 }
@@ -114,7 +115,7 @@ export function guideAction(t: T, state: GuideState): string {
  * a warned proposal with several notes (a dead end and a profile note) says
  * „Tomēr braukt” once, after its numbers — never once per note.
  */
-export function proposalGuide(t: T): { routing: string; proposed: string; warned: string; refused: string; refusedWide: string; refusedStraight: string } {
+export function proposalGuide(t: T): { routing: string; proposed: string; warned: string; refused: string; refusedWide: string; refusedStraight: string; refusedRemove: string } {
   return {
     routing: guideAction(t, { kind: "routing" }),
     proposed: guideAction(t, { kind: "proposed" }),
@@ -122,6 +123,7 @@ export function proposalGuide(t: T): { routing: string; proposed: string; warned
     refused: guideAction(t, { kind: "refused", reason: "" }),
     refusedWide: guideAction(t, { kind: "refused", reason: "", wide: true }),
     refusedStraight: guideAction(t, { kind: "refused", reason: "", straight: true }),
+    refusedRemove: guideAction(t, { kind: "refused", reason: "", remove: true }),
   };
 }
 

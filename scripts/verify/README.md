@@ -4,7 +4,7 @@ Two suites, both Playwright, both at **375×812 and 1280×800**:
 
 | | what | when | time |
 |---|---|---|---|
-| `smoke.sh` (`npm run verify:smoke`) | the core edit flow, 73 checks per viewport | every change to the edit flow, before every release | 92–130 s replayed on `next start`, both viewports in parallel |
+| `smoke.sh` (`npm run verify:smoke`) | the core edit flow, 91 checks per viewport | every change to the edit flow, before every release | 92–130 s replayed on `next start`, both viewports in parallel |
 | `full.sh` | the older scenario scripts (e2e, insert, linesheet, gap, guidance, guard, straight, placesearch, gate, laurini, ropazi, mergupe, batchbad ×2, ogre ×2, chain) | **big releases only** | 12 min recording (the release B run of the same set took ~33 min) |
 
 Where the time went before: every script generated its ride from scratch against the one-vCPU production router (~50 s per ride, slower when several agents share it), searched places through Photon, and ran on `next dev`. The kit removes all three.
@@ -15,6 +15,7 @@ On fixture rides with the router cache (`smoke.cjs`):
 
 - **Add a stop** (Sigulda → Līgatne → Cēsis): proposal → chip with numbers → halo over the dimmed ride → ✕ leaves line and ↶ as they were → again → ✓ commits with no extra routing → ↶ undoes.
 - **Move a stop** (Līgatne) and **move a pass-through point** (the rider's `ride-0928` with his four points), the same way.
+- **Remove a stop** and **remove a pass-through point** (the rider's `kapselu-upmali` GPX, „Pietura 1 · Viduči” by the Rīga–Ērgļi road): „Izņemt” → proposal → chip → halo → ✕ → again → ✓ → ↶. And with rung 0 forced to 422 (the production failure's shape: his own profile cannot join the cuts) the removal climbs the relaxed ladder to a proposal — never refused.
 - **Line sheet** opens on a tap on the line; **„Pievienot punktu šeit”** adds a dot with the line unchanged and nothing routed; ↶ takes it away.
 - **„Vest pa taisno”**: no road there → refused with the offer → proposal → ✓ keeps a drawn stretch → ↶.
 - **„Tomēr braukt” guard**: strict profile forced to 422 → warned, ✓ off, the offer said once; a forced ✓ click and Enter keep nothing; „Tomēr braukt” commits; ↶.
@@ -79,6 +80,7 @@ Cold cache timing (RECORD=1 against the production router brouter.mopik.eu, `nex
 | `ride-0928` | the same with the rider's four pass-through points (his `ride-0928.gpx`) | generated 2026-09-29 |
 | `laurini-ergli` | Lauriņi → Ērgļi; its direct ride is the rider's `ride-laurini-ergli.gpx`, 2093 points | captured generation (release B) |
 | `grostonas-ergli` | Grostonas iela 19 → Ērgļi | captured generation: **the router refused it live on 2026-09-29** („Neizdevās atrast maršrutu…”, tried 8) |
+| `kapselu-upmali` | Kapseļu iela → Viduči → Upmaļi, 101 km, hand-edited, five pass-through points | the rider's `scripts/fixtures/ride-kapselu-upmali-2026-09-29.gpx`, track point for point (`fixture-from-gpx.cjs`) |
 | `grostonas-chain` | Grostonas iela 19 → Sidgunda → Mālpils → Augšmala → Ērgļi | captured generation (release B) |
 
 **Adding a fixture:**
@@ -86,6 +88,7 @@ Cold cache timing (RECORD=1 against the production router brouter.mopik.eu, `nex
 1. Add an entry to `fixtures.spec.json`: `places` (names), optional `shapePoints` (`{lat, lon, afterPlace}`, where `afterPlace` is the index in `[start, ...stops]`).
 2. Add each place to `places.json` under the first three lowercase letters of its name (take the coordinates from `/api/places?q=…` once).
 3. `node scripts/verify/record-fixtures.cjs <name>` — one real generation (20–80 s), at most two at a time. With `--response=<file>` it takes a captured `/api/generate-route` answer instead of the router.
+   A hand-edited ride the router would not generate again: `node scripts/verify/fixture-from-gpx.cjs <name> <file.gpx>` takes the places and pass-through points from the rider's exported GPX (`<wpt>`/`<rte>`) and the ride from its `<trk>`, point for point (~1 km `road|gravel` segments: the GPX has no classes); the plan's options come from `--template=` (default `ride-0928`) plus the spec's `plan`. Do not `record-fixtures.cjs` such a fixture — that regenerates it.
 4. Commit the fixture. Re-record fixtures when the generate response shape changes, or when a fixture's ride no longer looks like what the app would produce. The edit flow tests the ride it is given, so an old ride stays a valid test ride.
 
 The ported `full/` scripts need no change for fixtures: `plan(page, places)` finds a plain fixture with the same places (first three letters each), and the next `generate(page)` loads it. `FIXTURES=off` goes back to the form and a real generation.

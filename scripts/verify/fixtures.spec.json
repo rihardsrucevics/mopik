@@ -69,5 +69,16 @@
       "Augšmala",
       "Ērgļi"
     ]
+  },
+  "kapselu-upmali": {
+    "description": "The rider's ride-kapselu-upmali.gpx (2026-09-29): Kapseļu iela → Viduči → Upmaļi, one way, 101 km, hand-edited, five pass-through points; „Pietura 1 · Viduči” by the Rīga–Ērgļi road. Built from the GPX with fixture-from-gpx.cjs (the track point for point). The remove-a-stop ride.",
+    "places": [
+      "Kapseļu iela",
+      "Viduči",
+      "Upmaļi"
+    ],
+    "plan": {
+      "includeTet": true
+    }
   }
 }
