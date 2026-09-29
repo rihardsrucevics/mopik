@@ -94,6 +94,7 @@ export type AnalyticsEvent =
   | "route_edit_wide_accepted" // „Pārrēķināt posmu” on a change only the whole-span re-route could make (it was refused with the km, `wide-ask`)
   | "route_edit_override_accepted" // „Tomēr braukt” on a proposal outside the profile or with a big detour; props: why (profile|detour|deadEnd), relax (the profile rung) — how often is the profile in the way?
   | "route_edit_straight_asked" // „Vest pa taisno” where no road reaches the point: routed as far as a road goes, then straight — how often does a rider need a point off every road?
+  | "route_edit_chain_asked"  // „Vest pa taisno caur visiem”: several pending points in a row off any road joined straight as one chain; props: points, runs
   | "route_edit_widened" // a place left on a spur the router did not prove a dead end, ridden through by a wider stretch — how often was the window too tight? (spur_m, km_delta)
   | "route_edit_blocked" // a refused or warned proposal with several points, probed each on its own; props: points, blocking (how many were named), causes (far,profile,detour,failed) — which points stop a batch?
   | "batch_rest_kept" // „Pievienot pārējās”: the points that stopped a batch dropped, the rest proposed again; props: dropped, kept
