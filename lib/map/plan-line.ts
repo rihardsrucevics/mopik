@@ -37,3 +37,44 @@ export function planLine(params: {
   ];
   return { confirmed: confirmed.length >= 2 ? confirmed : [], pending: line.length >= 2 ? line : null };
 }
+
+/** A point of a pending connector; `id` names the pending mark it is (−1 the single mark, else a batch stop's id) so the map can move it live. */
+export type LinkPoint = { lat: number; lon: number; id?: number };
+
+/**
+ * Edit mode's pending connectors (release B, rider 2026-09-28, images/27):
+ * while points wait for ✓, thin grey dashed straight lines prev → new → next,
+ * for each leg a pending point is in and no other — one chain per leg, the
+ * leg's fixed places at its ends and its pending points between them in
+ * riding order. One mechanism for every pending mark (a batch, a single new
+ * or moved pin; a pass-through point's chain is resolved by the map along the
+ * line), replacing the blue grab connector and the black move preview.
+ *
+ * `rows` are the form's rows in order, each its point or null (empty);
+ * `pending` marks the rows that wait. A round trip's last leg leads back to
+ * the start; a one-way ride's new finish ends its chain.
+ */
+export function pendingChains(params: { rows: readonly (LinkPoint | null)[]; pending: readonly boolean[]; roundTrip: boolean }): LinkPoint[][] {
+  const { rows, pending, roundTrip } = params;
+  const fixed = rows.map((r, i) => (r && !pending[i] ? i : -1)).filter((i) => i >= 0);
+  const chains: LinkPoint[][] = [];
+  let open: LinkPoint[] | null = null;
+  let prevFixed: number | null = null;
+  rows.forEach((r, i) => {
+    if (!r) return;
+    if (pending[i]) {
+      if (!open) open = prevFixed !== null ? [rows[prevFixed]!] : [];
+      open.push(r);
+      return;
+    }
+    if (open) { open.push(r); chains.push(open); open = null; }
+    prevFixed = i;
+  });
+  if (open) {
+    const tail = open as LinkPoint[];
+    // Past the last fixed place: a round trip rides back to the start.
+    if (roundTrip && fixed.length) tail.push(rows[fixed[0]]!);
+    chains.push(tail);
+  }
+  return chains.filter((c) => c.length >= 2);
+}

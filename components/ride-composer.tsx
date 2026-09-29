@@ -6,7 +6,7 @@ import type { MapChoiceGroup, MapControls, MapPendingMark } from "@/components/r
 import type { MapPointSheetRow } from "@/components/map-point-sheet";
 import { RidePlan } from "@/lib/chat/ride-plan";
 import { composeRidePlan, placesFromPlan } from "@/lib/chat/compose-plan";
-import { planLine } from "@/lib/map/plan-line";
+import { pendingChains, planLine } from "@/lib/map/plan-line";
 import { emptyUndo, popRedo, popUndo, pushUndo, type UndoStack } from "@/lib/map/undo-stack";
 import { RoutePlaces, addStop, addedStopIndex, defaultActiveRow, followRow, rowAfterConfirm, rowLabel, maxRows } from "@/components/route-places";
 import { useLocale } from "@/lib/i18n/use-locale";
@@ -21,8 +21,9 @@ import type { RidePlaces, ShapeEdit } from "@/lib/routing/reroute-leg";
 import type { Point } from "@/lib/geo/geometry";
 import { onLineElsewhere, placeNewPoint, stopNumbers, type InsertOption, type Placement } from "@/lib/map/insert-leg";
 import type { ProposalState, ProposedChange } from "@/lib/map/edit-proposal";
+import { fixesFor, type Blocking } from "@/lib/map/blocking";
 import { stepShape, type ShapePending } from "@/lib/map/shape-pending";
-import { OBJECT_COLOR, actionDetail, guidance, objectExplainer, type EditObject, type ObjectMark } from "@/lib/map/edit-guidance";
+import { OBJECT_COLOR, actionDetail, guidance, objectExplainer, pointLabel, type EditObject, type ObjectMark } from "@/lib/map/edit-guidance";
 // ── line-sheet ──
 import { editTipDue, lineSheetRows, markEditTipSeen, type LineSpot } from "@/lib/map/line-sheet";
 // ── /line-sheet ──
@@ -32,7 +33,7 @@ import { stepBatch } from "@/lib/map/batch-commit";
 import { mapFieldMode } from "@/lib/map/map-field";
 import { openMapFullscreen } from "@/lib/map/fullscreen";
 import { MAX_SHAPE_POINTS, MAX_STOPS } from "@/lib/chat/ride-limits";
-import { demoteInPlan, livePlanDots, neighboursAlong, planDotsFromPlan, planShapePoints, pointActions, promoteInPlan, selectionLive, type PlanDot, type PointSelection } from "@/lib/map/point-selection";
+import { demoteInPlan, livePlanDots, planDotsFromPlan, planShapePoints, pointActions, promoteInPlan, selectionLive, type PlanDot, type PointSelection } from "@/lib/map/point-selection";
 import {
   PROFILE_PRESETS,
   normalizeProfile,
@@ -242,6 +243,15 @@ export type RideEdit = {
   onOverride?: (commitNow: boolean) => void;
   /** „Vest pa taisno”: no road reaches the point — as far as a road goes, then straight (a proposal). Absent unless on offer. */
   onStraight?: () => void;
+  /**
+   * Release B item 1: the proposal's points that stop it (refused or
+   * warned) — ringed on the map, fixed per point with the notice area's
+   * chips („Pārvietot”, „Izņemt”, „Vest pa taisno”, „Pievienot pārējās”).
+   * The page names them in the guidance line (lib/map/blocking.ts).
+   */
+  blocking?: Blocking | null;
+  /** „Vest pa taisno” for one point of a batch: the rest routed, that point straight. Absent unless on offer. */
+  onStraightAt?: (at: { lat: number; lon: number }) => void;
 };
 
 /** This device's storage for the one-time edit hint, or nothing (a private window, blocked site data). */
@@ -1974,6 +1984,27 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     setBatch(batchRef.current);
     setChosenRow(batchRef.current[batchRef.current.length - 1].row);
   };
+  /**
+   * „Pievienot pārējās” (release B item 1): the points that stop the batch
+   * go, the rest stay pending and are proposed again — so they still land.
+   */
+  const dropBatchItems = (ids: number[]) => {
+    const going = batch.filter((b) => ids.includes(b.id));
+    if (!going.length) return;
+    if (going.length >= batch.length) { discardBatch(); return; }
+    setBatchSel(null);
+    if (newPoint && ids.includes(newPoint.id)) setNewPoint(null);
+    const rows = new Set(going.map((b) => b.row));
+    const keep = (i: number) => !rows.has(i);
+    setPlaces(places.filter((_, i) => keep(i)));
+    const nextPicked: Record<number, ResolvedPlace | null> = {};
+    for (const [k, v] of Object.entries(picked)) { const i = Number(k); if (keep(i)) nextPicked[i - [...rows].filter((r) => r < i).length] = v; }
+    setPicked(nextPicked);
+    batchRef.current = batch.filter((b) => !ids.includes(b.id)).map((b) => ({ ...b, row: b.row - [...rows].filter((r) => r < b.row).length }));
+    setBatch(batchRef.current);
+    setChosenRow(batchRef.current[batchRef.current.length - 1].row);
+    track("batch_rest_kept", { dropped: going.length, kept: batchRef.current.length });
+  };
   /** ✕ on the header while a batch is open: every pending stop goes. */
   const discardBatch = () => {
     track("batch_discarded", { n: batch.length });
@@ -2273,6 +2304,12 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   const moveOnLine = Boolean(movedShape && edit?.line && edit.places
     && onLineElsewhere({ line: edit.line, places: edit.places, shapeIndex: movedShape.index, to: movedShape.to }));
   const removeMoved = moveOnLine && moveRemove === moveKey;
+  // ── release-b: blocking ── Which pending points stop the proposal (item 1).
+  const blockingNow = edit?.blocking && !edit.blocking.probing && edit.blocking.points.length ? edit.blocking : null;
+  const sameSpot = (a: { lat: number; lon: number }, b: { lat: number; lon: number }) => Math.abs(a.lat - b.lat) < 1e-7 && Math.abs(a.lon - b.lon) < 1e-7;
+  const blockedItems = blockingNow ? batch.filter((b) => blockingNow.points.some((q) => sameSpot(q, b))) : [];
+  const pendingBlocked = Boolean(blockingNow && !batch.length);
+  // ── /release-b: blocking ──
   /** Whether the new point's kind can be switched now: one new point, pending, not being committed. */
   const canSwitchKind = Boolean(edit?.onPropose && newPoint && !batchCommitting && !edit.rerouting && (newPoint.kind === "pass"
     ? shapePending?.kind === "add" && Boolean(shapePending.to) && !atCap
@@ -2282,7 +2319,8 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
    * stay put). What each does is named here (`act`) and wired to the
    * handlers in the controls effect below, as every other control is.
    */
-  type ChoiceAct = { kind: "stop" | "pass" } | { leg: string } | { remove: boolean } | { wide: true } | { override: true } | { straight: true };
+  type ChoiceAct = { kind: "stop" | "pass" } | { leg: string } | { remove: boolean } | { wide: true } | { override: true } | { straight: true }
+    | { block: "move" | "remove" | "straight" | "rest"; id?: number };
   type ChoiceSpec = Omit<MapChoiceGroup, "options"> & { options: (Omit<MapChoiceGroup["options"][number], "onSelect"> & { act: ChoiceAct })[] };
   const choices: ChoiceSpec[] = [];
   if (canSwitchKind && newPoint) choices.push({
@@ -2321,6 +2359,33 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     key: "override", label: t(locale, "editOverrideLabel"), action: true,
     options: [{ key: "override", label: t(locale, "editOverrideAccept"), selected: false, act: { override: true } }],
   });
+  // ── release-b: blocking ── The points that stop the proposal (item 1):
+  // their fixes, per point, and „Pievienot pārējās” for the rest of a batch.
+  if (blockingNow && blockedItems.length) {
+    const first = blockedItems[0];
+    const point = blockingNow.points.find((q) => sameSpot(q, first));
+    const fixes = fixesFor(blockingNow, edit?.proposal?.phase === "proposed");
+    const who = point ? pointLabel(point) : "";
+    choices.push({
+      key: "block", label: who ? `${t(locale, "blockChipLabel")}: ${who}` : t(locale, "blockChipLabel"), action: true,
+      options: [
+        { key: "move", label: t(locale, "blockChipMove"), title: who ? `${t(locale, "blockChipMove")}: ${who}` : undefined, selected: false, act: { block: "move", id: first.id } },
+        { key: "remove", label: t(locale, "blockChipRemove"), title: who ? `${t(locale, "blockChipRemove")}: ${who}` : undefined, selected: false, act: { block: "remove", id: first.id } },
+        ...(fixes.straight && edit?.onStraightAt ? [{ key: "straight", label: t(locale, "editStraightAccept"), selected: false, act: { block: "straight" as const, id: first.id } }] : []),
+      ],
+    });
+    if (blockedItems.length < batch.length) choices.push({
+      key: "rest", label: t(locale, "blockChipRest"), action: true,
+      options: [{ key: "rest", label: t(locale, "blockChipRest"), selected: false, act: { block: "rest" } }],
+    });
+  } else if (blockingNow && pendingBlocked) {
+    // One point, not a batch: ✕ takes it out, a tap elsewhere moves it; „Vest pa taisno” is its own chip.
+    choices.push({
+      key: "block", label: t(locale, "blockChipLabel"), action: true,
+      options: [{ key: "remove", label: t(locale, "blockChipRemove"), selected: false, act: { block: "remove" } }],
+    });
+  }
+  // ── /release-b: blocking ──
   const choicesKey = choices.map((g) => `${g.key}:${g.options.map((o) => `${o.key}${o.selected ? "*" : ""}${o.label}`).join(",")}`).join("|");
   /** Why no stop fits, whole: the „+”'s name and tooltip, the field's at the cap. */
   const capSentence = fi(t(locale, "mapAddStopFull"), { n: MAX_STOPS });
@@ -2407,6 +2472,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     shapePress: (index: number) => void; pointRemove: () => void; confirmRemove: () => void; pointPromote: () => void; pointDemote: () => void; pointClose: () => void; pointMove: () => void;
     confirmBatch: () => void; discardBatch: () => void; undoBatch: () => void;
     selectBatch: (id: number) => void; moveBatch: (id: number, at: { lat: number; lon: number }) => void; dropBatch: (id: number) => void;
+    dropBatchItems: (ids: number[]) => void; blockMove: (id: number) => void;
     moveSelectedToRoad: () => void; dropSelected: () => void;
     undo: () => void;
     switchKind: (to: "stop" | "pass") => void; chooseLeg: (key: string) => void; moveChoice: (remove: boolean) => void; wide: () => void;
@@ -2486,17 +2552,35 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   const viaWaiting = lineSel?.phase === "via" && grab !== null && !grab.to;
   const lineKey = !lineSel ? "" : [lineSel.phase, lineSel.spot.lat, lineSel.spot.lon, lineSel.km, lineSel.heading, viaWaiting ? 1 : 0].join("|");
   // ── /line-sheet ──
-  const movePreview = !edit || batch.length ? null
+  // Release B: one mechanism for every pending mark — chains prev → new →
+  // next per affected leg (`pendingChains`), gone once the proposal has
+  // landed (its line says it then) and with the pending state on ✓ / ✕.
+  const proposalLanded = edit?.proposal?.phase === "proposed";
+  const chainRow = (i: number) => (picked[i] ? { lat: picked[i]!.lat, lon: picked[i]!.lon } : null);
+  const movePreview = !edit || proposalLanded ? null
+    : batch.length ? {
+        chains: pendingChains({
+          rows: places.map((_, i) => { const b = batch.find((x) => x.row === i); return b ? { lat: b.lat, lon: b.lon, id: b.id } : chainRow(i); }),
+          pending: places.map((_, i) => batch.some((x) => x.row === i)),
+          roundTrip: tripType === "round_trip",
+        }),
+        candidate: null,
+      }
     : shapePending?.kind === "add" ? { origin: shapePending.at, candidate: shapePending.to, ...(viaWaiting ? { follow: true } : {}) }
     : shapePending?.kind === "move" ? { origin: edit.shapePoints[shapePending.index] ?? null, candidate: shapePending.to }
     : pointSel?.kind === "shape" && pointSel.phase === "move" ? { origin: edit.shapePoints[pointSel.index] ?? null, candidate: null }
-    : activeRow !== null && (preview || pointSel?.phase === "move" || rowIsNew) ? {
-        neighbours: neighboursAlong(
-          places.map((_, i) => (i !== activeRow && picked[i] ? { point: { lat: picked[i]!.lat, lon: picked[i]!.lon }, along: i } : null)).filter((a): a is { point: { lat: number; lon: number }; along: number } => a !== null),
-          activeRow, tripType === "round_trip"),
-        // The mark itself while its name is still being looked up.
-        candidate: preview ? { lat: preview.lat, lon: preview.lon } : pickPoint && pickPoint.token !== 0 && namedToken !== pickPoint.token ? { lat: pickPoint.lat, lon: pickPoint.lon } : null,
-      }
+    : activeRow !== null && (preview || pointSel?.phase === "move" || rowIsNew) ? (() => {
+        // The mark itself — while its name is still being looked up, its spot.
+        const candidate = preview ? { lat: preview.lat, lon: preview.lon } : pickPoint && pickPoint.token !== 0 && namedToken !== pickPoint.token ? { lat: pickPoint.lat, lon: pickPoint.lon } : null;
+        return {
+          chains: !candidate ? [] : pendingChains({
+            rows: places.map((_, i) => (i === activeRow ? { ...candidate, id: -1 } : chainRow(i))),
+            pending: places.map((_, i) => i === activeRow),
+            roundTrip: tripType === "round_trip",
+          }),
+          candidate,
+        };
+      })()
     : null;
   const movePreviewKey = movePreview ? JSON.stringify(movePreview) : "";
   const stopCount = places.slice(1, tripType === "one_way" ? -1 : undefined).filter((p) => p.trim()).length;
@@ -2687,9 +2771,12 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     const lowerFirst = (w: string) => w.charAt(0).toLocaleLowerCase(locale) + w.slice(1);
     const detailed = (row: MapPointSheetRow, action: Parameters<typeof actionDetail>[1]): MapPointSheetRow => ({ ...row, detail: actionDetail(tk, action, selObject ?? "stop") });
     // ── /edit-guidance ──
+    // Release B item 1: a blocked point chosen with „Pārvietot” waits for its new place.
+    const blockedSel = selectedItem && blockingNow ? blockingNow.points.find((q) => sameSpot(q, selectedItem)) : undefined;
+    const blockMoveWords = blockedSel ? fi(t(locale, "blockMoveHint"), { name: pointLabel(blockedSel) }) : null;
     onMapControlsChange?.({
       pending,
-      hint: batchActive ? insertWords ?? batchCount : removeHint ? removeHint : pointSel?.phase === "move" ? t(locale, "pointMoveHint") : shapePending?.kind === "move" ? t(locale, "shapeMoveHint") : viaWaiting ? t(locale, "lineViaHint") : grab ? insertWords ?? t(locale, "mapGrabHint") : activeRow === null ? noRowWords : fi(t(locale, "mapActiveRowHint"), { label: activeLabel }),
+      hint: batchActive ? blockMoveWords ?? insertWords ?? batchCount : removeHint ? removeHint : pointSel?.phase === "move" ? t(locale, "pointMoveHint") : shapePending?.kind === "move" ? t(locale, "shapeMoveHint") : viaWaiting ? t(locale, "lineViaHint") : grab ? insertWords ?? t(locale, "mapGrabHint") : activeRow === null ? noRowWords : fi(t(locale, "mapActiveRowHint"), { label: activeLabel }),
       rowLabel: activeRow === null || batchActive ? undefined : activeLabel,
       // The pin the active row's mark will become, and a stop's number: one
       // more than the filled, numbered stops above it — the order the map
@@ -2700,6 +2787,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
           ? { role: "finish" as const, number: null }
           : { role: "via" as const, number: (newRow === activeRow ? rowNumbers[activeRow] : null) ?? 1 + places.slice(1, activeRow).filter((_, j) => picked[j + 1] && !picked[j + 1]?.kind).length },
       onAddStop,
+      pendingBlocked,
       // At the cap, why „+” is greyed out and the next mark adds nothing —
       // short, on a line of its own; the sentence is its tooltip.
       // While a proposal is shown the map's chip takes this slot (P1-D).
@@ -2719,6 +2807,12 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
             // lets the mark go); once ✓ already let it go (pressed while it
             // routed), the page commits the armed proposal itself.
             else if ("override" in act) { const confirm = pending?.onConfirm; edit?.onOverride?.(!confirm); confirm?.(); }
+            else if ("block" in act) {
+              if (act.block === "rest") h?.dropBatchItems(blockedItems.map((b) => b.id));
+              else if (act.block === "move" && act.id !== undefined) h?.blockMove(act.id);
+              else if (act.block === "remove") { if (act.id !== undefined) h?.dropBatch(act.id); else pending?.onCancel?.(); }
+              else if (act.block === "straight") { const b = batch.find((x) => x.id === act.id); if (b) edit?.onStraightAt?.({ lat: b.lat, lon: b.lon }); }
+            }
             else h?.moveChoice(act.remove);
           },
         })),
@@ -2741,7 +2835,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
         // A batch has no field to type into — its count is the field's words
         // (and the cap, once it is reached).
         // The cap is said on its own line (`notice`); the field keeps the count.
-        placeholder: batchActive ? insertWords ?? batchCount : removeHint ? removeHint : pointSel?.phase === "move" ? t(locale, "pointMoveHint") : shapePending?.kind === "move" ? t(locale, "shapeMoveHint") : viaWaiting ? t(locale, "lineViaHint") : grab ? insertWords ?? t(locale, "mapGrabHint") : activeRow === null ? noRowWords : newRow === activeRow && insertWords ? insertWords : t(locale, "mapSearchHint"),
+        placeholder: batchActive ? blockMoveWords ?? insertWords ?? batchCount : removeHint ? removeHint : pointSel?.phase === "move" ? t(locale, "pointMoveHint") : shapePending?.kind === "move" ? t(locale, "shapeMoveHint") : viaWaiting ? t(locale, "lineViaHint") : grab ? insertWords ?? t(locale, "mapGrabHint") : activeRow === null ? noRowWords : newRow === activeRow && insertWords ? insertWords : t(locale, "mapSearchHint"),
         // The phone's shorter words for the two that were cut off at 320 px.
         placeholderPhone: batchActive || removeHint || shapePending || grab ? undefined
           : pointSel?.phase === "move" ? t(locale, "pointMoveHintShort")
@@ -2835,6 +2929,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
       batchMode,
       batch: batch.map((b, k) => ({
         id: b.id, lat: b.lat, lon: b.lon, number: rowNumbers[b.row] ?? stopsBefore + k + 1, selected: b.id === batchSel, failing: b.check === "off-road",
+        ...(blockedItems.some((x) => x.id === b.id) ? { blocked: true } : {}),
         // Ridden on past a one-way finish, it is the new finish.
         ...(tripType === "one_way" && b.row === places.length - 1 ? { finish: true } : {}),
       })),
@@ -2876,7 +2971,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     // The parent's callback is an inline arrow and is rebuilt every render;
     // listing it would re-report the same controls on every keystroke.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapLive, activeRow, activeLabel, atCap, activeValue, activeConfirmed, anchor, locale, tripType, rowsKey, pendingKey, mapQuery, activeOwn?.lat, activeOwn?.lon, planKey, grab?.at.lat, grab?.at.lon, batchKey, fitAsk, undo.past.length, edit?.canUndo, edit?.rerouting, batchCommitting, shapeKey, stopCount, pointKey, movePreviewKey, proposalKey, proposeKey, passCount, pointTitle, choicesKey, insertWords, rowNumbers.join(","), lineKey, tipOn]);
+  }, [mapLive, activeRow, activeLabel, atCap, activeValue, activeConfirmed, anchor, locale, tripType, rowsKey, pendingKey, mapQuery, activeOwn?.lat, activeOwn?.lon, planKey, grab?.at.lat, grab?.at.lon, batchKey, fitAsk, undo.past.length, edit?.canUndo, edit?.rerouting, batchCommitting, shapeKey, stopCount, pointKey, movePreviewKey, proposalKey, proposeKey, passCount, pointTitle, choicesKey, insertWords, rowNumbers.join(","), lineKey, tipOn, blockedItems.map((b) => b.id).join(","), pendingBlocked]);
   // Nothing is offered once the form is gone. Without this the page would keep
   // drawing a map header for a form the rider has left.
   useEffect(() => () => onMapControlsChange?.(null),
@@ -2986,6 +3081,8 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
       selectBatch: (id: number) => setBatchSel((sel) => (sel === id ? null : id)),
       moveBatch: (id: number, at: { lat: number; lon: number }) => { moveBatchItem(id, at.lat, at.lon); setBatchSel(null); },
       dropBatch: dropBatchItem,
+      dropBatchItems,
+      blockMove: (id: number) => setBatchSel(id),
       moveSelectedToRoad: () => { if (selectedItem?.snappedTo) { moveBatchItem(selectedItem.id, selectedItem.snappedTo.lat, selectedItem.snappedTo.lon); setBatchSel(null); } },
       dropSelected: () => { if (selectedItem) dropBatchItem(selectedItem.id); },
       undo: undoStep,

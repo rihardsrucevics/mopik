@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { CLOSE_DETOURS, FAR_FROM_LINE_M, ON_LINE_M, onLineElsewhere, placeNewPoint, stopNumbers, type Pt } from "../lib/map/insert-leg";
+import { UNSURE_FLOOR_M, UNSURE_RATIO, isClose, ON_LINE_M, onLineElsewhere, placeNewPoint, stopNumbers, type Pt } from "../lib/map/insert-leg";
 import { mergeAddedInOrder, mergeShapes, planEdit, type RidePlace, type RidePlaces } from "../lib/routing/reroute-leg";
 import { cumulative } from "../lib/routing/detour";
 import type { Point } from "../lib/geo/geometry";
@@ -58,7 +58,7 @@ test("planning: the legs are straight lines — dist(prev, p) + dist(p, next) �
   assert.equal(placeNewPoint({ rows, point: at(5, 200), oneWay: false })!.chosen.index, 1);
 });
 
-test("a tie — the best two detours within 15 % — offers both legs, the best preselected", () => {
+test("a tie — the second detour at most 1.25 × the best — offers both legs, the best preselected", () => {
   // 500 m north of „A” itself: before it or after it is the same detour.
   const p = placeNewPoint({ rows: ROWS, point: at(10, 500), oneWay: true, line: LINE })!;
   assert.equal(p.unsure, "close");
@@ -70,34 +70,71 @@ test("a tie — the best two detours within 15 % — offers both legs, the best 
   assert.equal(again.chosen.key, other);
   assert.deepEqual(new Set([p.chosen.index, again.chosen.index]), new Set([1, 2]));
   assert.deepEqual(again.options!.map((o) => o.key), p.options!.map((o) => o.key), "the same two choices stay on offer");
-  // Just outside the 15 %: sure.
+  // Clearly nearer one leg: sure.
   const clear = placeNewPoint({ rows: ROWS, point: at(12, 500), oneWay: true, line: LINE })!;
   assert.equal(clear.unsure, null);
-  assert.ok(CLOSE_DETOURS === 0.15);
 });
 
-test("far from the line (> 2 km from every leg) offers the best two, even when one is clearly best", () => {
+test("the rule is the ratio of the best two detours, not how far the point is from the line", () => {
+  assert.equal(UNSURE_RATIO, 1.25);
+  assert.equal(UNSURE_FLOOR_M, 200);
+  assert.equal(isClose(4_000, 5_000), true, "a quarter more: asked");
+  assert.equal(isClose(4_000, 5_100), false);
+  assert.equal(isClose(50, 240), true, "both next to nothing: which side is his to say");
+  // 3 km off the middle of leg 1 (A–B): leg 1 costs 6 km, the others 2 × √(5² + 3²) ≈ 11.7 km — sure.
   const p = placeNewPoint({ rows: ROWS, point: at(15, 3_000), oneWay: true, line: LINE })!;
-  assert.equal(p.unsure, "far");
-  assert.equal(p.options!.length, 2);
-  assert.equal(p.options![0].key, "leg:1", "the nearest leg first, preselected");
+  assert.equal(p.unsure, null);
+  assert.equal(p.options, null);
   assert.equal(p.chosen.key, "leg:1");
-  assert.ok(p.chosen.distance > FAR_FROM_LINE_M);
-  // Planning has no line to be far from: sure.
-  assert.equal(placeNewPoint({ rows: ROWS, point: at(15, 3_000), oneWay: true })!.unsure, null);
+  // Far off, beside „A”, 6 km north: the legs either side cost the same 12 km. Asked.
+  const q = placeNewPoint({ rows: ROWS, point: at(10, 6_000), oneWay: true, line: LINE })!;
+  assert.equal(q.unsure, "close");
+  assert.deepEqual(q.options!.map((o) => o.key).sort(), ["leg:0", "leg:1"]);
 });
 
-test("beyond a one-way finish: the best leg preselected, „Beigās (jauns finišs)” the other chip", () => {
+test("images/25–26: Grostonas iela 19 → Ērgļi one way — points 2–5 km north of the line by Ropaži go into the one leg, no chips", () => {
+  // The ride has no stops: one leg east, and a new finish would be 60–75 km away.
+  const rows: (Pt | null)[] = [at(0), at(95)];
+  const line = eastLine(0, 95);
+  for (const [km, north] of [[20, 2_000], [25, 3_500], [30, 5_000], [35, 4_200]] as const) {
+    const p = placeNewPoint({ rows, point: at(km, north), oneWay: true, line })!;
+    assert.equal(p.unsure, null, `${km} km, ${north} m north: sure`);
+    assert.equal(p.options, null, "no „Pēc „Grostonas iela 19”” / „Beigās (jauns finišs)” chips");
+    assert.equal(p.chosen.key, "leg:0");
+    assert.equal(p.chosen.extend, false, "never a new finish");
+    assert.equal(p.chosen.index, 1, "between the start and the finish");
+  }
+  // A batch: the other pending points are not places to measure legs by — still the one leg.
+  const batch: (Pt | null)[] = [at(0), at(20, 2_000), at(25, 3_500), at(95)];
+  const q = placeNewPoint({ rows: batch, pending: [false, true, true, false], point: at(30, 5_000), oneWay: true, line })!;
+  assert.equal(q.options, null);
+  assert.equal(q.chosen.index, 3, "after the two pending ones it meets the leg past");
+});
+
+test("beyond a one-way finish: „Beigās (jauns finišs)” only when it is one of the best two, preselected only when it is the best", () => {
+  // 1 km past the finish on the line's own bearing: a new finish costs 1 km, leg 2 costs 2 km — the new finish is best.
   const p = placeNewPoint({ rows: ROWS, point: at(31), oneWay: true, line: LINE })!;
   assert.equal(p.unsure, "beyond-finish");
-  assert.deepEqual(p.options!.map((o) => o.key), ["leg:2", "extend"]);
-  assert.equal(p.chosen.key, "leg:2", "a stop is what „+” asked for");
-  assert.equal(p.chosen.index, 3, "before the finish");
-  const extend = placeNewPoint({ rows: ROWS, point: at(31), oneWay: true, line: LINE, choose: "extend" })!;
-  assert.equal(extend.chosen.extend, true);
-  assert.equal(extend.chosen.index, 4, "the last row: the new finish; the old one becomes a stop");
-  assert.equal(extend.chosen.before, 3);
-  assert.equal(extend.chosen.after, null);
+  assert.deepEqual(p.options!.map((o) => o.key), ["extend", "leg:2"], "the best first — the new finish — and the best leg beside it");
+  assert.equal(p.chosen.key, "extend", "preselected: it is the best");
+  assert.equal(p.chosen.index, 4, "the last row: the new finish; the old one becomes a stop");
+  assert.equal(p.chosen.before, 3);
+  assert.equal(p.chosen.after, null);
+  const leg = placeNewPoint({ rows: ROWS, point: at(31), oneWay: true, line: LINE, choose: "leg:2" })!;
+  assert.equal(leg.chosen.key, "leg:2");
+  assert.equal(leg.chosen.index, 3, "before the finish");
+  assert.deepEqual(leg.options!.map((o) => o.key), ["extend", "leg:2"], "the same two stay on offer");
+  // Close to the last leg, 5 km before the finish, 2 km off: leg 2 costs 4 km, a new finish ≈ 5.4 km — the leg
+  // preselected, „Beigās” second.
+  const legFirst = placeNewPoint({ rows: ROWS, point: at(25, 2_000), oneWay: true, line: LINE })!;
+  assert.equal(legFirst.options, null, "5.4 / 4 > 1.25: sure");
+  // 2 km before the finish, 1 km off: leg 2 costs 2 km, a new finish ≈ 2.24 km.
+  const legBest = placeNewPoint({ rows: ROWS, point: at(28, 1_000), oneWay: true, line: LINE })!;
+  assert.deepEqual(legBest.options!.map((o) => o.key), ["leg:2", "extend"], "the leg the best, „Beigās” one of the two");
+  assert.equal(legBest.chosen.key, "leg:2", "never preselected unless it is the best");
+  // Off the middle of the ride a new finish is never among the best two, never offered.
+  assert.equal(placeNewPoint({ rows: ROWS, point: at(15, 500), oneWay: true, line: LINE })!.options, null);
+  assert.ok(placeNewPoint({ rows: ROWS, point: at(10, 500), oneWay: true, line: LINE })!.options!.every((o) => !o.extend), "two legs, no „Beigās”");
   // A round trip has no finish to ride past.
   const loop = placeNewPoint({ rows: [at(0), at(10), at(20)], point: at(31), oneWay: false })!;
   assert.ok(loop.options?.every((o) => !o.extend) ?? true);
