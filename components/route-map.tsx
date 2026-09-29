@@ -4254,10 +4254,13 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
       if (performance.now() < lineClickMuteUntil) return;
       // A point's sheet is open: a tap on the map closes it, and does nothing
       // else — nothing moves until „Pārvietot”.
+      // An excluded stretch's own tap (stretch-layer.ts answers it) — first:
+      // on a phone this runs after the tap has settled, when the tap has
+      // already opened „Izslēgts posms”, and the sheet check below closed it
+      // again at once (backlog 51).
+      if (excludedTapRef.current && clickOnExcluded(map, e.point)) return;
       const sheet = pointSheetRef.current;
       if (sheet?.mode === "menu") { sheet.onClose(); return; }
-      // An excluded stretch's own tap (stretch-layer.ts answers it).
-      if (excludedTapRef.current && clickOnExcluded(map, e.point)) return;
       const pick = onPickPointRef.current;
       if (pick) { pick({ lat: e.lngLat.lat, lon: e.lngLat.lng }); return; }
       const feature = featureAt(e.point);
@@ -4566,8 +4569,15 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
           slot of the row. Notices, the off-road verdict, the move hint and
           the point popover stack above the bar (`flex-col-reverse`), well
           under the switch row at the top. The field's suggestions open
-          upward, over the map. */}
-      <div ref={headerRef} data-map-chrome className={controls ? "absolute bottom-3 left-3 right-3 z-20 flex flex-col-reverse gap-2 has-[input:focus]:z-30 max-md:left-[4.75rem]" : "hidden"}>
+          upward, over the map.
+
+          The column itself is `pointer-events-none`, only its children take
+          the pointer (backlog 51): it spans the map's width up to the top of
+          the tallest sheet, and that band — beside the popover, between the
+          rows — ate every press on the map under it: a stretch handle there
+          could not be held, an excluded stretch not tapped, a pan not
+          started ("the map deactivates"). */}
+      <div ref={headerRef} data-map-chrome className={controls ? "pointer-events-none absolute bottom-3 left-3 right-3 z-20 flex flex-col-reverse gap-2 has-[input:focus]:z-30 max-md:left-[4.75rem] [&>*]:pointer-events-auto" : "hidden"}>
       {controls && (
         /* The header, in ONE row — backlog 30. The rider's screenshot at
            375 px showed three stacked pills (the field, "+ Pietura", the hint)
