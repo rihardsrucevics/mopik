@@ -4,7 +4,8 @@ import { RidePlanSchema, planToIntent } from "@/lib/chat/ride-plan";
 import { MAX_SHAPE_POINTS, MAX_STOPS } from "@/lib/chat/ride-limits";
 import { buildMotoProfileOptions } from "@/lib/routing/moto-profile";
 import { profileAt } from "@/lib/routing/relax";
-import { fetchRoutePath } from "@/lib/routing/brouter";
+import { fetchRoutePath, withNogos } from "@/lib/routing/brouter";
+import { avoidPoints, fenceNogos } from "@/lib/routing/stretch";
 import { routeThroughPlaces, type ThroughResult } from "@/lib/routing/through-stops";
 import { classifyRoute } from "@/lib/routing/classify";
 import type { Point } from "@/lib/geo/geometry";
@@ -133,6 +134,13 @@ const BodySchema = z.object({
    * asked for when taking it off left the bend nowhere near the drop.
    */
   keepSpurs: z.boolean().optional(),
+  /**
+   * Per run: a stretch it must not ride (design D1/D3/D4, backlog 36) — the
+   * stretch being excluded, or the first pass of a stretch ridden twice —
+   * fenced with no-go circles for that run only. With the plan's own `avoid`
+   * (fenced on every run) a refusal is `no-way-round`.
+   */
+  fences: z.array(z.array(CoordSchema).max(400).nullable()).max(MAX_STOPS + 2).optional(),
 });
 
 /**
@@ -167,7 +175,15 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ error: "bad body" }, { status: 400 });
   }
-  const { plan, runs, loops, shapes, relax, keepSpurs } = parsed.data;
+  const { plan, runs, loops, shapes, relax, keepSpurs, fences } = parsed.data;
+  // The circles each run must keep out of: the ride's excluded stretches and
+  // the run's own fence, clear of the run's own points (its cuts and places).
+  const nogosFor = (points: Point[], i: number) => {
+    const fence = fences?.[i]?.map((c): Point => [c.lon, c.lat]);
+    const lines = [...(plan.avoid ?? []).map(avoidPoints), ...(fence && fence.length >= 2 ? [fence] : [])];
+    return lines.flatMap((l) => fenceNogos(l, points, { maxCount: Math.floor(80 / Math.max(1, lines.length)) })).slice(0, 80);
+  };
+  let fenced = false;
 
   let paths: ThroughResult[];
   try {
@@ -181,6 +197,11 @@ export async function POST(req: NextRequest) {
     const profileOptions = rung.options;
     const routing = Promise.all(runs.map((run, i) => {
       const points = run.map((c): Point => [c.lon, c.lat]);
+      const nogos = nogosFor(points, i);
+      if (nogos.length) fenced = true;
+      return withNogos(nogos, () => routeRun(points, i));
+    }));
+    function routeRun(points: Point[], i: number): Promise<ThroughResult> {
       if (loops?.[i] && points.length >= 3) {
         return routeThroughPlaces({ points, shapes: shapes?.[i], profileOptions, deadlineAt: startedAt + LOOP_DEADLINE_MS, keepShapeSpurs: keepSpurs });
       }
@@ -194,7 +215,7 @@ export async function POST(req: NextRequest) {
         // The run's ends are cuts in the kept ride; they must not move.
         pinnedEnds: true,
       }).then((path) => ({ path, deadEndMeters: 0 }));
-    }));
+    }
     // The abandoned search would otherwise reject into an unhandled promise
     // when its own rescue finally gives up, which on Node is a process-level
     // warning. Attaching a sink is not swallowing an error: whatever it
@@ -217,8 +238,9 @@ export async function POST(req: NextRequest) {
     // 422 rather than 500 for exactly that reason.
     const message = err instanceof Error ? err.message : "";
     const unreachable = /re-tracking track|island detected|position not mapped|target island|edit deadline/i.test(message);
+    // Fenced and refused: no way round what the ride must not ride.
     return NextResponse.json(
-      { error: unreachable ? "unreachable" : "failed", ms: Date.now() - startedAt },
+      { error: fenced ? "no-way-round" : unreachable ? "unreachable" : "failed", ms: Date.now() - startedAt },
       { status: 422 },
     );
   }

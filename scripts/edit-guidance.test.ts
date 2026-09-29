@@ -84,7 +84,8 @@ test("the sheets and the map wear the object's own colour", () => {
   assert.match(composer, /selectedColor: selObject \? OBJECT_COLOR\[selObject\] : undefined,/);
   // Both sheets are built from the one module.
   const sheets = composer.slice(composer.indexOf("pointSheet: lineSel?.phase === \"menu\""), composer.indexOf("movePreview,\n      planLine"));
-  assert.equal(sheets.split("explainer:").length - 1, 2, "the line sheet and the point sheet");
+  // The line sheet, the excluded stretch's sheet (backlog 36) and the point sheet.
+  assert.equal(sheets.split("explainer:").length - 1, 3, "the line sheet, the excluded sheet and the point sheet");
   assert.match(sheets, /hint: guidance\(tk, \{ kind: "via" \}\)/);
   assert.match(sheets, /hint: guidance\(tk, \{ kind: "move", name: pointTitle \}\)/);
   // add-kind (2026-09-29): the kind is one segmented control, not two rows — move, remove, and the line's two.

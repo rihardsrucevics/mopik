@@ -23,6 +23,8 @@ import { onLineElsewhere, placeNewPoint, stopNumbers, type InsertOption, type Pl
 import type { ProposalState, ProposedChange } from "@/lib/map/edit-proposal";
 import { fixesFor, type Blocking } from "@/lib/map/blocking";
 import { stepShape, type ShapePending } from "@/lib/map/shape-pending";
+import type { Stretch } from "@/lib/routing/stretch";
+import { EXCLUDED_COLOR } from "@/components/map/stretch-layer";
 import { OBJECT_COLOR, actionDetail, addArmedGuide, addChooserCopy, guidance, kindSwitchReason, objectExplainer, pointLabel, type EditObject, type ObjectMark } from "@/lib/map/edit-guidance";
 import { IDLE as ADD_IDLE, browserStorage, kindSwitch, readAddKind, stepAdd, writeAddKind, type AddKind, type AddSession } from "@/lib/map/add-kind";
 // ── line-sheet ──
@@ -227,6 +229,17 @@ export type RideEdit = {
    */
   onPassHere?: (spot: { lat: number; lon: number; alongMeters: number }) => void;
   // ── /line-sheet ──
+  // ── stretch ── backlog 36 (lib/routing/stretch.ts)
+  /** The stretch a tap at `alongMeters` selects, and its two passes when it is ridden twice. */
+  stretchAt?: (alongMeters: number) => { stretch: Stretch; passes: { first: Stretch; second: Stretch } | null } | null;
+  /** Why a stretch action cannot apply to `s` (a stop inside, a drawn line, the cap), or null. */
+  stretchBlock?: (kind: "exclude" | "back", s: Stretch) => string | null;
+  /** „Izslēgt šo posmu” / „Atpakaļ pa citu ceļu”: the page proposes it. */
+  onStretch?: (kind: "exclude" | "back", s: Stretch) => void;
+  /** The ride's excluded stretches, [lon, lat] lines, and „Atļaut atkal” for one of them. */
+  excluded?: Point[][];
+  onAllow?: (index: number) => void;
+  // ── /stretch ──
   // ── edit-routing ──
   /**
    * A place committed under its spot while the reverse lookup was still
@@ -550,6 +563,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     shapeAddRef.current = false;
     setPointSel(null);
     setLineSel(null);
+    setExSel(null);
     setNewPoint(null);
     setMoveRemove(null);
     const pinMove = sel?.kind === "pin" && sel.phase === "move";
@@ -599,8 +613,14 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
    * grab's mark (the drag's release). From then on it is the drag's own
    * pending point, proposal and ✓/✕. Gone with every exit (`leaveTransient`).
    */
-  type LineSel = { spot: LineSpot; km: string; heading: string; color: string; phase: "menu" | "via" };
+  type LineSel = {
+    spot: LineSpot; km: string; heading: string; color: string; phase: "menu" | "via";
+    // ── stretch ── the selected stretch (its handles), its passes when ridden twice, and whether an end is being dragged.
+    stretch?: Stretch; passes?: { first: Stretch; second: Stretch } | null; adjusting?: boolean;
+  };
   const [lineSel, setLineSel] = useState<LineSel | null>(null);
+  /** ── stretch ── An excluded stretch tapped: its sheet („Atļaut atkal”). */
+  const [exSel, setExSel] = useState<number | null>(null);
   /** The one-time hint on entering edit mode (once per device, lib/map/line-sheet.ts). */
   const [tipOn, setTipOn] = useState(false);
   // Shown the first time this device opens the editor's map, and marked
@@ -1528,8 +1548,46 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     setMapQuery(null);
     setRowIsNew(false);
     setChosenRow(null);
-    setLineSel({ spot: { lat: tap.lat, lon: tap.lon, slot: tap.slot, alongMeters: tap.alongMeters }, km: tap.km, heading: tap.heading, color: tap.color, phase: "menu" });
+    const sel = edit.stretchAt?.(tap.alongMeters) ?? null;
+    setLineSel({ spot: { lat: tap.lat, lon: tap.lon, slot: tap.slot, alongMeters: tap.alongMeters }, km: sel ? stretchKm(sel.stretch) : tap.km, heading: tap.heading, color: tap.color, phase: "menu", ...(sel ? { stretch: sel.stretch, passes: sel.passes } : {}) });
   };
+  // ── stretch ──
+  const stretchKm = (s: Stretch) => new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(Math.max(0.1, (s.toMeters - s.fromMeters) / 1000));
+  /** An end handle dragged: the selection, its length, and (on release) whether it is still ridden twice. */
+  const stretchEnds = (s: Stretch, done: boolean) => {
+    setLineSel((sel) => {
+      if (!sel || sel.phase !== "menu") return sel;
+      return { ...sel, stretch: s, km: stretchKm(s), adjusting: !done };
+    });
+    if (done && edit?.stretchAt) {
+      // Ridden twice or not, measured again for the adjusted piece.
+      const mid = (s.fromMeters + s.toMeters) / 2;
+      const probe = edit.stretchAt(mid);
+      setLineSel((sel) => (sel && sel.phase === "menu" ? { ...sel, passes: probe?.passes && overlaps(probe.passes, s) ? probe.passes : null } : sel));
+    }
+  };
+  const overlaps = (p: { first: Stretch; second: Stretch }, s: Stretch) => [p.first, p.second].some((q) => q.fromMeters < s.toMeters && q.toMeters > s.fromMeters);
+  const lineStretch = (kind: "exclude" | "back") => {
+    const sel = lineSel;
+    if (!sel?.stretch || sel.phase !== "menu" || !edit?.onStretch) return;
+    // „Atpakaļ pa citu ceļu”: the selection snaps to the second pass (design D4).
+    const target = kind === "back" && sel.passes ? sel.passes.second : sel.stretch;
+    track(kind === "exclude" ? "stretch_exclude_asked" : "stretch_back_asked", {});
+    leaveTransient();
+    edit.onStretch(kind, target);
+  };
+  const tapExcluded = (i: number) => {
+    if (!edit || busy) return;
+    leaveTransient({ keepPick: true });
+    setExSel(i);
+  };
+  const allowExcluded = () => {
+    const i = exSel;
+    if (i === null || !edit?.onAllow) return;
+    leaveTransient();
+    edit.onAllow(i);
+  };
+  // ── /stretch ──
   /**
    * „Virzīt caur citu vietu”: the hold-drag's own path (`grabLine`) at the
    * tapped spot, so the next tap is exactly where a drag would have been
@@ -2611,6 +2669,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     pinPress: (role: "start" | "via" | "finish", index: number) => void;
     lineGrab: (grab: { lat: number; lon: number; slot: number }) => void;
     lineTap: (tap: LineSpot & { km: string; heading: string; color: string }) => void; lineVia: () => void; linePass: () => void; tipClose: () => void;
+    stretchEnds: (s: Stretch, done: boolean) => void; lineExclude: () => void; lineBack: () => void; excludedTap: (i: number) => void; excludedAllow: () => void;
     shapeDrag: (index: number, at: { lat: number; lon: number }) => void;
     confirmShape: () => void; cancelShape: () => void;
     shapeRemove: (index: number) => void; shapePromote: (index: number) => void;
@@ -2959,7 +3018,9 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
       : selObject === "stop" ? { kind: "stop", number: stopNumber }
       : { kind: selObject };
     const selName = lineSel ? tk("lineObjectName") : pointTitle;
-    const selGuide = selObject && (lineSel?.phase === "menu" || pointSel?.phase === "menu") ? guidance(tk, { kind: "selected", object: selObject, name: selName }) : null;
+    const selGuide = lineSel?.phase === "menu" && lineSel.stretch
+      ? guidance(tk, lineSel.adjusting ? { kind: "stretchEnds" } : { kind: "stretch", name: selName })
+      : selObject && (lineSel?.phase === "menu" || pointSel?.phase === "menu") ? guidance(tk, { kind: "selected", object: selObject, name: selName }) : null;
     const lowerFirst = (w: string) => w.charAt(0).toLocaleLowerCase(locale) + w.slice(1);
     const detailed = (row: MapPointSheetRow, action: Parameters<typeof actionDetail>[1]): MapPointSheetRow => ({ ...row, detail: actionDetail(tk, action, selObject ?? "stop") });
     // ── /edit-guidance ──
@@ -3045,6 +3106,14 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
       activePlace: activeOwn ? { lat: activeOwn.lat, lon: activeOwn.lon } : null,
       // The tapped point: its ring, and its sheet of what can be done to it.
       selectedPoint: selectedAt ?? (lineSel?.phase === "menu" ? { lat: lineSel.spot.lat, lon: lineSel.spot.lon } : null),
+      // ── stretch ── the selection's yellow and its two end handles; the excluded stretches (edit mode).
+      stretch: lineSel?.phase === "menu" && lineSel.stretch ? {
+        fromMeters: lineSel.stretch.fromMeters,
+        toMeters: lineSel.stretch.toMeters,
+        onChange: (st: Stretch, done: boolean) => pendingHandlers.current?.stretchEnds(st, done),
+        labels: { from: t(locale, "stretchHandleFrom"), to: t(locale, "stretchHandleTo") },
+      } : null,
+      excluded: edit?.excluded?.length ? { lines: edit.excluded, selected: exSel, onTap: batchActive ? undefined : (i: number) => pendingHandlers.current?.excludedTap(i) } : null,
       // In the selected object's own colour (edit-guidance).
       selectedColor: selObject ? OBJECT_COLOR[selObject] : undefined,
       // add-kind: armed for a stop with its row still blank — what – what to do.
@@ -3067,13 +3136,44 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
         mark: selMark,
         explainer: objectExplainer(tk, "line"),
         guide: selGuide ?? undefined,
-        groups: [{ key: "line", rows: lineSheetRows({ shapeCount: passCount, rerouting: Boolean(edit?.rerouting) }).map(({ action, enabled, reason }): MapPointSheetRow => detailed({
+        groups: [...(lineSel.stretch ? [{
+          // ── stretch ── „Šis posms”: exclude it, or on a stretch ridden twice ride back another way.
+          key: "stretch",
+          heading: t(locale, "stretchHeading"),
+          rows: (["exclude", ...(lineSel.passes ? ["back" as const] : [])] as const).map((kind): MapPointSheetRow => {
+            const busyNow = Boolean(edit?.rerouting);
+            const reason = busyNow ? t(locale, "resEditRouting") : edit?.stretchBlock?.(kind, kind === "back" && lineSel.passes ? lineSel.passes.second : lineSel.stretch!) ?? null;
+            return {
+              key: kind,
+              icon: kind === "exclude" ? "exclude" as const : "back" as const,
+              label: t(locale, kind === "exclude" ? "stretchExclude" : "stretchBack"),
+              onPress: reason || !edit?.onStretch ? null : kind === "exclude" ? () => pendingHandlers.current?.lineExclude() : () => pendingHandlers.current?.lineBack(),
+              title: reason ?? undefined,
+              detail: reason ?? actionDetail(tk, kind, "line"),
+            };
+          }),
+        }] : []), { key: "line", rows: lineSheetRows({ shapeCount: passCount, rerouting: Boolean(edit?.rerouting) }).map(({ action, enabled, reason }): MapPointSheetRow => detailed({
           key: action,
           icon: action === "via" ? "via" as const : "addPass" as const,
           label: t(locale, action === "via" ? "lineVia" : "linePassHere"),
           onPress: !enabled ? null : action === "via" ? () => pendingHandlers.current?.lineVia() : () => pendingHandlers.current?.linePass(),
           title: reason === "cap" ? fi(t(locale, "shapeCapNote"), { n: MAX_SHAPE_POINTS }) : reason === "busy" ? t(locale, "resEditRouting") : undefined,
         }, action === "via" ? "via" : "passHere")) }],
+        closeLabel: t(locale, "pointSheetClose"),
+        cancelLabel: t(locale, "pickOnMapCancel"),
+        onClose: () => pendingHandlers.current?.pointClose(),
+      } : exSel !== null ? {
+        // ── stretch ── an excluded stretch: „Atļaut atkal”.
+        mode: "menu" as const,
+        kind: "line" as const,
+        title: t(locale, "excludedTitle"),
+        mark: { kind: "line" as const, color: EXCLUDED_COLOR },
+        explainer: t(locale, "excludedExplain"),
+        groups: [{ key: "excluded", rows: [{
+          key: "allow", icon: "allow" as const, label: t(locale, "excludedAllow"),
+          onPress: edit?.rerouting || !edit?.onAllow ? null : () => pendingHandlers.current?.excludedAllow(),
+          detail: actionDetail(tk, "allow", "line"),
+        }] }],
         closeLabel: t(locale, "pointSheetClose"),
         cancelLabel: t(locale, "pickOnMapCancel"),
         onClose: () => pendingHandlers.current?.pointClose(),
@@ -3295,6 +3395,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
       confirm: confirmPick, cancel: () => leaveTransient({ dropMark: true }), move: acceptOffRoadMove, dismiss: () => setOffRoad(null), pinDrag: chained("pinDrag", dragPin), addStop: chained("addStop", addStopFromMap), pinPress: chained("pinPress", pressPin),
       lineGrab: (g) => { const stacked = stackFirst(); if (stacked) setKeepGrabOnSeed(true); return grabLine(g, stacked); },
       lineTap: chained("lineTap", tapLine), lineVia, linePass, tipClose: () => setTipOn(false),
+      stretchEnds, lineExclude: () => lineStretch("exclude"), lineBack: () => lineStretch("back"), excludedTap: tapExcluded, excludedAllow: allowExcluded,
       shapeDrag: chained("shapeDrag", dragShape), confirmShape, cancelShape, shapeRemove: removeShape, shapePromote: promoteShape,
       shapePress: chained("shapePress", pressShape), pointClose: () => leaveTransient(), pointMove: movePoint,
       pointRemove: askRemove, confirmRemove,

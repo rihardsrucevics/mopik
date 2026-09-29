@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { OBJECT_COLOR, type ObjectMark } from "@/lib/map/edit-guidance";
-import { CircleDot, CirclePlus, MapPinned, MapPinPlus, Move, Route, Trash2, X, type LucideIcon } from "lucide-react";
+import { Ban, CircleCheck, CircleDot, CirclePlus, MapPinned, MapPinPlus, Move, Route, Trash2, Undo2, X, type LucideIcon } from "lucide-react";
 
 /**
  * What the map shows for the point the rider tapped (rider, 2026-09-25: act
@@ -28,7 +28,7 @@ import { CircleDot, CirclePlus, MapPinned, MapPinPlus, Move, Route, Trash2, X, t
  * `via` / `addPass`: the line sheet's „Virzīt caur citu vietu” and
  * „Pievienot punktu šeit” (lib/map/line-sheet.ts).
  */
-export type MapPointSheetIcon = "move" | "stop" | "remove" | "pass" | "via" | "addPass";
+export type MapPointSheetIcon = "move" | "stop" | "remove" | "pass" | "via" | "addPass" | "exclude" | "back" | "allow";
 
 export type MapPointSheetRow = {
   key: string;
@@ -61,7 +61,8 @@ export type MapPointSheetModel =
        * the sheet says it itself, above its header.
        */
       guide?: string;
-      groups: { key: string; rows: MapPointSheetRow[] }[];
+      /** `heading`: the group's name above its card („Šis posms”, backlog 36). */
+      groups: { key: string; heading?: string; rows: MapPointSheetRow[] }[];
       /**
        * add-kind (B3, rider 2026-09-29): one segmented „Pietura |
        * Caurbraucams” control instead of two rows. `onSwitch` switches to
@@ -81,7 +82,7 @@ export type MapPointSheetModel =
       onClose: () => void;
     };
 
-const ICONS: Record<MapPointSheetIcon, LucideIcon> = { move: Move, stop: MapPinPlus, remove: Trash2, pass: CircleDot, via: Route, addPass: CirclePlus };
+const ICONS: Record<MapPointSheetIcon, LucideIcon> = { move: Move, stop: MapPinPlus, remove: Trash2, pass: CircleDot, via: Route, addPass: CirclePlus, exclude: Ban, back: Undo2, allow: CircleCheck };
 
 const PHONE = "(max-width: 767px)";
 
@@ -182,7 +183,9 @@ export function MapPointSheet({ sheet }: { sheet: MapPointSheetModel }) {
           </div>
         )}
         {sheet.groups.map((group) => (
-          <div key={group.key} className="overflow-hidden rounded-2xl bg-white">
+          <div key={group.key} data-sheet-group={group.key}>
+          {group.heading && <p className="mb-1 px-1 text-xs font-semibold uppercase tracking-wide text-stone-500">{group.heading}</p>}
+          <div className="overflow-hidden rounded-2xl bg-white">
             {group.rows.map((row, i) => {
               const Icon = ICONS[row.icon];
               return (
@@ -196,6 +199,7 @@ export function MapPointSheet({ sheet }: { sheet: MapPointSheetModel }) {
                 </button>
               );
             })}
+          </div>
           </div>
         ))}
       </div>

@@ -164,7 +164,16 @@ export type RidePlaces = {
   vias: RidePlace[];
   finish: RidePlace | null;
   roundTrip: boolean;
+  /**
+   * Stretches this ride must not use („Izslēgt šo posmu”, backlog 36,
+   * `lib/routing/stretch.ts`): [lat, lon] points, ≤ 10 × ≤ 24. Absent when
+   * none — the plan's `avoid` and the share code's `x` follow it.
+   */
+  avoid?: AvoidStretch[];
 };
+
+/** An excluded stretch as the ride keeps it: [lat, lon] pairs, 5 decimals. */
+export type AvoidStretch = { line: [number, number][] };
 
 /**
  * The fixed points of a ride, in riding order, as coordinates.
@@ -248,7 +257,8 @@ export function anchorsAlong(anchors: Point[], line: Point[], cum: number[]): nu
  * edit — and is answered by re-routing the whole stretch between the first and
  * last place that changed.
  */
-export type EditKind = "move-start" | "move-stop" | "move-finish" | "add-stop" | "add-stops" | "remove-stop" | "reorder";
+/** `avoid-stretch`: „Izslēgt šo posmu” / „Atpakaļ pa citu ceļu” (backlog 36, lib/routing/stretch.ts). */
+export type EditKind = "move-start" | "move-stop" | "move-finish" | "add-stop" | "add-stops" | "remove-stop" | "reorder" | "avoid-stretch";
 
 /**
  * One stretch of the old line to throw away, and the points to route instead.
@@ -778,7 +788,7 @@ export function outAndBacks(coordinates: Point[], minMeters = THROUGH_SHARED_MIN
 }
 
 /** Undirected keys of a line's consecutive pairs, at `recomputeOverlap`'s ~1 m. */
-function pairKey(p: Point, q: Point): string {
+export function pairKey(p: Point, q: Point): string {
   const a = `${p[0].toFixed(5)},${p[1].toFixed(5)}`;
   const b = `${q[0].toFixed(5)},${q[1].toFixed(5)}`;
   return a < b ? `${a}|${b}` : `${b}|${a}`;
@@ -1723,12 +1733,15 @@ export function undoEdit(h: EditHistory): EditHistory {
  * must encode to the very code it always did (`encodePlanShare`, `rideId`).
  */
 export function planWithPlaces(plan: RidePlan, places: RidePlaces): RidePlan {
-  const { shapePoints: _was, ...rest } = plan;
-  void _was;
+  const { shapePoints: _was, avoid: _avoided, ...rest } = plan;
+  void _was; void _avoided;
   const shapes = shapePointsOf(places).slice(0, MAX_SHAPE_POINTS);
+  // Excluded stretches (backlog 36): the places' own, absent when none.
+  const avoid = (places.avoid ?? []).slice(0, 10);
   return {
     ...rest,
     ...(shapes.length ? { shapePoints: shapes } : {}),
+    ...(avoid.length ? { avoid } : {}),
     startPlace: places.start.name,
     viaPlaces: stopsOf(places).slice(0, MAX_STOPS).map((v) => v.name),
     ...(places.roundTrip ? {} : places.finish
@@ -1791,6 +1804,8 @@ export function placesFromRide(params: {
     vias: interleaveShapes(stops, plan.shapePoints, shapeVia),
     finish: plan.returnToStart === true || !params.destination ? null : place(params.destination, plan.destinationPlace),
     roundTrip: plan.returnToStart === true,
+    // A reopened ride remembers what it was told not to ride (backlog 36).
+    ...(plan.avoid?.length ? { avoid: plan.avoid } : {}),
   };
 }
 

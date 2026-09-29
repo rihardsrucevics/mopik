@@ -24,6 +24,7 @@ import { nearestUnder } from "@/lib/map/pin-hit";
 import { neighboursAlong } from "@/lib/map/point-selection";
 import type { ProposalView } from "@/lib/map/edit-proposal";
 import { useProposalLayer } from "@/components/map/proposal-layer";
+import { clickOnExcluded, useStretchLayer, type ExcludedStretches, type StretchSelection } from "@/components/map/stretch-layer";
 import { GUIDE_DASH } from "@/lib/map/edit-guidance";
 // ── line-sheet ──
 import { lineSpotAt, lineTapAction, markerNear, type LineSpot } from "@/lib/map/line-sheet";
@@ -242,6 +243,12 @@ export type MapControls = {
    * A tap on or next to a pin, a dot or a gate goes to that marker instead.
    */
   onLineTap?: (tap: LineSpot & { segmentId: number; km: string; heading: string; color: string }) => void;
+  // ── stretch ── backlog 36 (components/map/stretch-layer.ts)
+  /** The stretch selected on the line: yellow, with two end handles dragged along it. */
+  stretch?: StretchSelection | null;
+  /** Edit mode: the ride's excluded stretches, thin dark-red dashes; a tap → „Atļaut atkal”. */
+  excluded?: ExcludedStretches | null;
+  // ── /stretch ──
   /**
    * Edit mode, on the desktop: the words beside the cursor over the line
    * („Velc, lai virzītu caur citu vietu · pieskaries, lai redzētu iespējas”),
@@ -2515,6 +2522,8 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
   const lineGrabRef = useRef(controls?.onLineGrab);
   useEffect(() => { lineGrabRef.current = controls?.onLineGrab; }, [controls?.onLineGrab]);
   // ── line-sheet ──
+  const excludedTapRef = useRef(controls?.excluded?.onTap);
+  useEffect(() => { excludedTapRef.current = controls?.excluded?.onTap; }, [controls?.excluded?.onTap]);
   const lineTapRef = useRef(controls?.onLineTap);
   useEffect(() => { lineTapRef.current = controls?.onLineTap; }, [controls?.onLineTap]);
   const lineHoverTipRef = useRef(controls?.lineHoverTip);
@@ -4247,6 +4256,8 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
       // else — nothing moves until „Pārvietot”.
       const sheet = pointSheetRef.current;
       if (sheet?.mode === "menu") { sheet.onClose(); return; }
+      // An excluded stretch's own tap (stretch-layer.ts answers it).
+      if (excludedTapRef.current && clickOnExcluded(map, e.point)) return;
       const pick = onPickPointRef.current;
       if (pick) { pick({ lat: e.lngLat.lat, lon: e.lngLat.lng }); return; }
       const feature = featureAt(e.point);
@@ -4288,9 +4299,8 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
           const tapped = { ...(props ?? {}), ...(source?.properties ?? {}) } as SegmentProps;
           infoPopupRef.current?.remove();
           infoPopupRef.current = null;
-          // The stretch the sheet is about, lit as the card lights it.
+          // The stretch the sheet is about is lit by the stretch layer (its selection, with handles).
           highlightKeyRef.current = null;
-          setHighlight([id], `line:${id}`);
           lineTap({ ...spot, segmentId: id, km: kmLabel(locale, meters), heading: segmentHeading(m, tapped.roadClass, tapped.surface), color: SURFACE_COLORS[surfaceBucket(tapped.surface)] });
           return;
         }
@@ -4526,6 +4536,9 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
   // until P1-D implements it.
   useProposalLayer(mapRef, ready, proposal ?? null);
   // ── /P1-D: proposal ──
+  // ── stretch ──
+  useStretchLayer(mapRef, ready, segments, controls?.stretch ?? null, controls?.excluded ?? null);
+  // ── /stretch ──
 
   return (
     <div className="relative h-full w-full" data-map-pending={controls?.pending ? "true" : undefined}>

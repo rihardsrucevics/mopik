@@ -64,7 +64,7 @@ export function objectExplainer(t: T, object: EditObject): string {
   return t(EXPLAIN[object]);
 }
 
-export type SheetAction = "move" | "demote" | "promote" | "remove" | "via" | "passHere";
+export type SheetAction = "move" | "demote" | "promote" | "remove" | "via" | "passHere" | "exclude" | "back" | "allow";
 
 /** A row's detail line: what pressing it will do, for this object. */
 export function actionDetail(t: T, action: SheetAction, object: EditObject): string {
@@ -75,6 +75,9 @@ export function actionDetail(t: T, action: SheetAction, object: EditObject): str
     case "remove": return t(object === "pass" ? "detailRemovePass" : "detailRemoveStop");
     case "via": return t("detailVia");
     case "passHere": return t("detailPassHere");
+    case "exclude": return t("detailExclude");
+    case "back": return t("detailBack");
+    case "allow": return t("detailAllow");
   }
 }
 
@@ -92,7 +95,11 @@ export type GuideState =
   | { kind: "proposed"; warned?: boolean }
   // `wide`: „Pārrēķināt posmu” is on offer; `straight`: „Vest pa taisno” is.
   // `remove`: the refused edit took a point out — choosing another place is no answer.
-  | { kind: "refused"; reason: string; wide?: boolean; straight?: boolean; remove?: boolean }
+  // `stretch`: an exclusion or „Atpakaļ pa citu ceļu” that found no way round — the ride stays.
+  | { kind: "refused"; reason: string; wide?: boolean; straight?: boolean; remove?: boolean; stretch?: boolean }
+  // Backlog 36: a stretch of the line selected (its ends can be dragged), and while an end is dragged.
+  | { kind: "stretch"; name: string }
+  | { kind: "stretchEnds" }
   // Release B item 4: `count` edits chained, waiting for one ✓.
   | { kind: "chain"; count: number };
 
@@ -104,7 +111,9 @@ export function guideAction(t: T, state: GuideState): string {
     case "via": return t("guideTapVia");
     case "routing": return t("guideRouting");
     case "proposed": return t(state.warned ? "guideWarned" : "guideProposed");
-    case "refused": return t(state.straight ? "guideRefusedStraight" : state.wide ? "guideRefusedWide" : state.remove ? "guideRefusedRemove" : "guideRefused");
+    case "refused": return t(state.stretch ? "guideRefusedStretch" : state.straight ? "guideRefusedStraight" : state.wide ? "guideRefusedWide" : state.remove ? "guideRefusedRemove" : "guideRefused");
+    case "stretch": return t("guideStretchChoose");
+    case "stretchEnds": return "";
     case "chain": return fi(t("chainGuide"), { n: state.count });
   }
 }
@@ -115,7 +124,7 @@ export function guideAction(t: T, state: GuideState): string {
  * a warned proposal with several notes (a dead end and a profile note) says
  * „Tomēr braukt” once, after its numbers — never once per note.
  */
-export function proposalGuide(t: T): { routing: string; proposed: string; warned: string; refused: string; refusedWide: string; refusedStraight: string; refusedRemove: string } {
+export function proposalGuide(t: T): { routing: string; proposed: string; warned: string; refused: string; refusedWide: string; refusedStraight: string; refusedRemove: string; refusedStretch: string } {
   return {
     routing: guideAction(t, { kind: "routing" }),
     proposed: guideAction(t, { kind: "proposed" }),
@@ -124,6 +133,7 @@ export function proposalGuide(t: T): { routing: string; proposed: string; warned
     refusedWide: guideAction(t, { kind: "refused", reason: "", wide: true }),
     refusedStraight: guideAction(t, { kind: "refused", reason: "", straight: true }),
     refusedRemove: guideAction(t, { kind: "refused", reason: "", remove: true }),
+    refusedStretch: guideAction(t, { kind: "refused", reason: "", stretch: true }),
   };
 }
 
@@ -140,6 +150,8 @@ export function guidance(t: T, state: GuideState): string {
       case "proposed": return "";
       case "refused": return state.reason;
       case "chain": return "";
+      case "stretch": return fi(t("guideSelectedLine"), { name: state.name });
+      case "stretchEnds": return t("guideStretchEnds");
     }
   })();
   return joinGuide(what, guideAction(t, state));

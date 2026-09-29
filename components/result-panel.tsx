@@ -385,7 +385,8 @@ export function ResultPanel({ routes, selected, onSelect, plan, lucky = false, r
   const drawnKm = Math.round(drawnMeters(route.segments.features) / 100) / 10;
   // Design F2: the full search keeps stops and drops everything else, drawn
   // stretches included — so on a ride with any, it is off and says why.
-  const searchBlocked = drawnMeters(route.segments.features) > 0 ? m.searchDrawnBlocked : undefined;
+  // Backlog 36: excluded stretches are not wired into the full search yet — off, with the reason.
+  const searchBlocked = drawnMeters(route.segments.features) > 0 ? m.searchDrawnBlocked : plan?.avoid?.length ? m.searchOffAvoid : undefined;
   // The RISKS share, on the same denominator the ROADS rows use: road + track
   // + trail is the whole ride, so the two blocks' percentages are comparable
   // even though they measure different things. `|| 1` guards a zero-length

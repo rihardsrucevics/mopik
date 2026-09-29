@@ -125,7 +125,77 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
     rec("…↶ takes the dot away", (await dotsLoc().count()) === d0);
   }
 
-  // ── add-kind: „+” asks what to add; the sheet's one kind switch (rider, 2026-09-29) ──
+  // ── 1b. Backlog 36: a stretch selected, its end dragged, „Izslēgt šo posmu” → proposal → ✓ → ↶ ──
+  {
+    const t1 = Date.now();
+    const SH = process.env.STRETCH_SHOTS || L.SHOTS;
+    const stretchShot = (n) => tag === "375" && page.screenshot({ path: `${SH}/stretch-${n}.png` });
+    const titleText = async () => ((await page.locator('[data-point-sheet="menu"] .truncate').first().textContent().catch(() => "")) ?? "").trim();
+    const kmOf = (s) => { const m = /· (\d+),(\d) km/.exec(s); return m ? Number(`${m[1]}.${m[2]}`) : NaN; };
+    const openStretch = async () => {
+      await L.fit(page, await L.line(page));
+      const ll = await pointOn(0.55); await zoomTo(ll, 13);
+      await tapAt(ll); await page.waitForTimeout(700); await settled();
+    };
+    await openStretch();
+    const group = page.locator('[data-sheet-group="stretch"]');
+    const groupText = (await group.textContent().catch(() => "")) ?? "";
+    rec("stretch: the line sheet shows „Šis posms” with „Izslēgt šo posmu”", (await group.count()) === 1 && /Šis posms/i.test(groupText) && groupText.includes("Izslēgt šo posmu"), { groupText });
+    const title0 = await titleText();
+    rec("stretch: the header says the stretch's length and road", /^Ceļa posms · \d+,\d km \S/.test(title0), { title0 });
+    const handles = page.locator("[data-stretch-handle]");
+    rec("stretch: two end handles, the yellow selection drawn", (await handles.count()) === 2 && (await page.evaluate(() => Boolean(window.__map.getLayer("stretch-sel")))), { handles: await handles.count() });
+    const guideFit = await page.evaluate(() => {
+      const e = document.querySelector('[data-edit-guide="sheet"]') ?? document.querySelector("[data-edit-guide]");
+      if (!e) return null;
+      const lh = parseFloat(getComputedStyle(e).lineHeight) || 16;
+      return { lines: Math.round(e.getBoundingClientRect().height / lh), text: e.textContent.trim() };
+    });
+    rec("stretch: the guidance fits ≤ 3 lines, en dash", Boolean(guideFit) && guideFit.lines <= 3 && guideFit.text.includes(" – "), guideFit);
+    await stretchShot("selected");
+    // Drag the far end a third of the way back towards the near one.
+    const hb = async (end) => { const b = await page.locator(`[data-stretch-handle="${end}"]`).boundingBox(); return b && { x: b.x + b.width / 2, y: b.y + b.height / 2 }; };
+    const a = await hb("from"), b = await hb("to");
+    if (a && b) {
+      const q = { x: b.x + (a.x - b.x) / 3, y: b.y + (a.y - b.y) / 3 };
+      if (phone) {
+        const cdp = await page.context().newCDPSession(page);
+        const tp = (type, x, y) => cdp.send("Input.dispatchTouchEvent", { type, touchPoints: type === "touchEnd" ? [] : [{ x, y }] });
+        await tp("touchStart", b.x, b.y);
+        for (let k = 1; k <= 10; k++) { await tp("touchMove", b.x + (q.x - b.x) * k / 10, b.y + (q.y - b.y) * k / 10); await page.waitForTimeout(30); }
+        await tp("touchEnd");
+      } else {
+        await page.mouse.move(b.x, b.y); await page.mouse.down();
+        for (let k = 1; k <= 10; k++) { await page.mouse.move(b.x + (q.x - b.x) * k / 10, b.y + (q.y - b.y) * k / 10); await page.waitForTimeout(30); }
+        await page.mouse.up();
+      }
+      await page.waitForTimeout(400);
+    }
+    const title1 = await titleText();
+    rec("stretch: dragging an end shortens the stretch, the sheet stays", kmOf(title1) < kmOf(title0) && (await page.locator('[data-point-sheet="menu"]').count()) === 1, { title0, title1, a, b });
+    await stretchShot("adjusted");
+    await page.locator('[data-point-sheet="menu"] button[aria-label]').first().click().catch(() => {}); await page.waitForTimeout(400);
+    rec("stretch: ✕ closes the sheet and the selection", (await page.locator('[data-point-sheet="menu"]').count()) === 0 && (await handles.count()) === 0);
+    const exclude = async () => { await openStretch(); await sheetRow("Izslēgt šo posmu").click(); };
+    await exercise("exclude stretch", exclude, { idle });
+    // Committed: the excluded stretch shows as dashes; tapping it offers „Atļaut atkal”.
+    await exclude(); const sx = await L.waitChip(page);
+    await stretchShot("proposal");
+    const cf = await chipFit();
+    rec("stretch: the proposal's notes fit ≤ 3 lines", fits(cf), cf);
+    if (["proposed", "warn"].includes(sx.chip?.tone)) {
+      await slot(3); await page.waitForTimeout(800);
+      const exLayer = await page.evaluate(() => Boolean(window.__map.getLayer("stretch-excluded")));
+      rec("stretch: ✓ keeps the exclusion — dark-red dashes in edit mode", exLayer);
+      await zoomTo(await pointOn(0.55), 14); await page.waitForTimeout(400);
+      await stretchShot("excluded");
+      await slot(2); await page.waitForTimeout(700);
+      rec("stretch: ↶ takes the exclusion back", !(await page.evaluate(() => Boolean(window.__map.getLayer("stretch-excluded")))));
+    } else { rec("stretch: second exclusion proposal", false, sx.chip); await slot("x"); }
+    console.log(`[${tag}]   stretch ${((Date.now() - t1) / 1000).toFixed(1)} s`);
+  }
+
+  // ── 1c. „+” asks what to add; the sheet's one kind switch (rider, 2026-09-29) ──
   {
     const t = Date.now();
     const ADD_SHOTS = process.env.ADDKIND_SHOTS || L.SHOTS;
