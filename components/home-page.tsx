@@ -2108,7 +2108,7 @@ export function HomePage() {
     const mine = live.current;
     if (!route || s.phase !== "proposed" || !mine || mine.token !== s.proposal.token || !mine.landed) return false;
     // A sight's reach note says where the stop went; „Punkts pārvietots N m” would say it twice.
-    const movedHead = ui.resEditMoved.split("{")[0];
+    const movedHead = fi(ui.resEditMoved, { m: "\u0000" }).split("\u0000")[0];
     const notes = extra ? [...s.proposal.notes.filter((n) => !(extra.dropMoved && n.startsWith(movedHead))), ...extra.notes] : s.proposal.notes;
     const kept: EditProposal = { ...s.proposal, notes, ride: { ...s.proposal.ride, places: renamePlaces(s.proposal.ride.places, mine.renames) } };
     stopProposalWork();

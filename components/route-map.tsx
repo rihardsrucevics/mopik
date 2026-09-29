@@ -4621,7 +4621,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
           {proposal.tone === "routing" && <LoaderCircle aria-hidden="true" className="mt-px size-3.5 shrink-0 animate-spin text-stone-400" />}
           {(proposal.tone === "refused" || proposal.warn) && <TriangleAlert aria-hidden="true" className="mt-px size-3.5 shrink-0" />}
           {/* The numbers on one line; the proposal's notes under them,
-              smaller, at most two lines (the chip wrapped to four on a phone
+              smaller, at most three lines — a sight's reach note is a whole sentence (the chip wrapped to four on a phone
               with the notes run on). */}
           <span className="min-w-0">
             <span data-proposal-text className="block tabular-nums max-md:text-[11px]">
@@ -4629,7 +4629,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
               {/* ── edit-guidance ── what to do, after what is happening */}
               {proposal.guide && <span data-proposal-guide className="font-normal text-stone-600">{GUIDE_DASH}{proposal.guide}</span>}
             </span>
-            {proposal.notes && <span data-proposal-notes className="line-clamp-2 text-[10.5px] font-normal leading-snug text-stone-500">{proposal.notes}</span>}
+            {proposal.notes && <span data-proposal-notes className="line-clamp-3 text-[10.5px] font-normal leading-snug text-stone-500">{proposal.notes}</span>}
           </span>
         </div>
       ) : controls?.guide && !(phoneLayout && controls.pointSheet?.mode === "menu") ? (
