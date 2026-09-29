@@ -535,6 +535,7 @@ export type MessageKey =
   | "editDeadEnd"
   /** An edit whose new line would not join the ride; refused, the ride kept. */
   | "editBrokenLine"
+  | "editRemoveNoJoin"
   /**
    * The out-and-back an edit kept because the search for another way ran out
    * of time — said as what the line does, never as "a dead end", which it has
@@ -833,6 +834,7 @@ export type MessageKey =
   | "guideRefusedWide"
   | "guideWarned"
   | "guideRefusedStraight"
+  | "guideRefusedRemove"
   | "searchDrawnBlocked"
   | "explainStop"
   | "explainPass"
@@ -1350,7 +1352,8 @@ const lv: Messages = {
   editDone: "Pabeigt labošanu",
   editCancel: "Atcelt labošanu",
   editDeadEnd: "Pietura ir strupceļā – atpakaļ pa to pašu ceļu {km} km.",
-  editBrokenLine: "Šo labojumu neizdevās savienot ar maršrutu vienā līnijā — maršruts palika, kāds bija.",
+  editBrokenLine: "Šo labojumu neizdevās savienot ar maršrutu vienā līnijā – maršruts palika, kāds bija.",
+  editRemoveNoJoin: "Bez šī punkta „{a}” un „{b}” neizdevās savienot pa ceļiem ne ar vienu profilu.",
   editSameWayBack: "Uz pieturu un atpakaļ pa to pašu ceļu {km} km – citu ceļu laikus atrast neizdevās.",
   editDeadEndShape: "Caurbraucamais punkts ir strupceļā – atpakaļ pa to pašu ceļu {km} km.",
   editSameWayBackShape: "Uz caurbraucamo punktu un atpakaļ pa to pašu ceļu {km} km – citu ceļu laikus atrast neizdevās.",
@@ -1521,6 +1524,7 @@ const lv: Messages = {
   guideRefusedWide: "spied „Pārrēķināt posmu” vai ✕ atmet.",
   guideWarned: "spied „Tomēr braukt” vai ✕ atmet.",
   guideRefusedStraight: "spied „Vest pa taisno” vai ✕ atmet.",
+  guideRefusedRemove: "mēģini pārvietot tuvējo punktu vai izņemt citu.",
   searchDrawnBlocked: "Braucienā ir zīmēti posmi – pilnā meklēšana tos izmestu. Labo uz kartes.",
   explainStop: "Maršruts iet caur šo vietu, un tā ir GPX failā.",
   explainPass: "Tikai virza līniju, bez numura un bez apstāšanās.",
@@ -2003,7 +2007,8 @@ const lt: Messages = {
   editDone: "Baigti taisyti",
   editCancel: "Atšaukti taisymą",
   editDeadEnd: "Sustojimas yra akligatvyje – atgal tuo pačiu keliu {km} km.",
-  editBrokenLine: "Šio pataisymo nepavyko sujungti su maršrutu viena linija — maršrutas liko toks, koks buvo.",
+  editBrokenLine: "Šio pataisymo nepavyko sujungti su maršrutu viena linija – maršrutas liko toks, koks buvo.",
+  editRemoveNoJoin: "Be šio taško „{a}“ ir „{b}“ nepavyko sujungti keliais jokiu profiliu.",
   editSameWayBack: "Į sustojimą ir atgal tuo pačiu keliu {km} km – kito kelio laiku rasti nepavyko.",
   editDeadEndShape: "Pravažiavimo taškas yra akligatvyje – atgal tuo pačiu keliu {km} km.",
   editSameWayBackShape: "Į pravažiavimo tašką ir atgal tuo pačiu keliu {km} km – kito kelio laiku rasti nepavyko.",
@@ -2178,6 +2183,7 @@ const lt: Messages = {
   guideRefusedWide: "spauskite „Perskaičiuoti atkarpą” arba ✕ atmeskite.",
   guideWarned: "spauskite „Vis tiek važiuoti“ arba ✕ atmeskite.",
   guideRefusedStraight: "spauskite „Vesti tiesiai“ arba ✕ atmeskite.",
+  guideRefusedRemove: "pabandykite perkelti gretimą tašką arba pašalinti kitą.",
   searchDrawnBlocked: "Kelionėje yra nubrėžtų atkarpų – visa paieška jas išmestų. Taisykite žemėlapyje.",
   explainStop: "Maršrutas eina per šią vietą, ir ji yra GPX faile.",
   explainPass: "Tik nukreipia liniją – be numerio ir be sustojimo.",
@@ -2660,7 +2666,8 @@ const et: Messages = {
   editDone: "Lõpeta muutmine",
   editCancel: "Tühista muutmine",
   editDeadEnd: "Peatus on umbteel – tagasi sama teed {km} km.",
-  editBrokenLine: "Seda muudatust ei õnnestunud marsruudiga üheks jooneks ühendada — marsruut jäi endiseks.",
+  editBrokenLine: "Seda muudatust ei õnnestunud marsruudiga üheks jooneks ühendada – marsruut jäi endiseks.",
+  editRemoveNoJoin: "Ilma selle punktita ei õnnestunud „{a}” ja „{b}” teedpidi ühegi profiiliga ühendada.",
   editSameWayBack: "Peatusesse ja tagasi sama teed {km} km – teist teed ei õnnestunud õigel ajal leida.",
   editDeadEndShape: "Läbisõidupunkt on umbteel – tagasi sama teed {km} km.",
   editSameWayBackShape: "Läbisõidupunkti ja tagasi sama teed {km} km – teist teed ei õnnestunud õigel ajal leida.",
@@ -2831,6 +2838,7 @@ const et: Messages = {
   guideRefusedWide: "vajuta „Arvuta lõik ümber” või ✕ loobu.",
   guideWarned: "vajuta „Sõida ikkagi“ või ✕ loobu.",
   guideRefusedStraight: "vajuta „Vii otse“ või ✕ loobu.",
+  guideRefusedRemove: "proovi naaberpunkti liigutada või eemalda mõni teine.",
   searchDrawnBlocked: "Sõidus on joonistatud lõike – täisotsing viskaks need välja. Paranda kaardil.",
   explainStop: "Marsruut läheb läbi selle koha ja see on GPX-failis.",
   explainPass: "Ainult suunab joont – ilma numbri ja peatuseta.",
@@ -3311,7 +3319,8 @@ const en: Messages = {
   editDone: "Done editing",
   editCancel: "Discard edits",
   editDeadEnd: "The stop is on a dead end – back the same way for {km} km.",
-  editBrokenLine: "This change couldn't be joined into one line with the route — the route stays as it was.",
+  editBrokenLine: "This change couldn't be joined into one line with the route – the route stays as it was.",
+  editRemoveNoJoin: "Without this point, “{a}” and “{b}” could not be joined by road on any profile.",
   editSameWayBack: "To the stop and back the same way for {km} km – no other way was found in time.",
   editDeadEndShape: "The pass-through point is on a dead end – back the same way for {km} km.",
   editSameWayBackShape: "To the pass-through point and back the same way for {km} km – no other way was found in time.",
@@ -3482,6 +3491,7 @@ const en: Messages = {
   guideRefusedWide: "press “Re-route the stretch” or ✕ to discard.",
   guideWarned: "press “Ride it anyway” or ✕ to discard.",
   guideRefusedStraight: "press “Go straight” or ✕ to discard.",
+  guideRefusedRemove: "try moving a point nearby or removing another.",
   searchDrawnBlocked: "This ride has drawn stretches – a full search would drop them. Fix it on the map.",
   explainStop: "The route rides through this place, and it is in the GPX file.",
   explainPass: "Only steers the line – no number, no stop.",

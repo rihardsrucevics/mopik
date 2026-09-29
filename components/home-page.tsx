@@ -59,6 +59,7 @@ import {
   snapToLine,
   spanRun,
   spanEnds,
+  removedNeighbours,
   lineBreaks,
   spliceIsSound,
   throughBlockedPlaces,
@@ -1420,6 +1421,16 @@ export function HomePage() {
     const nextPlan = planWithPlaces(plan, planned.places);
     const startedAt = startClock();
     const refuse = (note: string, reason: string, meters?: number) => { refuseProposal(token, planned.kind, note, reason, meters); };
+    // A removal only merges the two legs around the place (rider, 2026-09-29:
+    // „dīvaini, ka neizdodas, apkārt ir daudz ceļu”): it never refuses while
+    // any rung of the ladder can join the places either side; past car-fast
+    // it says which two it could not join.
+    const removal = planned.kind === "remove-stop" && !p.straight;
+    const placeName = (v: RidePlace | null, fallback: string) => (v ? v.name || (isShape(v) ? ui.shapePointName : fallback) : fallback);
+    const refuseRemoval = () => {
+      const n = removedNeighbours(before, planned.places);
+      return refuse(n ? fi(ui.editRemoveNoJoin, { a: placeName(n.named.from, ui.mapStart), b: placeName(n.named.to, ui.mapFinish) }) : ui.editBrokenLine, "remove-no-join");
+    };
     const ownProfile = buildMotoProfileOptions(planToIntent(nextPlan));
     // Where the edit asks the ride to go: the places it adds or moves, or
     // the bend's drop — and how far that is from the ride it has.
@@ -1448,6 +1459,7 @@ export function HomePage() {
       // A lower rung reached the point only by a dead end: that is still a
       // road that reaches it (rule 1), offered with the dead end said.
       if (p.fallback) return land(p.fallback);
+      if (removal) return refuseRemoval();
       // No road at all, even on car-fast (rule 3, as the rider changed it):
       // said, and „Vest pa taisno” offered — as far as a road goes, then
       // straight (`lib/map/straight.ts`). One new point only: a batch or a
@@ -1573,7 +1585,9 @@ export function HomePage() {
       let verdict = sound(spliced);
       // Not on a relaxed rung: a whole span re-routed on a profile that is
       // not his would reshape the ride far from the point he asked for.
-      if (!verdict.ok && !p.wide && !level) {
+      // A removal tries it on every rung: it has no point of its own to keep
+      // near, only the two legs to merge.
+      if (!verdict.ok && !p.wide && (!level || removal)) {
         console.warn("mopik: edited line broke", { kind: planned.kind, breaks: verdict.breaks, missesPlaces: verdict.missesPlaces, offRoadMeters: verdict.offRoadMeters, runs: runs.map((r, i) => ({ i, from: Math.round(r.fromMeters), to: Math.round(r.toMeters) })) });
         track("route_edit_failed", { reason: "broken-line" });
         const span = spanRun({ line, cum: cumulative(line), before, after: planned.places, runs });
@@ -1587,9 +1601,8 @@ export function HomePage() {
           const kmBefore = baseMeters;
           if (second.ok && wideNeedsAsking(kmBefore, whole.distanceMeters)) {
             const ends = spanEnds({ line, cum: cumulative(line), before, span });
-            const name = (v: RidePlace | null, fallback: string) => (v ? v.name || (isShape(v) ? ui.shapePointName : fallback) : fallback);
             const km = new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-            return askWide(token, planned.kind, fi(ui.editWideAsk, { a: name(ends.from, ui.mapStart), b: name(ends.to, ui.mapFinish), km1: km.format(kmBefore / 1000), km2: km.format(whole.distanceMeters / 1000) }), p.change);
+            return askWide(token, planned.kind, fi(ui.editWideAsk, { a: placeName(ends.from, ui.mapStart), b: placeName(ends.to, ui.mapFinish), km1: km.format(kmBefore / 1000), km2: km.format(whole.distanceMeters / 1000) }), p.change);
           }
           if (second.ok) { runs = [span]; data = again; spliced = whole; verdict = second; }
           else {
@@ -1604,7 +1617,11 @@ export function HomePage() {
       if (!verdict.ok && verdict.offRoadMeters) return unreached(verdict.offRoadMeters);
       // On a relaxed rung a line that will not join is one more way that
       // did not reach the point; on his own profile it is said as it is.
-      if (!verdict.ok) return level ? unreached(reachM) : refuse(ui.editBrokenLine, "broken-line");
+      // A removal climbs the ladder too (`unreached`): the ride's own profile
+      // may not start where the kept ride was cut — a stretch an earlier edit
+      // rode on a relaxed rung — and a gap there is no reason to keep a place
+      // the rider took out.
+      if (!verdict.ok) return level || removal ? unreached(reachM) : refuse(ui.editBrokenLine, "broken-line");
       // Where the line actually reaches each changed place. A point in a
       // field is answered by the router with a line that turns back at the
       // nearest track, silently; the place follows the line and the rider is
