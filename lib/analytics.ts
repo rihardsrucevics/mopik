@@ -74,6 +74,7 @@ export type AnalyticsEvent =
   | "route_edit_undone"      // the last edit was reverted; props: how — the honest read on whether the corrections are good
   | "route_edit_failed"      // the stretch could not be routed through the new point; props: reason (status|network|degenerate|no-place)
   | "trip_type_changed"       // props: to (one_way|round_trip) — is the new default right?
+  | "saved_ride_edit_saved"   // „Pabeigt labošanu” on a ride from „Saglabātie”; props: how (overwrite | copy), ok
   | "saved_ride_edit_pressed" // „Labot” on a card in „Saglabātie”; props: km
   | "ride_edit_opened"        // "Rediģēt formā" on a shared or saved ride; props: from, saved
   | "shared_correction_sent" // "Ko mainīt?" typed on a shared ride's page; props: length, saved

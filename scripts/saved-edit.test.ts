@@ -22,7 +22,7 @@ test("origin: only a ride saved as his own after backlog 44 is his own", () => {
 test("own ride: edit overwrites the saved original, in its place and with its date", () => {
   const list = [row("a", 300), row("b", 200, { origin: "own" }), row("c", 100)];
   const target = editTargetFor(list[1] as never, "(kopija)");
-  assert.deepEqual(target, { mode: "overwrite", id: "b", savedAt: 200 });
+  assert.deepEqual(target, { mode: "overwrite", id: "b", savedAt: 200, name: "ride b" });
   const next = applySavedEdit(list, target, row("b2", 999, { origin: "own" }));
   assert.deepEqual(next.map((r) => r.id), ["a", "b2", "c"]);
   assert.equal(next[1].savedAt, 200, "keeps the original's date, so the list does not reorder");

@@ -6,6 +6,7 @@ import { messages } from "@/lib/i18n/messages";
 import type { UiLocale } from "@/lib/i18n/locale";
 import { fi } from "@/lib/i18n/format";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Download, Map, Plus, Search, SlidersHorizontal, Trash2 } from "lucide-react";
 import { SiteHeader } from "@/components/site-header";
 import { track } from "@/lib/analytics";
@@ -60,6 +61,7 @@ function editHref(ride: SavedRide): string {
 export function SavedRidesPage() {
   const [locale] = useLocale();
   const m = messages(locale);
+  const router = useRouter();
   const [rides, setRides] = useState<SavedRide[]>([]);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortKey>("recent");
@@ -204,7 +206,16 @@ export function SavedRidesPage() {
                 result panel uses for Save / Share / Details. */}
             <ul className="mt-3 space-y-3">
               {visible.map((r) => (
-                <li key={r.id} className="rounded-2xl border border-stone-200 bg-white p-4">
+                // The whole card opens the ride (backlog 44), as „Apskatīt”
+                // does. Every control on it — delete and its pill, the three
+                // pills, the other versions — is a link or a button and keeps
+                // its own tap: the card only answers taps that land on none.
+                // „Apskatīt” stays the keyboard and screen-reader way in.
+                <li key={r.id} data-saved-card onClick={(e) => {
+                  if (e.target instanceof Element && e.target.closest("a, button, input")) return;
+                  track("saved_ride_opened", { km: r.km, via: "card" });
+                  router.push(savedRideHref(r));
+                }} className="cursor-pointer rounded-2xl border border-stone-200 bg-white p-4 transition hover:border-stone-300">
                   <div className="flex items-start justify-between gap-2">
                     {/* Plain text, not a link: the card's own "Apskatīt" button
                         goes to the same place, and two controls to one

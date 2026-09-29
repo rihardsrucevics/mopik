@@ -480,6 +480,76 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
   }
   await page.unroute(/\/api\/places\?(?=.*\blat=)/, reverse);
 
+  // ── 8. „Saglabātie” (backlog 44/47): the card opens the ride; „Labot” is edit
+  // mode on the saved line; „Pabeigt labošanu” saves in place (own) or as a
+  // copy (legacy / someone else's). Seeded rows come from the app's own
+  // encoder with the router's labels as names — the shape backlog 47 broke on.
+  {
+    t = Date.now();
+    const { execFileSync } = require("child_process");
+    const seed = (name, origin) => JSON.parse(execFileSync("npx", ["tsx", `${__dirname}/encode-saved.ts`, name, origin], { env: { ...process.env, LABEL_SUFFIX: ", Latvija" } }).toString());
+    const own = seed("sigulda-cesis", "own"), legacy = { ...seed("antinciems-rigas", "legacy"), savedAt: own.savedAt - 1000 };
+    const savedShot = (n) => tag === "375" && page.screenshot({ path: `${process.env.SAVED_SHOTS || L.SHOTS}/saved-${n}.png` });
+    const readSaved = () => page.evaluate(() => JSON.parse(localStorage.getItem("mopik.saved.v1") || "[]"));
+    await page.goto(`${L.BASE}/saglabatie?lang=lv`);
+    await page.evaluate((rows) => localStorage.setItem("mopik.saved.v1", JSON.stringify(rows)), [own, legacy]);
+    await page.reload(); await page.waitForSelector("[data-saved-card]");
+    await savedShot("list");
+    // A tap on the card's numbers — no control there — opens the ride.
+    const card = page.locator("[data-saved-card]").first();
+    await card.locator(".grid-cols-3").first().click();
+    await page.waitForURL(/\/r\//, { timeout: 15000 }).catch(() => {});
+    rec("saved: a tap on the card opens the ride", /\/r\//.test(page.url()), { url: page.url() });
+    await page.goto(`${L.BASE}/saglabatie?lang=lv`); await page.waitForSelector("[data-saved-card]");
+    // The delete icon keeps its own tap: the pill, not a navigation.
+    await card.locator("[data-confirm-pill]").click(); await page.waitForTimeout(300);
+    rec("saved: delete keeps its own tap", /\/saglabatie/.test(page.url()) && (await page.getByText("Izdzēst?").count()) > 0, { url: page.url() });
+    await page.keyboard.press("Escape");
+
+    const labot = async (row) => {
+      const g0 = log.generate.length;
+      await page.getByRole("link", { name: `Labot ${row.name}` }).first().click();
+      await page.waitForSelector('[data-slot="3"]', { timeout: 20000 }).catch(() => {});
+      await page.waitForTimeout(1200);
+      const pts = (await L.line(page).catch(() => [])).length;
+      rec(`saved „Labot” (${row.origin ?? "legacy"}): edit mode on the saved line, nothing generated`, pts > 10 && log.generate.length === g0 && (await page.locator(".maplibregl-marker").count()) >= 2, { pts, generated: log.generate.length - g0 });
+    };
+    const addDot = async () => {
+      const ll = await pointOn(0.4); await zoomTo(ll, 13);
+      await tapAt(ll); await page.waitForTimeout(500);
+      await page.getByText("Pievienot punktu šeit", { exact: true }).click(); await page.waitForTimeout(700);
+      return (await L.undoEnabled(page)) === true;
+    };
+    const finish = async () => {
+      if (phone) { await page.getByRole("button", { name: "Aizvērt pilnekrāna karti" }).first().click(); await page.waitForTimeout(500); }
+      await page.getByRole("button", { name: "Pabeigt labošanu" }).first().click(); await page.waitForTimeout(1000);
+      return ((await page.locator("[data-saved-edit-said]").textContent().catch(() => "")) ?? "").trim();
+    };
+
+    // His own ride: saved in place.
+    await labot(own);
+    await L.fit(page, await L.line(page)); await savedShot("edit");
+    rec("saved own: an edit („Pievienot punktu šeit”)", await addDot());
+    const saidOwn = await finish();
+    await savedShot("done");
+    const afterOwn = await readSaved();
+    rec("saved own: „Pabeigt labošanu” saves in place and says so", saidOwn === "Saglabāts – labotais brauciens aizstāj saglabāto." && afterOwn.length === 2 && afterOwn[0].id !== own.id && afterOwn[0].name === own.name && afterOwn[0].origin === "own" && afterOwn[0].savedAt === own.savedAt && !afterOwn.some((r) => r.id === own.id), { saidOwn, rows: afterOwn.map((r) => [r.id, r.name, r.origin]) });
+
+    // A ride with no origin (saved before backlog 44): a copy, the original untouched.
+    await page.goto(`${L.BASE}/saglabatie?lang=lv`); await page.waitForSelector("[data-saved-card]");
+    await labot(legacy);
+    const notes = (await L.state(page)).notices.join(" ") + " " + ((await page.locator("[data-saved-edit-note]").textContent().catch(() => "")) ?? "");
+    rec("saved legacy: „Šis brauciens nav tavs – labojumi tiks saglabāti kā kopija.”", notes.includes("Šis brauciens nav tavs – labojumi tiks saglabāti kā kopija."), { notes });
+    await savedShot("copy-note");
+    rec("saved legacy: an edit", await addDot());
+    const saidCopy = await finish();
+    await savedShot("copy-done");
+    const afterCopy = await readSaved();
+    const copy = afterCopy.find((r) => r.name === `${legacy.name} (kopija)`);
+    rec("saved legacy: saved as „<name> (kopija)”, the original byte for byte", saidCopy === `Saglabāts kā jauns brauciens – „${legacy.name} (kopija)”.` && afterCopy.length === 3 && Boolean(copy) && copy.origin === "own" && JSON.stringify(afterCopy.find((r) => r.id === legacy.id)) === JSON.stringify(legacy), { saidCopy, rows: afterCopy.map((r) => [r.id, r.name, r.origin]) });
+    console.log(`[${tag}]   saved rides ${((Date.now() - t) / 1000).toFixed(1)} s`);
+  }
+
   await shot("end");
   // A 422 is how /api/reroute-leg says "no road reaches it" — the refused and
   // guard cases above ask for exactly that, and Chromium logs every non-2xx load.

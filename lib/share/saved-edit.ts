@@ -31,12 +31,12 @@ export function originOf(ride: { origin?: SavedOrigin; from?: "shared" }): Saved
 
 /** What „Pabeigt labošanu” does with an edited saved ride. */
 export type SavedEditTarget =
-  | { mode: "overwrite"; id: string; savedAt: number }
+  | { mode: "overwrite"; id: string; savedAt: number; name: string }
   | { mode: "copy"; name: string };
 
 export function editTargetFor(ride: { id: string; name: string; savedAt: number; origin?: SavedOrigin; from?: "shared" }, copySuffix: string): SavedEditTarget {
   return originOf(ride) === "own"
-    ? { mode: "overwrite", id: ride.id, savedAt: ride.savedAt }
+    ? { mode: "overwrite", id: ride.id, savedAt: ride.savedAt, name: ride.name }
     : { mode: "copy", name: `${ride.name} ${copySuffix}` };
 }
 
