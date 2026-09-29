@@ -47,12 +47,16 @@ export function proposalView(state: ProposalState, copy: ProposalCopy, locale: U
   const notes = proposal.notes.filter(Boolean).join(" ");
   const chip = formatEditDelta(copy.delta, proposal.delta, locale);
   const sentence = formatEditDelta(copy.deltaTitle, proposal.delta, locale);
+  // ── chain-polish ── a lead says what and how much first; the numbers go last, small.
+  const lead = proposal.lead?.trim();
+  const title = [lead, sentence, notes, ...(proposal.aside ?? [])].filter(Boolean).join(" ");
   return {
     // The numbers alone; the notes on a line of their own under them
     // (2026-09-28: run on, the chip wrapped to four lines on a phone).
-    text: chip,
+    text: lead || chip,
+    ...(lead ? { numbers: chip } : {}),
     ...(notes ? { notes } : {}),
-    title: notes ? `${sentence} ${notes}` : sentence,
+    title,
     ...(proposal.accept ? { warn: true as const } : {}),
     line: proposal.ride.segments,
     changed: proposal.changed,

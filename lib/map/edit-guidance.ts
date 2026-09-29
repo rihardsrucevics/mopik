@@ -264,4 +264,26 @@ export function chainLine(t: T, n: number, meters: number, format: (n: number) =
   const g = chainGuide(t, n, meters, format, riskM);
   return joinGuide(g.what, g.action);
 }
+
+/**
+ * ── chain-polish ── The chain's proposal in the two lines a phone has room
+ * for (rider, 2026-09-29: the one long note was cut after three lines, and
+ * named a point by its coordinates): `lead` — what and how much, before
+ * „– ✓ apstiprina, ✕ atmet.” („Taisni caur 3 punktiem – 1,5 km bez ceļa”);
+ * `detail` — the way, by the numbers the map's pins wear („No ceļa gala līdz
+ * pieturai 4, tad 4 → 5 → 6, pēc tam atpakaļ uz maršrutu.”). A point with no
+ * number (a pass-through point) numbers the chain 1, 2, 3 instead. Never a
+ * coordinate, never a name that may be one.
+ */
+export function chainProposalLines(t: T, c: { count: number; meters: number; numbers: (number | null)[]; sameEnd?: boolean; risk?: boolean }, format: (n: number) => string): { lead: string; detail: string } {
+  const km = format(Math.round(c.meters / 100) / 10);
+  const lead = fi(t(c.count === 1 ? "chainHeadOne" : "chainHead"), { n: c.count, km }) + (c.risk ? `, ${t("chainRisk")}` : "");
+  const stops = c.numbers.length === c.count && c.numbers.every((n) => n !== null);
+  const nums = stops ? (c.numbers as number[]) : Array.from({ length: c.count }, (_, i) => i + 1);
+  const a = fi(t(stops ? "chainToStop" : "chainToPoint"), { n: nums[0] });
+  // A long chain: the first two and the last.
+  const path = (nums.length > 5 ? [nums[0], nums[1], "…", nums[nums.length - 1]] : nums).join(" → ");
+  const way = c.count === 1 ? fi(t("chainDetailOne"), { a }) : fi(t("chainDetail"), { a, path });
+  return { lead, detail: c.sameEnd ? `${way} ${t("chainSameEnd")}` : way };
+}
 // ── /straight-chain ──

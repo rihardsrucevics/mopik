@@ -99,7 +99,7 @@ import { markOutsideProfile, farthestFrom, detourRisk, reachOf, deadEndNoteKey }
 import { NO_CHAIN, chainCount, chainTopOf, inheritWarning, popChain, shownProposal, stackOnto, type EditChain } from "@/lib/map/edit-chain";
 import { blockingFrom, singleCause, type Blocking, type BlockingPoint, type PointProbe } from "@/lib/map/blocking";
 import { drawnIntervals, straightRun } from "@/lib/map/straight";
-import { CHAIN_OFF_M, CHAIN_RISK_M, chainJoins, chainMeters, chainRun, insertChain, offRoadRuns } from "@/lib/map/straight-chain";
+import { CHAIN_OFF_M, CHAIN_RISK_M, chainEdit, chainJoins, chainMeters, chainRun, insertChain, offRoadRuns } from "@/lib/map/straight-chain";
 import { drawnMeters } from "@/lib/routing/drawn";
 import { profileAt, type RelaxDrop } from "@/lib/routing/relax";
 import { buildMotoProfileOptions } from "@/lib/routing/moto-profile";
@@ -113,7 +113,7 @@ import { LoaderCircle } from "lucide-react";
 // „Labot” opens the phone map full screen first: inline it is a preview.
 import { openMapFullscreen } from "@/lib/map/fullscreen";
 import { passOnLine } from "@/lib/map/line-sheet";
-import { chainGuide, chainLine, joinGuide, proposalGuide, blockedGuide, blockedLine, guideAction, sightAddedLine, sightReachLine, sightRefusedLine, tickedCount, tickedGuide } from "@/lib/map/edit-guidance";
+import { chainGuide, chainLine, chainProposalLines, joinGuide, proposalGuide, blockedGuide, blockedLine, guideAction, sightAddedLine, sightReachLine, sightRefusedLine, tickedCount, tickedGuide } from "@/lib/map/edit-guidance";
 import { metersToLine, rowsWithSight, sightReach } from "@/lib/map/sight-add";
 
 /** A proposal ready to land, with what `live.landed` records for its commit. */
@@ -1529,8 +1529,14 @@ export function HomePage() {
     const target = placesForChange(change, before, line);
     if ("note" in target) { refuseNow(target.how, target.note, target.reason); return; }
     if (line.length < 2) { refuseNow("move-stop", ui.resEditFailed, "degenerate"); return; }
+    // ── chain-polish ── a point of a straight chain taken out or moved: the chain re-formed from the points left (no router), or, the last one gone, its legs joined by roads.
+    const chained = chainEdit({ segments: baseSegments, before, after: target.after });
+    const chainExtra = chained?.kind === "reform" ? {
+      prefetched: { runs: [chained.routed] },
+      chain: { meters: chained.drawnMeters, count: chained.points.length, sameEnd: chained.sameEnd, points: chained.points },
+    } : {};
     // Drawn straight stretches are fixed: no window re-routes them (design C).
-    const planned = planEdit({ line, cum: cumulative(line), before, after: target.after, keepOrder: target.keepOrder, fixed: drawnIntervals(baseSegments) });
+    const planned = chained?.plan ?? planEdit({ line, cum: cumulative(line), before, after: target.after, keepOrder: target.keepOrder, fixed: drawnIntervals(baseSegments) });
     if (!planned) {
       // Nothing about the line changes: nothing to preview, nothing to commit.
       live.current = null;
@@ -1544,7 +1550,7 @@ export function HomePage() {
     if (opts.confirm) dispatchProposal({ type: "confirm" });
     const run = () => {
       proposeTimer.current = null;
-      void routeProposal({ token, before, planned, baseSegments, line, shape: change.kind === "shape", change, wide: opts.wide === true, ...(opts.straight !== undefined ? { straight: true, relax: opts.straight } : {}), ...(opts.then ? { then: opts.then } : {}), ...(opts.thenChain ? { thenChain: opts.thenChain, relax: opts.thenChain.level } : {}), ...stacked });
+      void routeProposal({ token, before, planned, baseSegments, line, shape: change.kind === "shape", change, wide: opts.wide === true, ...(opts.straight !== undefined ? { straight: true, relax: opts.straight } : {}), ...(opts.then ? { then: opts.then } : {}), ...(opts.thenChain ? { thenChain: opts.thenChain, relax: opts.thenChain.level } : {}), ...chainExtra, ...stacked });
     };
     if (opts.delay) proposeTimer.current = { timer: setTimeout(run, opts.delay), run };
     else run();
@@ -1564,7 +1570,7 @@ export function HomePage() {
     /** „Vest pa taisno caur visiem”: this landing is the rest of the batch; the chains are then drawn on top of it (`chainOnTop`). */
     thenChain?: { runs: RidePlace[][]; level: number };
     /** The chain itself, already built (`chainOnTop`): its drawn metres, how many points, whether in and out share a road end, the first and last names. */
-    chain?: { meters: number; count: number; sameEnd: boolean; first: string; last: string };
+    chain?: { meters: number; count: number; sameEnd: boolean; points: { lat: number; lon: number }[] };
   }): Promise<void> {
     if (!plan || !route) return;
     const { token, before, planned, baseSegments, line } = p;
@@ -1896,13 +1902,19 @@ export function HomePage() {
         notes.push(fi(ui.editStraightNote, { m: new Intl.NumberFormat(locale).format(m), name: name?.name || ui.shapePointName }));
         if (m > 1000) notes.push(fi(ui.editStraightRisk, { km: kmFormat.format(m / 1000) }));
       }
+      // ── chain-polish ── what and how much in the chip's first line, the way in one short line under it (never cut mid-sentence on a phone).
+      let chainSaid: { lead: string; aside: string[] } | null = null;
       if (p.chain) {
         const km = kmFormat.format(p.chain.meters / 1000);
-        notes.push(fi(ui.chainNote, { n: p.chain.count, km, a: p.chain.first, b: p.chain.last }));
-        if (p.chain.sameEnd) notes.push(ui.chainSameEnd);
-        if (p.chain.meters > CHAIN_RISK_M) notes.push(fi(ui.editStraightRisk, { km }));
-        // The honesty line, as the panel says it for every drawn stretch.
-        notes.push(fi(ui.panelDrawn, { km }));
+        const vias = settled.vias;
+        const numberOf = (q: { lat: number; lon: number }) => {
+          const i = vias.findIndex((v) => Math.abs(v.lat - q.lat) < 1e-6 && Math.abs(v.lon - q.lon) < 1e-6);
+          return i < 0 || isShape(vias[i]) || vias[i].kind ? null : vias.slice(0, i + 1).filter((v) => !isShape(v) && !v.kind).length;
+        };
+        const said = chainProposalLines((k) => ui[k], { count: p.chain.count, meters: p.chain.meters, numbers: p.chain.points.map(numberOf), sameEnd: p.chain.sameEnd, risk: p.chain.meters > CHAIN_RISK_M }, (n) => kmFormat.format(n));
+        notes.unshift(said.detail);
+        // The honesty line, as the panel says it for every drawn stretch: in the title, the phone has no room.
+        chainSaid = { lead: said.lead, aside: [fi(ui.panelDrawn, { km })] };
       }
       // The rider asked for the straight line himself: it waits for „Tomēr
       // braukt” only for a big detour, not for leaving his profile.
@@ -1923,6 +1935,7 @@ export function HomePage() {
         notes,
         ...(accept ? { accept } : {}),
         ...(level ? { relax: level } : {}),
+        ...(chainSaid ? chainSaid : {}),
       };
       // A place still ridden out to and back, when the router did not prove
       // the road a dead end: the stretch may only have been cut too tight for
@@ -2279,13 +2292,10 @@ export function HomePage() {
     if (proposalSeq.current !== token) return;
     const built = joins.map(({ r, j }, i) => chainRun({ points: pts(r), ...j, entryRoad: roads[2 * i], exitRoad: roads[2 * i + 1] }));
     const planned: EditPlan = { kind: "add-stops", places: after, runs: built.map((b) => b.run) };
-    const nameOf = (v: RidePlace) => v.name || ui.shapePointName;
-    const first = joins[0].r[0];
-    const lastRun = joins[joins.length - 1].r;
     await routeProposal({
       token, before, planned, baseSegments: rest.segments, line, shape: false, change: mine.change, wide: false, relax: topLevel,
       prefetched: { runs: built.map((b) => b.routed) },
-      chain: { meters: built.reduce((m, b) => m + b.drawnMeters, 0), count: chain.runs.reduce((n, r) => n + r.length, 0), sameEnd: built.some((b) => b.sameEnd), first: nameOf(first), last: nameOf(lastRun[lastRun.length - 1]) },
+      chain: { meters: built.reduce((m, b) => m + b.drawnMeters, 0), count: chain.runs.reduce((n, r) => n + r.length, 0), sameEnd: built.some((b) => b.sameEnd), points: joins.flatMap(({ r }) => r) },
       ...extra,
     });
   }
@@ -3392,7 +3402,7 @@ export function HomePage() {
         </p>
       )}
       {proposalShown && proposalShown.tone !== "routing" && (
-        <p data-edit-proposal role="status" title={proposalShown.title} className={`text-[11px] leading-snug tabular-nums ${proposalShown.tone === "refused" ? "text-[#bd4b00]" : "text-stone-700"}`}>{/* ── edit-guidance ── the same „what – what to do” as the map's chip, then the notes. */}{proposalShown.guide ? joinGuide(proposalShown.text, proposalShown.guide) : proposalShown.text}{proposalShown.notes ? `${proposalShown.guide ? " " : NOTE_JOINER}${proposalShown.notes}` : ""}</p>
+        <p data-edit-proposal role="status" title={proposalShown.title} className={`text-[11px] leading-snug tabular-nums ${proposalShown.tone === "refused" ? "text-[#bd4b00]" : "text-stone-700"}`}>{/* ── edit-guidance ── the same „what – what to do” as the map's chip, then the notes. */}{proposalShown.guide ? joinGuide(proposalShown.text, proposalShown.guide) : proposalShown.text}{proposalShown.notes ? `${proposalShown.guide ? " " : NOTE_JOINER}${proposalShown.notes}` : ""}{proposalShown.numbers ? ` ${proposalShown.numbers}` : ""}</p>
       )}
       {editNote && !proposalShown && <p role="status" className="text-[11px] leading-snug text-[#bd4b00]">{editNote}</p>}
     </div>

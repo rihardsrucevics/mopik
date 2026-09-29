@@ -4630,6 +4630,8 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
               {proposal.guide && <span data-proposal-guide className="font-normal text-stone-600">{GUIDE_DASH}{proposal.guide}</span>}
             </span>
             {proposal.notes && <span data-proposal-notes className="line-clamp-3 text-[10.5px] font-normal leading-snug text-stone-500">{proposal.notes}</span>}
+            {/* ── chain-polish ── a lead took the numbers' place: they come last, small. */}
+            {proposal.numbers && <span data-proposal-numbers className="block truncate text-[10.5px] font-normal leading-snug tabular-nums text-stone-500">{proposal.numbers}</span>}
           </span>
         </div>
       ) : controls?.guide && !(phoneLayout && controls.pointSheet?.mode === "menu") ? (
