@@ -301,24 +301,27 @@ export function chainProposalLines(t: T, c: { count: number; meters: number; num
 // ── /straight-chain ──
 
 // ── add-kind ──
-// „+” asks what to add (rider, 2026-09-29), in the same two parts: „Ko
-// pievienot? – izvēlies veidu, tad pieskaries kartei.”, then, armed, what he
-// is adding – what to do.
+// „+” adds pass-through points, no question asked (rider, 2026-09-30 — the
+// „Ko pievienot?” chooser is gone), in the same two parts.
 
-/** The chooser: its guidance line and its two chips, each with a detail line. */
-export function addChooserCopy(t: T): { guide: string; options: { key: "stop" | "pass"; label: string; detail: string }[] } {
-  return {
-    guide: joinGuide(t("addChooseWhat"), t("addChooseAct")),
-    options: [
-      { key: "stop", label: t("addStopLabel"), detail: t("addStopDetail") },
-      { key: "pass", label: t("addPassLabel"), detail: t("addPassDetail") },
-    ],
-  };
+/** Armed, before the first tap: „Pieskaries kartei, lai pievienotu caurbraucamu punktu – ✓ apstiprina visus, ✕ atmet.” */
+export function addPassGuide(t: T): string {
+  return joinGuide(t("addPassWhat"), t("addPassAct"));
 }
 
-/** Armed, before the first tap: „Pievieno caurbraucamu punktu – pieskaries kartei vietā, caur kuru braukt.” */
-export function addArmedGuide(t: T, kind: "stop" | "pass"): string {
-  return kind === "pass" ? joinGuide(t("addArmedPassWhat"), t("addArmedPassAct")) : joinGuide(t("addArmedStopWhat"), t("addArmedStopAct"));
+/** The pending count: „3 caurbraucami punkti – ✓ apstiprina visus, ↶ noņem pēdējo, ✕ atmet.” */
+export function passBatchLine(t: T, n: number): string {
+  return joinGuide(fi(t(one(n) ? "addPassCountOne" : "addPassCountMany"), { n }), t("addPassCountAct"));
+}
+
+/** The empty-map offer's chip label: „Pievienot punktu šeit”, and its guidance line. */
+export function offerCopy(t: T): { label: string; guide: string } {
+  return { label: t("linePassHere"), guide: joinGuide(t("offerWhat"), t("offerAct")) };
+}
+
+/** An empty row waiting for a place (the field's tap, a row's pin, planning's „+ Pietura”): „Meklē vietu vai pieskaries kartei – ✕ atceļ.” */
+export function rowWaitingGuide(t: T): string {
+  return joinGuide(t("rowWaitWhat"), t("rowWaitAct"));
 }
 
 /** Why the sheet's kind switch is off, in words (null: it is on). */

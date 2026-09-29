@@ -1464,7 +1464,9 @@ export function HomePage() {
       return { after: mergeShapes(before, fromRows) };
     }
     const { op } = change;
-    const next = applyShapeEdit(before, op);
+    // A batch of added points (backlog 53): applied one after the other, routed as one change.
+    let next = applyShapeEdit(before, op);
+    for (const more of change.more ?? []) if (!("error" in next)) next = applyShapeEdit(next, more);
     if ("error" in next) {
       const how: EditKind = op.kind === "add" ? "add-stop" : op.kind === "remove" ? "remove-stop" : "move-stop";
       const note = next.error === "stop-cap" ? fi(ui.mapAddStopFull, { n: MAX_STOPS }) : next.error === "shape-cap" ? fi(ui.shapeCapNote, { n: MAX_SHAPE_POINTS }) : ui.resEditFailed;
@@ -1607,7 +1609,7 @@ export function HomePage() {
     // Where the edit asks the ride to go: the places it adds or moves, or
     // the bend's drop — and how far that is from the ride it has.
     const known = [before.start, ...before.vias, ...(before.finish ? [before.finish] : [])];
-    const asked: Point[] = p.change.kind === "shape" && (p.change.op.kind === "add" || p.change.op.kind === "move")
+    const asked: Point[] = p.change.kind === "shape" && !p.change.more?.length && (p.change.op.kind === "add" || p.change.op.kind === "move")
       ? [[p.change.op.lon, p.change.op.lat]]
       : [planned.places.start, ...planned.places.vias, ...(planned.places.finish ? [planned.places.finish] : [])]
         .filter((q) => !known.some((k) => k.lat === q.lat && k.lon === q.lon)).map((q): Point => [q.lon, q.lat]);
@@ -1840,7 +1842,7 @@ export function HomePage() {
       // A bend the router could not take nearer to where it was dropped is
       // no solution (rule 5): what it re-routed on the way is noise
       // (`bendMissed`) — a more relaxed rung is tried towards the drop.
-      if (p.change.kind === "shape" && (p.change.op.kind === "add" || p.change.op.kind === "move")) {
+      if (p.change.kind === "shape" && !p.change.more?.length && (p.change.op.kind === "add" || p.change.op.kind === "move")) {
         const drop: Point = [p.change.op.lon, p.change.op.lat];
         const offAfter = nearestAlong(drop, spliced.coordinates, cumulative(spliced.coordinates)).meters;
         // Taking the bend off a spur can leave it nowhere near the drop: the
@@ -1969,7 +1971,7 @@ export function HomePage() {
           .filter((r, i, all): r is EditRun => r !== null && all.findIndex((q) => q && q.fromMeters === r.fromMeters && q.toMeters === r.toMeters) === i);
         const answers = await Promise.all(options.map((r) => request([r], false).catch((): { status: number } => ({ status: 0 }))));
         if (!current()) return;
-        const drop: Point | null = p.change.kind === "shape" && (p.change.op.kind === "add" || p.change.op.kind === "move") ? [p.change.op.lon, p.change.op.lat] : null;
+        const drop: Point | null = p.change.kind === "shape" && !p.change.more?.length && (p.change.op.kind === "add" || p.change.op.kind === "move") ? [p.change.op.lon, p.change.op.lat] : null;
         let best: { runs: EditRun[]; data: Routed; meters: number } | null = null;
         options.forEach((r, i) => {
           const a = answers[i];
@@ -2634,10 +2636,10 @@ export function HomePage() {
    * The first three change the line and go through the proposal, exactly as a
    * stop would; a kind switch does not and is committed at once.
    */
-  function commitShape(op: ShapeEdit) {
+  function commitShape(op: ShapeEdit, more?: ShapeEdit[]) {
     if (op.kind === "promote" || op.kind === "demote") { switchKind(op); return; }
-    track("shape_point_edited", { kind: op.kind });
-    void confirmChange({ kind: "shape", op });
+    track("shape_point_edited", { kind: op.kind, ...(more?.length ? { n: more.length + 1 } : {}) });
+    void confirmChange({ kind: "shape", op, ...(more?.length ? { more } : {}) });
   }
 
   /**
@@ -3537,7 +3539,7 @@ export function HomePage() {
         // elsewhere (Phase 1, lib/map/insert-leg.ts): the ride as drawn.
         places: workingPlaces,
         line: route ? ((chainTop?.ride.coordinates ?? edited?.coordinates ?? route.geometry.coordinates) as Point[]) : undefined,
-        onShape: (op) => { commitShape(op); },
+        onShape: (op, more) => { commitShape(op, more); },
         onPropose: proposeChange,
         proposal: shown,
         // Another edit started while this proposal is shown: it is chained, not dropped.

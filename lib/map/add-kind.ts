@@ -1,107 +1,118 @@
 /**
- * „+” on the map asks what to add (rider, 2026-09-29): a stop („Pietura” –
- * Mopik finds the road to it) or a pass-through point („Caurbraucams punkts”
- * – it only steers the line, no number). He used to add stops and convert
- * them one by one.
+ * „+” on the map adds pass-through points (rider, 2026-09-30 — this replaces
+ * the „Ko pievienot?” chooser of 2026-09-29): no question asked. A stop is
+ * made of a point afterwards, with the pending „Pietura | Caurbraucams” chip
+ * or the point sheet's switch; search (the map field) is for stops only.
  *
  * Pure and tested (`scripts/add-kind.test.ts`):
  *
- * - `stepAdd` — the chooser's state machine: idle → choose → armed (no point
- *   yet) → pending (n points of that kind) → committed / cancelled → idle.
- *   „+” while armed or pending is not asked again.
- * - `readAddKind` / `writeAddKind` — the last choice, remembered in
- *   localStorage and preselected; the chooser is still shown every time.
- *   Storage that is missing or throws is no preference, never an error.
- * - `kindSwitch` — the point sheet's one „Pietura | Caurbraucams” control:
- *   which kind the point is, whether it can switch, and why not.
+ * - `stepAdd` — the session: idle → armed → pending (n points) → committed /
+ *   cancelled → idle. „+” while armed is not a second session.
+ * - `stepPassBatch` — the pending points of a session (backlog 53): a tap
+ *   ADDS one, always — also while the batch is being routed; ↶ takes the last
+ *   off; ✕ drops them all; a drag moves one. A tap never moves a point.
+ * - `offerAllowed` / `stepOffer` — a tap on the empty map without „+” offers
+ *   „Pievienot punktu šeit” (edit mode only): a marker and a chip; the chip
+ *   adds one pending point there, a tap elsewhere, Escape or ✕ dismiss it.
+ * - `kindSwitch` — the point sheet's one „Pietura | Caurbraucams” control.
  */
 
 export type AddKind = "stop" | "pass";
 
 export type AddSession =
   | { phase: "idle" }
-  /** The chooser is up; `preselected` is the remembered (or default) chip. */
-  | { phase: "choose"; preselected: AddKind }
-  /** The map is armed for `kind`; `count` points of it are pending (0: waiting for the first tap). */
-  | { phase: "armed"; kind: AddKind; count: number };
+  /** „+” pressed: taps add pass-through points; `count` of them are pending (0: waiting for the first tap). */
+  | { phase: "armed"; count: number };
 
 export type AddEvent =
-  /** „+” pressed; `remembered` is the stored preference. */
-  | { type: "plus"; remembered: AddKind | null }
-  | { type: "choose"; kind: AddKind }
-  /** A tap on the map marked a pending point of the armed kind. */
+  | { type: "plus" }
+  /** A tap on the map added a pending point. */
   | { type: "mark" }
   /** ↶ took the last pending point off. */
   | { type: "unmark" }
-  /** ✕ / Escape on the chooser. */
-  | { type: "dismiss" }
   /** ✓: the pending points went into the ride. */
   | { type: "confirm" }
-  /** ✕ / Escape once armed: nothing is added. */
+  /** ✕ / Escape: nothing is added. */
   | { type: "cancel" };
 
 export const IDLE: AddSession = { phase: "idle" };
 
-/** A session that is armed — „+” is not asked again while it runs. */
-export function armedRunning(s: AddSession): boolean {
-  return s.phase === "armed";
-}
-
-/**
- * One step. `remember` is set when a choice was made: the page stores it
- * (`writeAddKind`). `outcome` says how an armed session ended.
- */
-export function stepAdd(s: AddSession, e: AddEvent): { session: AddSession; remember?: AddKind; outcome?: "committed" | "cancelled" } {
+/** One step. `outcome` says how an armed session ended. */
+export function stepAdd(s: AddSession, e: AddEvent): { session: AddSession; outcome?: "committed" | "cancelled" } {
   switch (e.type) {
     case "plus":
-      if (s.phase === "armed") return { session: s };
-      if (s.phase === "choose") return { session: s };
-      return { session: { phase: "choose", preselected: e.remembered ?? "stop" } };
-    case "choose":
-      if (s.phase !== "choose") return { session: s };
-      return { session: { phase: "armed", kind: e.kind, count: 0 }, remember: e.kind };
+      return s.phase === "armed" ? { session: s } : { session: { phase: "armed", count: 0 } };
     case "mark":
-      if (s.phase !== "armed") return { session: s };
-      return { session: { ...s, count: s.count + 1 } };
+      return s.phase === "armed" ? { session: { phase: "armed", count: s.count + 1 } } : { session: s };
     case "unmark":
-      if (s.phase !== "armed") return { session: s };
-      return { session: { ...s, count: Math.max(0, s.count - 1) } };
-    case "dismiss":
-      return s.phase === "choose" ? { session: IDLE } : { session: s };
+      return s.phase === "armed" ? { session: { phase: "armed", count: Math.max(0, s.count - 1) } } : { session: s };
     case "confirm":
-      if (s.phase !== "armed") return { session: s };
-      return s.count > 0 ? { session: IDLE, outcome: "committed" } : { session: s };
+      if (s.phase !== "armed" || s.count === 0) return { session: s };
+      return { session: IDLE, outcome: "committed" };
     case "cancel":
-      if (s.phase === "idle") return { session: s };
-      return { session: IDLE, outcome: s.phase === "armed" ? "cancelled" : undefined };
+      return s.phase === "idle" ? { session: s } : { session: IDLE, outcome: "cancelled" };
   }
 }
 
-export const ADD_KIND_KEY = "mopik.addKind";
+/** A pending pass-through point: where it was tapped, and where it joins the line (`at`, the grab point). */
+export type PassItem = { id: number; lat: number; lon: number; at: { lat: number; lon: number } };
 
-type StorageLike = Pick<Storage, "getItem" | "setItem">;
+export type PassEvent =
+  | { type: "add"; item: PassItem; max: number }
+  | { type: "pop" }
+  | { type: "drop"; id: number }
+  | { type: "move"; id: number; lat: number; lon: number; at: { lat: number; lon: number } }
+  | { type: "discard" };
 
-/** The remembered choice, or null — also when storage is missing or throws. */
-export function readAddKind(storage: () => StorageLike | null | undefined): AddKind | null {
-  try {
-    const v = storage()?.getItem(ADD_KIND_KEY);
-    return v === "stop" || v === "pass" ? v : null;
-  } catch {
-    return null;
+/**
+ * The batch's step. Nothing here knows whether the batch is being routed:
+ * that is the point — a tap while it routes adds, exactly as any other tap.
+ * `max` is how many the ride can still take (the pass-through cap).
+ */
+export function stepPassBatch(items: PassItem[], e: PassEvent): PassItem[] {
+  switch (e.type) {
+    case "add": return items.length >= e.max ? items : [...items, e.item];
+    case "pop": return items.slice(0, -1);
+    case "drop": return items.filter((i) => i.id !== e.id);
+    case "move": return items.map((i) => (i.id === e.id ? { ...i, lat: e.lat, lon: e.lon, at: e.at } : i));
+    case "discard": return [];
   }
 }
 
-/** Remember the choice; a storage that throws (private mode, blocked) is ignored. */
-export function writeAddKind(storage: () => StorageLike | null | undefined, kind: AddKind): void {
-  try {
-    storage()?.setItem(ADD_KIND_KEY, kind);
-  } catch {
-    // Nothing to do: the chooser still works, it just starts on „Pietura”.
-  }
+/** The whole batch as one proposal: the first add and the rest (`more`), one routing, one ✓, one ↶ step. */
+export function batchOps(items: PassItem[]): { op: { kind: "add"; lat: number; lon: number; grabbedAt: [number, number] }; more: { kind: "add"; lat: number; lon: number; grabbedAt: [number, number] }[] } | null {
+  if (!items.length) return null;
+  const ops = items.map((i) => ({ kind: "add" as const, lat: i.lat, lon: i.lon, grabbedAt: [i.at.lon, i.at.lat] as [number, number] }));
+  return { op: ops[0], more: ops.slice(1) };
 }
 
-/** The browser's localStorage, read lazily so a throwing accessor is caught by the caller. */
-export const browserStorage = (): StorageLike | null => (typeof window === "undefined" ? null : window.localStorage);
+export type Offer = { lat: number; lon: number } | null;
+
+/**
+ * Whether a tap on the empty map offers „Pievienot punktu šeit”: edit mode
+ * only (not the result or a shared map), and only when the map is otherwise
+ * idle — no „+” session, nothing pending, no sheet or selection, no row
+ * waiting for a place, nothing being routed, and room for another point.
+ */
+export function offerAllowed(p: { editing: boolean; armed: boolean; pending: boolean; selection: boolean; rowActive: boolean; busy: boolean; atShapeCap: boolean }): boolean {
+  return p.editing && !p.armed && !p.pending && !p.selection && !p.rowActive && !p.busy && !p.atShapeCap;
+}
+
+export type OfferEvent =
+  | { type: "emptyTap"; lat: number; lon: number; allowed: boolean }
+  /** Escape, ✕, a tap on the line, a pin or anything that starts something else. */
+  | { type: "dismiss" }
+  /** The chip pressed: one pending point there. */
+  | { type: "accept" };
+
+/** A tap elsewhere while the offer is up dismisses it; it never jumps to the new spot. */
+export function stepOffer(o: Offer, e: OfferEvent): { offer: Offer; add?: { lat: number; lon: number } } {
+  switch (e.type) {
+    case "emptyTap": return o ? { offer: null } : { offer: e.allowed ? { lat: e.lat, lon: e.lon } : null };
+    case "dismiss": return { offer: null };
+    case "accept": return o ? { offer: null, add: { lat: o.lat, lon: o.lon } } : { offer: null };
+  }
+}
 
 export type KindSwitchReason = "end" | "shapeCap" | "stopCap" | "busy";
 
@@ -130,4 +141,15 @@ export function kindSwitch(p: {
     : to === "stop" && (p.stopCount >= p.maxStops || p.atRowCap) ? "stopCap"
     : null;
   return { current, to, enabled: reason === null, reason };
+}
+
+/**
+ * Every state of the map's add and edit flows has a way out and words
+ * (rider, 2026-09-30, `images/46.png`: an empty stop row waiting, ✕ grey, no
+ * notice — „I don't know how to get out of this state”). For a state, whether
+ * it is idle, whether ✕ is on, and the guidance line: a state that is not
+ * idle must have both.
+ */
+export function stateHasExit(s: { idle: boolean; cancelEnabled: boolean; guide: string | null | undefined }): boolean {
+  return s.idle || (s.cancelEnabled && Boolean(s.guide && s.guide.trim()));
 }

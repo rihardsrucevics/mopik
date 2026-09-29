@@ -96,8 +96,9 @@ export type AnalyticsEvent =
   | "new_point_placed"        // a new point went into its nearest leg; props: unsure (null|close|beyond-finish; "far" before release B), mode (plan|edit) — how often is Mopik not sure?
   | "new_point_leg_chosen"    // the rider picked the other choice chip; props: extend (a new finish) — do the chips get used, and which way?
   | "new_point_kind_toggled"  // „Pietura” ⇄ „Caurbraucams” while pending; props: to (stop|pass)
-  | "add_chooser_opened"      // „+” asked what to add; props: preselected (stop|pass)
-  | "add_kind_chosen"         // a chooser chip; props: kind (stop|pass), mode (edit|plan)
+  | "add_armed"               // „+” armed for pass-through points; props: mode (edit|plan)
+  | "pass_batch_confirmed"    // ✓ on a „+” batch of pass-through points; props: n
+  | "empty_tap_offer_taken"   // „Pievienot punktu šeit” after a tap on the empty map
   | "pass_points_added"       // pass-through points added from „+”; props: n, mode (edit|plan)
   | "moved_point_on_line"     // a pass-through point moved onto the line elsewhere; props: choice (keep|remove) — what does the rider mean by it?
   | "route_edit_wide_accepted" // „Pārrēķināt posmu” on a change only the whole-span re-route could make (it was refused with the km, `wide-ask`)

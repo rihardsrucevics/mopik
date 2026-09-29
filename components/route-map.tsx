@@ -344,18 +344,14 @@ export type MapControls = {
   choices?: MapChoiceGroup[] | null;
   // ── add-kind ──
   /**
-   * „+” asks what to add (rider, 2026-09-29): the guidance line and two
-   * large chips in the notice area, each with its detail line, the
-   * remembered one preselected; ✕ and Escape dismiss it. The bar's slots do
-   * not move while it is up.
+   * Edit mode, the map otherwise idle: a tap on the empty map (not the line,
+   * a pin, a marker or a gate) — the composer may offer „Pievienot punktu
+   * šeit” there. Respects the phone's tap settle (`TAP_SETTLE_MS`), so a
+   * double-tap zoom is never an offer.
    */
-  addChooser?: {
-    guide: string;
-    label: string;
-    options: { key: string; label: string; detail: string; selected: boolean; onSelect: () => void }[];
-    closeLabel: string;
-    onClose: () => void;
-  } | null;
+  onEmptyTap?: (at: { lat: number; lon: number }) => void;
+  /** Where the offer stands: a small marker until it is taken or dismissed. */
+  emptyOffer?: { lat: number; lon: number } | null;
   // ── /add-kind ──
 };
 
@@ -2524,6 +2520,8 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
   // ── line-sheet ──
   const excludedTapRef = useRef(controls?.excluded?.onTap);
   useEffect(() => { excludedTapRef.current = controls?.excluded?.onTap; }, [controls?.excluded?.onTap]);
+  const emptyTapRef = useRef(controls?.onEmptyTap);
+  useEffect(() => { emptyTapRef.current = controls?.onEmptyTap; });
   const lineTapRef = useRef(controls?.onLineTap);
   useEffect(() => { lineTapRef.current = controls?.onLineTap; }, [controls?.onLineTap]);
   const lineHoverTipRef = useRef(controls?.lineHoverTip);
@@ -3655,6 +3653,19 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
   }, [ready, shapeDotsKey]);
   useEffect(() => () => { for (const marker of shapeMarkersRef.current) marker.remove(); }, []);
 
+  // ── add-kind ── The empty-map offer's marker: a small dashed ring where he tapped.
+  const offerAt = controls?.emptyOffer ?? null;
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || !offerAt) return;
+    const el = document.createElement("div");
+    el.dataset.emptyOffer = "1";
+    el.setAttribute("aria-hidden", "true");
+    el.style.cssText = "width:18px;height:18px;border-radius:9999px;border:2.5px dashed #1c1917;background:rgba(255,255,255,0.85);pointer-events:none;box-shadow:0 1px 3px rgba(0,0,0,0.3)";
+    const mk = new maplibregl.Marker({ element: el }).setLngLat([offerAt.lon, offerAt.lat]).addTo(map);
+    return () => { mk.remove(); };
+  }, [ready, offerAt?.lat, offerAt?.lon]); // eslint-disable-line react-hooks/exhaustive-deps
+  // ── /add-kind ──
   /**
    * The point the rider tapped (`MapControls.selectedPoint`): a steady orange
    * ring around it, and the pin itself enlarged — the old faint blink was
@@ -4274,6 +4285,8 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
         // always meant by it.
         clearHighlight();
         clearFocus();
+        // add-kind: edit mode offers a pass-through point here (never on a marker).
+        if (!onMarker(e)) emptyTapRef.current?.({ lat: e.lngLat.lat, lon: e.lngLat.lng });
         return;
       }
 
@@ -4641,35 +4654,6 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
           the bar, one row of groups — each group's options side by side,
           wrapping only between groups — so the notice stays compact and the
           slots never move. */}
-      {/* ── add-kind ── „+” asks what to add: the guidance line, then two
-          large chips side by side (one row at 375 px), ✕ to dismiss. */}
-      {controls?.addChooser && (
-        <div role="group" aria-label={controls.addChooser.label} data-add-chooser
-          className="flex w-full max-w-md flex-col gap-1 self-start rounded-2xl border border-[#ececf0] bg-white/95 p-1.5 shadow-sm backdrop-blur max-md:w-auto max-md:self-stretch max-md:mr-16">
-          <div className="flex items-center gap-1 pl-1.5">
-            <span role="status" data-edit-guide="add" className="min-w-0 flex-1 text-xs font-medium leading-snug text-stone-700">{controls.addChooser.guide}</span>
-            <button type="button" onClick={controls.addChooser.onClose} aria-label={controls.addChooser.closeLabel} title={controls.addChooser.closeLabel} data-add-close
-              className="flex size-7 shrink-0 items-center justify-center rounded-full text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-800">
-              <X aria-hidden="true" className="size-3.5" />
-            </button>
-          </div>
-          <div role="radiogroup" aria-label={controls.addChooser.label} className="grid grid-cols-2 gap-1.5">
-            {controls.addChooser.options.map((o) => (
-              <button key={o.key} type="button" role="radio" aria-checked={o.selected} data-add-kind={o.key} onClick={o.onSelect}
-                className={`flex min-h-12 min-w-0 items-start gap-2 rounded-xl border-2 px-2 py-1.5 text-left transition-colors ${o.selected ? "border-stone-900 bg-stone-50" : "border-[#ececf0] bg-white hover:border-stone-300"}`}>
-                {o.key === "pass"
-                  ? <span aria-hidden="true" className="mt-0.5 block size-3.5 shrink-0 rounded-full border-[2.5px] border-[#1c1917] bg-white" />
-                  : <span aria-hidden="true" className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border-2 border-white bg-[#f56300] text-[9px] font-bold text-white shadow-[0_1px_2px_rgba(0,0,0,0.3)]">{1}</span>}
-                <span className="min-w-0">
-                  <span className="block text-[13px] font-semibold leading-tight text-stone-900 max-md:text-[12.5px]">{o.label}</span>
-                  <span className="block text-[11px] leading-snug text-stone-500">{o.detail}</span>
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-      {/* ── /add-kind ── */}
       {controls?.choices && controls.choices.length > 0 && (
         <div data-map-choices className="flex w-max min-w-0 max-w-full flex-wrap items-center gap-1.5 self-start max-md:-ml-16 max-md:mr-16">
           {controls.choices.map((group) => (
