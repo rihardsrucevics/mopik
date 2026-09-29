@@ -1332,7 +1332,7 @@ the same `reorder` path the arrows use so picked coordinates, the active
 row, the undo stack and the map's numbered pins follow. Pointer events with
 mouse only (`pointerType === "mouse"`), so touch laptops fall back to arrows.
 
-## 34. One kind of point: stop ↔ pass-through, switchable both ways
+## 34. One kind of point: stop ↔ pass-through, switchable both ways — MOSTLY DONE 2026-09-30 (switch both ways; „+" adds pass-through points; list never shows them; bulk actions later)
 
 **Rider, 2026-09-25.** Stops and the white shaping points are two different
 objects today, with different lists and behaviour, and only one direction of
@@ -1373,7 +1373,7 @@ assumption in the honest duration, its own class in the share code and GPX
 can be ridden or that it is legal. Edit mode, the continuous-line invariant
 and „Optimizēt” (32) must treat such a segment as fixed.
 
-## 36. Tap a stretch of the line and say what to do with it
+## 36. ~~Tap a stretch of the line and say what to do with it~~ — DONE 2026-09-30
 
 **Rider, 2026-09-25**, instead of doing "avoid" and "no retracing" through
 points. A **tap** on the line (a drag still makes a pass-through point)
@@ -1458,7 +1458,7 @@ holds the other three. Let finished slots start the next candidate instead
 of waiting for the batch; then measure how many candidates each ride gets.
 The pre-search reachability probe (27) costs 0.25–1.3 s and is not the cause.
 
-## 40. The map's field looks like a search box but does nothing when tapped
+## 40. ~~The map's field looks like a search box but does nothing when tapped~~ — DONE 2026-09-27
 
 **Rider, 2026-09-27, on his iPhone in full-screen edit mode.** He wanted a
 new stop, so he tapped the field at the bottom of the map — it is not
@@ -1540,7 +1540,7 @@ pass-through point (34), not a stop. If no clean way exists, say so and
 keep the ride. Related: 34, 36 (tap a stretch / exclude it), 41 (route
 between points vs drawn line), 32 („Optimizēt”).
 
-## 44. Saved rides: open by tapping the card, and „Labot” for every saved ride
+## 44. ~~Saved rides: open by tapping the card, and „Labot” for every saved ride~~ — DONE 2026-09-30
 
 **Rider, 2026-09-28.**
 1. In „Saglabātie” the whole ride card opens the ride — not only its
@@ -1569,7 +1569,7 @@ Fix: the server returns seconds per segment (a `seconds` field on the
 segments `classifyRoute` produces), carried in the share code and types, so
 an edit subtracts exactly what it removes.
 
-## 46. „Pievienot” on a sight on the map only ticks it — it is not added
+## 46. ~~„Pievienot” on a sight on the map only ticks it — it is not added~~ — DONE 2026-09-30
 
 **Rider, 2026-09-28.** Viewing or editing his ride, he opens a sight on the
 map and taps „Pievienot”. It looks added. But the side panel's „Apskates
@@ -1598,7 +1598,7 @@ ride cannot come closer than it was, it is said with the distance
 netikt – pietura paliek pie ceļa, tālāk kājām.” Smoke section 7. Not done:
 the shared page's card still only ticks (it has no ticked bar yet).
 
-## 47. BUG: from „Saglabātie”, edit opens the form but the map shows no ride
+## 47. ~~BUG: from „Saglabātie”, edit opens the form but the map shows no ride~~ — DONE 2026-09-30
 
 **Rider, 2026-09-28, iPhone, production (c40401b).** In „Saglabātie” he
 pressed edit on a saved ride (a round trip: Kuģu iela 26A → „Antiņciems” →
@@ -1635,7 +1635,7 @@ and a way to run the search after the response is sent (Vercel `waitUntil`
 or a background function within the 60 s limit). Related: 39 (the search's
 50 s budget).
 
-## 50. BUG: a new finish (or start) cannot be placed — always „neizdevās savienot”
+## 50. ~~BUG: a new finish (or start) cannot be placed — always „neizdevās savienot”~~ — DONE 2026-09-30
 
 **Rider, 2026-09-30.** Editing a ride in Latvia, he cannot put a new
 finish anywhere: it is refused every time with „Finišs „Gaujas iela” – to
@@ -1646,7 +1646,7 @@ adds of stops do too; finish/start changes evidently do not, or the finish
 leg is judged against the wrong anchors. A finish or start change must end
 in a proposal, or a named blocker with „Vest pa taisno”.
 
-## 51. BUG: after tapping a stretch the map stops responding; the page scrolls instead
+## 51. ~~BUG: after tapping a stretch the map stops responding; the page scrolls instead~~ — DONE 2026-09-30
 
 **Rider, 2026-09-30.** Tapping a stretch (backlog 36) selects it and the end
 handles cannot be dragged further; he cannot remove particular exclusions;
@@ -1656,7 +1656,7 @@ after tapping a stretch the map is no longer touchable or movable
 takes the map's gestures while the sheet or the handles are up, or the page
 scroll is not locked in full screen.
 
-## 52. Stops in forest with no road: batch with several blockers offers no „Vest pa taisno”
+## 52. ~~Stops in forest with no road: batch with several blockers offers no „Vest pa taisno”~~ — DONE 2026-09-30
 
 **Rider, 2026-09-30.** Four new stops in a forest: the note names „Pietura 2”
 (~754 m from a road) and „Pietura 4” („Ceplīši · 56.4819, 25.7056”, ~318 m)
@@ -1668,7 +1668,7 @@ where off-road and reachable points alternate needs the straight option per
 blocker (or one „Vest pa taisno visiem”), and names by nearest place or
 „punkts N”, never coordinates.
 
-## 53. Pass-through points: mark several in a row, like stops
+## 53. ~~Pass-through points: mark several in a row, like stops~~ — DONE 2026-09-30
 
 **Rider, 2026-09-30** (`images/44.webp`, after choosing „Caurbraucams punkts”
 in the „+” chooser). Adding pass-through points must work like adding
@@ -1704,7 +1704,7 @@ one straight line, back on another to the road toward the next anchor,
 making a triangle instead of an out-and-back. Say in the note when it is
 still the same line (no other road end within reach).
 
-## 55. Guidance must never promise an option that is not on screen
+## 55. ~~Guidance must never promise an option that is not on screen~~ — DONE 2026-09-30
 
 **Found 2026-09-30** (`images/45.png`): a blocked pass-through point says
 „… – pārvieto, izņem vai „Vest pa taisno”.” but only „Izņemt” is offered.

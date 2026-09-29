@@ -24,6 +24,26 @@ If `gh` is on `tronems`, `git push` fails with 403 — that one is loud.
 symptom is that www.mopik.eu does not change. When a deploy "did not work",
 check the account before you check the code.
 
+## Where this stands — handover, 2026-09-30
+
+**Production is `0f63767`** (main, PRs #2–#19 of 2026-09-28…30). The full
+summary — what shipped, the rider's new rules, how we work, what is left and
+the first steps for the next session — is in
+**`docs/SESSION-2026-09-28-30.md`**. Read it first.
+
+In one paragraph: map editing is now a proposal editor (preview + halo + chip,
+✓/✕/↶, chained edits), with pass-through points and stops switchable both
+ways, „+" that adds pass-through points in a batch, a line sheet with stretch
+selection and exclusions, a relaxed-profile ladder with „Tomēr braukt", drawn
+straight connectors („Vest pa taisno"), finish/start/removal that no longer
+refuse, saved rides you can edit, short share links, a phone map that edits
+only in full screen, and a fast verify kit (`scripts/verify/`, `smoke.sh`).
+Shipping: branch → PR → merge when green; Vercel deploys `main`.
+
+**Next, if the rider agrees:** backlog 54 and the shorter batch notice
+(fast), then 43 („Šī posma vietā brauc caur šejieni"); the router recordings
+are stale — run `RECORD=1 scripts/verify/smoke.sh` first.
+
 ## Where this stands — handover, 2026-09-28
 
 **Shipping: route-editing Phase 1** (design: `docs/DESIGN-route-editing.md`,

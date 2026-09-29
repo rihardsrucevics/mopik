@@ -4621,3 +4621,13 @@ in one session. The full flow works: **prompt → intent → GraphHopper → map
 - `OPENAI_API_KEY` for real LLM parsing; paid GraphHopper key for off-road
   steering.
 - Founder test from MVP doc §27: generate 20 routes, ride 5–10, tune profiles.
+
+
+## 2026-09-28 to 2026-09-30 — route editing becomes an editor
+
+PRs #2–#19 (see `docs/SESSION-2026-09-28-30.md`). Measured highlights: the
+fast verify kit runs the core edit flow at both viewports in about 3–5
+minutes (the old full suite took about 33 minutes); Lauriņi → Ērgļi through
+road 136,2 → 141,0 km with no dead-end claim; Rīga → Baldone edits that used
+to refuse now end in a proposal; ride 109,5 → 87,4 km and 7 % → 1 % retraced
+after the loop-round-a-generated-via fix.
