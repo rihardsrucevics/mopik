@@ -1628,3 +1628,16 @@ lost when the connection drops, and no work is redone. Needs a small store
 and a way to run the search after the response is sent (Vercel `waitUntil`
 or a background function within the 60 s limit). Related: 39 (the search's
 50 s budget).
+
+## 53. Pass-through points: mark several in a row, like stops
+
+**Rider, 2026-09-30** (`images/44.webp`, after choosing „Caurbraucams punkts”
+in the „+” chooser). Adding pass-through points must work like adding
+stops: he taps the map, the point appears at once, and he can tap the next
+one immediately — several in a row, all pending, one routing for the whole
+batch, one ✓, one ↶. Today each further tap chains onto the landed proposal,
+and while the previous proposal is still routing a new tap MOVES that dot
+instead of adding one, so he cannot mark a series of dots quickly along a
+line. Same concept as the stop batch: pins appear instantly, the line and
+chip follow (debounced), the field says how many are pending, ✓ commits
+all, ↶ removes the last pending dot, ✕ discards the batch.
