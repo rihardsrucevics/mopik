@@ -6,6 +6,7 @@ import { messages } from "@/lib/i18n/messages";
 import type { UiLocale } from "@/lib/i18n/locale";
 import { fi } from "@/lib/i18n/format";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Download, Map, Plus, Search, SlidersHorizontal, Trash2 } from "lucide-react";
 import { SiteHeader } from "@/components/site-header";
 import { track } from "@/lib/analytics";
@@ -13,6 +14,7 @@ import { listSaved, markSavedSeen, removeRide, decodeSaved, savedRideHref, type 
 import { decodePlanShare, planPart } from "@/lib/share/route-code";
 import { planSummary } from "@/lib/chat/ride-plan";
 import { gpxFilename } from "@/lib/gpx/filename";
+import { rideForEdit } from "@/lib/share/saved-edit";
 import { sharedRideGpx } from "@/lib/gpx/share-gpx";
 
 // A function of the language: the labels are shown in four, and a module
@@ -50,10 +52,16 @@ function summaryOf(ride: SavedRide, locale: UiLocale): string {
   return ride.prompt ?? "";
 }
 
+/** Where „Labot” goes: edit mode on the saved line when the code can carry it there, else the prefilled form. */
+function editHref(ride: SavedRide): string {
+  return rideForEdit(ride.code) ? `/?saved=${encodeURIComponent(ride.id)}` : `/?p=${planPart(ride.code)}&from=${encodeURIComponent(ride.code)}`;
+}
+
 /** Every saved ride, with search, sorting and a direct GPX download. */
 export function SavedRidesPage() {
   const [locale] = useLocale();
   const m = messages(locale);
+  const router = useRouter();
   const [rides, setRides] = useState<SavedRide[]>([]);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortKey>("recent");
@@ -198,7 +206,16 @@ export function SavedRidesPage() {
                 result panel uses for Save / Share / Details. */}
             <ul className="mt-3 space-y-3">
               {visible.map((r) => (
-                <li key={r.id} className="rounded-2xl border border-stone-200 bg-white p-4">
+                // The whole card opens the ride (backlog 44), as „Apskatīt”
+                // does. Every control on it — delete and its pill, the three
+                // pills, the other versions — is a link or a button and keeps
+                // its own tap: the card only answers taps that land on none.
+                // „Apskatīt” stays the keyboard and screen-reader way in.
+                <li key={r.id} data-saved-card onClick={(e) => {
+                  if (e.target instanceof Element && e.target.closest("a, button, input")) return;
+                  track("saved_ride_opened", { km: r.km, via: "card" });
+                  router.push(savedRideHref(r));
+                }} className="cursor-pointer rounded-2xl border border-stone-200 bg-white p-4 transition hover:border-stone-300">
                   <div className="flex items-start justify-between gap-2">
                     {/* Plain text, not a link: the card's own "Apskatīt" button
                         goes to the same place, and two controls to one
@@ -299,11 +316,13 @@ export function SavedRidesPage() {
                       className="flex h-10 min-w-0 items-center justify-center gap-0.5 rounded-full border border-stone-200 px-0.5 text-[13px] font-medium text-stone-700 transition hover:bg-stone-50 sm:gap-1.5 sm:px-3">
                       <Download className="size-3.5 shrink-0" /><span className="truncate">{m.savDownload}</span>
                     </button>
-                    {/* Straight into the form, prefilled. Without it editing a
-                        kept ride meant opening it and then finding the button
-                        there — two hops for the thing a rider does most. */}
+                    {/* „Labot”: straight into edit mode on the saved line
+                        (`/?saved=<id>`, backlog 44/47) — the same editor as a
+                        result's „Labot”, nothing generated again. A code with
+                        no coordinates for its places (older saves) can only
+                        prefill the form, as before. */}
                     {planPart(r.code) && (
-                      <Link href={`/?p=${planPart(r.code)}&from=${encodeURIComponent(r.code)}`} onClick={() => track("ride_edit_opened", { from: "saved", saved: true })}
+                      <Link href={editHref(r)} onClick={() => track("saved_ride_edit_pressed", { km: r.km })}
                         aria-label={fi(m.savEditRide, { name: r.name })}
                         className="flex h-10 min-w-0 items-center justify-center gap-0.5 rounded-full border border-stone-200 px-0.5 text-[13px] font-medium text-stone-700 transition hover:bg-stone-50 sm:gap-1.5 sm:px-3">
                         <SlidersHorizontal className="size-3.5 shrink-0" /><span className="truncate">{m.savEdit}</span>

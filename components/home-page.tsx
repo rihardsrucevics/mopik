@@ -10,8 +10,9 @@ import type { DetourFocusNote, SelectedPoi } from "@/components/suggestions-card
 import { InstallPrompt } from "@/components/install-prompt";
 import { MapPanel } from "@/components/map-panel";
 import { track } from "@/lib/analytics";
-import { decodePlanPlaces, decodePlanShare } from "@/lib/share/route-code";
-import { isCodeSaved, removeRide, rideId } from "@/lib/share/saved-rides";
+import { decodePlanPlaces, decodePlanShare, shareStartLabel } from "@/lib/share/route-code";
+import { findSaved, isCodeSaved, removeRide, rideId, saveEditedRide, type SavedRide } from "@/lib/share/saved-rides";
+import { editTargetFor, originOf, rideForEdit } from "@/lib/share/saved-edit";
 import { IntroSplash } from "@/components/intro-splash";
 import { SiteHeader } from "@/components/site-header";
 import { useLocale } from "@/lib/i18n/use-locale";
@@ -779,6 +780,59 @@ export function HomePage() {
       window.history.replaceState(null, "", window.location.pathname);
     }, 0);
   }, []);
+  /**
+   * `?saved=<id>`: „Labot” on a ride in „Saglabātie” (backlog 44/47). The
+   * saved code is the ride — its line, plan and routed places — so it is put
+   * in state exactly as a generation would leave it, and the result's own
+   * „Labot” is pressed on it once it can be (`editOnArrival`). Nothing is
+   * generated. Before this the list sent only the plan to the form, and the
+   * map had no line and, for rides saved under the router's labels, no pins.
+   */
+  const editOnArrival = useRef(false);
+  const arrived = useRef(false);
+  /**
+   * The saved row the ride on screen was opened from, with that ride — so a
+   * new generation, which is another `result`, leaves it behind by
+   * construction (the `splicedFor` pattern). „Pabeigt labošanu” saves the
+   * edit to it: in place when it is his own, as „… (kopija)” otherwise
+   * (`editTargetFor`); `said` is what the save reported.
+   */
+  const [savedFor, setSavedFor] = useState<{ result: GenerateRouteResponse; ride: SavedRide; said: string | null } | null>(null);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get("saved");
+    if (!id) return;
+    // Same no-cleanup timer as `?p=`: StrictMode runs the effect twice. Only
+    // the first timer applies it — a second one landing after the first had
+    // entered edit mode left `editOnArrival` armed, and „Pabeigt labošanu”
+    // then dropped the rider straight back into the editor.
+    setTimeout(() => {
+      if (arrived.current) return;
+      arrived.current = true;
+      const saved = findSaved(id);
+      const ride = saved ? rideForEdit(saved.code) : null;
+      if (ride) {
+        setPlan(ride.plan);
+        setPlaces(ride.places);
+        setResult(ride.result);
+        setSavedFor({ result: ride.result, ride: saved!, said: null });
+        setSelected(0);
+        setEntryMode("chat");
+        editOnArrival.current = true;
+        track("ride_edit_opened", { from: "saved", saved: true });
+      }
+      window.history.replaceState(null, "", window.location.pathname);
+    }, 0);
+  }, []);
+  useEffect(() => {
+    if (!editOnArrival.current || !canEdit || editMode) return;
+    editOnArrival.current = false;
+    openMapFullscreen();
+    // Said on the map too: on a phone the editor is full screen, over the column's note.
+    enterEdit(savedFor?.result === result && originOf(savedFor.ride) === "shared" ? ui.savEditNotYours : null);
+    // `enterEdit` is this render's function; `canEdit` is what makes it callable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canEdit, editMode]);
   // The rider's standing profile (how rough, why, where): remembered on the
   // device, applied to the form and used to seed a fresh chat so it only has
   // to ask where and how long.
@@ -1308,7 +1362,7 @@ export function HomePage() {
    * line under them. The map shows the ride's own pins from the first frame
    * (`setPreview`) rather than whatever the planning form last reported.
    */
-  function enterEdit() {
+  function enterEdit(note: string | null = null) {
     if (!ridePlaces || !shownRoute) return;
     setSelectedPois([]);
     setSightNote(null);
@@ -1319,7 +1373,7 @@ export function HomePage() {
     // while every edit changed a line nobody could see (2026-09-25).
     setSplicedFor({ result, spliced: null });
     setFocusPoi(null);
-    setEditNote(null);
+    setEditNote(note);
     discardProposal();
     setChain(NO_CHAIN);
     // Stops only: a shaping point is a dot of the editor's own, not a pin.
@@ -1359,6 +1413,21 @@ export function HomePage() {
     track("route_edit_finished", { edited: Boolean(edited) });
     setEditMode(false);
     setEditNote(null);
+    // Opened from „Saglabātie”: the edit is saved there, and said so.
+    const from = savedFor && savedFor.result === result ? savedFor : null;
+    if (from && edited && shownRoute && result) {
+      const target = editTargetFor(from.ride, ui.savCopySuffix);
+      const row = saveEditedRide(target, shownRoute, shareStartLabel(plan, routedPlaces), plan, routedPlaces, plan ? planSummary(plan, locale) : undefined);
+      track("saved_ride_edit_saved", { how: target.mode, ok: Boolean(row) });
+      setSavedFor({
+        result,
+        // The copy is his own from now on: the next edit updates it.
+        ride: row ?? from.ride,
+        said: !row ? ui.savEditSaveFailed : target.mode === "copy" ? fi(ui.savEditSavedCopy, { name: row.name }) : ui.savEditSavedOwn,
+      });
+      // Said above the ride, where the page may not be scrolled to.
+      setTimeout(() => document.querySelector("[data-saved-edit-said]")?.scrollIntoView({ block: "nearest", behavior: "smooth" }), 50);
+    }
   }
 
   // ── Preview before commit (docs/DESIGN-route-editing.md B4, Phase 1) ──
@@ -3386,6 +3455,13 @@ export function HomePage() {
       <div className="grid items-start gap-5 md:grid-cols-[minmax(340px,460px)_1fr]">
         <div className="min-w-0 space-y-4">
           <InstallPrompt show={Boolean(result) && !chatting} />
+          {/* Backlog 44: whose ride is being edited, and what „Pabeigt labošanu” did with it. */}
+          {editMode && savedFor?.result === result && originOf(savedFor.ride) === "shared" && (
+            <p className="rounded-xl border border-stone-200 bg-[#faf9f6] p-3 text-sm text-stone-700" data-saved-edit-note>{ui.savEditNotYours}</p>
+          )}
+          {!editMode && savedFor?.result === result && savedFor.said && (
+            <p role="status" className="rounded-xl border border-stone-200 bg-[#faf9f6] p-3 text-sm text-stone-700" data-saved-edit-said>{savedFor.said}</p>
+          )}
           {entryMode === "form"
             ? <RideComposer key={plan ? planSummary(plan, locale) : "new"} initialPlan={plan} initialPlaces={places} profile={profile} onProfileChange={changeProfile} busy={phase !== "idle"} onGenerate={startFromForm} onUseChat={() => setEntryMode("chat")} onPlacesChange={setPreview} map={mapInComposer && mapVisible ? mapPanel : undefined}
                 // Only while planning: the form reopened over a result shows the
