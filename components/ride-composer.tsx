@@ -2679,6 +2679,8 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
   useEffect(() => { passMarkRef.current = newPoint?.kind === "pass" && grab ? (lat: number, lon: number) => { placePass(lat, lon, null, newPoint); } : null; });
   /** Editing, armed for pass-through points with none marked yet: ✕ ends it, the field says what to do. */
   const passWaiting = Boolean(edit) && armedPass && !grab && !batch.length && !edit?.chain;
+  // What the map's controls show of a „+” session (the controls effect's key).
+  const addKey = addSession.phase === "choose" ? `choose:${addSession.preselected}` : addSession.phase === "armed" ? `armed:${addSession.kind}:${ghostRow ?? ""}:${naming ? 1 : 0}:${passWaiting ? 1 : 0}` : "idle";
   const selectedItem = batchSel === null ? null : batch.find((b) => b.id === batchSel) ?? null;
   const batchKey = batch.map((b) => `${b.id}:${b.row}:${b.lat},${b.lon}:${b.place?.name ?? ""}:${b.check}`).join("|") + `|${batchSel ?? ""}|${batchReady ? 1 : 0}`;
   const pendingKey = shapePending
@@ -3177,7 +3179,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
     // The parent's callback is an inline arrow and is rebuilt every render;
     // listing it would re-report the same controls on every keystroke.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapLive, activeRow, activeLabel, atCap, activeValue, activeConfirmed, anchor, locale, tripType, rowsKey, pendingKey, mapQuery, activeOwn?.lat, activeOwn?.lon, planKey, grab?.at.lat, grab?.at.lon, batchKey, fitAsk, undo.past.length, edit?.canUndo, edit?.rerouting, batchCommitting, shapeKey, stopCount, pointKey, movePreviewKey, proposalKey, proposeKey, passCount, pointTitle, choicesKey, insertWords, rowNumbers.join(","), lineKey, tipOn, blockedItems.map((b) => b.id).join(","), pendingBlocked, edit?.chain?.count ?? 0]);
+  }, [mapLive, activeRow, activeLabel, atCap, activeValue, activeConfirmed, anchor, locale, tripType, rowsKey, pendingKey, mapQuery, activeOwn?.lat, activeOwn?.lon, planKey, grab?.at.lat, grab?.at.lon, batchKey, fitAsk, undo.past.length, edit?.canUndo, edit?.rerouting, batchCommitting, shapeKey, stopCount, pointKey, movePreviewKey, proposalKey, proposeKey, passCount, pointTitle, choicesKey, insertWords, rowNumbers.join(","), lineKey, tipOn, blockedItems.map((b) => b.id).join(","), pendingBlocked, edit?.chain?.count ?? 0, addKey]);
   // Nothing is offered once the form is gone. Without this the page would keep
   // drawing a map header for a form the rider has left.
   useEffect(() => () => onMapControlsChange?.(null),

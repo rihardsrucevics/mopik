@@ -4622,7 +4622,7 @@ export function RouteMap({ segments, start, destination, via, focus, onFocusClea
           large chips side by side (one row at 375 px), ✕ to dismiss. */}
       {controls?.addChooser && (
         <div role="group" aria-label={controls.addChooser.label} data-add-chooser
-          className="flex w-full max-w-md flex-col gap-1 self-start rounded-2xl border border-[#ececf0] bg-white/95 p-1.5 shadow-sm backdrop-blur max-md:w-auto max-md:mr-16">
+          className="flex w-full max-w-md flex-col gap-1 self-start rounded-2xl border border-[#ececf0] bg-white/95 p-1.5 shadow-sm backdrop-blur max-md:w-auto max-md:self-stretch max-md:mr-16">
           <div className="flex items-center gap-1 pl-1.5">
             <span role="status" data-edit-guide="add" className="min-w-0 flex-1 text-xs font-medium leading-snug text-stone-700">{controls.addChooser.guide}</span>
             <button type="button" onClick={controls.addChooser.onClose} aria-label={controls.addChooser.closeLabel} title={controls.addChooser.closeLabel} data-add-close

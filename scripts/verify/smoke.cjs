@@ -134,7 +134,7 @@ const hv = (a, b) => { const R = 6371000, r = Math.PI / 180; const dLa = (b[1] -
     const stopsLoc = () => page.locator(".maplibregl-marker:not([data-pending])").filter({ hasText: /^\d+$/ });
     const chooser = page.locator("[data-add-chooser]");
     const h0 = L.hash(await L.line(page)); const d0 = await dotsLoc().count(); const p0 = await stopsLoc().count(); const u0 = await L.undoEnabled(page);
-    const ll = await pointOn(0.6, 350, 0); await zoomTo(ll);
+    const ll = await pointOn(0.3, 400, 0); await zoomTo(ll);
     await slot(1); await page.waitForTimeout(300);
     const guide = ((await chooser.locator('[data-edit-guide="add"]').textContent().catch(() => "")) ?? "").trim();
     rec("add-kind: „+” shows the chooser „Ko pievienot? – …”", (await chooser.isVisible()) && guide === "Ko pievienot? – izvēlies veidu, tad pieskaries kartei.", { guide });
