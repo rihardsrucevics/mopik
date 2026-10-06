@@ -758,7 +758,7 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
    * kept; the reverse lookup only supplies a name the rider recognises, and a
    * failed lookup still fills the field with the coordinates.
    */
-  const useMyLocation = () => {
+  const useMyLocation = (row = 0) => {
     if (!navigator.geolocation || locating) return;
     setLocating(true);
     setError(null);
@@ -767,8 +767,8 @@ export function RideComposer({ initialPlan, initialPlaces, profile, onProfileCha
         const { latitude: lat, longitude: lon } = coords;
         const found = await nameForPoint(lat, lon);
         const place: ResolvedPlace = found ?? { name: `${lat.toFixed(4)}, ${lon.toFixed(4)}`, label: t(locale, "myLocation"), lat, lon };
-        setPlaces((prev) => prev.map((p, i) => (i === 0 ? place.name : p)));
-        setPick(0, place);
+        setPlaces((prev) => prev.map((p, i) => (i === row ? place.name : p)));
+        setPick(row, place);
         // The same shelf a dropdown pick goes on. A place found by GPS was the
         // one kind of place the app forgot: `PlaceInput.pick` calls
         // `rememberPlace`, and this path never goes through it, so "Sigulda"

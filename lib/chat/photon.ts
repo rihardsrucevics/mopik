@@ -129,7 +129,12 @@ function kindOf(p: PhotonFeature["properties"]): { group: number; kind: PlaceKin
   if (EXCLUDED_KEYS.has(key)) return null;
   const group = KIND_GROUP[`${key}:${value}`];
   // A house number is an address whatever the building happens to be tagged as.
-  if (group === undefined) return p.housenumber ? { group: 1, kind: "address" } : null;
+  if (group === undefined && p.housenumber) return { group: 1, kind: "address" };
+  // A named house with no number is how Latvian farmsteads are addressed —
+  // "Veclodēni, Baldones pagasts" (rider, 2026-10-06: they were missing).
+  // OSM tags them building=* or place=house; the name is the address.
+  if (group === undefined && p.name && (key === "building" || (key === "place" && value === "house"))) return { group: 1, kind: "address" };
+  if (group === undefined) return null;
   return {
     group,
     kind: group === 0 ? "settlement" : group === 1 ? "address" : KIND_OF_TAG[`${key}:${value}`] ?? "place",
@@ -145,6 +150,12 @@ export type PlaceSuggestion = ResolvedPlace & {
    */
   kind: PlaceKind;
 };
+
+/**
+ * Case-blind form of a name, to spot the exact match. Diacritics are kept on
+ * purpose: folded, "Cēsīm" exactly matched Ćesim in Bosnia.
+ */
+const fold = (s: string) => s.normalize("NFC").toLowerCase().trim();
 
 /** Great-circle km; only used to rank and to cut off other continents. */
 function distanceKm(home: { lat: number; lon: number }, [lon, lat]: [number, number]): number {
@@ -246,7 +257,9 @@ export async function searchPlacesDetailed(q: string, home = DEFAULT_HOME, opts:
       const q = f.properties;
       // An address carries no name of its own: "Brīvības iela 105, Rīga".
       const street = [q.street ?? q.name, q.housenumber].filter(Boolean).join(" ");
-      const name = kind.group === 1 && street ? street : q.name ?? street;
+      // A farmstead's name is its address; its `street` is only the nearest road.
+      const namedHouse = kind.group === 1 && !q.housenumber && !!q.name;
+      const name = kind.group === 1 && street && !namedHouse ? street : q.name ?? street;
       if (!name) return [];
       // A named POI needs its street: Rīga has a dozen Circle K, and
       // "Circle K · Rīga" is the same line for every one of them. The address
@@ -258,7 +271,7 @@ export async function searchPlacesDetailed(q: string, home = DEFAULT_HOME, opts:
       // and Lithuanian lists — and how it got stored, in Latvian, with every
       // recent place. The client renders the kind beside the label instead,
       // translated.
-      const at = kind.group > 1 && street && street !== name ? street : "";
+      const at = (kind.group > 1 || namedHouse) && street && street !== name ? street : "";
       const where = q.city ?? q.district ?? q.county ?? q.state ?? "";
       const suffix = [at, where && where !== name ? where : ""].filter(Boolean).join(" · ");
       return [{
@@ -266,6 +279,7 @@ export async function searchPlacesDetailed(q: string, home = DEFAULT_HOME, opts:
         lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0],
         kind: kind.kind,
         group: kind.group, rank: RANK[q.osm_value ?? ""] ?? 0, distanceKm: distanceKm(home, f.geometry.coordinates),
+        exact: fold(name) === fold(query) ? 0 : 1,
       }];
     })
     // Settlements first, then addresses, stops and landmarks; Latvia before
@@ -275,7 +289,11 @@ export async function searchPlacesDetailed(q: string, home = DEFAULT_HOME, opts:
     // Warszawa above the capital: the nearest thing with the right name is
     // rarely the one meant. Distance only separates equals — which is exactly
     // what "LV first" used to do, without assuming the rider is in Latvia.
-    .sort((a, b) => a.group - b.group || b.rank - a.rank || a.distanceKm - b.distanceKm)
+    //
+    // The exact name goes before all of that (2026-10-06): typing "Veclodēni"
+    // returned eight fuzzy hamlets — Veclodiņi, Vecaudēni… — and the
+    // farmstead actually called Veclodēni fell off the end of the list.
+    .sort((a, b) => a.exact - b.exact || a.group - b.group || b.rank - a.rank || a.distanceKm - b.distanceKm)
     .filter((x) => {
       const k = `${x.label}|${x.lat.toFixed(4)}|${x.lon.toFixed(4)}`;
       if (seen.has(k)) return false;
