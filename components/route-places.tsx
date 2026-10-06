@@ -191,7 +191,8 @@ export function RoutePlaces({ places, picked, oneWay, busy, onChange, onPick, on
   oneWay: boolean;
   busy?: boolean;
   /** Fill the start from the device's location. Absent = no button. */
-  onUseLocation?: () => void;
+  /** Fills the given row with the device's location. */
+  onUseLocation?: (row: number) => void;
   locating?: boolean;
   /**
    * Fill this row by tapping the map. Absent = no button.
@@ -390,7 +391,7 @@ export function RoutePlaces({ places, picked, oneWay, busy, onChange, onPick, on
                 // The crosshair alone: every map app uses it, so the label was
                 // spending a third of the field's width saying what the icon
                 // already says. The name still reaches a screen reader.
-                <button type="button" disabled={busy || locating} onClick={onUseLocation}
+                <button type="button" disabled={busy || locating} onClick={() => onUseLocation(i)}
                   aria-label={t(locale, "useMyLocation")}
                   title={t(locale, "myLocation")}
                   className="flex size-8 shrink-0 items-center justify-center rounded-lg text-[#bd4b00] transition hover:bg-stone-100 disabled:opacity-40">
@@ -410,6 +411,17 @@ export function RoutePlaces({ places, picked, oneWay, busy, onChange, onPick, on
                     row, because a row with nothing in it is exactly the one
                     the rider cannot name and wants to point at. */}
                 {pickButton(i)}
+                {/* The crosshair on every empty row, not only the start
+                    (rider, 2026-10-06): a ride that ends at home, or a stop
+                    where he is standing now, is the same one tap. */}
+                {!place.trim() && onUseLocation && (
+                  <button type="button" disabled={busy || locating} onClick={() => onUseLocation(i)}
+                    aria-label={t(locale, "useMyLocation")}
+                    title={t(locale, "myLocation")}
+                    className="flex size-8 shrink-0 items-center justify-center rounded-lg text-[#bd4b00] transition hover:bg-stone-100 disabled:opacity-40">
+                    <LocateFixed className={`size-4 ${locating ? "animate-pulse" : ""}`} />
+                  </button>
+                )}
                 {/* Arrows, not a drag handle. Dragging a small target inside
                     a scrolling form never worked on iOS — Safari kept the
                     gesture for scrolling — and three attempts to fix it failed
